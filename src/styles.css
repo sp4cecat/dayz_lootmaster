@@ -1,0 +1,103 @@
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f9f9f9;
+  --text: #213547;
+  --muted: #6b7280;
+  --primary: #646cff; /* Vite brand indigo */
+  --primary-hover: #747bff; /* Vite hover (light) */
+  --border: #e5e5e5;
+  --warn: #f59e0b;
+  --error: #ef4444;
+  --chip: #eef2ff;
+}
+
+:root[data-theme="dark"] {
+  --bg: #242424; /* Vite dark background */
+  --bg-soft: #1a1a1a; /* Vite dark button bg */
+  --text: rgba(255, 255, 255, 0.87); /* Vite dark text */
+  --muted: #a1a1a1;
+  --primary: #646cff;
+  --primary-hover: #535bf2; /* Vite hover (dark) */
+  --border: #2e2e2e;
+  --warn: #fbbf24;
+  --error: #f87171;
+  --chip: #1b2331;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+
+.app { height: 100%; display: flex; flex-direction: column; }
+.app-center { align-items: center; justify-content: center; gap: 12px; }
+.error { color: var(--error); }
+.spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.app-header { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); gap: 12px; background: var(--bg); position: sticky; top: 0; z-index: 5; }
+.brand { display: flex; align-items: center; gap: 8px; }
+.logo { font-size: 20px; }
+.header-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.btn { background: var(--bg-soft); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+.btn.primary { background: var(--primary); border-color: transparent; color: white; }
+.btn.primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn:disabled { opacity: 0.6; cursor: default; }
+.link { background: none; border: none; color: var(--primary); cursor: pointer; text-decoration: underline; padding: 0; }
+.link:hover { color: var(--primary-hover); }
+
+.banner { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.banner.warn { background: color-mix(in oklab, var(--warn) 10%, transparent); }
+.warn-text { color: var(--warn); }
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 8px; background: var(--chip); border: 1px solid var(--border); margin-left: 6px; font-size: 12px; }
+.chip.muted { opacity: 0.7; }
+.chip.warn { background: color-mix(in oklab, var(--warn) 15%, transparent); border-color: color-mix(in oklab, var(--warn) 50%, var(--border)); }
+
+.content.two-pane { flex: 1; display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+.left-pane { border-right: 1px solid var(--border); padding: 12px; overflow: auto; }
+.right-pane { padding: 12px; overflow: hidden; }
+
+.filters { display: flex; flex-direction: column; gap: 12px; }
+.filters-row { display: flex; gap: 8px; }
+.control { display: flex; flex-direction: column; gap: 6px; }
+.control input[type="text"], .control input[type="number"], .control select, textarea.code-view {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+}
+.control.mixed input[type="number"]::placeholder { color: var(--muted); }
+.control.full { grid-column: 1 / -1; }
+.checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.checkbox { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 6px; }
+.checkbox.checked { background: color-mix(in oklab, var(--primary) 10%, transparent); }
+.checkbox.indeterminate { background: color-mix(in oklab, var(--muted) 10%, transparent); }
+
+.types-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.table-header, .tr { display: grid; grid-template-columns: 2fr 1fr 2fr 1fr 1fr; gap: 8px; align-items: center; }
+.table-header { padding: 8px 12px; background: var(--bg-soft); border-bottom: 1px solid var(--border); font-weight: 600; }
+.table-body { overflow: auto; max-height: calc(100vh - 230px); }
+.tr { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.tr.selected { background: color-mix(in oklab, var(--primary) 12%, transparent); }
+.td.name { display: flex; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
+.table-and-form { display: grid; grid-template-columns: 1fr minmax(360px, 420px); gap: 12px; height: 100%; }
+.edit-form-container { border: 1px solid var(--border); border-radius: 10px; overflow: auto; background: var(--bg); }
+
+.edit-form { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.edit-form-header { display: flex; align-items: center; gap: 8px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 10px; }
+
+.errors { margin-top: 8px; padding: 8px; border: 1px solid var(--error); color: var(--error); border-radius: 8px; background: color-mix(in oklab, var(--error) 10%, transparent); }
+
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 10; }
+.modal { width: min(900px, 100%); max-height: 90vh; overflow: auto; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; }
+.modal.full { width: min(1200px, 100%); height: 90vh; display: flex; flex-direction: column; }
+.modal-header { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); }
+.modal-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.resolve-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.resolve-section h4 { margin: 0 0 6px; }
+.chips.selectable .chip { cursor: pointer; }
+.chips .chip.selected { background: color-mix(in oklab, var(--primary) 20%, transparent); border-color: var(--primary); }
+
+textarea.code-view { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+.spacer { flex: 1 1 auto; }
