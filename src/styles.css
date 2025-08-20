@@ -13,7 +13,8 @@
 
 :root[data-theme="dark"] {
     --bg: rgb(49, 62, 85); /* Vite dark background */
-    --bg-soft: rgb(60, 71, 101); /* Vite dark button bg */
+    --bg-soft: rgb(59, 74, 101); /* Vite dark button bg */
+    --bg-softer: rgb(70, 88, 120); /* Vite dark button bg */
     --text: rgba(255, 255, 255, 0.87); /* Vite dark text */
     --muted: #a1a1a1;
     --primary: #646cff;
@@ -237,6 +238,7 @@ body {
 .control.full {
     flex: 1 1 100%;
     width: 100%;
+    background: var(--bg-softer);
 }
 
 .checkbox-grid {

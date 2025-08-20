@@ -80,28 +80,30 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
       </div>
 
       <div className="form-grid">
-        <label className={`control ${form.category && !definitions.categories.includes(form.category) ? 'error' : ''}`}>
-          <span>Category</span>
-          <select
-            value={form.category}
-            onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-          >
-            <option value="">—</option>
-            {definitions.categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-
-        {['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].map(k => (
-          <label key={k} className={`control ${form[k] === null ? 'mixed' : ''}`}>
-            <span>{labelFor(k)}</span>
-            <input
-              type="number"
-              placeholder={form[k] === null ? 'Mixed' : ''}
-              value={form[k] === null ? '' : form[k]}
-              onChange={e => setNum(k, e.target.value)}
-            />
+        <div className="basics-stack">
+          <label className={`control ${form.category && !definitions.categories.includes(form.category) ? 'error' : ''}`}>
+            <span>Category</span>
+            <select
+              value={form.category}
+              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+            >
+              <option value="">—</option>
+              {definitions.categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </label>
-        ))}
+
+          {['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].map(k => (
+            <label key={k} className={`control ${form[k] === null ? 'mixed' : ''}`}>
+              <span>{labelFor(k)}</span>
+              <input
+                type="number"
+                placeholder={form[k] === null ? 'Mixed' : ''}
+                value={form[k] === null ? '' : form[k]}
+                onChange={e => setNum(k, e.target.value)}
+              />
+            </label>
+          ))}
+        </div>
 
         <fieldset className="control full">
           <legend>Flags</legend>
