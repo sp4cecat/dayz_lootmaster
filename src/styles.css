@@ -216,6 +216,9 @@ body {
     display: flex;
     gap: 8px;
 }
+.control.grow {
+    flex: 1 1 auto;
+}
 
 .basics-stack {
     display: flex;

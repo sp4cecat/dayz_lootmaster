@@ -43,7 +43,7 @@ export default function Filters({ definitions, filters, onChange }) {
         </label>
       </div>
       <div className="filters-row">
-        <label className="control">
+        <label className="control grow">
           <span>Name (supports * and ?)</span>
           <input
             type="text"
