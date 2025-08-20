@@ -35,14 +35,22 @@ export default function TypesTable({ definitions, types, selection, setSelection
     setSelection(next);
   };
 
+  const condensed = selection.size > 0;
+
   return (
-    <div className="types-table">
+    <div className={`types-table ${condensed ? 'condensed' : ''}`}>
       <div className="table-header">
         <div className="th name">Name</div>
-        <div className="th category">Category</div>
-        <div className="th flags">Usage/Value/Tag</div>
-        <div className="th nums">Nominal / Min</div>
-        <div className="th nums">Lifetime</div>
+        {!condensed && (
+          <>
+            <div className="th category">Category</div>
+            <div className="th usage">Usage</div>
+            <div className="th value">Value</div>
+            <div className="th tag">Tag</div>
+            <div className="th nums">Nominal / Min</div>
+            <div className="th nums">Lifetime</div>
+          </>
+        )}
       </div>
       <div className="table-body" role="list">
         {rows.map(t => {
@@ -59,18 +67,27 @@ export default function TypesTable({ definitions, types, selection, setSelection
                 {t.name}
                 {t.hasUnknown && <span className="chip warn">Unknown</span>}
               </div>
-              <div className="td category">
-                <span className={!definitions.categories.includes(t.category || '') ? 'warn-text' : ''}>
-                  {t.category || '—'}
-                </span>
-              </div>
-              <div className="td flags">
-                <GroupChips label="U" values={t.usage} unknown={(unknowns.byType[t.name]?.usage) || []} />
-                <GroupChips label="V" values={t.value} unknown={(unknowns.byType[t.name]?.value) || []} />
-                <GroupChips label="T" values={t.tag} unknown={(unknowns.byType[t.name]?.tag) || []} />
-              </div>
-              <div className="td nums">{t.nominal} / {t.min}</div>
-              <div className="td nums">{t.lifetime}</div>
+
+              {!condensed && (
+                <>
+                  <div className="td category">
+                    <span className={!definitions.categories.includes(t.category || '') ? 'warn-text' : ''}>
+                      {t.category || '—'}
+                    </span>
+                  </div>
+                  <div className="td usage">
+                    <GroupChips values={t.usage} unknown={(unknowns.byType[t.name]?.usage) || []} />
+                  </div>
+                  <div className="td value">
+                    <GroupChips values={t.value} unknown={(unknowns.byType[t.name]?.value) || []} />
+                  </div>
+                  <div className="td tag">
+                    <GroupChips values={t.tag} unknown={(unknowns.byType[t.name]?.tag) || []} />
+                  </div>
+                  <div className="td nums">{t.nominal} / {t.min}</div>
+                  <div className="td nums">{t.lifetime}</div>
+                </>
+              )}
             </div>
           );
         })}
@@ -82,7 +99,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
 function GroupChips({ label, values, unknown }) {
   return (
     <div className="chips">
-      <span className="chip muted">{label}</span>
+      {label ? <span className="chip muted">{label}</span> : null}
       {values.map(v => (
         <span key={v} className={`chip ${unknown.includes(v) ? 'warn' : ''}`}>{v}</span>
       ))}
