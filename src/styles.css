@@ -12,8 +12,8 @@
 }
 
 :root[data-theme="dark"] {
-    --bg: rgb(30, 41, 59); /* Vite dark background */
-    --bg-soft: rgb(29, 45, 83); /* Vite dark button bg */
+    --bg: rgb(49, 62, 85); /* Vite dark background */
+    --bg-soft: rgb(60, 71, 101); /* Vite dark button bg */
     --text: rgba(255, 255, 255, 0.87); /* Vite dark text */
     --muted: #a1a1a1;
     --primary: #646cff;
@@ -309,6 +309,7 @@ legend {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
+    background: var(--bg);
 }
 
 .tr.selected > .td {
@@ -346,7 +347,7 @@ legend {
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: auto;
-    background: var(--bg);
+    background: var(--bg-soft);
 }
 
 .edit-form {
