@@ -15,14 +15,14 @@
     --bg: rgb(49, 62, 85); /* Vite dark background */
     --bg-soft: rgb(59, 74, 101); /* Vite dark button bg */
     --bg-softer: rgb(70, 88, 120); /* Vite dark button bg */
-    --text: rgba(255, 255, 255, 0.87); /* Vite dark text */
+    --text: rgba(255, 255, 255, 0.73); /* Vite dark text */
     --muted: #a1a1a1;
     --primary: #646cff;
     --primary-hover: #535bf2; /* Vite hover (dark) */
-    --border: #2e2e2e;
+    --border: #292929;
     --warn: #fbbf24;
     --error: #f87171;
-    --chip: #1b2331;
+    --chip: #293449;
 }
 
 * {
@@ -167,7 +167,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    border-radius: 999px;
+    border-radius: 7px;
     padding: 2px 8px;
     background: var(--chip);
     border: 1px solid var(--border);
