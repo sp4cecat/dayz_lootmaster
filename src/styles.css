@@ -286,13 +286,13 @@ legend {
 .types-table {
     display: grid;
     grid-auto-rows: auto;
-    grid-template-columns: max-content max-content max-content max-content max-content max-content max-content; /* Name, Category, Usage, Value, Tag, Nominal/Min, Lifetime */
+    grid-template-columns: min-content max-content max-content max-content max-content max-content max-content max-content max-content; /* Name, Nom, Min, Lifetime, Restock, Category, Usage, Value, Tag */
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-soft);
     width: max-content;
     flex: 0 0 auto;
-  align-self: flex-start;
+    align-self: flex-start;
     overflow: auto;
     max-height: calc(100vh - 100px);
 }

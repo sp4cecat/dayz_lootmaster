@@ -80,12 +80,14 @@ export default function TypesTable({ definitions, types, selection, setSelection
         </div>
         {!condensed && (
           <>
+            <div className="th nums">Nom</div>
+            <div className="th nums">Min</div>
+            <div className="th nums">Lifetime</div>
+            <div className="th nums">Restock</div>
             <div className="th category">Category</div>
             <div className="th usage">Usage</div>
             <div className="th value">Value</div>
             <div className="th tag">Tag</div>
-            <div className="th nums">Nominal / Min</div>
-            <div className="th nums">Lifetime</div>
           </>
         )}
       </div>
@@ -107,6 +109,10 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
               {!condensed && (
                 <>
+                  <div className="td nums">{t.nominal}</div>
+                  <div className="td nums">{t.min}</div>
+                  <div className="td nums">{t.lifetime}</div>
+                  <div className="td nums">{t.restock}</div>
                   <div className="td category">
                     <span className={!definitions.categories.includes(t.category || '') ? 'warn-text' : ''}>
                       {t.category || '—'}
@@ -121,8 +127,6 @@ export default function TypesTable({ definitions, types, selection, setSelection
                   <div className="td tag">
                     <GroupChips values={t.tag} unknown={(unknowns.byType[t.name]?.tag) || []} />
                   </div>
-                  <div className="td nums">{t.nominal} / {t.min}</div>
-                  <div className="td nums">{t.lifetime}</div>
                 </>
               )}
             </div>

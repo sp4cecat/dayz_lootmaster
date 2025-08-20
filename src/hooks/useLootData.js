@@ -39,7 +39,7 @@ export function useLootData() {
     let mounted = true;
     (async () => {
       try {
-        const limitsRes = await fetch('/samples/types/cfglimitsdefinition.xml');
+        const limitsRes = await fetch('/samples/cfglimitsdefinition.xml');
         const limitsText = await limitsRes.text();
         const defs = parseLimitsXml(limitsText);
 
