@@ -196,6 +196,7 @@ body {
     border-right: 1px solid var(--border);
     padding: 12px;
     overflow: auto;
+    background: var(--bg-soft);
 }
 
 .right-pane {
@@ -214,6 +215,12 @@ body {
 .filters-row {
     display: flex;
     gap: 8px;
+}
+
+.basics-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
 }
 
 .control {
@@ -269,7 +276,7 @@ legend {
 }
 
 .checkbox.checked {
-    background: color-mix(in oklab, var(--primary) 10%, transparent);
+    background: color-mix(in oklab, var(--primary) 30%, transparent);
 }
 
 .checkbox.indeterminate {
@@ -285,8 +292,20 @@ legend {
     background: var(--bg-soft);
     width: max-content;
     flex: 0 0 auto;
+  align-self: flex-start;
     overflow: auto;
-    max-height: calc(100vh - 230px);
+    max-height: calc(100vh - 100px);
+}
+
+/* Name header: left label, right-aligned "Select all" link */
+.th.name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.th.name .select-all-link {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 /* Flatten header, body and rows into the same grid to align columns */
@@ -459,6 +478,7 @@ legend {
 
 .chips.selectable .chip {
     cursor: pointer;
+    background: var(--bg);
 }
 
 .chips .chip.selected {

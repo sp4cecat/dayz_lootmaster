@@ -52,7 +52,8 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
   const cycleTri = (group, key) => {
     setForm(f => {
       const cur = f[group][key];
-      const next = cur === 'mixed' ? true : cur === true ? false : 'mixed';
+      // On user click: mixed or false -> true, true -> false
+      const next = cur === true ? false : true;
       return { ...f, [group]: { ...f[group], [key]: next } };
     });
   };

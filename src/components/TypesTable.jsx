@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -22,17 +22,43 @@ export default function TypesTable({ definitions, types, selection, setSelection
     });
   }, [types, unknowns]);
 
-  const onRowClick = (e, name) => {
+  const anchorRef = useRef(null);
+
+  const onRowClick = (e, index, name) => {
     const isToggle = e.metaKey || e.ctrlKey;
+    const isRange = e.shiftKey;
     const next = new Set(selection);
-    if (isToggle) {
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+
+    if (isRange) {
+      const anchor = anchorRef.current ?? index;
+      const start = Math.min(anchor, index);
+      const end = Math.max(anchor, index);
+      const rangeNames = rows.slice(start, end + 1).map(r => r.name);
+
+      if (isToggle) {
+        // Toggle each in the range
+        rangeNames.forEach(n => next.has(n) ? next.delete(n) : next.add(n));
+      } else {
+        // Replace with the range
+        next.clear();
+        rangeNames.forEach(n => next.add(n));
+      }
     } else {
-      next.clear();
-      next.add(name);
+      if (isToggle) {
+        if (next.has(name)) next.delete(name);
+        else next.add(name);
+      } else {
+        next.clear();
+        next.add(name);
+      }
+      anchorRef.current = index;
     }
+
     setSelection(next);
+  };
+
+  const selectAll = () => {
+    setSelection(new Set(rows.map(r => r.name)));
   };
 
   const condensed = selection.size > 0;
@@ -40,7 +66,18 @@ export default function TypesTable({ definitions, types, selection, setSelection
   return (
     <div className={`types-table ${condensed ? 'condensed' : ''}`}>
       <div className="table-header">
-        <div className="th name">Name</div>
+        <div className="th name">
+          <span>Name</span>
+          <button
+            type="button"
+            className="link select-all-link"
+            onClick={selectAll}
+            disabled={rows.length === 0}
+            title="Select all filtered types"
+          >
+            Select all
+          </button>
+        </div>
         {!condensed && (
           <>
             <div className="th category">Category</div>
@@ -53,14 +90,14 @@ export default function TypesTable({ definitions, types, selection, setSelection
         )}
       </div>
       <div className="table-body" role="list">
-        {rows.map(t => {
+        {rows.map((t, i) => {
           const selected = selection.has(t.name);
           return (
             <div
               key={t.name}
               role="listitem"
               className={`tr ${selected ? 'selected' : ''}`}
-              onClick={e => onRowClick(e, t.name)}
+              onClick={e => onRowClick(e, i, t.name)}
               title={t.hasUnknown ? 'Contains unknown entries' : undefined}
             >
               <div className="td name">
