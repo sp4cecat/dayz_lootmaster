@@ -13,7 +13,7 @@ import React, { useMemo } from 'react';
  */
 export default function Filters({ definitions, filters, onChange }) {
   const allCategoryOptions = useMemo(
-    () => ['all', ...definitions.categories],
+    () => ['all', 'none', ...definitions.categories],
     [definitions.categories]
   );
 

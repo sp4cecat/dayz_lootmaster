@@ -42,7 +42,13 @@ export default function App() {
     const { category, name, usage, value, tag } = filters;
     const namePattern = name?.trim() ? wildcardToRegExp(name.trim()) : null;
     return lootTypes.filter(t => {
-      if (category && category !== 'all' && t.category !== category) return false;
+      if (category && category !== 'all') {
+        if (category === 'none') {
+          if (t.category) return false;
+        } else if (t.category !== category) {
+          return false;
+        }
+      }
       if (namePattern && !namePattern.test(t.name)) return false;
       if (usage.length && !usage.every(u => t.usage.includes(u))) return false;
       if (value.length && !value.every(v => t.value.includes(v))) return false;

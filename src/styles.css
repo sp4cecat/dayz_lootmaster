@@ -326,6 +326,26 @@ legend {
     font-weight: 600;
 }
 
+.th.sortable {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.th.sortable > span:first-child {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.th.sortable:hover > span:first-child {
+    text-decoration-thickness: 2px;
+}
+
+.sort-ind {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
 .td {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -14,13 +14,46 @@ import React, { useMemo, useRef } from 'react';
  * }} props
  */
 export default function TypesTable({ definitions, types, selection, setSelection, unknowns }) {
+  const [sort, setSort] = useState(/** @type {{key: null | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: null, dir: 'asc' }));
+
   const rows = useMemo(() => {
-    return types.map(t => {
+    const arr = types.map(t => {
       const unk = unknowns.byType[t.name] || { usage: [], value: [], tag: [] };
       const hasUnknown = (unk.usage?.length || 0) + (unk.value?.length || 0) + (unk.tag?.length || 0) + (unk.category ? 1 : 0) > 0;
       return { ...t, hasUnknown, unk };
     });
-  }, [types, unknowns]);
+
+    if (sort.key) {
+      const getVal = (r) => {
+        if (sort.key === 'usage' || sort.key === 'value') {
+          return (r[sort.key] || []).join(',').toLowerCase();
+        }
+        return Number(r[sort.key] ?? 0);
+      };
+      arr.sort((a, b) => {
+        const av = getVal(a);
+        const bv = getVal(b);
+        let cmp = 0;
+        if (typeof av === 'number' && typeof bv === 'number') {
+          cmp = av - bv;
+        } else {
+          cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        }
+        return sort.dir === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    return arr;
+  }, [types, unknowns, sort]);
+
+  const handleSort = (key) => {
+    setSort(prev => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      // cycle to unsorted
+      return { key: null, dir: 'asc' };
+    });
+  };
 
   const anchorRef = useRef(null);
 
@@ -80,13 +113,48 @@ export default function TypesTable({ definitions, types, selection, setSelection
         </div>
         {!condensed && (
           <>
-            <div className="th nums">Nom</div>
+            <div
+              className="th nums sortable"
+              onClick={() => handleSort('nominal')}
+              title="Sort by nominal"
+            >
+              <span>Nom</span>
+              {sort.key === 'nominal' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
             <div className="th nums">Min</div>
-            <div className="th nums">Lifetime</div>
-            <div className="th nums">Restock</div>
+            <div
+              className="th nums sortable"
+              onClick={() => handleSort('lifetime')}
+              title="Sort by lifetime"
+            >
+              <span>Lifetime</span>
+              {sort.key === 'lifetime' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
+            <div
+              className="th nums sortable"
+              onClick={() => handleSort('restock')}
+              title="Sort by restock"
+            >
+              <span>Restock</span>
+              {sort.key === 'restock' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
             <div className="th category">Category</div>
-            <div className="th usage">Usage</div>
-            <div className="th value">Value</div>
+            <div
+              className="th usage sortable"
+              onClick={() => handleSort('usage')}
+              title="Sort by usage"
+            >
+              <span>Usage</span>
+              {sort.key === 'usage' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
+            <div
+              className="th value sortable"
+              onClick={() => handleSort('value')}
+              title="Sort by value"
+            >
+              <span>Value</span>
+              {sort.key === 'value' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
             <div className="th tag">Tag</div>
           </>
         )}
