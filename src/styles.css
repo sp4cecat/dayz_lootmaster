@@ -289,15 +289,23 @@ legend {
 .types-table {
     display: grid;
     grid-auto-rows: auto;
-    grid-template-columns: min-content max-content max-content max-content max-content max-content max-content max-content max-content; /* Name, Nom, Min, Lifetime, Restock, Category, Usage, Value, Tag */
+    /* Name, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Tag fill remaining width */
+    grid-template-columns: max-content max-content max-content max-content max-content 1fr 1fr 1fr 1fr;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-soft);
-    width: max-content;
-    flex: 0 0 auto;
+    width: 100%;
+    flex: 1 1 auto;
     align-self: flex-start;
     overflow: auto;
     max-height: calc(100vh - 100px);
+}
+
+/* Condensed mode: only Name column rendered */
+.types-table.condensed {
+    grid-template-columns: max-content;
+    width: min-content;
+    flex: 0 0 auto;
 }
 
 /* Name header: left label, right-aligned "Select all" link */
@@ -371,11 +379,6 @@ legend {
     flex-wrap: wrap;
     gap: 4px;
     align-items: center;
-}
-
-/* Condensed mode: only Name column rendered */
-.types-table.condensed {
-    grid-template-columns: max-content;
 }
 
 .table-and-form {
