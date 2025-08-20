@@ -17,14 +17,14 @@ export default function Filters({ definitions, filters, onChange }) {
     [definitions.categories]
   );
 
-  const multiGroup = [
-    { key: 'usage', label: 'Usage', options: definitions.usageflags },
-    { key: 'value', label: 'Value', options: definitions.valueflags },
-    { key: 'tag', label: 'Tag', options: definitions.tags },
-  ];
-
   const setField = (key, value) => {
     onChange({ ...filters, [key]: value });
+  };
+
+  const toggleUsage = (opt) => {
+    const curr = filters.usage;
+    const next = curr.includes(opt) ? curr.filter(x => x !== opt) : [...curr, opt];
+    setField('usage', next);
   };
 
   return (
@@ -54,32 +54,71 @@ export default function Filters({ definitions, filters, onChange }) {
         </label>
       </div>
 
-      {multiGroup.map(group => (
-        <fieldset className="filters-group" key={group.key}>
-          <legend>{group.label}</legend>
-          <div className="checkbox-grid">
-            {group.options.map(opt => {
-              const selected = filters[group.key].includes(opt);
-              return (
-                <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={e => {
-                      const curr = filters[group.key];
-                      const next = e.target.checked
-                        ? [...curr, opt]
-                        : curr.filter(x => x !== opt);
-                      setField(group.key, next);
-                    }}
-                  />
-                  <span>{opt}</span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-      ))}
+      <fieldset className="filters-group">
+        <legend>Usage</legend>
+        <div className="chips selectable">
+          {definitions.usageflags.map(opt => {
+            const selected = filters.usage.includes(opt);
+            return (
+              <button
+                type="button"
+                key={opt}
+                className={`chip ${selected ? 'selected' : ''}`}
+                onClick={() => toggleUsage(opt)}
+                aria-pressed={selected}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="filters-group">
+        <legend>Value</legend>
+        <div className="checkbox-grid">
+          {definitions.valueflags.map(opt => {
+            const selected = filters.value.includes(opt);
+            return (
+              <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={e => {
+                    const curr = filters.value;
+                    const next = e.target.checked ? [...curr, opt] : curr.filter(x => x !== opt);
+                    setField('value', next);
+                  }}
+                />
+                <span>{opt}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="filters-group">
+        <legend>Tag</legend>
+        <div className="checkbox-grid">
+          {definitions.tags.map(opt => {
+            const selected = filters.tag.includes(opt);
+            return (
+              <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={e => {
+                    const curr = filters.tag;
+                    const next = e.target.checked ? [...curr, opt] : curr.filter(x => x !== opt);
+                    setField('tag', next);
+                  }}
+                />
+                <span>{opt}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
     </div>
   );
 }

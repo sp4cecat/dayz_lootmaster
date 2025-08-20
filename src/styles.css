@@ -370,6 +370,9 @@ legend {
     flex-wrap: wrap;
     gap: 10px;
     align-items: flex-start;
+    flex: 1 1 auto;
+    overflow: auto;
+    min-height: 0; /* enable inner scrolling in flex context */
 }
 
 .form-grid > .control,

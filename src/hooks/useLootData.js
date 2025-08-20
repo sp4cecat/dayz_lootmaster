@@ -94,6 +94,14 @@ export function useLootData() {
 
   // Unknowns resolution modal control and logic
   const [unknownsOpen, setUnknownsOpen] = useState(false);
+  const hasPromptedUnknownsRef = useRef(false);
+  useEffect(() => {
+    if (!hasPromptedUnknownsRef.current && unknowns.hasAny) {
+      setUnknownsOpen(true);
+      hasPromptedUnknownsRef.current = true;
+    }
+  }, [unknowns]);
+
   const resolveUnknowns = useMemo(() => ({
     isOpen: unknownsOpen,
     open: () => setUnknownsOpen(true),

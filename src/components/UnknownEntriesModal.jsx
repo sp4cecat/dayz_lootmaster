@@ -16,6 +16,7 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
     addValue: new Set(),
     addTag: new Set(),
     addCategory: new Set(),
+    addToDefinitions: true,
     removeUnknownFromTypes: true
   });
 
@@ -29,13 +30,17 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
   };
 
   const apply = () => {
+    const add = state.addToDefinitions
+      ? {
+          usage: Array.from(state.addUsage),
+          value: Array.from(state.addValue),
+          tag: Array.from(state.addTag),
+          category: Array.from(state.addCategory),
+        }
+      : { usage: [], value: [], tag: [], category: [] };
+
     onApply({
-      add: {
-        usage: Array.from(state.addUsage),
-        value: Array.from(state.addValue),
-        tag: Array.from(state.addTag),
-        category: Array.from(state.addCategory),
-      },
+      add,
       remove: state.removeUnknownFromTypes
     });
   };
@@ -50,7 +55,7 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
           <button className="btn primary" onClick={apply}>Apply</button>
         </div>
         <div className="modal-body">
-          <p>Some types contain entries not present in cfglimitsdefinition.xml. Add them to definitions, or remove them from types.</p>
+          <p>Select entries you want to add to definitions, or choose to remove unknown entries from affected types.</p>
           <div className="resolve-grid">
             <ResolveSection
               title="Categories"
@@ -77,6 +82,16 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
               onToggle={(v) => toggleSet('addTag', v)}
             />
           </div>
+
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={state.addToDefinitions}
+              onChange={e => setState(s => ({ ...s, addToDefinitions: e.target.checked }))}
+            />
+            <span>Add selected entries to definitions</span>
+          </label>
+
           <label className="checkbox">
             <input
               type="checkbox"
