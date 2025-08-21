@@ -197,6 +197,37 @@ export function generateLimitsXml(defs) {
 }
 
 /**
+ * Generate a single types.xml from multiple source files with comments indicating origin file.
+ * @param {{file: string, types: Type[]}[]} files
+ * @returns {string}
+ */
+export function generateTypesXmlFromFilesWithComments(files) {
+  const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<types>'];
+  // Sort files by name for deterministic output
+  const sorted = [...files].sort((a, b) => String(a.file).localeCompare(String(b.file)));
+  for (const { file, types } of sorted) {
+    lines.push(`  <!-- ${escapeAttr(file)}.xml -->`);
+    for (const t of types) {
+      lines.push(`  <type name="${escapeAttr(t.name)}">`);
+      lines.push(`    <nominal>${t.nominal}</nominal>`);
+      lines.push(`    <min>${t.min}</min>`);
+      lines.push(`    <lifetime>${t.lifetime}</lifetime>`);
+      lines.push(`    <restock>${t.restock}</restock>`);
+      lines.push(`    <quantmin>${t.quantmin}</quantmin>`);
+      lines.push(`    <quantmax>${t.quantmax}</quantmax>`);
+      lines.push(`    <flags count_in_cargo="${to01(t.flags.count_in_cargo)}" count_in_hoarder="${to01(t.flags.count_in_hoarder)}" count_in_map="${to01(t.flags.count_in_map)}" count_in_player="${to01(t.flags.count_in_player)}" crafted="${to01(t.flags.crafted)}" deloot="${to01(t.flags.deloot)}"/>`);
+      if (t.category) lines.push(`    <category name="${escapeAttr(t.category)}"/>`);
+      for (const u of t.usage) lines.push(`    <usage name="${escapeAttr(u)}"/>`);
+      for (const v of t.value) lines.push(`    <value name="${escapeAttr(v)}"/>`);
+      for (const g of t.tag) lines.push(`    <tag name="${escapeAttr(g)}"/>`);
+      lines.push('  </type>');
+    }
+  }
+  lines.push('</types>');
+  return lines.join('\n');
+}
+
+/**
  * Helper to read entries with "name" attribute under a parent element.
  * @param {Document} doc
  * @param {string} parentTag

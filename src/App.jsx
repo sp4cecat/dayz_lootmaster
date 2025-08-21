@@ -41,7 +41,8 @@ export default function App() {
     groups,
     duplicatesByName,
     manage,
-    getGroupTypes
+    getGroupTypes,
+    getGroupFiles
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
@@ -237,6 +238,7 @@ export default function App() {
           groups={groups}
           defaultGroup={groups[0] || 'vanilla'}
           getGroupTypes={getGroupTypes}
+          getGroupFiles={getGroupFiles}
           definitions={definitions}
           onClose={() => setShowExport(false)}
         />

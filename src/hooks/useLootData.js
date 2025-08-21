@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseEconomyCoreXml, parseLimitsXml, parseTypesXml } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
+import { loadAllGrouped, saveManyTypeFiles, saveTypeFile } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -11,6 +12,11 @@ import { validateUnknowns } from '../utils/validation.js';
 /**
  * Grouped storage structure
  * @typedef {Record<string, Type[]>} TypeGroups
+ */
+
+/**
+ * File-level storage structure (group -> fileBase -> types[])
+ * @typedef {Record<string, Record<string, Type[]>>} TypeFiles
  */
 
 const STORAGE_KEY_GROUPS = 'dayz-types-editor:lootGroups';
@@ -25,10 +31,12 @@ export function useLootData() {
   const [error, setError] = useState(null);
   const [definitions, setDefinitions] = useState(null);
 
-  // Grouped types as persisted structure
+  // File-level persisted structure: group -> file -> types
+  const [lootFiles, setLootFiles] = useState(/** @type {TypeFiles|null} */(null));
+  // Derived grouped structure for convenience (combined per group)
   const [lootGroups, setLootGroups] = useState(/** @type {TypeGroups|null} */(null));
-  // Merged array view with group metadata for UI (each element augmented with "group" prop)
-  const [lootTypes, _setLootTypes] = useState(/** @type {(Type & {group: string})[]|null} */(null));
+  // Merged array view with metadata for UI (each element augmented with "group" and source file)
+  const [lootTypes, _setLootTypes] = useState(/** @type {(Type & {group: string, file: string})[]|null} */(null));
   // Filters include groups selection
   const [filters, setFilters] = useState({ category: 'all', name: '', usage: [], value: [], tag: [], groups: /** @type {string[]} */([]) });
   const [selection, setSelection] = useState(new Set());
@@ -50,41 +58,59 @@ export function useLootData() {
 
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
-    if (!lootGroups) return;
+    if (!lootFiles) return;
 
-    // Build an index from name -> updated type (ignore "group" prop on write)
-    /** @type {Map<string, Type & {group?: string}>} */
-    const nextByName = new Map(nextMerged.map(t => [t.name, t]));
+    // Build a lookup by group+file+name -> updated type (ignore meta props on write)
+    /** @type {Map<string, Type & {group?: string, file?: string}>} */
+    const updatedIndex = new Map(
+      nextMerged.map(t => [`${t.group}:${t.file}:${t.name}`, t])
+    );
 
-    /** @type {TypeGroups} */
-    const updatedGroups = Object.fromEntries(
-      Object.entries(lootGroups).map(([group, arr]) => {
-        const replaced = arr.map(t => {
-          const upd = nextByName.get(t.name);
-          if (upd) {
-            const { group: _g, ...rest } = upd;
-            return { ...t, ...rest };
-          }
-          return t;
-        });
-        return [group, replaced];
+    // Rebuild file-level structure by replacing types where updated
+    /** @type {TypeFiles} */
+    const updatedFiles = Object.fromEntries(
+      Object.entries(lootFiles).map(([group, files]) => {
+        const nextFiles = Object.fromEntries(
+          Object.entries(files).map(([file, arr]) => {
+            const replaced = arr.map(orig => {
+              const upd = updatedIndex.get(`${group}:${file}:${orig.name}`);
+              if (upd) {
+                const { group: _g, file: _f, ...rest } = upd;
+                return { ...orig, ...rest };
+              }
+              return orig;
+            });
+            return [file, replaced];
+          })
+        );
+        return [group, nextFiles];
       })
     );
 
-    setLootGroups(updatedGroups);
-    // Update duplicates map after applying changes
-    setDuplicatesByName(computeDuplicatesMap(updatedGroups));
+    setLootFiles(updatedFiles);
 
-    const merged = mergeGroups(updatedGroups);
+    // Derive grouped and merged views
+    const updatedGroups = combineFilesToGroups(updatedFiles);
+    setLootGroups(updatedGroups);
+    setDuplicatesByName(computeDuplicatesMap(updatedGroups));
+    const merged = mergeFromFiles(updatedFiles);
     _setLootTypes(merged);
 
+    // Persist per-file if requested
     if (opts.persist) {
-      saveToStorage(STORAGE_KEY_GROUPS, updatedGroups);
+      const records = [];
+      for (const [group, files] of Object.entries(updatedFiles)) {
+        for (const [file, arr] of Object.entries(files)) {
+          records.push({ group, file, types: arr });
+        }
+      }
+      void saveManyTypeFiles(records);
     }
+
     if (definitions) {
       setUnknowns(validateUnknowns(merged, definitions));
     }
-  }, [lootGroups, definitions]);
+  }, [lootFiles, definitions]);
 
   const setLootTypes = useCallback((next, opts = { persist: false }) => {
     // Keep backward compatibility with callers; interpret as merged array and project back to groups
@@ -100,29 +126,32 @@ export function useLootData() {
         const limitsText = await limitsRes.text();
         const defs = parseLimitsXml(limitsText);
 
-        // Try grouped from storage
+        // Try file-level records from IndexedDB
         let parsedFromSamples = false;
-        /** @type {TypeGroups|null} */
-        let groups = loadFromStorage(STORAGE_KEY_GROUPS) || null;
+        /** @type {TypeFiles|null} */
+        let files = await loadAllGrouped();
+        if (files && Object.keys(files).length === 0) files = null;
 
-        // Fallback: try legacy flat storage and wrap as vanilla
-        if (!groups) {
+        // Fallback: legacy flat storage to seed IDB as vanilla/types
+        if (!files) {
           /** @type {Type[]|null} */
           const legacy = loadFromStorage(LEGACY_STORAGE_KEY_TYPES) || null;
           if (legacy) {
-            groups = { vanilla: legacy };
+            files = { vanilla: { types: legacy } };
+            await saveManyTypeFiles([{ group: 'vanilla', file: 'types', types: legacy }]);
           }
         }
 
-        // If still empty, build from samples (vanilla + cfgeconomycore order)
-        if (!groups) {
+        // If still empty, build from samples (vanilla + cfgeconomycore order) and seed IDB per file
+        if (!files) {
+          /** @type {TypeFiles} */
+          const assembledFiles = { };
+
           // 1) Vanilla base
           const vanillaRes = await fetch('/samples/db/types.xml');
           const vanillaText = await vanillaRes.text();
           const vanilla = parseTypesXml(vanillaText);
-
-          /** @type {TypeGroups} */
-          const assembled = { vanilla };
+          assembledFiles.vanilla = { types: vanilla };
 
           // 2) Additional groups from economy core (ordered)
           try {
@@ -130,19 +159,19 @@ export function useLootData() {
             const econText = await econRes.text();
             const { order, filesByGroup } = parseEconomyCoreXml(econText);
 
-            console.log(econText,  order, filesByGroup)
-
             for (const group of order) {
-              const files = filesByGroup[group] || [];
-              /** @type {Type[]} */
-              let arr = [];
-              for (const filePath of files) {
+              const filesList = filesByGroup[group] || [];
+              for (const filePath of filesList) {
                 const res = await fetch(filePath);
                 const text = await res.text();
                 const parsed = parseTypesXml(text);
-                arr = arr.concat(parsed);
+
+                const parts = filePath.split('/');
+                const fileName = parts[parts.length - 1] || 'types.xml';
+                const fileBase = fileName.replace(/\.xml$/i, '');
+                if (!assembledFiles[group]) assembledFiles[group] = {};
+                assembledFiles[group][fileBase] = parsed;
               }
-              assembled[group] = arr;
             }
           } catch (e) {
             // If cfgeconomycore is missing or invalid, proceed with vanilla only
@@ -150,19 +179,29 @@ export function useLootData() {
             console.warn('Failed to parse cfgeconomycore.xml, proceeding with vanilla only:', e);
           }
 
-          // Persist initial build
-          saveToStorage(STORAGE_KEY_GROUPS, assembled);
-          groups = assembled;
+          // Persist initial build per file into IndexedDB
+          const records = [];
+          for (const [group, perFile] of Object.entries(assembledFiles)) {
+            for (const [file, arr] of Object.entries(perFile)) {
+              records.push({ group, file, types: arr });
+            }
+          }
+          await saveManyTypeFiles(records);
+          files = assembledFiles;
           parsedFromSamples = true;
         }
 
         if (!mounted) return;
 
         setDefinitions(defs);
+        setLootFiles(files);
+
+        // Derive grouped and merged views
+        const groups = combineFilesToGroups(files);
         setLootGroups(groups);
         setDuplicatesByName(computeDuplicatesMap(groups));
 
-        const merged = mergeGroups(groups);
+        const merged = mergeFromFiles(files);
         _setLootTypes(merged);
         setUnknowns(validateUnknowns(merged, defs));
         historyRef.current = createHistory(merged);
@@ -236,27 +275,41 @@ export function useLootData() {
    * @param {string} entry
    */
   const removeDefinitionEntry = useCallback((kind, entry) => {
-    if (!lootGroups) return;
+    if (!lootFiles) return;
 
-    // Update groups by removing the entry from all types in all groups
-    /** @type {TypeGroups} */
-    const nextGroups = Object.fromEntries(
-      Object.entries(lootGroups).map(([g, arr]) => {
-        const cleaned = arr.map(t => {
-          const next = { ...t };
-          if (kind === 'usage') next.usage = next.usage.filter(x => x !== entry);
-          else if (kind === 'value') next.value = next.value.filter(x => x !== entry);
-          else next.tag = next.tag.filter(x => x !== entry);
-          return next;
-        });
-        return [g, cleaned];
+    // Update files by removing the entry from all types in all files
+    /** @type {TypeFiles} */
+    const nextFiles = Object.fromEntries(
+      Object.entries(lootFiles).map(([g, files]) => {
+        const nextPerFile = Object.fromEntries(
+          Object.entries(files).map(([f, arr]) => {
+            const cleaned = arr.map(t => {
+              const next = { ...t };
+              if (kind === 'usage') next.usage = next.usage.filter(x => x !== entry);
+              else if (kind === 'value') next.value = next.value.filter(x => x !== entry);
+              else next.tag = next.tag.filter(x => x !== entry);
+              return next;
+            });
+            return [f, cleaned];
+          })
+        );
+        return [g, nextPerFile];
       })
     );
 
     // Persist and refresh derived state
-    setLootGroups(nextGroups);
-    saveToStorage(STORAGE_KEY_GROUPS, nextGroups);
-    const merged = mergeGroups(nextGroups);
+    setLootFiles(nextFiles);
+    const records = [];
+    for (const [g, perFile] of Object.entries(nextFiles)) {
+      for (const [f, arr] of Object.entries(perFile)) {
+        records.push({ group: g, file: f, types: arr });
+      }
+    }
+    void saveManyTypeFiles(records);
+
+    const groups = combineFilesToGroups(nextFiles);
+    setLootGroups(groups);
+    const merged = mergeFromFiles(nextFiles);
     _setLootTypes(merged);
     if (definitions) setUnknowns(validateUnknowns(merged, definitions));
     historyRef.current.push(merged);
@@ -350,10 +403,7 @@ export function useLootData() {
         setFromMergedTypes(cleaned, { persist: true });
         pushHistory(cleaned);
       } else {
-        // just persist definitions and current groups
-        if (lootGroups) {
-          saveToStorage(STORAGE_KEY_GROUPS, lootGroups);
-        }
+        // just close; definitions are already updated in state
       }
       setUnknownsOpen(false);
     }
@@ -374,11 +424,11 @@ export function useLootData() {
 
   // Ordered groups list for UI: vanilla first, then the rest as defined by insertion order in object
   const groupsList = useMemo(() => {
-    if (!lootGroups) return [];
-    const keys = Object.keys(lootGroups);
+    if (!lootFiles) return [];
+    const keys = Object.keys(lootFiles);
     const vanillaFirst = keys.includes('vanilla') ? ['vanilla', ...keys.filter(k => k !== 'vanilla')] : keys;
     return vanillaFirst;
-  }, [lootGroups]);
+  }, [lootFiles]);
 
   /**
    * Get types array for a given group.
@@ -386,9 +436,22 @@ export function useLootData() {
    * @returns {Type[]}
    */
   const getGroupTypes = useCallback((group) => {
-    if (!lootGroups) return [];
-    return lootGroups[group] || [];
-  }, [lootGroups]);
+    if (!lootFiles || !lootFiles[group]) return [];
+    /** @type {Type[]} */
+    const combined = [];
+    for (const arr of Object.values(lootFiles[group])) combined.push(...arr);
+    return combined;
+  }, [lootFiles]);
+
+  /**
+   * Get per-file breakdown for a group.
+   * @param {string} group
+   * @returns {{file: string, types: Type[]}[]}
+   */
+  const getGroupFiles = useCallback((group) => {
+    if (!lootFiles || !lootFiles[group]) return [];
+    return Object.entries(lootFiles[group]).map(([file, types]) => ({ file, types }));
+  }, [lootFiles]);
 
   return {
     loading,
@@ -409,6 +472,7 @@ export function useLootData() {
     resolveUnknowns,
     groups: groupsList,
     getGroupTypes,
+    getGroupFiles,
     duplicatesByName,
     // Summary modal
     summary: loadSummary,
@@ -424,28 +488,44 @@ export function useLootData() {
 }
 
 /**
- * Merge grouped types to a single array adding group metadata.
- * If multiple groups contain a type with the same name, the last loaded one wins:
- * vanilla is loaded first, then additional groups in order from cfgeconomycore.
- * @param {TypeGroups} groups
- * @returns {(Type & {group: string})[]}
+ * Combine file-level structure to grouped per group (concatenate files).
+ * @param {TypeFiles} files
+ * @returns {TypeGroups}
  */
-function mergeGroups(groups) {
-  const entries = Object.entries(groups);
-  const ordered = entries.sort(([a], [b]) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
-
-  // Use a map to ensure last definition for a given name is kept
-  /** @type {Map<string, Type & {group: string}>} */
-  const byName = new Map();
-
-  for (const [group, arr] of ordered) {
-    for (const t of arr) {
-      // Later groups overwrite earlier ones
-      byName.set(t.name, { ...t, group });
+function combineFilesToGroups(files) {
+  /** @type {TypeGroups} */
+  const groups = {};
+  for (const [group, perFile] of Object.entries(files)) {
+    groups[group] = [];
+    for (const arr of Object.values(perFile)) {
+      groups[group].push(...arr);
     }
   }
+  return groups;
+}
 
-  // Note: Map preserves insertion order; sorting UI will handle user-facing order
+/**
+ * Merge file-level types to a single array adding group and file metadata.
+ * If multiple groups contain a type with the same name, the last group in order wins:
+ * vanilla is loaded first, then additional groups (object key order).
+ * @param {TypeFiles} files
+ * @returns {(Type & {group: string, file: string})[]}
+ */
+function mergeFromFiles(files) {
+  const groups = Object.keys(files);
+  const orderedGroups = groups.sort((a, b) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
+
+  /** @type {Map<string, Type & {group: string, file: string}>} */
+  const byName = new Map();
+
+  for (const group of orderedGroups) {
+    const perFile = files[group];
+    for (const [file, arr] of Object.entries(perFile)) {
+      for (const t of arr) {
+        byName.set(t.name, { ...t, group, file });
+      }
+    }
+  }
   return Array.from(byName.values());
 }
 
