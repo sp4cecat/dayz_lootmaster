@@ -26,6 +26,12 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, defin
     return generateTypesXml(arr);
   }, [mode, group, getGroupTypes, definitions]);
 
+  const exportPath = useMemo(() => {
+    if (mode === 'limits') return 'cfglimitsdefinition.xml';
+    if (group === 'vanilla') return 'db/types.xml';
+    return `db/types/${group}/types.xml`;
+  }, [mode, group]);
+
   const onCopy = async () => {
     await navigator.clipboard.writeText(xml);
   };
@@ -85,6 +91,9 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, defin
                 </select>
               </label>
             )}
+          </div>
+          <div className="filters-row" aria-live="polite">
+            <span className="muted">File: <code>{exportPath}</code></span>
           </div>
           <div className="code-block" aria-label="Export XML" role="region">
             {xml}
