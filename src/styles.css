@@ -51,6 +51,10 @@ body {
     line-height: 1.5;
 }
 
+h1 {
+    font-size: 2.5em;
+}
+
 .app {
     width: 100%;
     height: 100%;
@@ -223,6 +227,8 @@ body {
 .basics-stack {
     display: flex;
     flex-direction: column;
+    align-content: space-evenly;
+    width: min-content;
     gap: 15px;
 }
 
@@ -410,6 +416,7 @@ legend {
     display: flex;
     overflow: hidden;
     background: var(--bg-soft);
+    padding: 8px 15px;
 }
 /* Prevent any direct child from exceeding the container height */
 .edit-form-container > * {
@@ -436,11 +443,14 @@ legend {
 .form-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 30px;
     align-items: flex-start;
+    justify-content: flex-start;
     flex: 1 1 auto;
     overflow: auto;
     min-height: 0; /* enable inner scrolling in flex context */
+    flex-direction: row;
+    max-height: calc(100vh - 100px);
 }
 
 .form-grid > .control,
@@ -456,16 +466,38 @@ legend {
     flex-wrap: wrap;
     gap: 10px;
     align-content: flex-start;
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: 100%;
-    overflow: auto;
+    flex: 0 0 auto;   /* fill remaining space next to basics-stack */
+    height: 100%;     /* enable vertical wrapping by container height */
+    overflow: hidden; /* no vertical scroll needed */
+    justify-content: flex-start;
+    width: max-content;
+}
+.edit-form .panels-wrap .checkbox-grid {
+    width: max-content;
 }
 
 .edit-form .panels-item {
-    flex: 0 0 auto;
+    flex: 1 0 max-content;
+    width: max-content;
     min-width: 220px;
-    max-width: 360px;
+}
+
+/* All panels: contents wrap vertically within available height */
+.edit-form .panels-item .checkbox-grid {
+    display: flex;            /* override grid for vertical wrap behavior */
+    flex-direction: column;
+    flex-wrap: wrap;
+    height: 100%;             /* wrap based on available height */
+    width: max-content;       /* size to content horizontally */
+    align-content: flex-start;
+    gap: 3px 10px;            /* compact vertical spacing */
+}
+
+/* Usage panel should not exceed parent height */
+.edit-form .usage-panel {
+    max-height: 100%;
+    overflow: hidden;
+    flex: 0 0 auto;
 }
 
 /* Edit form control sizing */

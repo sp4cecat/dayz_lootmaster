@@ -165,7 +165,7 @@ function makeTriState(allOptions, arrays) {
 
 function renderTriStateGroup(group, form, options, cycleTri) {
   return (
-    <fieldset className="control panels-item">
+    <fieldset className={`control panels-item ${group}-panel`}>
       <legend>{group[0].toUpperCase() + group.slice(1)}</legend>
       <div className="checkbox-grid">
         {options.map(opt => {
