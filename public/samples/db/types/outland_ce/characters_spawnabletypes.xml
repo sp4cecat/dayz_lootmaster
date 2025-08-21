@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<spawnabletypes>
+    <damage min="0.85" max="0.85" />
+    <type name="SurvivorM_Mirek_Victim">
+        <damage min="0.0" max="0.0" />
+        <attachments chance="1.0"> <!-- head -->
+            <item name="Spacecat_ZSh3PilotHelmet_Black" chance="0.1"/>
+            <item name="Spacecat_ZSh3PilotHelmet_Green" chance="0.1"/>
+            <item name="Spacecat_ZSh3PilotHelmet_Tan" chance="0.1"/>
+            <item name="Spacecat_BallisticHelmet_Black" chance="0.05"/>
+            <item name="NVGHeadstrap" chance="0.05"/>
+            <item name="BallisticHelmet_Green" chance="0.15"/>
+            <item name="BallisticHelmet_UN" chance="0.2"/>
+            <item name="GorkaHelmet" chance="0.05"/>
+            <item name="Mich2001Helmet" chance="0.1"/>
+            <item name="Slouch_Hat_Brown" chance="0.1"/>
+            <item name="Spacecat_Mich2001Helmet_Black" chance="0.02"/>
+            <item name="Spacecat_Mich2001Helmet_Tan" chance="0.03"/>
+            <item name="Spacecat_Mich2001Helmet_Police" chance="0.04"/>
+            <item name="Spacecat_GorkaHelmet_Black" chance="0.03"/>
+            <item name="Spacecat_GorkaHelmet_Tan" chance="0.03"/>
+            <item name="Spacecat_GorkaHelmet_Woodland" chance="0.01"/>
+            <item name="Spacecat_GorkaHelmet_Marpat" chance="0.01"/>
+            <item name="Spacecat_GorkaHelmet_Urban" chance="0.01"/>
+            <item name="Spacecat_GorkaHelmet_UNBlue" chance="0.2"/>
+            <item name="Ushanka_Blue" chance="0.75"/>
+            <item name="Ushanka_Green" chance="0.75"/>
+        </attachments>
+        <attachments chance="1.0"> <!-- top -->
+            <item name="M65Jacket_Black" chance="0.03"/>
+            <item name="Spacecat_HuntingJacket_Black" chance="0.03"/>
+            <item name="M65Jacket_Khaki" chance="0.04"/>
+            <item name="M65Jacket_Olive" chance="0.05"/>
+            <item name="SeaMenPants_Black" chance="0.03"/>
+            <item name="SeaMenJacket_Grey" chance="0.04"/>
+            <item name="SeaMenJacket_Pink" chance="0.1"/>
+            <item name="Spacecat_M65Jacket_EMR" chance="0.01"/>
+            <item name="Winter_Parka_Green" chance="0.03"/>
+            <item name="Spacecat_Winter_Parka_Black" chance="0.01"/>
+            <item name="Spacecat_HuntingJacket_Pink" chance="0.1"/>
+            <item name="Spacecat_HuntingJacket_Pink" chance="0.1"/>
+            <item name="Wool_GreatCoat_Navy" chance="0.02"/>
+            <item name="Wool_GreatCoat_Olive" chance="0.02"/>
+            <item name="Wool_GreatCoat_Grey" chance="0.01"/>
+            <item name="TacticalShirt_Black" chance="0.5"/>
+            <item name="TacticalShirt_Grey" chance="0.65"/>
+            <item name="TacticalShirt_Olive" chance="1.0"/>
+        </attachments>
+        <attachments chance="1.0"> <!-- pants -->
+            <item name="Spacecat_CargoPants_Camo" chance="0.03"/>
+            <item name="Spacecat_CargoPants_UrbanCamo" chance="0.05"/>
+            <item name="Spacecat_HunterPants_Black" chance="0.02"/>
+            <item name="Spacecat_HunterPants_Woodland" chance="0.02"/>
+            <item name="Spacecat_HunterPants_Pink" chance="0.05"/>
+            <item name="USMCPants_Woodland" chance="0.1"/>
+            <item name="USMCPants_Desert" chance="0.1"/>
+            <item name="Galife_Pants_Olive" chance="0.08"/>
+            <item name="Galife_Pants_Navy" chance="0.08"/>
+            <item name="SeaMenPants_Black" chance="0.01"/>
+            <item name="SeaMenPants_Grey" chance="0.02"/>
+            <item name="SeaMenPants_Blue" chance="0.03"/>
+            <item name="SeaMenPants_Pink" chance="0.08"/>
+            <item name="Skinny_Jeans_Black" chance="0.4"/>
+            <item name="Kneepads_Jeans_Black" chance="0.4"/>
+        </attachments>
+        <attachments chance="1.0"> <!-- feet -->
+            <item name="Kirza_Boots" chance="0.03"/>
+            <item name="CombatBoots_Beige" chance="0.05"/>
+            <item name="CombatBoots_Black" chance="0.05"/>
+            <item name="CombatBoots_Brown" chance="0.05"/>
+            <item name="CombatBoots_Green" chance="0.05"/>
+            <item name="CombatBoots_Grey" chance="0.05"/>
+            <item name="JungleBoots_Beige" chance="0.05"/>
+            <item name="JungleBoots_Black" chance="0.05"/>
+            <item name="JungleBoots_Brown" chance="0.05"/>
+            <item name="JungleBoots_Green" chance="0.05"/>
+            <item name="JungleBoots_Olive" chance="0.05"/>
+            <item name="MilitaryBoots_Brown" chance="0.05"/>
+            <item name="MilitaryBoots_Black" chance="0.05"/>
+            <item name="SK8_Sneakers_Black" chance="0.05"/>
+            <item name="SK8_Sneakers_FullBlack" chance="0.05"/>
+            <item name="Spacecat_Sneakers_Black" chance="0.3"/>
+            <item name="Spacecat_Sneakers_Camo" chance="0.6"/>
+            <item name="HikingBoots_Black" chance="0.7"/>
+            <item name="HikingBootsLow_Black" chance="1.0"/>
+        </attachments>
+        <attachments chance="1.0"> <!-- hands -->
+            <item name="Spacecat_PaddedGloves_Black" chance="0.01"/>
+            <item name="Spacecat_PaddedGloves_Pink" chance="0.06"/>
+            <item name="OMNOGloves_Brown" chance="0.05"/>
+            <item name="OMNOGloves_Gray" chance="0.06"/>
+            <item name="TacticalGloves_Beige" chance="0.06"/>
+            <item name="TacticalGloves_Green" chance="0.06"/>
+            <item name="TacticalGloves_Black" chance="0.05"/>
+            <item name="PaddedGloves_Beige" chance="0.03"/>
+            <item name="PaddedGloves_Brown" chance="0.03"/>
+            <item name="PaddedGloves_Threat" chance="0.02"/>
+            <item name="WorkingGloves_Black" chance="0.8"/>
+            <item name="WorkingGloves_Black" chance="0.8"/>
+            <item name="WorkingGloves_Beige" chance="1.0"/>
+        </attachments>
+        <attachments chance="0.5"> <!-- eyes -->
+            <item name="TacticalGoggles" chance="0.1"/>
+            <item name="SportGlasses_Black" chance="0.15"/>
+            <item name="SportGlasses_Green" chance="0.15"/>
+            <item name="SportGlasses_Green" chance="0.15"/>
+            <item name="SportGlasses_Orange" chance="0.15"/>
+            <item name="AviatorGlasses" chance="0.5"/>
+            <item name="DesignerGlasses" chance="0.75"/>
+            <item name="AviatorGlasses" chance="1.0"/>
+        </attachments>
+        <attachments chance="0.5"> <!-- face -->
+            <item name="Spacecat_BalaclavaMask_Woodland" chance="0.05"/>
+            <item name="BalaclavaMask_Beige" chance="0.1"/>
+            <item name="BalaclavaMask_Black" chance="0.15"/>
+            <item name="BalaclavaMask_Blackskull" chance="0.15"/>
+            <item name="BalaclavaMask_Green" chance="0.15"/>
+            <item name="BalaclavaMask_Pink" chance="0.15"/>
+            <item name="BalaclavaMask_White" chance="0.15"/>
+            <item name="GasMask" chance="0.5"/>
+            <item name="Balaclava3Holes_Black" chance="0.75"/>
+            <item name="Balaclava3Holes_Blue" chance="1.0"/>
+        </attachments>
+        <attachments chance="0.5"> <!-- belt -->
+            <item name="MilitaryBelt" chance="0.2"/>
+            <item name="Spacecat_MilitaryBelt_Black" chance="0.1"/>
+            <item name="Spacecat_MilitaryBelt_Tan" chance="0.1"/>
+            <item name="HipPack_Black" chance="0.1"/>
+            <item name="Spacecat_CivilianBelt_Black" chance="0.2"/>
+            <item name="HipPack_Green" chance="0.2"/>
+            <item name="HipPack_Party" chance="0.3"/>
+            <item name="Spacecat_CivilianBelt_Tan" chance="0.6"/>
+            <item name="Spacecat_CivilianBelt_Pink" chance="1.0"/>
+        </attachments>
+        <attachments chance="0.75"> <!-- backpack -->
+            <item name="Redos_RifleBags_Black" chance="0.01"/>
+            <item name="Redos_RifleBags_Green" chance="0.01"/>
+            <item name="Redos_RifleBags_Tan" chance="0.01"/>
+            <item name="Redos_RifleBags_Desert_Camo" chance="0.01"/>
+            <item name="AliceBag_Black" chance="0.015"/>
+            <item name="Spacecat_Tortillabag_Marpat" chance="0.015"/>
+            <item name="Spacecat_Tortillabag_Black" chance="0.015"/>
+            <item name="AliceBag_Camo" chance="0.02"/>
+            <item name="AliceBag_Green" chance="0.02"/>
+            <item name="Massbag" chance="0.02"/>
+            <item name="Massbag2" chance="0.01"/>
+            <item name="Massbag3" chance="0.02"/>
+            <item name="Massbag4" chance="0.02"/>
+            <item name="Slingbag_Black" chance="0.2"/>
+            <item name="Slingbag_Brown" chance="0.1"/>
+            <item name="Slingbag_Gray" chance="0.1"/>
+            <item name="HipPack_Black" chance="0.1"/>
+            <item name="DuffelBagSmall_Camo" chance="0.1"/>
+            <item name="DuffelBagSmall_Green" chance="0.1"/>
+            <item name="DuffelBagSmall_Medical" chance="0.1"/>
+            <item name="CanvasBag_Olive" chance="0.1"/>
+            <item name="CanvasBag_Medical" chance="0.1"/>
+            <item name="ArmyPouch_Green" chance="0.1"/>
+            <item name="ArmyPouch_Camo" chance="0.2"/>
+            <item name="ArmyPouch_Black" chance="0.2"/>
+            <item name="ArmyPouch_Beige" chance="0.3"/>
+            <item name="Spacecat_CivilianBelt_Pink" chance="1.0"/>
+        </attachments>
+        <cargo chance="1.0">
+            <item name="RFFSHeli_wiring_harness" chance="0.001"/>
+            <item name="RFFSHeli_hydraulic_hoses" chance="0.001"/>
+            <item name="RFFSHeli_igniter_plug" chance="0.001"/>
+            <item name="RFFSHeli_aviation_battery" chance="0.001"/>
+            <item name="Compass" chance="0.5"/>
+            <item name="OrienteeringCompass" chance="1.0"/>
+        </cargo>
+    </type>
+</spawnabletypes>

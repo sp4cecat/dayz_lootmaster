@@ -1,0 +1,80 @@
+<?xml version="0" encoding="UTF-8" standalone="yes" ?>
+<economycore>
+	<classes>
+<!--
+These are rootclasses to be used by economy.
+Do not forget to add attribute act="character", if root class represents character (player, infected, animal)
+Do not forget to add attribute act="car", if root class represents moveable vehicles
+-->
+		<rootclass name="DefaultWeapon" /> <!-- weapons -->
+		<rootclass name="DefaultMagazine" /> <!-- magazines -->
+		<rootclass name="Inventory_Base" /> <!-- inventory items -->
+		<rootclass name="HouseNoDestruct" reportMemoryLOD="no" /> <!-- houses, wrecks -->
+		<rootclass name="SurvivorBase" act="character" reportMemoryLOD="no" /> <!-- player characters -->
+		<rootclass name="DZ_LightAI" act="character" reportMemoryLOD="no" /> <!-- infected, animals -->
+		<rootclass name="CarScript" act="car" reportMemoryLOD="no" /> <!-- cars (sedan, hatchback, transitBus, V3S, ...) -->
+	</classes>
+	<defaults>
+		<default name="dyn_radius" value="30"/>
+		<default name="dyn_smin" value="0"/>
+		<default name="dyn_smax" value="0"/>
+		<default name="dyn_dmin" value="1"/>
+		<default name="dyn_dmax" value="5"/>
+		<default name="log_ce_loop" value="true"/>
+		<default name="log_ce_dynamicevent" value="true"/>
+		<default name="log_ce_vehicle" value="true"/>
+		<default name="log_ce_lootspawn" value="true"/>
+		<default name="log_ce_lootcleanup" value="true"/>
+		<default name="log_ce_lootrespawn" value="true"/>
+		<default name="log_ce_statistics" value="true"/>
+		<default name="log_ce_zombie" value="true"/>
+		<default name="log_storageinfo" value="true"/>
+		<default name="log_hivewarning" value="true"/>
+		<default name="log_missionfilewarning" value="true"/>
+		<default name="save_events_startup" value="true"/>
+		<default name="save_types_startup" value="true"/>
+	</defaults>
+	<ce folder="db/types/outland_ce">
+		<file name="types.xml" type="types"/>
+		<file name="characters_types.xml" type="types"/>
+		<file name="characters_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="zen_types.xml" type="types"/>
+		<file name="notes_types.xml" type="types"/>
+		<file name="slc_types.xml" type="types"/>
+		<file name="cs_types.xml" type="types"/>
+		<file name="vehicles_types.xml" type="types"/>
+		<file name="colours_types.xml" type="types"/>
+		<file name="exiled_types.xml" type="types"/>
+		<file name="fashion_types.xml" type="types"/>
+		<file name="faction_types.xml" type="types"/>
+		<file name="redo_types.xml" type="types"/>
+		<file name="storage_types.xml" type="types"/>
+		<file name="assets_types.xml" type="types"/>
+		<file name="outland_flags_types.xml" type="types"/>
+		<file name="breachingcharge_types.xml" type="types"/>
+		<file name="slc_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="vehicles_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="worn_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="pristine_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="evil_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="events.xml" type="events"/>
+	</ce>
+	<ce folder="db/types/outland_weapons_ce">
+		<file name="mortys_types.xml" type="types"/>
+		<file name="spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="pristine_spawnabletypes.xml" type="spawnabletypes"/>
+	</ce>
+	<ce folder="db/types/rfwc_ce">
+		<file name="rfwc_types.xml" type="types"/>
+		<file name="rfwc_spawnabletypes.xml" type="spawnabletypes"/>
+		<file name="rfwc_events.xml" type="events"/>
+	</ce>
+	<ce folder="db/types/BBP_ce">
+		<file name="types_BBP.xml" type="types"/>
+	</ce>
+	<ce folder="db/types/windstride_ce">
+		<file name="types_windstride.xml" type="types"/>
+		<file name="spawnabletypes.xml" type="spawnabletypes"/>
+	</ce>
+</economycore>

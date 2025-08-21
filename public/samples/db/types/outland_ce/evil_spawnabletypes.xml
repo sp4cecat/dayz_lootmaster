@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!--
+0-29 = Pristine
+30-49 = Worn
+50-69 = Damaged
+70-99 = Badly Damaged
+-->
+<spawnabletypes>
+    <damage min="0.71" max="0.72" />
+    <type name="OutlandBlackCoin">
+        <damage min="0.71" max="0.72" />
+    </type>
+</spawnabletypes>

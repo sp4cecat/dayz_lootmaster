@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!--
+0-29 = Pristine
+30-49 = Worn
+50-69 = Damaged
+70-99 = Badly Damaged
+-->
+<spawnabletypes>
+    <damage min="0.0" max="0.71" />
+    <type name="Spacecat_Mich2001Helmet_Police">
+        <attachments chance="0.005">
+            <item name="NVGoggles" />
+        </attachments>
+    </type>
+    <type name="Spacecat_Mich2001Helmet_Black">
+        <attachments chance="0.005">
+            <item name="NVGoggles" />
+        </attachments>
+    </type>
+    <type name="Spacecat_Mich2001Helmet_Tan">
+        <attachments chance="0.005">
+            <item name="Spacecat_NVGoggles_Tan" />
+        </attachments>
+    </type>
+    <type name="Spacecat_Mich2001Helmet_Marpat">
+        <attachments chance="0.005">
+            <item name="Spacecat_NVGoggles_Marpat" />
+        </attachments>
+    </type>
+    <type name="Spacecat_Mich2001Helmet_Woodland">
+        <attachments chance="0.005">
+            <item name="Spacecat_NVGoggles_Woodland" />
+        </attachments>
+    </type>
+    <type name="Spacecat_MountainBag_Medic">
+        <attachments chance="0.30">
+            <item name="BandageDressing" />
+        </attachments>
+        <attachments chance="0.30">
+            <item name="BandageDressing" />
+        </attachments>
+        <attachments chance="0.30">
+            <item name="SamSplint" />
+        </attachments>
+        <attachments chance="0.30">
+            <item name="BandageDressing" />
+        </attachments>
+        <attachments chance="0.30">
+            <item name="GPSReceiver" />
+        </attachments>
+        <attachments chance="0.30">
+            <item name="FirstAidKit" />
+        </attachments>
+    </type>
+    <type name="Barrel_Black">
+        <hoarder />
+    </type>
+    <type name="Barrel_Tan">
+        <hoarder />
+    </type>
+    <type name="Barrel_White">
+        <hoarder />
+    </type>
+</spawnabletypes>

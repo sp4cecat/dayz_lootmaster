@@ -5,13 +5,15 @@ import React, { useMemo } from 'react';
  */
 
 /**
+ * Filters panel
  * @param {{
  *  definitions: Definitions,
- *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[] },
+ *  groups: string[],
+ *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], groups: string[] },
  *  onChange: (next: any) => void
  * }} props
  */
-export default function Filters({ definitions, filters, onChange }) {
+export default function Filters({ definitions, groups, filters, onChange }) {
   const allCategoryOptions = useMemo(
     () => ['all', 'none', ...definitions.categories],
     [definitions.categories]
@@ -22,7 +24,7 @@ export default function Filters({ definitions, filters, onChange }) {
   };
 
   const clearFilters = () => {
-    onChange({ category: 'all', name: '', usage: [], value: [], tag: [] });
+    onChange({ category: 'all', name: '', usage: [], value: [], tag: [], groups: [] });
   };
 
   const toggleUsage = (opt) => {
@@ -31,12 +33,51 @@ export default function Filters({ definitions, filters, onChange }) {
     setField('usage', next);
   };
 
+  const toggleGroup = (g) => {
+    const curr = filters.groups;
+    const next = curr.includes(g) ? curr.filter(x => x !== g) : [...curr, g];
+    setField('groups', next);
+  };
+
+  const selectedGroupsSet = new Set(filters.groups);
+  const allGroupsSelected = filters.groups.length === 0;
+
   return (
     <div className="filters">
       <div className="filters-row">
         <div className="spacer" />
         <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
       </div>
+
+      <fieldset className="filters-group">
+        <legend>Types Groups</legend>
+        <div className="chips selectable">
+          <button
+            type="button"
+            className={`chip ${allGroupsSelected ? 'selected' : ''}`}
+            onClick={() => setField('groups', [])}
+            aria-pressed={allGroupsSelected}
+            title="Show all groups"
+          >
+            All
+          </button>
+          {groups.map(g => {
+            const selected = selectedGroupsSet.has(g);
+            return (
+              <button
+                type="button"
+                key={g}
+                className={`chip ${selected ? 'selected' : ''}`}
+                onClick={() => toggleGroup(g)}
+                aria-pressed={selected}
+                title={`Toggle group ${g}`}
+              >
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <div className="filters-row">
         <label className="control">

@@ -33,15 +33,23 @@ export default function App() {
     canRedo,
     unknowns,
     resolveUnknowns,
+    groups
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
 
   const filteredTypes = useMemo(() => {
     if (!lootTypes) return [];
-    const { category, name, usage, value, tag } = filters;
+    const { category, name, usage, value, tag, groups: selectedGroups } = filters;
+    const selectedGroupsSet = new Set(selectedGroups);
     const namePattern = name?.trim() ? wildcardToRegExp(name.trim()) : null;
+
     return lootTypes.filter(t => {
+      // Groups filter: if none selected, treat as all; otherwise must include
+      if (selectedGroups.length > 0 && t.group && !selectedGroupsSet.has(t.group)) {
+        return false;
+      }
+
       if (category && category !== 'all') {
         if (category === 'none') {
           if (t.category) return false;
@@ -72,7 +80,9 @@ export default function App() {
     // updatedPartial: function that applies updates to a Type and returns new Type
     const newTypes = lootTypes.map(t => {
       if (selection.has(t.name)) {
-        return updatedPartial(t);
+        // Preserve group metadata if the updater returns a fresh object
+        const updated = updatedPartial(t);
+        return { ...t, ...updated };
       }
       return t;
     });
@@ -125,6 +135,7 @@ export default function App() {
         <aside className="left-pane">
           <Filters
             definitions={definitions}
+            groups={groups}
             filters={filters}
             onChange={setFilters}
           />

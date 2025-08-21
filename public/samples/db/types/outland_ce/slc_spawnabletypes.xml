@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!--
+0-29 = Pristine
+30-49 = Worn
+50-69 = Damaged
+70-99 = Badly Damaged
+-->
+<spawnabletypes>
+    <damage min="0.0" max="0.0" />
+
+    <type name="SLC_Ninjato"></type>
+    <type name="SLC_Katana"></type>
+    <type name="SLC_Wakazashi"></type>
+    <type name="SLC_Tachi"></type>
+
+    <type name="SLCNinjatoSheath">
+        <attachments chance="1.00">
+            <item name="SLC_Ninjato" />
+        </attachments>
+    </type>
+    <type name="SLCKatanaSheath">
+        <attachments chance="1.00">
+            <item name="SLC_Katana" />
+        </attachments>
+    </type>
+    <type name="SLCTachiSheath">
+        <attachments chance="1.00">
+            <item name="SLC_Tachi" />
+        </attachments>
+    </type>
+
+</spawnabletypes>

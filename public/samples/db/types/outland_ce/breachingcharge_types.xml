@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<types>
+    <type name="HDSN_Gunpowder">
+        <nominal>24</nominal>
+        <lifetime>14400</lifetime>
+        <restock>900</restock>
+        <min>18</min>
+        <quantmin>20</quantmin>
+        <quantmax>60</quantmax>
+        <cost>100</cost>
+        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+        <category name="explosives"/>
+        <usage name="Industrial"/>
+        <usage name="Firefighter"/>
+        <usage name="Military"/>
+        <usage name="CrashMilitary"/>
+    </type>
+    <type name="HDSN_C4Stick">
+        <nominal>10</nominal>
+        <lifetime>14400</lifetime>
+        <restock>600</restock>
+        <min>7</min>
+        <quantmin>-1</quantmin>
+        <quantmax>-1</quantmax>
+        <cost>100</cost>
+        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+        <category name="explosives"/>
+        <usage name="Industrial"/>
+        <usage name="Military"/>
+    </type>
+    <type name="HDSN_BreachingChargeHeavy">
+        <lifetime>14400</lifetime>
+        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="1" deloot="0"/>
+        <category name="explosives"/>
+    </type>
+</types>

@@ -97,6 +97,44 @@ export function parseTypesXml(xml) {
 }
 
 /**
+ * Parse cfgeconomycore.xml and return group order and types file paths for each group.
+ * Only <file> entries with attribute type="types" are included.
+ * @param {string} xml
+ * @returns {{ order: string[], filesByGroup: Record<string, string[]> }}
+ */
+export function parseEconomyCoreXml(xml) {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const ceNodes = Array.from(doc.getElementsByTagName('ce'));
+
+  /** @type {string[]} */
+  const order = [];
+  /** @type {Record<string, string[]>} */
+  const filesByGroup = {};
+
+  for (const ce of ceNodes) {
+    const folder = ce.getAttribute('folder');
+    if (!folder) continue;
+    const parts = folder.split('/').filter(Boolean);
+    const group = parts[parts.length - 1] || folder;
+
+    const typeFileNodes = Array.from(ce.getElementsByTagName('file'))
+      .filter(f => (f.getAttribute('type') || '').toLowerCase() === 'types');
+
+    const files = typeFileNodes
+      .map(f => f.getAttribute('name'))
+      .filter(Boolean)
+      .map(name => `/samples/${folder}/${name}`);
+
+    if (files.length > 0) {
+      order.push(group);
+      filesByGroup[group] = files;
+    }
+  }
+
+  return { order, filesByGroup };
+}
+
+/**
  * Generate types.xml string from array of Type
  * @param {Type[]} types
  */
