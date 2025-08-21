@@ -258,6 +258,7 @@ export default function App() {
           }
           countRefs={manage.countRefs}
           removeEntry={(k, entry) => manage.removeEntry(k, entry)}
+          addEntry={(k, entry) => manage.addEntry(k, entry)}
           onClose={() => { setManageOpen(false); setManageKind(null); }}
         />
       )}

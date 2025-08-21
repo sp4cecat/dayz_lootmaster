@@ -264,11 +264,42 @@ export function useLootData() {
     // Update definitions to remove the entry
     setDefinitions(d => {
       if (!d) return d;
-      if (kind === 'usage') return { ...d, usageflags: d.usageflags.filter(x => x !== entry) };
-      if (kind === 'value') return { ...d, valueflags: d.valueflags.filter(x => x !== entry) };
-      return { ...d, tags: d.tags.filter(x => x !== entry) };
+      const next =
+        kind === 'usage' ? { ...d, usageflags: d.usageflags.filter(x => x !== entry) } :
+        kind === 'value' ? { ...d, valueflags: d.valueflags.filter(x => x !== entry) } :
+        { ...d, tags: d.tags.filter(x => x !== entry) };
+      // Recompute unknowns with updated definitions
+      setUnknowns(validateUnknowns(_setLootTypes ? (lootTypes || []) : [], next));
+      return next;
     });
-  }, [lootGroups, definitions]);
+  }, [lootGroups, definitions, lootTypes]);
+
+  /**
+   * Add an entry to definitions.
+   * @param {'usage'|'value'|'tag'} kind
+   * @param {string} entry
+   */
+  const addDefinitionEntry = useCallback((kind, entry) => {
+    const value = (entry || '').trim();
+    if (!value) return;
+    setDefinitions(d => {
+      if (!d) return d;
+      let next = d;
+      if (kind === 'usage') {
+        if (d.usageflags.includes(value)) return d;
+        next = { ...d, usageflags: [...d.usageflags, value].sort() };
+      } else if (kind === 'value') {
+        if (d.valueflags.includes(value)) return d;
+        next = { ...d, valueflags: [...d.valueflags, value].sort() };
+      } else {
+        if (d.tags.includes(value)) return d;
+        next = { ...d, tags: [...d.tags, value].sort() };
+      }
+      // Recompute unknowns with updated definitions
+      setUnknowns(validateUnknowns(lootTypes || [], next));
+      return next;
+    });
+  }, [lootTypes]);
 
   // Unknowns resolution modal control and logic
   const [unknownsOpen, setUnknownsOpen] = useState(false);
@@ -375,7 +406,8 @@ export function useLootData() {
     // Management helpers
     manage: {
       countRefs: countDefinitionRefs,
-      removeEntry: removeDefinitionEntry
+      removeEntry: removeDefinitionEntry,
+      addEntry: addDefinitionEntry
     }
   };
 }

@@ -106,7 +106,7 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
       </div>
       <div className="filters-row">
         <label className="control grow">
-          <span>Name (supports * and ?)</span>
+          <span>Filter by text (supports * and ?)</span>
           <input
             type="text"
             value={filters.name}
