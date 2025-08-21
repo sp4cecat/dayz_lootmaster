@@ -106,21 +106,24 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
           ))}
         </div>
 
-        <fieldset className="control full">
-          <legend>Flags</legend>
-          <div className="checkbox-grid">
-            {Object.keys(base.flags).map(k => (
-              <label key={k} className="checkbox">
-                <input type="checkbox" checked={!!form.flags[k]} onChange={() => toggleFlag(k)} />
-                <span>{k}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <div className="panels-wrap">
+          {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
 
-        {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
-        {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
-        {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
+          <fieldset className="control panels-item">
+            <legend>Flags</legend>
+            <div className="checkbox-grid">
+              {Object.keys(base.flags).map(k => (
+                <label key={k} className="checkbox">
+                  <input type="checkbox" checked={!!form.flags[k]} onChange={() => toggleFlag(k)} />
+                  <span>{k}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
+          {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
+        </div>
       </div>
 
       {Object.keys(errors).length > 0 && (
@@ -162,7 +165,7 @@ function makeTriState(allOptions, arrays) {
 
 function renderTriStateGroup(group, form, options, cycleTri) {
   return (
-    <fieldset className="control full">
+    <fieldset className="control panels-item">
       <legend>{group[0].toUpperCase() + group.slice(1)}</legend>
       <div className="checkbox-grid">
         {options.map(opt => {

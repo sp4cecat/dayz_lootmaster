@@ -192,7 +192,7 @@ body {
 }
 
 .left-pane {
-    flex: 0 0 320px;
+    flex: 0 0 360px;
     border-right: 1px solid var(--border);
     padding: 12px;
     overflow: auto;
@@ -257,11 +257,7 @@ body {
     gap: 6px;
 }
 
-.filters-group .checkbox-grid {
-    gap: 0;
-}
-
-.edit-form .checkbox-grid {
+.checkbox-grid {
     row-gap: 0; /* halve vertical spacing in edit form */
 }
 
@@ -391,8 +387,7 @@ legend {
 
 /* Filter panel chips have fixed width for consistent layout */
 .filters .chips .chip {
-    width: 100px;
-    flex: 0 0 80px;
+    flex: 1 0 100px;
     justify-content: center;
     text-align: center;
     overflow: hidden;
@@ -412,8 +407,16 @@ legend {
     min-width: 360px;
     border: 1px solid var(--border);
     border-radius: 10px;
-    overflow: auto;
+    display: flex;
+    overflow: hidden;
     background: var(--bg-soft);
+}
+/* Prevent any direct child from exceeding the container height */
+.edit-form-container > * {
+    max-height: 100%;
+    min-height: 0;
+    overflow: auto;
+    flex: 1 1 auto;
 }
 
 .edit-form {
@@ -421,6 +424,7 @@ legend {
     flex-direction: column;
     gap: 12px;
     padding: 12px;
+    height: 100%;
 }
 
 .edit-form-header {
@@ -443,6 +447,25 @@ legend {
 .form-grid > fieldset.control {
     flex: 1 1 220px;
     min-width: 180px;
+}
+
+/* Panels (Flags, Usage, Value, Tag) stacked vertically and wrapping into columns */
+.edit-form .panels-wrap {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-content: flex-start;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+    overflow: auto;
+}
+
+.edit-form .panels-item {
+    flex: 0 0 auto;
+    min-width: 220px;
+    max-width: 360px;
 }
 
 /* Edit form control sizing */
