@@ -142,10 +142,11 @@ h1 {
 .link {
     background: none;
     border: none;
-    color: var(--primary);
+    color: color-mix(in oklab, var(--primary) 50%, white);
     cursor: pointer;
     text-decoration: underline;
     padding: 0;
+    font-size: 11px;
 }
 
 .link:hover {
@@ -303,8 +304,8 @@ legend {
 .types-table {
     display: grid;
     grid-auto-rows: auto;
-    /* Name, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Tag fill remaining width */
-    grid-template-columns: max-content max-content max-content max-content max-content 1fr 1fr 1fr 1fr;
+    /* Name, Group, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Tag fill remaining width */
+    grid-template-columns: max-content min-content min-content min-content max-content max-content 1fr 1fr 1fr 1fr;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-soft);

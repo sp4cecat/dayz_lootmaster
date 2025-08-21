@@ -16,7 +16,7 @@ import React, { useMemo, useRef, useState } from 'react';
  * }} props
  */
 export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {} }) {
-  const [sort, setSort] = useState(/** @type {{key: null | 'name' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: 'name', dir: 'asc' }));
+  const [sort, setSort] = useState(/** @type {{key: null | 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: 'name', dir: 'asc' }));
 
   const rows = useMemo(() => {
     const arr = types.map(t => {
@@ -32,6 +32,9 @@ export default function TypesTable({ definitions, types, selection, setSelection
         }
         if (sort.key === 'name') {
           return String(r.name).toLowerCase();
+        }
+        if (sort.key === 'group') {
+          return String(r.group || '').toLowerCase();
         }
         return Number(r[sort.key] ?? 0);
       };
@@ -124,6 +127,14 @@ export default function TypesTable({ definitions, types, selection, setSelection
         {!condensed && (
           <>
             <div
+              className="th group sortable"
+              onClick={() => handleSort('group')}
+              title="Sort by group"
+            >
+              <span>Group</span>
+              {sort.key === 'group' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
+            <div
               className="th nums sortable"
               onClick={() => handleSort('nominal')}
               title="Sort by nominal"
@@ -202,6 +213,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
               {!condensed && (
                 <>
+                  <div className="td group">{t.group || '—'}</div>
                   <div className="td nums">{t.nominal}</div>
                   <div className="td nums">{t.min}</div>
                   <div className="td nums">{t.lifetime}</div>
