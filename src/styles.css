@@ -228,12 +228,23 @@ h1 {
 .filters {
     display: flex;
     flex-direction: column;
+    justify-content: flex-start;
     gap: 12px;
 }
 
 .filters-row {
     display: flex;
     gap: 8px;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.filters-row span {
+    color: var(--muted);
+    font-size: 11px;
+}
+.filters-row .panel-title {
+    padding: 0;
+    margin: 0;
 }
 .control.grow {
     flex: 1 1 auto;
@@ -427,6 +438,8 @@ legend {
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
 }
 
 .table-and-form {

@@ -53,12 +53,10 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
   return (
     <div className="filters">
       <div className="filters-row">
-        <h2 className="panel-title">Filters</h2>
+        <h2 className="panel-title">Filters<br/>
+            <span>Matching {matchingCount} types</span></h2>
         <div className="spacer" />
         <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
-      </div>
-      <div className="filters-row" aria-live="polite">
-        <span>Matching {matchingCount} types</span>
       </div>
 
       <fieldset className="filters-group">
@@ -93,7 +91,7 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
 
       <div className="filters-row">
         <label className="control">
-          <span>Category</span>
+          <legend>Category</legend>
           <select
             value={filters.category}
             onChange={e => setField('category', e.target.value)}
@@ -106,7 +104,7 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
       </div>
       <div className="filters-row">
         <label className="control grow">
-          <span>Filter by text (supports * and ?)</span>
+          <legend>Filter by text (supports * and ?)</legend>
           <input
             type="text"
             value={filters.name}
