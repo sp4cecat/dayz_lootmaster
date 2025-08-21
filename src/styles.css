@@ -319,7 +319,7 @@ legend {
     display: grid;
     grid-auto-rows: auto;
     /* Name, Group, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Tag fill remaining width */
-    grid-template-columns: max-content min-content min-content min-content max-content max-content 1fr 1fr 1fr 1fr;
+    grid-template-columns: max-content min-content min-content min-content max-content min-content min-content 1.5fr 1.5fr 1fr;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-soft);
@@ -397,6 +397,8 @@ legend {
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     background: var(--bg);
+    display: flex;
+    align-items: center;
 }
 
 .tr.selected > .td {
@@ -404,8 +406,6 @@ legend {
 }
 
 .td.name {
-    display: flex;
-    align-items: center;
     white-space: nowrap;
 }
 
