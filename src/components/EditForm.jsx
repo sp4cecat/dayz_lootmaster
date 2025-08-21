@@ -108,6 +108,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
 
         <div className="panels-wrap">
           {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
+          {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
 
           <fieldset className="control panels-item">
             <legend>Flags</legend>
@@ -121,7 +122,6 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
             </div>
           </fieldset>
 
-          {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
           {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
         </div>
       </div>

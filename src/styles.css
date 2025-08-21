@@ -481,6 +481,7 @@ legend {
     width: max-content;
     min-width: 220px;
     background: var(--bg-softer);
+    padding: 10px;
 }
 
 /* All panels: contents wrap vertically within available height */
