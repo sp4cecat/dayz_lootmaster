@@ -423,6 +423,10 @@ legend {
     white-space: nowrap;
 }
 
+.td.name.modified {
+    color: color-mix(in oklab, var(--text) 70%, var(--warn) 30%);
+}
+
 .chips {
     display: flex;
     flex-wrap: wrap;

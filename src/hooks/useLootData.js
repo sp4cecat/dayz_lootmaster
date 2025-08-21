@@ -495,7 +495,7 @@ export function useLootData() {
   }, [lootFiles]);
 
   const storageDiff = useMemo(() => {
-    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number }>> }} */
+    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>> }} */
     const diff = {
       definitions: { categories: false, usageflags: false, valueflags: false, tags: false },
       files: {}
@@ -520,8 +520,8 @@ export function useLootData() {
           const currArr = currPer[f] || [];
           const baseNames = new Set(baseArr.map(t => t.name));
           const currNames = new Set(currArr.map(t => t.name));
-          const added = [...currNames].filter(n => !baseNames.has(n)).length;
-          const removed = [...baseNames].filter(n => !currNames.has(n)).length;
+          const addedNames = [...currNames].filter(n => !baseNames.has(n));
+          const removedNames = [...baseNames].filter(n => !currNames.has(n));
 
           // Modified: intersection where any field differs
           const normalize = (t) => ({
@@ -536,18 +536,23 @@ export function useLootData() {
           });
           const baseByName = new Map(baseArr.map(t => [t.name, normalize(t)]));
           const currByName = new Map(currArr.map(t => [t.name, normalize(t)]));
-          let modified = 0;
+          const modifiedNames = [];
           for (const name of [...baseNames].filter(n => currNames.has(n))) {
             const a = baseByName.get(name);
             const b = currByName.get(name);
-            if (JSON.stringify(a) !== JSON.stringify(b)) modified++;
+            if (JSON.stringify(a) !== JSON.stringify(b)) modifiedNames.push(name);
           }
 
+          const added = addedNames.length;
+          const removed = removedNames.length;
+          const modified = modifiedNames.length;
+
+          const changedNames = [...new Set([...addedNames, ...modifiedNames])];
           const changedCount = added + removed + modified;
           const changed = changedCount > 0;
 
           if (!diff.files[g]) diff.files[g] = {};
-          diff.files[g][f] = { changed, added, removed, modified, changedCount };
+          diff.files[g][f] = { changed, added, removed, modified, changedCount, addedNames, removedNames, modifiedNames, changedNames };
         }
       }
     }

@@ -233,6 +233,7 @@ export default function App() {
               unknowns={unknowns}
               condensed={selectedTypes.length > 0}
               duplicatesByName={duplicatesByName}
+              storageDiff={storageDiff}
             />
             {selectedTypes.length > 0 && (
               <div className="edit-form-container" key={editKey}>

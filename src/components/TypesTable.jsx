@@ -8,15 +8,16 @@ import { formatLifetime } from '../utils/time.js';
 /**
  * @param {{
  *  definitions: {categories: string[], usageflags: string[], valueflags: string[], tags: string[]},
- *  types: Type[],
+ *  types: (Type & {group?: string, file?: string})[],
  *  selection: Set<string>,
  *  setSelection: (sel: Set<string>) => void,
  *  unknowns: { byType: Record<string, { category?: string[], usage: string[], value: string[], tag: string[] }>}
  *  condensed?: boolean,
- *  duplicatesByName?: Record<string, string[]>
+ *  duplicatesByName?: Record<string, string[]>,
+ *  storageDiff?: { files: Record<string, Record<string, { changedNames?: string[] }>> }
  * }} props
  */
-export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {} }) {
+export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {}, storageDiff }) {
   const [sort, setSort] = useState(/** @type {{key: null | 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: 'name', dir: 'asc' }));
 
   // Virtualization state
@@ -242,7 +243,12 @@ export default function TypesTable({ definitions, types, selection, setSelection
               onClick={e => onRowClick(e, globalIndex, t.name)}
               title={t.hasUnknown ? 'Contains unknown entries' : undefined}
             >
-              <div className="td name">
+              <div className={`td name ${(() => {
+                const g = t.group || '';
+                const f = t.file || 'types';
+                const changedSet = storageDiff?.files?.[g]?.[f]?.changedNames || [];
+                return changedSet.includes(t.name) ? 'modified' : '';
+              })()}`}>
                 {t.name}
                 {(() => {
                   const groups = duplicatesByName[t.name] || [];
