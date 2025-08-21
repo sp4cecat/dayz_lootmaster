@@ -104,8 +104,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="brand">
-          <span className="logo">🧰</span>
-          <h1>DayZ Types Editor</h1>
+          <h1>DayZ Lootmaster</h1>
         </div>
         <div className="header-actions">
           <button className="btn" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">Undo</button>
