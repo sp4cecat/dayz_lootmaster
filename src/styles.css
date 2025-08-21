@@ -464,13 +464,13 @@ legend {
     display: flex;
     flex-direction: column;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 30px;
     align-content: flex-start;
     flex: 0 0 auto;   /* fill remaining space next to basics-stack */
     height: 100%;     /* enable vertical wrapping by container height */
     overflow: hidden; /* no vertical scroll needed */
     justify-content: flex-start;
-    width: max-content;
+    width: auto;
 }
 .edit-form .panels-wrap .checkbox-grid {
     width: max-content;
@@ -480,17 +480,19 @@ legend {
     flex: 1 0 max-content;
     width: max-content;
     min-width: 220px;
+    background: var(--bg-softer);
 }
 
 /* All panels: contents wrap vertically within available height */
 .edit-form .panels-item .checkbox-grid {
-    display: flex;            /* override grid for vertical wrap behavior */
-    flex-direction: column;
-    flex-wrap: wrap;
-    height: 100%;             /* wrap based on available height */
-    width: max-content;       /* size to content horizontally */
-    align-content: flex-start;
-    gap: 3px 10px;            /* compact vertical spacing */
+    display: grid;
+    grid-auto-rows: max-content;
+    grid-template-columns: repeat(2, max-content); /* exactly two columns */
+    gap: 3px 10px;                                  /* row gap / column gap */
+    width: max-content;                              /* size to both columns */
+}
+.edit-form .usage-panel .checkbox span {
+    white-space: nowrap; /* keep labels on one line for stable column widths */
 }
 
 /* Usage panel should not exceed parent height */
