@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { generateLimitsXml, generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
 import { createZip } from '../utils/zip.js';
 
@@ -13,15 +13,45 @@ import { createZip } from '../utils/zip.js';
  *  getGroupTypes: (group: string) => import('../utils/xml.js').Type[],
  *  getGroupFiles: (group: string) => {file: string, types: import('../utils/xml.js').Type[]}[],
  *  definitions: { categories: string[], usageflags: string[], valueflags: string[], tags: string[] },
+ *  storageDiff?: { files: Record<string, Record<string, { changed: boolean }>> },
  *  onClose: () => void
  * }} props
  */
-export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGroupFiles, definitions, onClose }) {
+export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGroupFiles, definitions, storageDiff, onClose }) {
   const [mode, setMode] = useState(/** @type {'types'|'limits'} */('types'));
   const [group, setGroup] = useState(defaultGroup || groups[0] || '');
   const filesForGroup = useMemo(() => (mode === 'types' && group ? getGroupFiles(group) : []), [mode, group, getGroupFiles]);
   const hasMultipleFiles = filesForGroup.length > 1;
   const [typesFormat, setTypesFormat] = useState(/** @type {'single'|'zip'} */('single'));
+
+  // Which groups have at least one changed file
+  const changedGroups = useMemo(() => {
+    if (!storageDiff || !storageDiff.files) return [];
+    return groups.filter(g => {
+      const per = storageDiff.files[g];
+      return per && Object.values(per).some(info => info.changed);
+    });
+  }, [storageDiff, groups]);
+
+  // Ensure selected group is valid when exporting types
+  useEffect(() => {
+    if (mode !== 'types') return;
+    if (changedGroups.length === 0) return;
+    if (!changedGroups.includes(group)) {
+      setGroup(changedGroups[0]);
+    }
+  }, [mode, changedGroups, group]);
+
+  // Determine which files in the selected group have changed
+  const changedFiles = useMemo(() => {
+    if (mode !== 'types' || !group || !storageDiff || !storageDiff.files || !storageDiff.files[group]) return [];
+    return Object.entries(storageDiff.files[group])
+      .filter(([, info]) => info.changed)
+      .map(([file]) => file);
+  }, [mode, group, storageDiff]);
+
+  const changedFilesSet = useMemo(() => new Set(changedFiles), [changedFiles]);
+  const zipAvailable = changedFiles.length > 0;
 
   const xml = useMemo(() => {
     if (mode === 'limits') {
@@ -36,30 +66,33 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
 
   const exportPath = useMemo(() => {
     if (mode === 'limits') return 'cfglimitsdefinition.xml';
-    if (typesFormat === 'zip' && hasMultipleFiles) {
-      return `db/types/${group}/*.xml`;
+    if (typesFormat === 'zip' && zipAvailable) {
+      return `db/types/${group}/*.xml (changed)`;
     }
     if (group === 'vanilla') return 'db/types.xml';
     return `db/types/${group}/types.xml`;
-  }, [mode, group, hasMultipleFiles, typesFormat]);
+  }, [mode, group, zipAvailable, typesFormat]);
 
   const onCopy = async () => {
     await navigator.clipboard.writeText(xml);
   };
 
   const onDownloadZip = () => {
-    if (!hasMultipleFiles || typesFormat !== 'zip') return;
-    // Build per-file XMLs with original filenames
+    if (!zipAvailable || typesFormat !== 'zip') return;
+    // Build per-file XMLs with original filenames, only for changed files
     const encoder = new TextEncoder();
-    const files = filesForGroup.map(({ file, types }) => {
-      const name = `${file}.xml`;
-      const content = generateTypesXml(types);
-      return { name, data: encoder.encode(content) };
-    });
+    const files = filesForGroup
+      .filter(({ file }) => changedFilesSet.has(file))
+      .map(({ file, types }) => {
+        const name = `${file}.xml`;
+        const content = generateTypesXml(types);
+        return { name, data: encoder.encode(content) };
+      });
+    if (!files.length) return;
     const zip = createZip(files);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(zip);
-    a.download = `${group || 'types'}-types.zip`;
+    a.download = `${group || 'types'}-types-changed.zip`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -72,10 +105,10 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     <div className="modal-backdrop">
       <div className="modal full">
         <div className="modal-header">
-          <h3>Export</h3>
+          <h3>Export Changed Types</h3>
           <div className="spacer" />
           <button className="btn" onClick={onClose}>Close</button>
-          {mode === 'types' && hasMultipleFiles && typesFormat === 'zip' ? (
+          {mode === 'types' && typesFormat === 'zip' && zipAvailable ? (
             <button
               className="btn primary"
               onClick={onDownloadZip}
@@ -141,10 +174,10 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
                 <label className="control" style={{ marginLeft: 'auto', minWidth: 180 }}>
                   <span>Group</span>
                   <select value={group} onChange={e => setGroup(e.target.value)}>
-                    {groups.map(g => <option key={g} value={g}>{g}</option>)}
+                    {changedGroups.map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </label>
-                {hasMultipleFiles && (
+                {hasMultipleFiles && zipAvailable && (
                   <div className="checkbox" style={{ marginLeft: 8 }}>
                     <label className="checkbox" style={{ gap: 6 }}>
                       <input
@@ -162,7 +195,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
                         checked={typesFormat === 'zip'}
                         onChange={() => setTypesFormat('zip')}
                       />
-                      <span>Zip of files</span>
+                      <span>Zip of changed files</span>
                     </label>
                   </div>
                 )}
@@ -177,12 +210,20 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
               {xml}
             </div>
           )}
-          {mode === 'types' && hasMultipleFiles && typesFormat === 'zip' && (
+          {mode === 'types' && typesFormat === 'zip' && (
             <div className="muted" style={{ marginTop: 8 }}>
-              This ZIP will include:
-              <ul>
-                {filesForGroup.map(({ file }) => (<li key={file}><code>{file}.xml</code></li>))}
-              </ul>
+              {zipAvailable ? (
+                <>
+                  This ZIP will include:
+                  <ul>
+                    {filesForGroup.filter(({ file }) => changedFilesSet.has(file)).map(({ file }) => (
+                      <li key={file}><code>{file}.xml</code></li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <span>No changed files to export for this group.</span>
+              )}
             </div>
           )}
         </div>

@@ -115,6 +115,17 @@ h1 {
     gap: 8px;
 }
 
+.btn.icon-only {
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.icon-muted svg {
+    opacity: 0.5;
+}
+
 .btn {
     background: var(--bg-soft);
     border: 1px solid var(--border);

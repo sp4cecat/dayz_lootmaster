@@ -8,6 +8,7 @@ import UnknownEntriesModal from './components/UnknownEntriesModal.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import SummaryModal from './components/SummaryModal.jsx';
 import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
+import StorageStatusModal from './components/StorageStatusModal.jsx';
 import { generateTypesXml } from './utils/xml.js';
 
 /**
@@ -42,12 +43,15 @@ export default function App() {
     duplicatesByName,
     manage,
     getGroupTypes,
-    getGroupFiles
+    getGroupFiles,
+    storageDirty,
+    storageDiff
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
+  const [showStorage, setShowStorage] = useState(false);
 
   // Resizable left pane (filters)
   const [leftWidth, setLeftWidth] = useState(300); // default 300px
@@ -154,6 +158,17 @@ export default function App() {
         </div>
         <div className="header-actions">
           <button
+            className={`btn icon-only ${storageDirty ? '' : 'icon-muted'}`}
+            onClick={() => setShowStorage(true)}
+            title="Storage status (click to view differences)"
+            aria-label="Storage status"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M14 5v6H6V5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <button
             className="btn"
             onClick={undo}
             disabled={!canUndo}
@@ -240,6 +255,7 @@ export default function App() {
           getGroupTypes={getGroupTypes}
           getGroupFiles={getGroupFiles}
           definitions={definitions}
+          storageDiff={storageDiff}
           onClose={() => setShowExport(false)}
         />
       )}
@@ -268,6 +284,9 @@ export default function App() {
           addEntry={(k, entry) => manage.addEntry(k, entry)}
           onClose={() => { setManageOpen(false); setManageKind(null); }}
         />
+      )}
+      {showStorage && storageDiff && (
+        <StorageStatusModal diff={storageDiff} onClose={() => setShowStorage(false)} />
       )}
     </div>
   );

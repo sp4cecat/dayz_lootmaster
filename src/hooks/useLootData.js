@@ -56,6 +56,10 @@ export function useLootData() {
   // Map type name -> array of groups the type appears in
   const [duplicatesByName, setDuplicatesByName] = useState(/** @type {Record<string, string[]>} */({}));
 
+  // Baseline parsed from samples (read-only reference to compare against edits)
+  const [baselineFiles, setBaselineFiles] = useState(/** @type {TypeFiles|null} */(null));
+  const [baselineDefinitions, setBaselineDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
+
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
     if (!lootFiles) return;
@@ -194,6 +198,7 @@ export function useLootData() {
         if (!mounted) return;
 
         setDefinitions(defs);
+        setBaselineDefinitions(defs);
         setLootFiles(files);
 
         // Derive grouped and merged views
@@ -203,6 +208,42 @@ export function useLootData() {
 
         const merged = mergeFromFiles(files);
         _setLootTypes(merged);
+
+        // Always parse a fresh baseline from samples for diffing
+        try {
+          /** @type {TypeFiles} */
+          const baseline = {};
+          // Vanilla
+          const vanillaRes = await fetch('/samples/db/types.xml');
+          const vanillaText = await vanillaRes.text();
+          const vanilla = parseTypesXml(vanillaText);
+          baseline.vanilla = { types: vanilla };
+          // Other groups via cfgeconomycore
+          try {
+            const econRes = await fetch('/samples/cfgeconomycore.xml');
+            const econText = await econRes.text();
+            const { order, filesByGroup } = parseEconomyCoreXml(econText);
+            for (const g of order) {
+              const list = filesByGroup[g] || [];
+              for (const filePath of list) {
+                const res = await fetch(filePath);
+                const text = await res.text();
+                const parsed = parseTypesXml(text);
+                const parts = filePath.split('/');
+                const fileName = parts[parts.length - 1] || 'types.xml';
+                const fileBase = fileName.replace(/\.xml$/i, '');
+                if (!baseline[g]) baseline[g] = {};
+                baseline[g][fileBase] = parsed;
+              }
+            }
+          } catch (e) {
+            // ignore, baseline will include vanilla only
+          }
+          setBaselineFiles(baseline);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to parse baseline from samples:', e);
+        }
         setUnknowns(validateUnknowns(merged, defs));
         historyRef.current = createHistory(merged);
 
@@ -453,6 +494,78 @@ export function useLootData() {
     return Object.entries(lootFiles[group]).map(([file, types]) => ({ file, types }));
   }, [lootFiles]);
 
+  const storageDiff = useMemo(() => {
+    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number }>> }} */
+    const diff = {
+      definitions: { categories: false, usageflags: false, valueflags: false, tags: false },
+      files: {}
+    };
+    // Definitions compare
+    if (baselineDefinitions && definitions) {
+      const cmp = (a, b) => JSON.stringify([...a].sort()) !== JSON.stringify([...b].sort());
+      diff.definitions.categories = cmp(baselineDefinitions.categories, definitions.categories);
+      diff.definitions.usageflags = cmp(baselineDefinitions.usageflags, definitions.usageflags);
+      diff.definitions.valueflags = cmp(baselineDefinitions.valueflags, definitions.valueflags);
+      diff.definitions.tags = cmp(baselineDefinitions.tags, definitions.tags);
+    }
+    // Files compare
+    if (baselineFiles && lootFiles) {
+      const allGroups = new Set([...Object.keys(baselineFiles), ...Object.keys(lootFiles)]);
+      for (const g of allGroups) {
+        const basePer = baselineFiles[g] || {};
+        const currPer = lootFiles[g] || {};
+        const allFiles = new Set([...Object.keys(basePer), ...Object.keys(currPer)]);
+        for (const f of allFiles) {
+          const baseArr = basePer[f] || [];
+          const currArr = currPer[f] || [];
+          const baseNames = new Set(baseArr.map(t => t.name));
+          const currNames = new Set(currArr.map(t => t.name));
+          const added = [...currNames].filter(n => !baseNames.has(n)).length;
+          const removed = [...baseNames].filter(n => !currNames.has(n)).length;
+
+          // Modified: intersection where any field differs
+          const normalize = (t) => ({
+            name: t.name,
+            category: t.category || null,
+            nominal: t.nominal, min: t.min, lifetime: t.lifetime, restock: t.restock,
+            quantmin: t.quantmin, quantmax: t.quantmax,
+            flags: t.flags,
+            usage: [...t.usage].sort(),
+            value: [...t.value].sort(),
+            tag: [...t.tag].sort(),
+          });
+          const baseByName = new Map(baseArr.map(t => [t.name, normalize(t)]));
+          const currByName = new Map(currArr.map(t => [t.name, normalize(t)]));
+          let modified = 0;
+          for (const name of [...baseNames].filter(n => currNames.has(n))) {
+            const a = baseByName.get(name);
+            const b = currByName.get(name);
+            if (JSON.stringify(a) !== JSON.stringify(b)) modified++;
+          }
+
+          const changedCount = added + removed + modified;
+          const changed = changedCount > 0;
+
+          if (!diff.files[g]) diff.files[g] = {};
+          diff.files[g][f] = { changed, added, removed, modified, changedCount };
+        }
+      }
+    }
+    return diff;
+  }, [baselineDefinitions, definitions, baselineFiles, lootFiles]);
+
+  const storageDirty = useMemo(() => {
+    const d = storageDiff;
+    if (!d) return false;
+    if (d.definitions.categories || d.definitions.usageflags || d.definitions.valueflags || d.definitions.tags) return true;
+    for (const g of Object.keys(d.files)) {
+      for (const f of Object.keys(d.files[g])) {
+        if (d.files[g][f].changed) return true;
+      }
+    }
+    return false;
+  }, [storageDiff]);
+
   return {
     loading,
     error,
@@ -474,6 +587,8 @@ export function useLootData() {
     getGroupTypes,
     getGroupFiles,
     duplicatesByName,
+    storageDirty,
+    storageDiff,
     // Summary modal
     summary: loadSummary,
     summaryOpen,
@@ -527,6 +642,25 @@ function mergeFromFiles(files) {
     }
   }
   return Array.from(byName.values());
+}
+
+/**
+ * Stable serialization of types for equality comparison
+ * @param {Type[]} arr
+ */
+function serializeTypes(arr) {
+  const norm = (t) => ({
+    name: t.name,
+    category: t.category || null,
+    nominal: t.nominal, min: t.min, lifetime: t.lifetime, restock: t.restock,
+    quantmin: t.quantmin, quantmax: t.quantmax,
+    flags: t.flags,
+    usage: [...t.usage].sort(),
+    value: [...t.value].sort(),
+    tag: [...t.tag].sort(),
+  });
+  const sorted = [...arr].sort((a, b) => a.name.localeCompare(b.name)).map(norm);
+  return JSON.stringify(sorted);
 }
 
 function uniq(arr) {
