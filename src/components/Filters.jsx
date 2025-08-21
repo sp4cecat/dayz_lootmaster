@@ -129,7 +129,7 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </button>
         </legend>
         <div className="chips selectable">
-          {definitions.usageflags.map(opt => {
+          {[...definitions.usageflags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(opt => {
             const selected = filters.usage.includes(opt);
             return (
               <button
@@ -159,7 +159,7 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </button>
         </legend>
         <div className="chips selectable">
-          {definitions.valueflags.map(opt => {
+          {[...definitions.valueflags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(opt => {
             const selected = filters.value.includes(opt);
             return (
               <button
