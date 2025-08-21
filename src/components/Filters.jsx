@@ -21,6 +21,10 @@ export default function Filters({ definitions, filters, onChange }) {
     onChange({ ...filters, [key]: value });
   };
 
+  const clearFilters = () => {
+    onChange({ category: 'all', name: '', usage: [], value: [], tag: [] });
+  };
+
   const toggleUsage = (opt) => {
     const curr = filters.usage;
     const next = curr.includes(opt) ? curr.filter(x => x !== opt) : [...curr, opt];
@@ -29,6 +33,11 @@ export default function Filters({ definitions, filters, onChange }) {
 
   return (
     <div className="filters">
+      <div className="filters-row">
+        <div className="spacer" />
+        <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
+      </div>
+
       <div className="filters-row">
         <label className="control">
           <span>Category</span>
