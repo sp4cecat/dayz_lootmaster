@@ -257,6 +257,14 @@ body {
     gap: 6px;
 }
 
+.filters-group .checkbox-grid {
+    gap: 0;
+}
+
+.edit-form .checkbox-grid {
+    row-gap: 0; /* halve vertical spacing in edit form */
+}
+
 /* Remove bounding box styling from fieldsets */
 fieldset {
     border: 0;
@@ -379,6 +387,17 @@ legend {
     flex-wrap: wrap;
     gap: 4px;
     align-items: center;
+}
+
+/* Filter panel chips have fixed width for consistent layout */
+.filters .chips .chip {
+    width: 100px;
+    flex: 0 0 80px;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
 }
 
 .table-and-form {
