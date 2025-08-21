@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useLootData } from './hooks/useLootData.js';
 import Filters from './components/Filters.jsx';
 import TypesTable from './components/TypesTable.jsx';
@@ -46,6 +46,31 @@ export default function App() {
   const [showExport, setShowExport] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
+
+  // Resizable left pane (filters)
+  const [leftWidth, setLeftWidth] = useState(300); // default 300px
+  const dragStartXRef = useRef(0);
+  const startWidthRef = useRef(300);
+  const draggingRef = useRef(false);
+
+  const onResizeStart = (e) => {
+    draggingRef.current = true;
+    dragStartXRef.current = e.clientX;
+    startWidthRef.current = leftWidth;
+    window.addEventListener('mousemove', onResizing);
+    window.addEventListener('mouseup', onResizeEnd);
+  };
+  const onResizing = (e) => {
+    if (!draggingRef.current) return;
+    const delta = e.clientX - dragStartXRef.current;
+    const next = Math.max(300, Math.min(600, startWidthRef.current + delta));
+    setLeftWidth(next);
+  };
+  const onResizeEnd = () => {
+    draggingRef.current = false;
+    window.removeEventListener('mousemove', onResizing);
+    window.removeEventListener('mouseup', onResizeEnd);
+  };
 
   const filteredTypes = useMemo(() => {
     if (!lootTypes) return [];
@@ -128,8 +153,28 @@ export default function App() {
           <h1>DayZ Lootmaster</h1>
         </div>
         <div className="header-actions">
-          <button className="btn" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">Undo</button>
-          <button className="btn" onClick={redo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>
+          <button
+            className="btn"
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl/Cmd+Z)"
+            aria-label="Undo"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 7H5V4M5 7l4.5-4.5M5 7h8a6 6 0 1 1 0 12h-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <button
+            className="btn"
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+            aria-label="Redo"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M16 7h3V4M19 7l-4.5-4.5M19 7h-8a6 6 0 1 0 0 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
           <button className="btn primary" onClick={() => setShowExport(true)}>Export XML</button>
           <ThemeToggle />
         </div>
@@ -143,7 +188,7 @@ export default function App() {
       )}
 
       <main className="content two-pane">
-        <aside className="left-pane">
+        <aside className="left-pane" style={{ width: `${leftWidth}px` }}>
           <Filters
             definitions={definitions}
             groups={groups}
@@ -152,6 +197,16 @@ export default function App() {
             onManage={(kind) => { setManageKind(kind); setManageOpen(true); }}
           />
         </aside>
+        <div
+          className="pane-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={300}
+          aria-valuemax={600}
+          aria-valuenow={leftWidth}
+          onMouseDown={onResizeStart}
+          title="Drag to resize filters panel"
+        />
         <section className="right-pane">
           <div className="table-and-form">
             <TypesTable

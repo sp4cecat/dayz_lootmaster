@@ -197,7 +197,10 @@ h1 {
 }
 
 .left-pane {
-    flex: 0 0 360px;
+    flex: 0 0 auto;
+    width: 300px;              /* default width */
+    min-width: 300px;          /* clamp minimum */
+    max-width: 600px;          /* clamp maximum */
     border-right: 1px solid var(--border);
     padding: 12px;
     overflow: auto;
@@ -602,4 +605,15 @@ textarea.code-view {
 
 .spacer {
     flex: 1 1 auto;
+}
+
+/* Vertical resizer between left and right panes */
+.pane-resizer {
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: linear-gradient(to right, transparent, var(--border), transparent);
+    border-right: 1px solid var(--border);
+}
+.pane-resizer:hover {
+    background: linear-gradient(to right, transparent, color-mix(in oklab, var(--primary) 40%, var(--border)), transparent);
 }
