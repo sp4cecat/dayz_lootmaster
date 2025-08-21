@@ -326,6 +326,12 @@ legend {
     flex: 0 0 auto;
 }
 
+/* Virtualization spacers spanning all columns */
+.spacer-row {
+    grid-column: 1 / -1;
+    height: 0;
+}
+
 /* Name header: left label, right-aligned "Select all" link */
 .th.name {
   display: flex;

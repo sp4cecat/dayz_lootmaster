@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -17,6 +17,13 @@ import React, { useMemo, useRef, useState } from 'react';
  */
 export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {} }) {
   const [sort, setSort] = useState(/** @type {{key: null | 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: 'name', dir: 'asc' }));
+
+  // Virtualization state
+  const containerRef = useRef(/** @type {HTMLDivElement|null} */(null));
+  const [rowHeight, setRowHeight] = useState(36);
+  const [viewportHeight, setViewportHeight] = useState(400);
+  const [scrollTop, setScrollTop] = useState(0);
+  const overscan = 8;
 
   const rows = useMemo(() => {
     const arr = types.map(t => {
@@ -53,6 +60,40 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
     return arr;
   }, [types, unknowns, sort]);
+
+  // Measure viewport height and (approximate) row height
+  useEffect(() => {
+    const updateViewport = () => {
+      if (containerRef.current) {
+        setViewportHeight(containerRef.current.clientHeight);
+      }
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const firstRow = containerRef.current.querySelector('.tr');
+    if (firstRow instanceof HTMLElement) {
+      const h = firstRow.getBoundingClientRect().height;
+      if (h && Math.abs(h - rowHeight) > 1) setRowHeight(h);
+    }
+  }, [rows.length, condensedProp, rowHeight]);
+
+  const handleScroll = (e) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  };
+
+  // Compute visible window
+  const total = rows.length;
+  const visibleCount = Math.max(1, Math.ceil(viewportHeight / rowHeight) + overscan);
+  const startIndex = Math.max(0, Math.min(Math.max(0, total - visibleCount), Math.floor(scrollTop / rowHeight)));
+  const endIndex = Math.min(total, startIndex + visibleCount);
+  const topPad = startIndex * rowHeight;
+  const bottomPad = Math.max(0, (total - endIndex) * rowHeight);
+  const visibleRows = rows.slice(startIndex, endIndex);
 
   const handleSort = (key) => {
     setSort(prev => {
@@ -105,7 +146,11 @@ export default function TypesTable({ definitions, types, selection, setSelection
   const condensed = typeof condensedProp === 'boolean' ? condensedProp : (selection.size > 0);
 
   return (
-    <div className={`types-table ${condensed ? 'condensed' : ''}`}>
+    <div
+      className={`types-table ${condensed ? 'condensed' : ''}`}
+      ref={containerRef}
+      onScroll={handleScroll}
+    >
       <div className="table-header">
         <div
           className="th name sortable"
@@ -180,15 +225,20 @@ export default function TypesTable({ definitions, types, selection, setSelection
           </>
         )}
       </div>
+
+      {/* top spacer to preserve scroll height above visible window */}
+      <div className="spacer-row" style={{ height: `${topPad}px` }} />
+
       <div className="table-body" role="list">
-        {rows.map((t, i) => {
+        {visibleRows.map((t, i) => {
+          const globalIndex = startIndex + i;
           const selected = selection.has(t.name);
           return (
             <div
-              key={t.name}
+              key={`${t.name}-${globalIndex}`}
               role="listitem"
               className={`tr ${selected ? 'selected' : ''}`}
-              onClick={e => onRowClick(e, i, t.name)}
+              onClick={e => onRowClick(e, globalIndex, t.name)}
               title={t.hasUnknown ? 'Contains unknown entries' : undefined}
             >
               <div className="td name">
@@ -238,6 +288,9 @@ export default function TypesTable({ definitions, types, selection, setSelection
           );
         })}
       </div>
+
+      {/* bottom spacer to preserve scroll height below visible window */}
+      <div className="spacer-row" style={{ height: `${bottomPad}px` }} />
     </div>
   );
 }

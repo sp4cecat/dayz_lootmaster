@@ -195,6 +195,7 @@ export default function App() {
             filters={filters}
             onChange={setFilters}
             onManage={(kind) => { setManageKind(kind); setManageOpen(true); }}
+            matchingCount={filteredTypes.length}
           />
         </aside>
         <div

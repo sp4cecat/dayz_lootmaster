@@ -11,10 +11,11 @@ import React, { useMemo } from 'react';
  *  groups: string[],
  *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], groups: string[] },
  *  onChange: (next: any) => void,
- *  onManage: (kind: 'usage'|'value'|'tag') => void
+ *  onManage: (kind: 'usage'|'value'|'tag') => void,
+ *  matchingCount: number
  * }} props
  */
-export default function Filters({ definitions, groups, filters, onChange, onManage }) {
+export default function Filters({ definitions, groups, filters, onChange, onManage, matchingCount }) {
   const allCategoryOptions = useMemo(
     () => ['all', 'none', ...definitions.categories],
     [definitions.categories]
@@ -34,6 +35,12 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
     setField('usage', next);
   };
 
+  const toggleValue = (opt) => {
+    const curr = filters.value;
+    const next = curr.includes(opt) ? curr.filter(x => x !== opt) : [...curr, opt];
+    setField('value', next);
+  };
+
   const toggleGroup = (g) => {
     const curr = filters.groups;
     const next = curr.includes(g) ? curr.filter(x => x !== g) : [...curr, g];
@@ -49,6 +56,9 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
         <h2 className="panel-title">Filters</h2>
         <div className="spacer" />
         <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
+      </div>
+      <div className="filters-row" aria-live="polite">
+        <span>Matching {matchingCount} types</span>
       </div>
 
       <fieldset className="filters-group">
@@ -148,22 +158,19 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
             manage
           </button>
         </legend>
-        <div className="checkbox-grid">
+        <div className="chips selectable">
           {definitions.valueflags.map(opt => {
             const selected = filters.value.includes(opt);
             return (
-              <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={e => {
-                    const curr = filters.value;
-                    const next = e.target.checked ? [...curr, opt] : curr.filter(x => x !== opt);
-                    setField('value', next);
-                  }}
-                />
-                <span>{opt}</span>
-              </label>
+              <button
+                type="button"
+                key={opt}
+                className={`chip ${selected ? 'selected' : ''}`}
+                onClick={() => toggleValue(opt)}
+                aria-pressed={selected}
+              >
+                {opt}
+              </button>
             );
           })}
         </div>
