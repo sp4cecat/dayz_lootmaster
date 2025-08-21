@@ -159,7 +159,16 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </button>
         </legend>
         <div className="chips selectable">
-          {[...definitions.valueflags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(opt => {
+          {[...definitions.valueflags].sort((a, b) => {
+            const ma = /^tier\s*(\d+)$/i.exec(String(a).trim());
+            const mb = /^tier\s*(\d+)$/i.exec(String(b).trim());
+            if (ma && mb) {
+              const na = Number(ma[1]);
+              const nb = Number(mb[1]);
+              return na - nb;
+            }
+            return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+          }).map(opt => {
             const selected = filters.value.includes(opt);
             return (
               <button

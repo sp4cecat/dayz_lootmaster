@@ -17,11 +17,15 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
   const label = kind === 'usage' ? 'Usage' : kind === 'value' ? 'Value' : 'Tag';
   const [newEntry, setNewEntry] = useState('');
 
+  const isCapped = kind === 'usage' || kind === 'value';
+  const cap = 32;
+  const count = entries.length;
+
   const onRemoveClick = (entry) => {
-    const count = countRefs(kind, entry);
+    const refCount = countRefs(kind, entry);
     const proceed = window.confirm(
-      count > 0
-        ? `${count} type(s) currently reference "${entry}" in ${label.toLowerCase()}. Removing it will delete this value from those types. Do you want to proceed?`
+      refCount > 0
+        ? `${refCount} type(s) currently reference "${entry}" in ${label.toLowerCase()}. Removing it will delete this value from those types. Do you want to proceed?`
         : `Remove "${entry}" from ${label.toLowerCase()}?`
     );
     if (!proceed) return;
@@ -33,6 +37,10 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
     if (!v) return;
     if (entries.includes(v)) {
       window.alert(`"${v}" already exists in ${label.toLowerCase()}.`);
+      return;
+    }
+    if (isCapped && count >= cap) {
+      window.alert(`${label} has a maximum of ${cap} entries. Remove an entry before adding another.`);
       return;
     }
     addEntry(kind, v);
@@ -66,6 +74,17 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
               <button className="btn primary" type="button" onClick={onAdd}>Add</button>
             </div>
           </div>
+
+          {isCapped && count === cap && (
+            <div className="banner warn" role="status" aria-live="polite">
+              {label} is at the maximum of {cap} entries. Adding another will exceed the limit.
+            </div>
+          )}
+          {isCapped && count > cap && (
+            <div className="banner warn" role="status" aria-live="polite">
+              {label} exceeds the maximum of {cap} entries (currently {count}). Please remove entries.
+            </div>
+          )}
 
           {entries.length === 0 ? (
             <p className="muted">No entries.</p>
