@@ -370,6 +370,7 @@ legend {
     background: var(--bg-soft);
     border-bottom: 1px solid var(--border);
     font-weight: 600;
+    justify-content: center;
 }
 
 .th.sortable {
@@ -399,6 +400,7 @@ legend {
     background: var(--bg);
     display: flex;
     align-items: center;
+    justify-content: center;
 }
 
 .tr.selected > .td {
@@ -406,6 +408,7 @@ legend {
 }
 
 .td.name {
+    justify-content: flex-start;
     white-space: nowrap;
 }
 
