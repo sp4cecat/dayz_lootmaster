@@ -1,4 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
+import { formatLifetime } from '../utils/time.js';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -266,8 +267,10 @@ export default function TypesTable({ definitions, types, selection, setSelection
                   <div className="td group">{t.group || '—'}</div>
                   <div className="td nums">{t.nominal}</div>
                   <div className="td nums">{t.min}</div>
-                  <div className="td nums">{t.lifetime}</div>
-                  <div className="td nums">{t.restock}</div>
+                  <div className="td nums" title={`${t.lifetime} seconds`}>{formatLifetime(Number(t.lifetime))}</div>
+                  <div className="td nums" title={`${t.restock} seconds`}>
+                    {Number(t.restock) === 0 ? '0' : formatLifetime(Number(t.restock))}
+                  </div>
                   <div className="td category">
                     <span className={!definitions.categories.includes(t.category || '') ? 'warn-text' : ''}>
                       {t.category || '—'}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { validateTypeAgainstDefinitions } from '../utils/validation.js';
+import { formatLifetime } from '../utils/time.js';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -39,6 +40,37 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
   useEffect(() => setForm(initial), [initial]);
 
   const [errors, setErrors] = useState({});
+
+  // Lifetime popover state
+  const [showLifetimePicker, setShowLifetimePicker] = useState(false);
+  const [lp, setLp] = useState({ weeks: 0, days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  // Initialize picker values from current lifetime when opening
+  useEffect(() => {
+    if (showLifetimePicker) {
+      const secs = Number(form.lifetime || 0);
+      const u = splitSecondsToUnits(isFinite(secs) ? secs : 0);
+      setLp(u);
+    }
+  }, [showLifetimePicker, form.lifetime]);
+
+  // Refs for outside-click handling
+  const lifetimeRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  // Close the popover on outside click
+  useEffect(() => {
+    if (!showLifetimePicker) return;
+    const onDown = (e) => {
+      const pop = popoverRef.current;
+      const trigger = lifetimeRef.current;
+      if (pop && pop.contains(e.target)) return;
+      if (trigger && trigger.contains(e.target)) return;
+      setShowLifetimePicker(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showLifetimePicker]);
 
   const setNum = (key, strVal) => {
     const v = strVal === '' ? '' : Number(strVal);
@@ -94,14 +126,105 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
           </label>
 
           {['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].map(k => (
-            <label key={k} className={`control ${form[k] === null ? 'mixed' : ''}`}>
-              <span>{labelFor(k)}</span>
+            <label
+              key={k}
+              className={`control ${form[k] === null ? 'mixed' : ''}`}
+              style={{ position: 'relative' }}
+              ref={k === 'lifetime' ? lifetimeRef : null}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {labelFor(k)}
+                {k === 'lifetime' && (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(true); }}
+                    title="Open lifetime picker"
+                    aria-label="Open lifetime picker"
+                    style={{ textDecoration: 'none', padding: 0, display: 'inline-flex', alignItems: 'center' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M12 7v5l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                )}
+              </span>
               <input
                 type="number"
                 placeholder={form[k] === null ? 'Mixed' : ''}
                 value={form[k] === null ? '' : form[k]}
                 onChange={e => setNum(k, e.target.value)}
               />
+
+              {k === 'lifetime' && showLifetimePicker && (
+                <div
+                  className="lifetime-popover"
+                  role="dialog"
+                  aria-label="Lifetime picker"
+                  ref={popoverRef}
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    marginTop: 6,
+                    zIndex: 2,
+                    background: 'var(--bg)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: 10,
+                    boxShadow: '0 4px 18px rgba(0,0,0,.2)',
+                    minWidth: 260
+                  }}
+                >
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                    {[
+                      { key: 'weeks', label: 'Weeks' },
+                      { key: 'days', label: 'Days' },
+                      { key: 'hours', label: 'Hours' },
+                      { key: 'minutes', label: 'Minutes' },
+                      { key: 'seconds', label: 'Seconds' },
+                    ].map(f => (
+                      <label key={f.key} className="control" style={{ margin: 0 }}>
+                        <span style={{ fontSize: 11 }}>{f.label}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={lp[f.key]}
+                          onChange={e => setLp(prev => ({ ...prev, [f.key]: Math.max(0, Number(e.target.value || 0)) }))}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(false); }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const total = unitsToSeconds(lp);
+                        setNum('lifetime', String(total));
+                        setShowLifetimePicker(false);
+                        if (document && document.activeElement instanceof HTMLElement) {
+                          document.activeElement.blur();
+                        }
+                      }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {k === 'lifetime' && form[k] !== null && form[k] !== '' && Number.isFinite(Number(form[k])) && (
                 <div className="muted" style={{ fontSize: '11px' }}>
                   ≈ {formatLifetime(Number(form[k]))}
@@ -236,18 +359,17 @@ function applyToType(t, form, defs) {
   return next;
 }
 
+
 /**
- * Format lifetime (seconds) into: n week/s n day/s n hour/s n minute/s n second/s.
- * Includes only non-zero units; when all are zero returns "0 seconds".
+ * Split seconds into units for the lifetime picker.
  * @param {number} secs
- * @returns {string}
+ * @returns {{weeks:number,days:number,hours:number,minutes:number,seconds:number}}
  */
-function formatLifetime(secs) {
+function splitSecondsToUnits(secs) {
   let total = Math.max(0, Math.floor(secs));
   const WEEK = 7 * 24 * 60 * 60;
   const DAY = 24 * 60 * 60;
   const HOUR = 60 * 60;
-  const MINUTE = 60;
 
   const weeks = Math.floor(total / WEEK);
   total %= WEEK;
@@ -255,15 +377,22 @@ function formatLifetime(secs) {
   total %= DAY;
   const hours = Math.floor(total / HOUR);
   total %= HOUR;
-  const minutes = Math.floor(total / MINUTE);
-  const seconds = total % MINUTE;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return { weeks, days, hours, minutes, seconds };
+}
 
-  const s = (n, singular) => `${n} ${singular}${n === 1 ? '' : 's'}`;
-  const parts = [];
-  if (weeks) parts.push(s(weeks, 'week'));
-  if (days) parts.push(s(days, 'day'));
-  if (hours) parts.push(s(hours, 'hour'));
-  if (minutes) parts.push(s(minutes, 'minute'));
-  if (seconds) parts.push(s(seconds, 'second'));
-  return parts.length ? parts.join(' ') : '0 seconds';
+/**
+ * Convert unit parts to seconds for the lifetime picker.
+ * @param {{weeks:number,days:number,hours:number,minutes:number,seconds:number}} u
+ * @returns {number}
+ */
+function unitsToSeconds(u) {
+  return (
+    (u.weeks || 0) * 7 * 24 * 60 * 60 +
+    (u.days || 0) * 24 * 60 * 60 +
+    (u.hours || 0) * 60 * 60 +
+    (u.minutes || 0) * 60 +
+    (u.seconds || 0)
+  );
 }
