@@ -10,10 +10,11 @@ import React, { useMemo } from 'react';
  *  definitions: Definitions,
  *  groups: string[],
  *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], groups: string[] },
- *  onChange: (next: any) => void
+ *  onChange: (next: any) => void,
+ *  onManage: (kind: 'usage'|'value'|'tag') => void
  * }} props
  */
-export default function Filters({ definitions, groups, filters, onChange }) {
+export default function Filters({ definitions, groups, filters, onChange, onManage }) {
   const allCategoryOptions = useMemo(
     () => ['all', 'none', ...definitions.categories],
     [definitions.categories]
@@ -45,6 +46,7 @@ export default function Filters({ definitions, groups, filters, onChange }) {
   return (
     <div className="filters">
       <div className="filters-row">
+        <h2 className="panel-title">Filters</h2>
         <div className="spacer" />
         <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
       </div>
@@ -105,7 +107,17 @@ export default function Filters({ definitions, groups, filters, onChange }) {
       </div>
 
       <fieldset className="filters-group">
-        <legend>Usage</legend>
+        <legend>
+          Usage
+          <button
+            type="button"
+            className="link"
+            onClick={() => onManage('usage')}
+            style={{ float: 'right' }}
+          >
+            manage
+          </button>
+        </legend>
         <div className="chips selectable">
           {definitions.usageflags.map(opt => {
             const selected = filters.usage.includes(opt);
@@ -125,7 +137,17 @@ export default function Filters({ definitions, groups, filters, onChange }) {
       </fieldset>
 
       <fieldset className="filters-group">
-        <legend>Value</legend>
+        <legend>
+          Value
+          <button
+            type="button"
+            className="link"
+            onClick={() => onManage('value')}
+            style={{ float: 'right' }}
+          >
+            manage
+          </button>
+        </legend>
         <div className="checkbox-grid">
           {definitions.valueflags.map(opt => {
             const selected = filters.value.includes(opt);
@@ -148,7 +170,17 @@ export default function Filters({ definitions, groups, filters, onChange }) {
       </fieldset>
 
       <fieldset className="filters-group">
-        <legend>Tag</legend>
+        <legend>
+          Tag
+          <button
+            type="button"
+            className="link"
+            onClick={() => onManage('tag')}
+            style={{ float: 'right' }}
+          >
+            manage
+          </button>
+        </legend>
         <div className="checkbox-grid">
           {definitions.tags.map(opt => {
             const selected = filters.tag.includes(opt);

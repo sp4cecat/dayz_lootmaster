@@ -11,10 +11,12 @@ import React, { useMemo, useRef, useState } from 'react';
  *  selection: Set<string>,
  *  setSelection: (sel: Set<string>) => void,
  *  unknowns: { byType: Record<string, { category?: string[], usage: string[], value: string[], tag: string[] }>}
+ *  condensed?: boolean,
+ *  duplicatesByName?: Record<string, string[]>
  * }} props
  */
-export default function TypesTable({ definitions, types, selection, setSelection, unknowns }) {
-  const [sort, setSort] = useState(/** @type {{key: null | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: null, dir: 'asc' }));
+export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {} }) {
+  const [sort, setSort] = useState(/** @type {{key: null | 'name' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: 'name', dir: 'asc' }));
 
   const rows = useMemo(() => {
     const arr = types.map(t => {
@@ -27,6 +29,9 @@ export default function TypesTable({ definitions, types, selection, setSelection
       const getVal = (r) => {
         if (sort.key === 'usage' || sort.key === 'value') {
           return (r[sort.key] || []).join(',').toLowerCase();
+        }
+        if (sort.key === 'name') {
+          return String(r.name).toLowerCase();
         }
         return Number(r[sort.key] ?? 0);
       };
@@ -94,17 +99,22 @@ export default function TypesTable({ definitions, types, selection, setSelection
     setSelection(new Set(rows.map(r => r.name)));
   };
 
-  const condensed = selection.size > 0;
+  const condensed = typeof condensedProp === 'boolean' ? condensedProp : (selection.size > 0);
 
   return (
     <div className={`types-table ${condensed ? 'condensed' : ''}`}>
       <div className="table-header">
-        <div className="th name">
+        <div
+          className="th name sortable"
+          onClick={() => handleSort('name')}
+          title="Sort by name"
+        >
           <span>Name</span>
+          {sort.key === 'name' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
           <button
             type="button"
             className="link select-all-link"
-            onClick={selectAll}
+            onClick={(e) => { e.stopPropagation(); selectAll(); }}
             disabled={rows.length === 0}
             title="Select all filtered types"
           >
@@ -172,6 +182,21 @@ export default function TypesTable({ definitions, types, selection, setSelection
             >
               <div className="td name">
                 {t.name}
+                {(() => {
+                  const groups = duplicatesByName[t.name] || [];
+                  const others = groups.filter(g => g !== t.group);
+                  const count = others.length;
+                  return count > 0 ? (
+                    <span
+                      className="chip"
+                      title={`Also in: ${others.join(', ')}`}
+                      aria-label={`Also in ${others.join(', ')}`}
+                      style={{ marginLeft: '6px' }}
+                    >
+                      +{count}
+                    </span>
+                  ) : null;
+                })()}
                 {t.hasUnknown && <span className="chip warn">Unknown</span>}
               </div>
 

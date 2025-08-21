@@ -6,6 +6,8 @@ import EditForm from './components/EditForm.jsx';
 import ExportModal from './components/ExportModal.jsx';
 import UnknownEntriesModal from './components/UnknownEntriesModal.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
+import SummaryModal from './components/SummaryModal.jsx';
+import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import { generateTypesXml } from './utils/xml.js';
 
 /**
@@ -33,10 +35,17 @@ export default function App() {
     canRedo,
     unknowns,
     resolveUnknowns,
-    groups
+      summary,
+      summaryOpen,
+      closeSummary,
+    groups,
+    duplicatesByName,
+    manage
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
 
   const filteredTypes = useMemo(() => {
     if (!lootTypes) return [];
@@ -60,8 +69,8 @@ export default function App() {
       if (namePattern && !namePattern.test(t.name)) return false;
       if (usage.length && !usage.every(u => t.usage.includes(u))) return false;
       if (value.length && !value.every(v => t.value.includes(v))) return false;
-      if (tag.length && !tag.every(g => t.tag.includes(g))) return false;
-      return true;
+      return !(tag.length && !tag.every(g => t.tag.includes(g)));
+
     });
   }, [lootTypes, filters]);
 
@@ -89,6 +98,8 @@ export default function App() {
     setLootTypes(newTypes, { persist: true });
     pushHistory(newTypes);
     setEditKey(k => k + 1);
+    // Close the edit form by clearing the selection after persisting
+    setSelection(new Set());
   };
 
   if (loading) {
@@ -138,6 +149,7 @@ export default function App() {
             groups={groups}
             filters={filters}
             onChange={setFilters}
+            onManage={(kind) => { setManageKind(kind); setManageOpen(true); }}
           />
         </aside>
         <section className="right-pane">
@@ -148,6 +160,8 @@ export default function App() {
               selection={selection}
               setSelection={setSelection}
               unknowns={unknowns}
+              condensed={selectedTypes.length > 0}
+              duplicatesByName={duplicatesByName}
             />
             {selectedTypes.length > 0 && (
               <div className="edit-form-container" key={editKey}>
@@ -171,6 +185,24 @@ export default function App() {
           unknowns={unknowns}
           onApply={resolveUnknowns.apply}
           onClose={resolveUnknowns.close}
+        />
+      )}
+      {summaryOpen && summary && (
+        <SummaryModal summary={summary} onClose={closeSummary} />
+      )}
+      {manageOpen && manageKind && (
+        <ManageDefinitionsModal
+          kind={manageKind}
+          entries={
+            manageKind === 'usage'
+              ? definitions.usageflags
+              : manageKind === 'value'
+              ? definitions.valueflags
+              : definitions.tags
+          }
+          countRefs={manage.countRefs}
+          removeEntry={(k, entry) => manage.removeEntry(k, entry)}
+          onClose={() => { setManageOpen(false); setManageKind(null); }}
         />
       )}
     </div>

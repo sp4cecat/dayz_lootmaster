@@ -15,6 +15,7 @@ import { validateUnknowns } from '../utils/validation.js';
 
 const STORAGE_KEY_GROUPS = 'dayz-types-editor:lootGroups';
 const LEGACY_STORAGE_KEY_TYPES = 'dayz-types-editor:lootTypes';
+const STORAGE_KEY_SUMMARY_SHOWN = 'dayz-types-editor:summaryShown';
 
 /**
  * Hook to load limits and grouped types, manage filters/selection, persistence, history, and unknown entries flow.
@@ -35,6 +36,18 @@ export function useLootData() {
   const historyRef = useRef(createHistory([]));
 
   const [unknowns, setUnknowns] = useState(makeUnknownsEmpty());
+
+  /**
+   * Summary data computed after initial load.
+   * Contains counts of types and definition entries, plus optional group breakdown.
+   * @type {[{typesTotal: number, definitions: {categories: number, usageflags: number, valueflags: number, tags: number}, groups?: { name: string, count: number }[] } | null, (next: any) => void]}
+   */
+  const [loadSummary, setLoadSummary] = useState(/** @type {{typesTotal: number, definitions: {categories: number, usageflags: number, valueflags: number, tags: number}, groups?: { name: string, count: number }[] }|null} */(null));
+  const [summaryOpen, setSummaryOpen] = useState(false);
+
+  // Map type name -> array of groups the type appears in
+  const [duplicatesByName, setDuplicatesByName] = useState(/** @type {Record<string, string[]>} */({}));
+
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
     if (!lootGroups) return;
@@ -59,6 +72,8 @@ export function useLootData() {
     );
 
     setLootGroups(updatedGroups);
+    // Update duplicates map after applying changes
+    setDuplicatesByName(computeDuplicatesMap(updatedGroups));
 
     const merged = mergeGroups(updatedGroups);
     _setLootTypes(merged);
@@ -86,6 +101,7 @@ export function useLootData() {
         const defs = parseLimitsXml(limitsText);
 
         // Try grouped from storage
+        let parsedFromSamples = false;
         /** @type {TypeGroups|null} */
         let groups = loadFromStorage(STORAGE_KEY_GROUPS) || null;
 
@@ -114,6 +130,8 @@ export function useLootData() {
             const econText = await econRes.text();
             const { order, filesByGroup } = parseEconomyCoreXml(econText);
 
+            console.log(econText,  order, filesByGroup)
+
             for (const group of order) {
               const files = filesByGroup[group] || [];
               /** @type {Type[]} */
@@ -135,17 +153,39 @@ export function useLootData() {
           // Persist initial build
           saveToStorage(STORAGE_KEY_GROUPS, assembled);
           groups = assembled;
+          parsedFromSamples = true;
         }
 
         if (!mounted) return;
 
         setDefinitions(defs);
         setLootGroups(groups);
+        setDuplicatesByName(computeDuplicatesMap(groups));
 
         const merged = mergeGroups(groups);
         _setLootTypes(merged);
         setUnknowns(validateUnknowns(merged, defs));
         historyRef.current = createHistory(merged);
+
+        // Prepare and show one-time summary of loaded data (only on first parse-and-load)
+        const groupOrder = Object.keys(groups).sort((a, b) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
+        const summaryPayload = {
+          typesTotal: merged.length,
+          definitions: {
+            categories: defs.categories.length,
+            usageflags: defs.usageflags.length,
+            valueflags: defs.valueflags.length,
+            tags: defs.tags.length,
+          },
+          groups: groupOrder.map(name => ({ name, count: (groups[name] || []).length }))
+        };
+        const alreadyShown = !!loadFromStorage(STORAGE_KEY_SUMMARY_SHOWN);
+        if (parsedFromSamples && !alreadyShown) {
+          setLoadSummary(summaryPayload);
+          setSummaryOpen(true);
+          saveToStorage(STORAGE_KEY_SUMMARY_SHOWN, true);
+        }
+
         setLoading(false);
       } catch (e) {
         if (!mounted) return;
@@ -176,6 +216,59 @@ export function useLootData() {
 
   const canUndo = historyRef.current.canUndo;
   const canRedo = historyRef.current.canRedo;
+
+  /**
+   * Count how many types reference a given entry by kind.
+   * @param {'usage'|'value'|'tag'} kind
+   * @param {string} entry
+   * @returns {number}
+   */
+  const countDefinitionRefs = useCallback((kind, entry) => {
+    const arr = lootTypes || [];
+    if (kind === 'usage') return arr.filter(t => t.usage.includes(entry)).length;
+    if (kind === 'value') return arr.filter(t => t.value.includes(entry)).length;
+    return arr.filter(t => t.tag.includes(entry)).length;
+  }, [lootTypes]);
+
+  /**
+   * Remove an entry from definitions and from all types; persist and push history.
+   * @param {'usage'|'value'|'tag'} kind
+   * @param {string} entry
+   */
+  const removeDefinitionEntry = useCallback((kind, entry) => {
+    if (!lootGroups) return;
+
+    // Update groups by removing the entry from all types in all groups
+    /** @type {TypeGroups} */
+    const nextGroups = Object.fromEntries(
+      Object.entries(lootGroups).map(([g, arr]) => {
+        const cleaned = arr.map(t => {
+          const next = { ...t };
+          if (kind === 'usage') next.usage = next.usage.filter(x => x !== entry);
+          else if (kind === 'value') next.value = next.value.filter(x => x !== entry);
+          else next.tag = next.tag.filter(x => x !== entry);
+          return next;
+        });
+        return [g, cleaned];
+      })
+    );
+
+    // Persist and refresh derived state
+    setLootGroups(nextGroups);
+    saveToStorage(STORAGE_KEY_GROUPS, nextGroups);
+    const merged = mergeGroups(nextGroups);
+    _setLootTypes(merged);
+    if (definitions) setUnknowns(validateUnknowns(merged, definitions));
+    historyRef.current.push(merged);
+
+    // Update definitions to remove the entry
+    setDefinitions(d => {
+      if (!d) return d;
+      if (kind === 'usage') return { ...d, usageflags: d.usageflags.filter(x => x !== entry) };
+      if (kind === 'value') return { ...d, valueflags: d.valueflags.filter(x => x !== entry) };
+      return { ...d, tags: d.tags.filter(x => x !== entry) };
+    });
+  }, [lootGroups, definitions]);
 
   // Unknowns resolution modal control and logic
   const [unknownsOpen, setUnknownsOpen] = useState(false);
@@ -273,27 +366,44 @@ export function useLootData() {
     canRedo: canRedo(),
     unknowns,
     resolveUnknowns,
-    groups: groupsList
+    groups: groupsList,
+    duplicatesByName,
+    // Summary modal
+    summary: loadSummary,
+    summaryOpen,
+    closeSummary: () => setSummaryOpen(false),
+    // Management helpers
+    manage: {
+      countRefs: countDefinitionRefs,
+      removeEntry: removeDefinitionEntry
+    }
   };
 }
 
 /**
- * Merge grouped types to a single array adding group metadata,
- * preserving the precedence order: vanilla first, then other groups in object order.
+ * Merge grouped types to a single array adding group metadata.
+ * If multiple groups contain a type with the same name, the last loaded one wins:
+ * vanilla is loaded first, then additional groups in order from cfgeconomycore.
  * @param {TypeGroups} groups
  * @returns {(Type & {group: string})[]}
  */
 function mergeGroups(groups) {
   const entries = Object.entries(groups);
   const ordered = entries.sort(([a], [b]) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
-  /** @type {(Type & {group: string})[]} */
-  const merged = [];
+
+  // Use a map to ensure last definition for a given name is kept
+  /** @type {Map<string, Type & {group: string}>} */
+  const byName = new Map();
+
   for (const [group, arr] of ordered) {
     for (const t of arr) {
-      merged.push({ ...t, group });
+      // Later groups overwrite earlier ones
+      byName.set(t.name, { ...t, group });
     }
   }
-  return merged;
+
+  // Note: Map preserves insertion order; sorting UI will handle user-facing order
+  return Array.from(byName.values());
 }
 
 function uniq(arr) {
@@ -306,4 +416,26 @@ function makeUnknownsEmpty() {
     sets: { usage: new Set(), value: new Set(), tag: new Set(), category: new Set() },
     byType: {}
   };
+}
+
+/**
+ * Compute duplicates map: type name -> list of groups the type appears in.
+ * @param {TypeGroups} groups
+ * @returns {Record<string, string[]>}
+ */
+function computeDuplicatesMap(groups) {
+  /** @type {Map<string, Set<string>>} */
+  const map = new Map();
+  for (const [group, arr] of Object.entries(groups)) {
+    for (const t of arr) {
+      if (!map.has(t.name)) map.set(t.name, new Set());
+      map.get(t.name).add(group);
+    }
+  }
+  /** @type {Record<string, string[]>} */
+  const out = {};
+  for (const [name, set] of map.entries()) {
+    out[name] = Array.from(set);
+  }
+  return out;
 }

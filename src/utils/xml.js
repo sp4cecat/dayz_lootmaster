@@ -31,7 +31,7 @@
  * @returns {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}}
  */
 export function parseLimitsXml(xml) {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const doc = safeParseXml(xml);
 
   const categories = readNamedChildren(doc, 'categories', ['category']);
   const usageflags = readNamedChildren(doc, 'usageflags', ['flag', 'usage']);
@@ -75,9 +75,10 @@ export function parseTypesXml(xml) {
     const categoryEl = node.getElementsByTagName('category')[0];
     const category = categoryEl?.getAttribute('name') || undefined;
 
-    const usage = Array.from(node.getElementsByTagName('usage')).map(u => u.getAttribute('name')).filter(Boolean);
-    const value = Array.from(node.getElementsByTagName('value')).map(u => u.getAttribute('name')).filter(Boolean);
-    const tag = Array.from(node.getElementsByTagName('tag')).map(u => u.getAttribute('name')).filter(Boolean);
+    // Deduplicate entries within usage/value/tag
+    const usage = uniq(Array.from(node.getElementsByTagName('usage')).map(u => u.getAttribute('name')).filter(Boolean));
+    const value = uniq(Array.from(node.getElementsByTagName('value')).map(u => u.getAttribute('name')).filter(Boolean));
+    const tag = uniq(Array.from(node.getElementsByTagName('tag')).map(u => u.getAttribute('name')).filter(Boolean));
 
     return {
       name,
@@ -103,8 +104,10 @@ export function parseTypesXml(xml) {
  * @returns {{ order: string[], filesByGroup: Record<string, string[]> }}
  */
 export function parseEconomyCoreXml(xml) {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const doc = safeParseXml(xml);
   const ceNodes = Array.from(doc.getElementsByTagName('ce'));
+
+  console.log("CE Nodes", doc, ceNodes)
 
   /** @type {string[]} */
   const order = [];
@@ -113,12 +116,18 @@ export function parseEconomyCoreXml(xml) {
 
   for (const ce of ceNodes) {
     const folder = ce.getAttribute('folder');
+    console.log("Folder", folder)
     if (!folder) continue;
     const parts = folder.split('/').filter(Boolean);
     const group = parts[parts.length - 1] || folder;
 
+
+      console.log("Parts/group",parts, group)
+
     const typeFileNodes = Array.from(ce.getElementsByTagName('file'))
       .filter(f => (f.getAttribute('type') || '').toLowerCase() === 'types');
+
+    console.log("NODES", typeFileNodes)
 
     const files = typeFileNodes
       .map(f => f.getAttribute('name'))
@@ -189,4 +198,34 @@ function escapeAttr(s) {
 
 function uniq(arr) {
   return Array.from(new Set(arr));
+}
+
+/**
+ * Parse XML resiliently by retrying without XML declaration if a parser error occurs.
+ * Throws if the document still fails to parse.
+ * @param {string} xml
+ * @returns {Document}
+ */
+function safeParseXml(xml) {
+  let doc = new DOMParser().parseFromString(xml, 'application/xml');
+  if (hasParserError(doc)) {
+    // Strip XML declaration (prolog) and retry
+    const cleaned = xml.replace(/^\s*<\?xml[^>]*\?>\s*/i, '');
+    doc = new DOMParser().parseFromString(cleaned, 'application/xml');
+    if (hasParserError(doc)) {
+      // Provide a terse error to callers; upstream catches and handles
+      throw new Error('Failed to parse XML');
+    }
+  }
+  return doc;
+}
+
+/**
+ * Detects if a parsed Document contains a parsererror element.
+ * @param {Document} doc
+ * @returns {boolean}
+ */
+function hasParserError(doc) {
+  const errs = doc.getElementsByTagName('parsererror');
+  return errs && errs.length > 0;
 }
