@@ -169,6 +169,34 @@ export function generateTypesXml(types) {
 }
 
 /**
+ * Generate cfglimitsdefinition.xml from in-memory definitions.
+ * Uses <flag> elements for usage/value and <category>/<tag> for others.
+ * @param {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}} defs
+ * @returns {string}
+ */
+export function generateLimitsXml(defs) {
+  const esc = (s) => escapeAttr(s);
+  const lines = [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<limitsdefinition>',
+    '  <categories>',
+    ...defs.categories.map(c => `    <category name="${esc(c)}"/>`),
+    '  </categories>',
+    '  <usageflags>',
+    ...defs.usageflags.map(u => `    <flag name="${esc(u)}"/>`),
+    '  </usageflags>',
+    '  <valueflags>',
+    ...defs.valueflags.map(v => `    <flag name="${esc(v)}"/>`),
+    '  </valueflags>',
+    '  <tags>',
+    ...defs.tags.map(t => `    <tag name="${esc(t)}"/>`),
+    '  </tags>',
+    '</limitsdefinition>'
+  ];
+  return lines.join('\n');
+}
+
+/**
  * Helper to read entries with "name" attribute under a parent element.
  * @param {Document} doc
  * @param {string} parentTag

@@ -609,6 +609,20 @@ textarea.code-view {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
+.code-block {
+    flex: 1 1 auto;
+    min-height: 200px;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    white-space: pre;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    line-height: 1.4;
+}
+
 .spacer {
     flex: 1 1 auto;
 }

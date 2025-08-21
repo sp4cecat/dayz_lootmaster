@@ -380,6 +380,16 @@ export function useLootData() {
     return vanillaFirst;
   }, [lootGroups]);
 
+  /**
+   * Get types array for a given group.
+   * @param {string} group
+   * @returns {Type[]}
+   */
+  const getGroupTypes = useCallback((group) => {
+    if (!lootGroups) return [];
+    return lootGroups[group] || [];
+  }, [lootGroups]);
+
   return {
     loading,
     error,
@@ -398,6 +408,7 @@ export function useLootData() {
     unknowns,
     resolveUnknowns,
     groups: groupsList,
+    getGroupTypes,
     duplicatesByName,
     // Summary modal
     summary: loadSummary,

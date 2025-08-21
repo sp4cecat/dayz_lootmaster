@@ -40,7 +40,8 @@ export default function App() {
       closeSummary,
     groups,
     duplicatesByName,
-    manage
+    manage,
+    getGroupTypes
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
@@ -144,8 +145,6 @@ export default function App() {
   }
   if (!definitions || !lootTypes) return null;
 
-  const xmlString = generateTypesXml(lootTypes);
-
   return (
     <div className="app">
       <header className="app-header">
@@ -234,7 +233,13 @@ export default function App() {
       </main>
 
       {showExport && (
-        <ExportModal xml={xmlString} onClose={() => setShowExport(false)} />
+        <ExportModal
+          groups={groups}
+          defaultGroup={groups[0] || 'vanilla'}
+          getGroupTypes={getGroupTypes}
+          definitions={definitions}
+          onClose={() => setShowExport(false)}
+        />
       )}
       {resolveUnknowns.isOpen && (
         <UnknownEntriesModal
