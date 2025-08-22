@@ -70,6 +70,10 @@ export function useLootData() {
       nextMerged.map(t => [`${t.group}:${t.file}:${t.name}`, t])
     );
 
+    // Track vanilla overrides to upsert into vanilla_overrides
+    /** @type {Map<string, Type>} */
+    const vanillaOverrides = new Map();
+
     // Rebuild file-level structure by replacing types where updated
     /** @type {TypeFiles} */
     const updatedFiles = Object.fromEntries(
@@ -80,6 +84,17 @@ export function useLootData() {
               const upd = updatedIndex.get(`${group}:${file}:${orig.name}`);
               if (upd) {
                 const { group: _g, file: _f, ...rest } = upd;
+                // If editing a vanilla entry, do not modify vanilla; instead, stage an override
+                if (group === 'vanilla') {
+                  const candidate = { ...orig, ...rest };
+                  const changed = JSON.stringify(normalizeType(candidate)) !== JSON.stringify(normalizeType(orig));
+                  if (changed) {
+                    vanillaOverrides.set(orig.name, candidate);
+                  }
+                  // keep original vanilla record unchanged
+                  return orig;
+                }
+                // Non-vanilla groups: apply replacement as usual
                 return { ...orig, ...rest };
               }
               return orig;
@@ -90,6 +105,31 @@ export function useLootData() {
         return [group, nextFiles];
       })
     );
+
+    // Apply/upsert vanilla overrides into group 'vanilla_overrides' under file 'types_overrides'
+    if (vanillaOverrides.size > 0) {
+      if (!updatedFiles['vanilla_overrides']) {
+        updatedFiles['vanilla_overrides'] = {};
+      }
+      const targetFile = 'types_overrides';
+      // Remove any previous overrides for the same names across all files in vanilla_overrides
+      const namesToReplace = new Set(vanillaOverrides.keys());
+      for (const [f, arr] of Object.entries(updatedFiles['vanilla_overrides'])) {
+        updatedFiles['vanilla_overrides'][f] = arr.filter(t => !namesToReplace.has(t.name));
+      }
+      // Ensure target file exists
+      if (!updatedFiles['vanilla_overrides'][targetFile]) {
+        updatedFiles['vanilla_overrides'][targetFile] = [];
+      }
+      // Upsert new/updated overrides
+      const bucket = updatedFiles['vanilla_overrides'][targetFile];
+      for (const [, t] of vanillaOverrides) {
+        // Replace if already present in target bucket
+        const idx = bucket.findIndex(x => x.name === t.name);
+        if (idx >= 0) bucket[idx] = t;
+        else bucket.push(t);
+      }
+    }
 
     // Compute changes vs previous lootFiles
     try {
