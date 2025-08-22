@@ -9,24 +9,32 @@ import React, { useMemo } from 'react';
  * @param {{
  *  definitions: Definitions,
  *  groups: string[],
- *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], groups: string[] },
+ *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], flags: string[], groups: string[] },
  *  onChange: (next: any) => void,
  *  onManage: (kind: 'usage'|'value'|'tag') => void,
- *  matchingCount: number
+ *  matchingCount: number,
+ *  flagOptions: string[]
  * }} props
  */
-export default function Filters({ definitions, groups, filters, onChange, onManage, matchingCount }) {
+export default function Filters({ definitions, groups, filters, onChange, onManage, matchingCount, flagOptions = [] }) {
   const allCategoryOptions = useMemo(
     () => ['all', 'none', ...definitions.categories],
     [definitions.categories]
   );
+
+  // Ensure flags list is available even if not provided from parent
+  const flagsList = useMemo(() => {
+    if (Array.isArray(flagOptions) && flagOptions.length > 0) return flagOptions;
+    // Fallback to known flags
+    return ['count_in_cargo', 'count_in_hoarder', 'count_in_map', 'count_in_player', 'crafted', 'deloot'];
+  }, [flagOptions]);
 
   const setField = (key, value) => {
     onChange({ ...filters, [key]: value });
   };
 
   const clearFilters = () => {
-    onChange({ category: 'all', name: '', usage: [], value: [], tag: [], groups: [] });
+    onChange({ category: 'all', name: '', usage: [], value: [], tag: [], flags: [], groups: [] });
   };
 
   const toggleUsage = (opt) => {
@@ -59,6 +67,13 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
 
   const selectedGroupsSet = new Set(filters.groups);
   const allGroupsSelected = filters.groups.length === 0;
+
+  // Toggle a flag key on/off in filters.flags
+  const toggleFlag = (key) => {
+    const curr = Array.isArray(filters.flags) ? filters.flags : [];
+    const next = curr.includes(key) ? curr.filter(x => x !== key) : [...curr, key];
+    setField('flags', next);
+  };
 
   return (
     <div className="filters">
@@ -205,6 +220,27 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
                 aria-pressed={selected}
               >
                 {opt}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="filters-group">
+        <legend>Flags</legend>
+        <div className="chips selectable">
+          {flagsList.map(key => {
+            const selected = (filters.flags || []).includes(key);
+            return (
+              <button
+                type="button"
+                key={key}
+                className={`chip ${selected ? 'selected' : ''}`}
+                onClick={() => toggleFlag(key)}
+                aria-pressed={selected}
+                title={key}
+              >
+                {key}
               </button>
             );
           })}

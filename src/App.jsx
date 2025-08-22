@@ -138,9 +138,20 @@ export default function App() {
     window.removeEventListener('mouseup', onResizeEnd);
   };
 
+  // Available flag options derived from current types
+  const flagOptions = useMemo(() => {
+    if (!lootTypes) return [];
+    const set = new Set();
+    for (const t of lootTypes) {
+      if (!t.flags) continue;
+      Object.keys(t.flags).forEach(k => set.add(k));
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [lootTypes]);
+
   const filteredTypes = useMemo(() => {
     if (!lootTypes) return [];
-    const { category, name, usage, value, tag, groups: selectedGroups } = filters;
+    const { category, name, usage, value, tag, flags, groups: selectedGroups } = filters;
     const selectedGroupsSet = new Set(selectedGroups);
     const namePattern = name?.trim() ? wildcardToRegExp(name.trim()) : null;
 
@@ -177,10 +188,26 @@ export default function App() {
           }
         }
 
+            // Flags filter: require all selected flags to be truthy
+            if (flags && flags.length) {
+              const f = t.flags || {};
+              if (!flags.every(key => !!f[key])) return false;
+            }
+
       return !(tag.length && !tag.every(g => t.tag.includes(g)));
 
     });
   }, [lootTypes, filters]);
+
+  // Count types with no flags set (to show a warning banner)
+  const noFlagsCount = useMemo(() => {
+    if (!lootTypes) return 0;
+    return lootTypes.filter(t => {
+      const f = t.flags || {};
+      const values = Object.values(f);
+      return values.length === 0 || values.every(v => !v);
+    }).length;
+  }, [lootTypes]);
 
   const selectedTypes = useMemo(() => {
     if (!lootTypes) return [];
@@ -317,6 +344,11 @@ export default function App() {
           <button className="link" onClick={() => resolveUnknowns.open()}>Review</button>
         </div>
       )}
+      {noFlagsCount > 0 && (
+        <div className="banner warn" role="status" aria-live="polite">
+          {noFlagsCount} type{noFlagsCount === 1 ? '' : 's'} have no flags set.
+        </div>
+      )}
 
       <main className="content two-pane">
         <aside className="left-pane" style={{ width: `${leftWidth}px` }}>
@@ -327,6 +359,7 @@ export default function App() {
             onChange={setFilters}
             onManage={(kind) => { setManageKind(kind); setManageOpen(true); }}
             matchingCount={filteredTypes.length}
+            flagOptions={flagOptions}
           />
         </aside>
         <div
