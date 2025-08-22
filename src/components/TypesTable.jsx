@@ -223,7 +223,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
               <span>Value</span>
               {sort.key === 'value' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
             </div>
-            <div className="th tag">Tag</div>
+            <div className="th flags">Flags</div>
           </>
         )}
       </div>
@@ -288,8 +288,8 @@ export default function TypesTable({ definitions, types, selection, setSelection
                   <div className="td value">
                     <GroupChips values={t.value} unknown={(unknowns.byType[t.name]?.value) || []} />
                   </div>
-                  <div className="td tag">
-                    <GroupChips values={t.tag} unknown={(unknowns.byType[t.name]?.tag) || []} />
+                  <div className="td flags">
+                    <GroupChips values={getFlagChipLabels(t.flags)} unknown={[]} />
                   </div>
                 </>
               )}
@@ -314,4 +314,16 @@ function GroupChips({ label, values, unknown }) {
       {values.length === 0 && <span className="muted">—</span>}
     </div>
   );
+}
+
+/**
+ * Compute flag labels for chips: include only truthy flags,
+ * and for keys starting with 'count_in_' remove the 'count_' prefix for display.
+ * @param {{[k:string]: boolean}} flags
+ * @returns {string[]}
+ */
+function getFlagChipLabels(flags) {
+  if (!flags) return [];
+  const entries = Object.entries(flags).filter(([, v]) => !!v).map(([k]) => k);
+  return entries.map(k => (k.startsWith('count_in_') ? k.replace(/^count_/, '') : k));
 }
