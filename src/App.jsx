@@ -46,7 +46,9 @@ export default function App() {
     getGroupTypes,
     getGroupFiles,
     storageDirty,
-    storageDiff
+    storageDiff,
+    setChangeEditorID,
+    reloadFromFiles
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
@@ -103,7 +105,13 @@ export default function App() {
     try { localStorage.removeItem(EDITOR_ID_SELECTED); } catch { /* ignore */ }
     setProfileOpen(false);
     setEditorID(null);
+    setChangeEditorID('');
   };
+
+  // Keep hook aware of current editorID
+  React.useEffect(() => {
+    if (editorID) setChangeEditorID(editorID);
+  }, [editorID, setChangeEditorID]);
 
   // Resizable left pane (filters)
   const [leftWidth, setLeftWidth] = useState(300); // default 300px
@@ -247,6 +255,21 @@ export default function App() {
             </svg>
           </button>
           <button className="btn primary" onClick={() => setShowExport(true)}>Export XML</button>
+          <button
+            className="btn"
+            onClick={() => {
+              const ok = window.confirm('Warning: All data will be reloaded from files and any existing changes will be lost. This will reset in-memory state, IndexedDB (including edit logs), and re-parse from /samples.\n\nDo you want to continue?');
+              if (ok) reloadFromFiles();
+            }}
+            title="Reload from Files"
+            aria-label="Reload from Files"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginRight: 6 }}>
+              <path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M20 10a8 8 0 0 0-13.66-5.66L4 6M4 14a8 8 0 0 0 13.66 5.66L20 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Reload from Files
+          </button>
           <ThemeToggle />
           <div className="profile" ref={profileRef}>
             <button

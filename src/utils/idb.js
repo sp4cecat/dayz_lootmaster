@@ -1,7 +1,9 @@
 /**
  * Minimal IndexedDB wrapper for storing parsed types per group and file.
  * Database: dayz-types-editor
- * Object store: lootTypes (keyPath: "id"), records: { id: string, group: string, file: string, types: any[] }
+ * Object stores:
+ *  - lootTypes (keyPath: "id"), records: { id: string, group: string, file: string, types: any[] }
+ *  - changeLog (autoIncrement), records: { id:number, ts:number, editorID:string, group:string, file:string, typeName:string, action:'added'|'modified'|'removed' }
  */
 
 /**
@@ -10,7 +12,7 @@
  */
 export function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('dayz-types-editor', 1);
+    const req = indexedDB.open('dayz-types-editor', 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('lootTypes')) {
@@ -18,9 +20,31 @@ export function openDB() {
         store.createIndex('group', 'group', { unique: false });
         store.createIndex('file', 'file', { unique: false });
       }
+      if (!db.objectStoreNames.contains('changeLog')) {
+        db.createObjectStore('changeLog', { keyPath: 'id', autoIncrement: true });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Append multiple change log entries.
+ * @param {{ts:number, editorID:string, group:string, file:string, typeName:string, action:'added'|'modified'|'removed'}[]} entries
+ */
+export async function appendChangeLogs(entries) {
+  if (!entries || entries.length === 0) return;
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('changeLog', 'readwrite');
+    const store = tx.objectStore('changeLog');
+    for (const e of entries) {
+      store.add(e);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 
@@ -99,4 +123,42 @@ export async function loadAllGrouped() {
     out[r.group][r.file] = r.types || [];
   }
   return out;
+}
+
+/**
+ * Clear all change log records.
+ */
+export async function clearChangeLog() {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('changeLog', 'readwrite');
+    const store = tx.objectStore('changeLog');
+    store.clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/**
+ * Get change logs for a given group and optional set of files.
+ * @param {string} group
+ * @param {Set<string>=} filesLimit Set of file base names (without .xml) to include
+ * @returns {Promise<{ts:number, editorID:string, group:string, file:string, typeName:string, action:'added'|'modified'|'removed'}[]>}
+ */
+export async function getChangeLogsForGroup(group, filesLimit) {
+  const db = await openDB();
+  return await new Promise((resolve, reject) => {
+    const tx = db.transaction('changeLog', 'readonly');
+    const store = tx.objectStore('changeLog');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = req.result || [];
+      const filtered = all.filter(e => e.group === group && (!filesLimit || filesLimit.has(e.file)));
+      // sort by timestamp ascending
+      filtered.sort((a, b) => a.ts - b.ts);
+      resolve(filtered);
+    };
+    req.onerror = () => reject(req.error);
+  });
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { generateLimitsXml, generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
 import { createZip } from '../utils/zip.js';
+import { getChangeLogsForGroup } from '../utils/idb.js';
 
 /**
  * Export modal allowing the user to export:
@@ -77,7 +78,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     await navigator.clipboard.writeText(xml);
   };
 
-  const onDownloadZip = () => {
+  const onDownloadZip = async () => {
     if (!zipAvailable || typesFormat !== 'zip') return;
     // Build per-file XMLs with original filenames, only for changed files
     const encoder = new TextEncoder();
@@ -88,6 +89,66 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
         const content = generateTypesXml(types);
         return { name, data: encoder.encode(content) };
       });
+
+    // Build changes text file for only the changed files
+    try {
+      const logs = await getChangeLogsForGroup(group, changedFilesSet);
+      const lines = [];
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yy = String(now.getFullYear()).slice(-2);
+      const hh = String(now.getHours());
+      const mi = String(now.getMinutes());
+      const ss = String(now.getSeconds());
+      const changesFileName = `changes_${dd}-${mm}-${yy}_${hh}-${mi}-${ss}.txt`;
+
+      lines.push(`Change log for group "${group}"`);
+      lines.push(`Generated at ${now.toISOString()}`);
+      lines.push('');
+      if (logs.length === 0) {
+        lines.push('No changes recorded for the selected files.');
+      } else {
+        // Group by file
+        const byFile = new Map();
+        for (const e of logs) {
+          if (!byFile.has(e.file)) byFile.set(e.file, []);
+          byFile.get(e.file).push(e);
+        }
+        const sortedFiles = Array.from(byFile.keys()).sort((a, b) => a.localeCompare(b));
+        for (const f of sortedFiles) {
+          lines.push(`File: ${f}.xml`);
+          const arr = byFile.get(f);
+          for (const e of arr) {
+            const ts = new Date(e.ts);
+            const tdd = String(ts.getDate()).padStart(2, '0');
+            const tmm = String(ts.getMonth() + 1).padStart(2, '0');
+            const tyy = String(ts.getFullYear()).slice(-2);
+            const th = String(ts.getHours());
+            const tm = String(ts.getMinutes()).padStart(2, '0');
+            const ts2 = String(ts.getSeconds()).padStart(2, '0');
+            const fields = Array.isArray(e.fields) && e.fields.length ? ` [fields: ${e.fields.join(', ')}]` : '';
+            lines.push(`${tdd}-${tmm}-${tyy} ${th}:${tm}:${ts2} - [${e.editorID || 'unknown'}] ${e.typeName} ${e.action}${fields}`);
+          }
+          lines.push(''); // spacer between files
+        }
+      }
+
+      files.push({ name: changesFileName, data: encoder.encode(lines.join('\n')) });
+    } catch (e) {
+      // If logs fail, include a minimal note
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yy = String(now.getFullYear()).slice(-2);
+      const hh = String(now.getHours());
+      const mi = String(now.getMinutes());
+      const ss = String(now.getSeconds());
+      const changesFileName = `changes_${dd}-${mm}-${yy}_${hh}-${mi}-${ss}.txt`;
+      const note = `Failed to load change logs. Exported at ${now.toISOString()}.`;
+      files.push({ name: changesFileName, data: new TextEncoder().encode(note) });
+    }
+
     if (!files.length) return;
     const zip = createZip(files);
     const a = document.createElement('a');

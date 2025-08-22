@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseEconomyCoreXml, parseLimitsXml, parseTypesXml } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { loadAllGrouped, saveManyTypeFiles, saveTypeFile } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, saveTypeFile, clearAllTypeFiles, clearChangeLog } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -90,6 +90,44 @@ export function useLootData() {
         return [group, nextFiles];
       })
     );
+
+    // Compute changes vs previous lootFiles
+    try {
+      const editorID = currentEditorIdRef.current || 'unknown';
+      const ts = Date.now();
+      /** @type {{ts:number, editorID:string, group:string, file:string, typeName:string, action:'added'|'modified'|'removed', fields?: string[]}[]} */
+      const logs = [];
+      for (const [g, perFileNew] of Object.entries(updatedFiles)) {
+        const perFileOld = (lootFiles[g] || {});
+        const fileKeys = new Set([...Object.keys(perFileOld), ...Object.keys(perFileNew)]);
+        for (const f of fileKeys) {
+          const oldArr = perFileOld[f] || [];
+          const newArr = perFileNew[f] || [];
+          const oldBy = new Map(oldArr.map(t => [t.name, normalizeType(t)]));
+          const newBy = new Map(newArr.map(t => [t.name, normalizeType(t)]));
+          for (const name of newBy.keys()) {
+            if (!oldBy.has(name)) {
+              logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'added' });
+            } else {
+              const a = oldBy.get(name);
+              const b = newBy.get(name);
+              if (JSON.stringify(a) !== JSON.stringify(b)) {
+                const fields = compareChangedFields(a, b);
+                logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields });
+              }
+            }
+          }
+          for (const name of oldBy.keys()) {
+            if (!newBy.has(name)) {
+              logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'removed' });
+            }
+          }
+        }
+      }
+      if (logs.length) void appendChangeLogs(logs);
+    } catch {
+      // ignore logging errors
+    }
 
     setLootFiles(updatedFiles);
 
@@ -338,6 +376,35 @@ export function useLootData() {
       })
     );
 
+    // Log modifications vs previous files
+    try {
+      const editorID = currentEditorIdRef.current || 'unknown';
+      const ts = Date.now();
+      /** @type {{ts:number, editorID:string, group:string, file:string, typeName:string, action:'modified', fields?: string[]}[]} */
+      const logs = [];
+      for (const [g, perFileNew] of Object.entries(nextFiles)) {
+        const perFileOld = (lootFiles[g] || {});
+        for (const [f, newArr] of Object.entries(perFileNew)) {
+          const oldArr = perFileOld[f] || [];
+          const oldBy = new Map(oldArr.map(t => [t.name, normalizeType(t)]));
+          const newBy = new Map(newArr.map(t => [t.name, normalizeType(t)]));
+          for (const name of newBy.keys()) {
+            if (oldBy.has(name)) {
+              const a = oldBy.get(name);
+              const b = newBy.get(name);
+              if (JSON.stringify(a) !== JSON.stringify(b)) {
+                const fields = compareChangedFields(a, b);
+                logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields });
+              }
+            }
+          }
+        }
+      }
+      if (logs.length) void appendChangeLogs(logs);
+    } catch {
+      // ignore logging errors
+    }
+
     // Persist and refresh derived state
     setLootFiles(nextFiles);
     const records = [];
@@ -485,6 +552,97 @@ export function useLootData() {
   }, [lootFiles]);
 
   /**
+   * Reload all data from sample files, clearing IndexedDB (types + change log) and local grouped keys.
+   */
+  const reloadFromFiles = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Clear IndexedDB stores and any legacy/local grouped cache
+      await clearAllTypeFiles();
+      await clearChangeLog();
+      try {
+        localStorage.removeItem(STORAGE_KEY_GROUPS);
+        localStorage.removeItem(LEGACY_STORAGE_KEY_TYPES);
+      } catch {
+        // ignore
+      }
+
+      // Reload definitions
+      const limitsRes = await fetch('/samples/cfglimitsdefinition.xml');
+      const limitsText = await limitsRes.text();
+      const defs = parseLimitsXml(limitsText);
+
+      // Build from samples (vanilla + cfgeconomycore order)
+      /** @type {TypeFiles} */
+      const assembledFiles = {};
+
+      // Vanilla base
+      const vanillaRes = await fetch('/samples/db/types.xml');
+      const vanillaText = await vanillaRes.text();
+      const vanilla = parseTypesXml(vanillaText);
+      assembledFiles.vanilla = { types: vanilla };
+
+      // Additional groups
+      try {
+        const econRes = await fetch('/samples/cfgeconomycore.xml');
+        const econText = await econRes.text();
+        const { order, filesByGroup } = parseEconomyCoreXml(econText);
+        for (const group of order) {
+          const filesList = filesByGroup[group] || [];
+          for (const filePath of filesList) {
+            const res = await fetch(filePath);
+            const text = await res.text();
+            const parsed = parseTypesXml(text);
+
+            const parts = filePath.split('/');
+            const fileName = parts[parts.length - 1] || 'types.xml';
+            const fileBase = fileName.replace(/\.xml$/i, '');
+            if (!assembledFiles[group]) assembledFiles[group] = {};
+            assembledFiles[group][fileBase] = parsed;
+          }
+        }
+      } catch (e) {
+        // proceed with vanilla only
+        // eslint-disable-next-line no-console
+        console.warn('Failed to parse cfgeconomycore.xml during reload:', e);
+      }
+
+      // Persist per file into IndexedDB
+      const records = [];
+      for (const [group, perFile] of Object.entries(assembledFiles)) {
+        for (const [file, arr] of Object.entries(perFile)) {
+          records.push({ group, file, types: arr });
+        }
+      }
+      await saveManyTypeFiles(records);
+
+      // Reset state, baselines, history, unknowns
+      setDefinitions(defs);
+      setBaselineDefinitions(defs);
+      setLootFiles(assembledFiles);
+
+      const groupsCombined = combineFilesToGroups(assembledFiles);
+      setLootGroups(groupsCombined);
+      setDuplicatesByName(computeDuplicatesMap(groupsCombined));
+
+      const merged = mergeFromFiles(assembledFiles);
+      _setLootTypes(merged);
+      setUnknowns(validateUnknowns(merged, defs));
+      historyRef.current = createHistory(merged);
+
+      // Reset baselines to newly parsed
+      setBaselineFiles(assembledFiles);
+
+      setLoading(false);
+    } catch (e) {
+      setError(e);
+      setLoading(false);
+    }
+  }, []);
+
+  /**
    * Get per-file breakdown for a group.
    * @param {string} group
    * @returns {{file: string, types: Type[]}[]}
@@ -571,6 +729,12 @@ export function useLootData() {
     return false;
   }, [storageDiff]);
 
+  // Track current editor ID for change logging
+  const currentEditorIdRef = useRef(/** @type {string} */(''));
+  const setChangeEditorID = useCallback((id) => {
+    currentEditorIdRef.current = id || '';
+  }, []);
+
   return {
     loading,
     error,
@@ -603,7 +767,9 @@ export function useLootData() {
       countRefs: countDefinitionRefs,
       removeEntry: removeDefinitionEntry,
       addEntry: addDefinitionEntry
-    }
+    },
+    setChangeEditorID,
+    reloadFromFiles
   };
 }
 
@@ -654,7 +820,12 @@ function mergeFromFiles(files) {
  * @param {Type[]} arr
  */
 function serializeTypes(arr) {
-  const norm = (t) => ({
+  const sorted = [...arr].sort((a, b) => a.name.localeCompare(b.name)).map(normalizeType);
+  return JSON.stringify(sorted);
+}
+
+function normalizeType(t) {
+  return {
     name: t.name,
     category: t.category || null,
     nominal: t.nominal, min: t.min, lifetime: t.lifetime, restock: t.restock,
@@ -663,9 +834,30 @@ function serializeTypes(arr) {
     usage: [...t.usage].sort(),
     value: [...t.value].sort(),
     tag: [...t.tag].sort(),
-  });
-  const sorted = [...arr].sort((a, b) => a.name.localeCompare(b.name)).map(norm);
-  return JSON.stringify(sorted);
+  };
+}
+
+/**
+ * Compare two normalized types and return human-readable field names that differ.
+ * @param {ReturnType<typeof normalizeType>} a
+ * @param {ReturnType<typeof normalizeType>} b
+ * @returns {string[]}
+ */
+function compareChangedFields(a, b) {
+  /** @type {string[]} */
+  const out = [];
+  if (a.category !== b.category) out.push('Category');
+  if (a.nominal !== b.nominal) out.push('Nominal');
+  if (a.min !== b.min) out.push('Min');
+  if (a.lifetime !== b.lifetime) out.push('Lifetime');
+  if (a.restock !== b.restock) out.push('Restock');
+  if (a.quantmin !== b.quantmin) out.push('Quantmin');
+  if (a.quantmax !== b.quantmax) out.push('Quantmax');
+  if (JSON.stringify(a.flags) !== JSON.stringify(b.flags)) out.push('Flags');
+  if (JSON.stringify(a.usage) !== JSON.stringify(b.usage)) out.push('Usage');
+  if (JSON.stringify(a.value) !== JSON.stringify(b.value)) out.push('Value');
+  if (JSON.stringify(a.tag) !== JSON.stringify(b.tag)) out.push('Tag');
+  return out;
 }
 
 function uniq(arr) {
