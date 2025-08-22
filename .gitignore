@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+/public/samples/db/types/**
+/public/samples/cfgeconomycore.xml
+/public/samples/cfglimitsdefinition.xml
