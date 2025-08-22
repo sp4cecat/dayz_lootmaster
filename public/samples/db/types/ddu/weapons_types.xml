@@ -1,584 +1,552 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version="1.0" encoding="UTF-8"?>
 <types>
-    <type name="ddu_Ammo_338LM">
-        <nominal>8</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>5</min>
-        <quantmin>10</quantmin>
-        <quantmax>90</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="ContaminatedArea" />
-        <usage name="Convoy" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_Ammo_408CT">
-        <nominal>10</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>5</min>
-        <quantmin>10</quantmin>
-        <quantmax>50</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="ContaminatedArea" />
-    </type>
-    <type name="ddu_AtlasBipod">
-        <nominal>6</nominal>
-        <lifetime>7200</lifetime>
-        <restock>3600</restock>
-        <min>4</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1" />
-        <category name="weapons" />
-        <usage name="Convoy" />
-        <usage name="Military" />
-    </type>
-    <type name="ddu_XPS2_Black">
-        <nominal>9</nominal>
-        <lifetime>7200</lifetime>
-        <restock>1800</restock>
-        <min>5</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_VerticalForegrip_Black">
-        <nominal>6</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>4</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <usage name="Military" />
-        <category name="weapons" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_VerticalForegrip_FDE">
-        <nominal>6</nominal>
-        <lifetime>7200</lifetime>
-        <restock>300</restock>
-        <min>2</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier4" />
-        <usage name="Military" />
-    </type>
-    <type name="ddu_VortexStrikefire">
-        <nominal>0</nominal>
-        <lifetime>7200</lifetime>
-        <restock>1800</restock>
-        <min>0</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-    </type>
-    <type name="ddu_WaltherZFOptic">
-        <nominal>12</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>7</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <tag name="floor" />
-        <usage name="Hunting" />
-        <value name="Tier2" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_BurlapWrap_Tan">
-        <lifetime>7200</lifetime>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-    </type>
-    <type name="ddu_BurlapWrap_Green">
-        <lifetime>7200</lifetime>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-    </type>
-    <type name="ddu_ACR">
-        <nominal>3</nominal>
-        <lifetime>7200</lifetime>
-        <restock>3600</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="0" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Convoy" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_AUGA3">
-        <nominal>1</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_BenelliM2">
-        <nominal>12</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>6</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier2" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-        <usage name="Military" />
-        <usage name="Police" />
-    </type>
-    <type name="ddu_DVL">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>1</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_Mag_DVL_5rnd">
-        <nominal>3</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>2</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="ContaminatedArea" />
-    </type>
-    <type name="ddu_HK417">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>14400</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_Mag_HK417_20rnd">
-        <nominal>10</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>6</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Bunker" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_K98Scope">
-        <nominal>0</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>0</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="0" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Hunting" />
-        <value name="Tier1" />
-        <value name="Tier2" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="AmmoBox_792x57_15Rnd">
-        <nominal>0</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>0</min>
-        <quantmin>10</quantmin>
-        <quantmax>90</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="0" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Hunting" />
-        <usage name="Village" />
-    </type>
-    <type name="Ammo_792x57">
-        <nominal>0</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>0</min>
-        <quantmin>10</quantmin>
-        <quantmax>90</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <value name="Tier2" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_M110">
-        <nominal>3</nominal>
-        <lifetime>14400</lifetime>
-        <restock>7200</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-        <usage name="Convoy" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_Mag_M110_20rnd">
-        <nominal>15</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>10</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-        <usage name="Military" />
-        <usage name="Convoy" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_M14">
-        <nominal>0</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>0</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-        <usage name="Military" />
-    </type>
-    <type name="ddu_Mag_M14_20rnd">
-        <nominal>5</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>2</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_M200_Suppressor">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>14400</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_M200">
-        <nominal>1</nominal>
-        <lifetime>14400</lifetime>
-        <restock>7200</restock>
-        <min>1</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_Mag_M200_7rnd">
-        <nominal>3</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>2</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-    </type>
-    <type name="ddu_M249">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Convoy" />
-        <usage name="Bunker" />
-        <usage name="ContaminatedArea" />
-    </type>
-    <type name="ddu_Mag_M249_200rnd">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Bunker" />
-        <usage name="ContaminatedArea" />
-    </type>
-    <type name="ddu_M9A3">
-        <nominal>10</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>5</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Police" />
-        <usage name="Prison" />
-    </type>
-    <type name="ddu_MP40">
-        <nominal>10</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>9</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1" />
-        <category name="weapons" />
-        <usage name="Police" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_Mag_MP40_32rnd">
-        <nominal>15</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>9</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Police" />
-    </type>
-    <type name="ddu_MP5SD">
-        <nominal>10</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>5</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Police" />
-    </type>
-    <type name="ddu_RifleSuppressor">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>7200</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-        <usage name="Bunker" />
-    </type>
-    <type name="ddu_R700">
-        <nominal>1</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>1</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Bunker" />
-        <usage name="Hunting" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_Mag_R700_5rnd">
-        <nominal>15</nominal>
-        <lifetime>7200</lifetime>
-        <restock>7200</restock>
-        <min>10</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <usage name="Hunting" />
-        <usage name="Bunker" />
-        <usage name="Store" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_RPD">
-        <nominal>1</nominal>
-        <lifetime>7200</lifetime>
-        <restock>28800</restock>
-        <min>1</min>
-        <quantmin>0</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Convoy" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_Mag_RPD_100rnd">
-        <nominal>3</nominal>
-        <lifetime>7200</lifetime>
-        <restock>7100</restock>
-        <min>2</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Convoy" />
-        <value name="Tier4" />
-        <value name="Tier3" />
-    </type>
-    <type name="ddu_SA58_Bttstck">
-        <nominal>6</nominal>
-        <lifetime>7200</lifetime>
-        <restock>7200</restock>
-        <min>4</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <usage name="Military" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_SA58">
-        <nominal>2</nominal>
-        <lifetime>7200</lifetime>
-        <restock>7200</restock>
-        <min>1</min>
-        <quantmin>0</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1" />
-        <category name="weapons" />
-        <usage name="ContaminatedArea" />
-        <usage name="Military" />
-        <value name="Tier4" />
-    </type>
-    <type name="ddu_Mag_SA58_20rnd">
-        <nominal>6</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>4</min>
-        <quantmin>10</quantmin>
-        <quantmax>100</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-        <usage name="Bunker" />
-        <usage name="Military" />
-    </type>
-    <type name="ddu_SVT40">
-        <nominal>5</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>3</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-        <usage name="Military" />
-        <usage name="Hunting" />
-    </type>
-    <type name="ddu_Mag_SVT40_10rnd">
-        <nominal>15</nominal>
-        <lifetime>7200</lifetime>
-        <restock>0</restock>
-        <min>5</min>
-        <quantmin>-1</quantmin>
-        <quantmax>-1</quantmax>
-        <cost>100</cost>
-        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0" />
-        <category name="weapons" />
-        <value name="Tier3" />
-        <value name="Tier4" />
-        <value name="Tier4" />
-        <usage name="Military" />
-        <usage name="Hunting" />
-        <usage name="Bunker" />
-        <usage name="Store" />
-    </type>
+  <type name="ddu_Ammo_338LM">
+    <nominal>8</nominal>
+    <min>5</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>90</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Convoy"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Ammo_408CT">
+    <nominal>10</nominal>
+    <min>5</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>50</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="ContaminatedArea"/>
+  </type>
+  <type name="ddu_AtlasBipod">
+    <nominal>6</nominal>
+    <min>4</min>
+    <lifetime>7200</lifetime>
+    <restock>3600</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1"/>
+    <category name="weapons"/>
+    <usage name="Convoy"/>
+    <usage name="Military"/>
+  </type>
+  <type name="ddu_XPS2_Black">
+    <nominal>9</nominal>
+    <min>5</min>
+    <lifetime>7200</lifetime>
+    <restock>1800</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_VerticalForegrip_Black">
+    <nominal>6</nominal>
+    <min>4</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_VerticalForegrip_FDE">
+    <nominal>6</nominal>
+    <min>2</min>
+    <lifetime>7200</lifetime>
+    <restock>300</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_VortexStrikefire">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>1800</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+  </type>
+  <type name="ddu_WaltherZFOptic">
+    <nominal>12</nominal>
+    <min>7</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Hunting"/>
+    <value name="Tier2"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+    <tag name="floor"/>
+  </type>
+  <type name="ddu_BurlapWrap_Tan">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>0</quantmin>
+    <quantmax>0</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+  </type>
+  <type name="ddu_BurlapWrap_Green">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>0</quantmin>
+    <quantmax>0</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+  </type>
+  <type name="ddu_ACR">
+    <nominal>3</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>3600</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Convoy"/>
+    <usage name="Military"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_AUGA3">
+    <nominal>1</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_BenelliM2">
+    <nominal>12</nominal>
+    <min>6</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Police"/>
+    <value name="Tier2"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_DVL">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_Mag_DVL_5rnd">
+    <nominal>3</nominal>
+    <min>2</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="ContaminatedArea"/>
+  </type>
+  <type name="ddu_HK417">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>14400</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_Mag_HK417_20rnd">
+    <nominal>10</nominal>
+    <min>6</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Bunker"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_K98Scope">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Hunting"/>
+    <usage name="Military"/>
+    <value name="Tier1"/>
+    <value name="Tier2"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="AmmoBox_792x57_15Rnd">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>90</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Hunting"/>
+    <usage name="Military"/>
+    <usage name="Village"/>
+  </type>
+  <type name="Ammo_792x57">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>90</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <value name="Tier2"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_M110">
+    <nominal>3</nominal>
+    <min>1</min>
+    <lifetime>14400</lifetime>
+    <restock>7200</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Convoy"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_Mag_M110_20rnd">
+    <nominal>15</nominal>
+    <min>10</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Convoy"/>
+    <usage name="Bunker"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_M14">
+    <nominal>0</nominal>
+    <min>0</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Mag_M14_20rnd">
+    <nominal>5</nominal>
+    <min>2</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_M200_Suppressor">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>14400</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_M200">
+    <nominal>1</nominal>
+    <min>1</min>
+    <lifetime>14400</lifetime>
+    <restock>7200</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_Mag_M200_7rnd">
+    <nominal>3</nominal>
+    <min>2</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+  </type>
+  <type name="ddu_M249">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Convoy"/>
+    <usage name="Bunker"/>
+    <usage name="ContaminatedArea"/>
+  </type>
+  <type name="ddu_Mag_M249_200rnd">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Bunker"/>
+    <usage name="ContaminatedArea"/>
+  </type>
+  <type name="ddu_M9A3">
+    <nominal>10</nominal>
+    <min>5</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Police"/>
+    <usage name="Prison"/>
+  </type>
+  <type name="ddu_MP40">
+    <nominal>10</nominal>
+    <min>9</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1"/>
+    <category name="weapons"/>
+    <usage name="Police"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Mag_MP40_32rnd">
+    <nominal>15</nominal>
+    <min>9</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Police"/>
+  </type>
+  <type name="ddu_MP5SD">
+    <nominal>10</nominal>
+    <min>5</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Police"/>
+  </type>
+  <type name="ddu_RifleSuppressor">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>7200</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Bunker"/>
+  </type>
+  <type name="ddu_R700">
+    <nominal>1</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Bunker"/>
+    <usage name="Hunting"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Mag_R700_5rnd">
+    <nominal>15</nominal>
+    <min>10</min>
+    <lifetime>7200</lifetime>
+    <restock>7200</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Hunting"/>
+    <usage name="Bunker"/>
+    <usage name="Store"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_RPD">
+    <nominal>1</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>28800</restock>
+    <quantmin>0</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Convoy"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Mag_RPD_100rnd">
+    <nominal>3</nominal>
+    <min>2</min>
+    <lifetime>7200</lifetime>
+    <restock>7100</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Convoy"/>
+    <value name="Tier4"/>
+    <value name="Tier3"/>
+  </type>
+  <type name="ddu_SA58_Bttstck">
+    <nominal>6</nominal>
+    <min>4</min>
+    <lifetime>7200</lifetime>
+    <restock>7200</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_SA58">
+    <nominal>2</nominal>
+    <min>1</min>
+    <lifetime>7200</lifetime>
+    <restock>7200</restock>
+    <quantmin>0</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1"/>
+    <category name="weapons"/>
+    <usage name="ContaminatedArea"/>
+    <usage name="Military"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Mag_SA58_20rnd">
+    <nominal>6</nominal>
+    <min>4</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>10</quantmin>
+    <quantmax>100</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Bunker"/>
+    <usage name="Military"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_SVT40">
+    <nominal>5</nominal>
+    <min>3</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Hunting"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
+  <type name="ddu_Mag_SVT40_10rnd">
+    <nominal>15</nominal>
+    <min>5</min>
+    <lifetime>7200</lifetime>
+    <restock>0</restock>
+    <quantmin>-1</quantmin>
+    <quantmax>-1</quantmax>
+    <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+    <category name="weapons"/>
+    <usage name="Military"/>
+    <usage name="Hunting"/>
+    <usage name="Bunker"/>
+    <usage name="Store"/>
+    <value name="Tier3"/>
+    <value name="Tier4"/>
+  </type>
 </types>

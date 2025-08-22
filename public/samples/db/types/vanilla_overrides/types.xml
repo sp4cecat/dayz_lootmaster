@@ -1,3 +1,36 @@
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <types>
+    <!-- types.xml -->
+    <!-- types.xml -->
+    <type name="HuntingBag_Hannah">
+        <nominal>0</nominal>
+        <min>0</min>
+        <lifetime>2600</lifetime>
+        <restock>0</restock>
+        <quantmin>-1</quantmin>
+        <quantmax>-1</quantmax>
+        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+        <category name="containers"/>
+    </type>
+    <type name="NorseHelm">
+        <nominal>0</nominal>
+        <min>0</min>
+        <lifetime>14400</lifetime>
+        <restock>0</restock>
+        <quantmin>-1</quantmin>
+        <quantmax>-1</quantmax>
+        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="0"/>
+        <category name="clothes"/>
+    </type>
+    <type name="AmmoBox">
+        <nominal>10</nominal>
+        <min>6</min>
+        <lifetime>604800</lifetime>
+        <restock>0</restock>
+        <quantmin>-1</quantmin>
+        <quantmax>-1</quantmax>
+        <flags count_in_cargo="0" count_in_hoarder="0" count_in_map="1" count_in_player="0" crafted="0" deloot="1"/>
+        <category name="containers"/>
+        <usage name="Military"/>
+    </type>
 </types>

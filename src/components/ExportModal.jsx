@@ -7,6 +7,7 @@ import { getChangeLogsForGroup } from '../utils/idb.js';
  * Export modal allowing the user to export:
  * - types.xml for a specific group
  * - cfglimitsdefinition.xml built from current definitions
+ * - all changed non-vanilla groups as a ZIP (only changed files)
  *
  * @param {{
  *  groups: string[],
@@ -19,16 +20,16 @@ import { getChangeLogsForGroup } from '../utils/idb.js';
  * }} props
  */
 export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGroupFiles, definitions, storageDiff, onClose }) {
-  const [mode, setMode] = useState(/** @type {'types'|'limits'} */('types'));
+  const [mode, setMode] = useState(/** @type {'types'|'limits'|'all'} */('types'));
   const [group, setGroup] = useState(defaultGroup || groups[0] || '');
   const filesForGroup = useMemo(() => (mode === 'types' && group ? getGroupFiles(group) : []), [mode, group, getGroupFiles]);
   const hasMultipleFiles = filesForGroup.length > 1;
   const [typesFormat, setTypesFormat] = useState(/** @type {'single'|'zip'} */('single'));
 
-  // Which groups have at least one changed file
+  // Which groups have at least one changed file (exclude 'vanilla')
   const changedGroups = useMemo(() => {
     if (!storageDiff || !storageDiff.files) return [];
-    return groups.filter(g => {
+    return groups.filter(g => g !== 'vanilla').filter(g => {
       const per = storageDiff.files[g];
       return per && Object.values(per).some(info => info.changed);
     });
@@ -54,19 +55,40 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
   const changedFilesSet = useMemo(() => new Set(changedFiles), [changedFiles]);
   const zipAvailable = changedFiles.length > 0;
 
+  // For "all" mode: build a list of groups->changed files (non-vanilla only)
+  const allChangedMap = useMemo(() => {
+    /** @type {Record<string, string[]>} */
+    const out = {};
+    if (!storageDiff || !storageDiff.files) return out;
+    for (const g of groups) {
+      if (g === 'vanilla') continue;
+      const per = storageDiff.files[g];
+      if (!per) continue;
+      const files = Object.entries(per).filter(([, info]) => info.changed).map(([f]) => f);
+      if (files.length) out[g] = files.sort((a, b) => a.localeCompare(b));
+    }
+    return out;
+  }, [storageDiff, groups]);
+
+  const anyAllChanged = useMemo(() => Object.keys(allChangedMap).length > 0, [allChangedMap]);
+
   const xml = useMemo(() => {
     if (mode === 'limits') {
       return generateLimitsXml(definitions);
     }
-    if (hasMultipleFiles && typesFormat === 'single') {
+    if (hasMultipleFiles && typesFormat === 'single' && mode === 'types') {
       return generateTypesXmlFromFilesWithComments(filesForGroup);
     }
-    const arr = getGroupTypes(group) || [];
-    return generateTypesXml(arr);
+    if (mode === 'types') {
+      const arr = getGroupTypes(group) || [];
+      return generateTypesXml(arr);
+    }
+    return ''; // no single-XML preview for "all" zip mode
   }, [mode, group, getGroupTypes, definitions, hasMultipleFiles, typesFormat, filesForGroup]);
 
   const exportPath = useMemo(() => {
     if (mode === 'limits') return 'cfglimitsdefinition.xml';
+    if (mode === 'all') return 'db/types/<non-vanilla groups>/*.xml (changed)';
     if (typesFormat === 'zip' && zipAvailable) {
       return `db/types/${group}/*.xml (changed)`;
     }
@@ -79,8 +101,37 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
   };
 
   const onDownloadZip = async () => {
+    if (mode === 'all') {
+      // Build a zip with all changed files across non-vanilla groups
+      if (!anyAllChanged) return;
+      const encoder = new TextEncoder();
+      const files = [];
+      for (const g of Object.keys(allChangedMap).sort((a, b) => a.localeCompare(b))) {
+        const changedSet = new Set(allChangedMap[g]);
+        const perFiles = getGroupFiles(g);
+        for (const { file, types } of perFiles) {
+          if (!changedSet.has(file)) continue;
+          const name = `${g}/${file}.xml`;
+          const content = generateTypesXml(types);
+          files.push({ name, data: encoder.encode(content) });
+        }
+      }
+      if (!files.length) return;
+      const zip = createZip(files);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(zip);
+      a.download = `changed-groups-types.zip`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
+      return;
+    }
+
     if (!zipAvailable || typesFormat !== 'zip') return;
-    // Build per-file XMLs with original filenames, only for changed files
+    // Build per-file XMLs with original filenames, only for changed files (single group)
     const encoder = new TextEncoder();
     const files = filesForGroup
       .filter(({ file }) => changedFilesSet.has(file))
@@ -169,7 +220,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
           <h3>Export Changed Types</h3>
           <div className="spacer" />
           <button className="btn" onClick={onClose}>Close</button>
-          {mode === 'types' && typesFormat === 'zip' && zipAvailable ? (
+          {(mode === 'types' && typesFormat === 'zip' && zipAvailable) || (mode === 'all' && anyAllChanged) ? (
             <button
               className="btn primary"
               onClick={onDownloadZip}
@@ -229,6 +280,15 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
                 onChange={() => setMode('limits')}
               />
               <span>Limits definitions</span>
+            </label>
+            <label className="checkbox" title={anyAllChanged ? 'Export changed files across all non-vanilla groups' : 'No changed files across non-vanilla groups'}>
+              <input
+                type="radio"
+                name="export-mode"
+                checked={mode === 'all'}
+                onChange={() => setMode('all')}
+              />
+              <span>All changed groups (zip)</span>
             </label>
             {mode === 'types' && (
               <>

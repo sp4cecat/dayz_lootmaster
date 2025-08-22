@@ -68,10 +68,15 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
   const selectedGroupsSet = new Set(filters.groups);
   const allGroupsSelected = filters.groups.length === 0;
 
-  // Toggle a flag key on/off in filters.flags
+  // Toggle a flag key on/off in filters.flags; 'None' is exclusive
   const toggleFlag = (key) => {
     const curr = Array.isArray(filters.flags) ? filters.flags : [];
-    const next = curr.includes(key) ? curr.filter(x => x !== key) : [...curr, key];
+    if (key === 'None') {
+      setField('flags', curr.includes('None') ? [] : ['None']);
+      return;
+    }
+    const cleaned = curr.filter(x => x !== 'None');
+    const next = cleaned.includes(key) ? cleaned.filter(x => x !== key) : [...cleaned, key];
     setField('flags', next);
   };
 
@@ -229,6 +234,15 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
       <fieldset className="filters-group">
         <legend>Flags</legend>
         <div className="chips selectable">
+          <button
+            type="button"
+            className={`chip none-chip ${(filters.flags || []).includes('None') ? 'selected' : ''}`}
+            onClick={() => toggleFlag('None')}
+            aria-pressed={(filters.flags || []).includes('None')}
+            title="Types with no flags set"
+          >
+            None
+          </button>
           {flagsList.map(key => {
             const selected = (filters.flags || []).includes(key);
             return (

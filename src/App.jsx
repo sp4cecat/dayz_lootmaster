@@ -188,10 +188,15 @@ export default function App() {
           }
         }
 
-            // Flags filter: require all selected flags to be truthy
+            // Flags filter: if 'None' selected require no truthy flags; otherwise require all selected flags to be truthy
             if (flags && flags.length) {
               const f = t.flags || {};
-              if (!flags.every(key => !!f[key])) return false;
+              if (flags.includes('None')) {
+                const values = Object.values(f);
+                if (!(values.length === 0 || values.every(v => !v))) return false;
+              } else {
+                if (!flags.every(key => !!f[key])) return false;
+              }
             }
 
       return !(tag.length && !tag.every(g => t.tag.includes(g)));

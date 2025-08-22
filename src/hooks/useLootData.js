@@ -106,12 +106,12 @@ export function useLootData() {
       })
     );
 
-    // Apply/upsert vanilla overrides into group 'vanilla_overrides' under file 'types_overrides'
+    // Apply/upsert vanilla overrides into group 'vanilla_overrides' under file 'types'
     if (vanillaOverrides.size > 0) {
       if (!updatedFiles['vanilla_overrides']) {
         updatedFiles['vanilla_overrides'] = {};
       }
-      const targetFile = 'types_overrides';
+      const targetFile = 'types';
       // Remove any previous overrides for the same names across all files in vanilla_overrides
       const namesToReplace = new Set(vanillaOverrides.keys());
       for (const [f, arr] of Object.entries(updatedFiles['vanilla_overrides'])) {
@@ -232,7 +232,9 @@ export function useLootData() {
           // 1) Vanilla base
           const vanillaRes = await fetch('/samples/db/types.xml');
           const vanillaText = await vanillaRes.text();
-          const vanilla = parseTypesXml(vanillaText);
+          let vanilla = parseTypesXml(vanillaText);
+          // Ignore world/static objects in vanilla imports
+          vanilla = vanilla.filter(t => !(t.name?.startsWith('Land_') || t.name?.startsWith('StaticObj_') || t.name?.startsWith('static_')));
           assembledFiles.vanilla = { types: vanilla };
 
           // 2) Additional groups from economy core (ordered)
@@ -294,7 +296,9 @@ export function useLootData() {
           // Vanilla
           const vanillaRes = await fetch('/samples/db/types.xml');
           const vanillaText = await vanillaRes.text();
-          const vanilla = parseTypesXml(vanillaText);
+          let vanilla = parseTypesXml(vanillaText);
+          // Ignore world/static objects in vanilla imports
+          vanilla = vanilla.filter(t => !(t.name?.startsWith('Land_') || t.name?.startsWith('StaticObj_') || t.name?.startsWith('Static_')));
           baseline.vanilla = { types: vanilla };
           // Other groups via cfgeconomycore
           try {
@@ -621,7 +625,9 @@ export function useLootData() {
       // Vanilla base
       const vanillaRes = await fetch('/samples/db/types.xml');
       const vanillaText = await vanillaRes.text();
-      const vanilla = parseTypesXml(vanillaText);
+      let vanilla = parseTypesXml(vanillaText);
+      // Ignore world/static objects in vanilla imports
+      vanilla = vanilla.filter(t => !(t.name?.startsWith('Land_') || t.name?.startsWith('StaticObj_') || t.name?.startsWith('Static_')));
       assembledFiles.vanilla = { types: vanilla };
 
       // Additional groups
