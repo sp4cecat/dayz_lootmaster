@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseEconomyCoreXml, parseLimitsXml, parseTypesXml } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, saveTypeFile, clearAllTypeFiles, clearChangeLog } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -152,8 +152,8 @@ export function useLootData() {
               const a = oldBy.get(name);
               const b = newBy.get(name);
               if (JSON.stringify(a) !== JSON.stringify(b)) {
-                const fields = compareChangedFields(a, b);
-                logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields });
+                const { fields, oldValues, newValues } = diffChangedFields(a, b);
+                logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields, oldValues, newValues });
               }
             }
           }
@@ -437,8 +437,8 @@ export function useLootData() {
               const a = oldBy.get(name);
               const b = newBy.get(name);
               if (JSON.stringify(a) !== JSON.stringify(b)) {
-                const fields = compareChangedFields(a, b);
-                logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields });
+                const { fields, oldValues, newValues } = diffChangedFields(a, b);
+                logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields, oldValues, newValues });
               }
             }
           }
@@ -578,8 +578,7 @@ export function useLootData() {
   const groupsList = useMemo(() => {
     if (!lootFiles) return [];
     const keys = Object.keys(lootFiles);
-    const vanillaFirst = keys.includes('vanilla') ? ['vanilla', ...keys.filter(k => k !== 'vanilla')] : keys;
-    return vanillaFirst;
+    return keys.includes('vanilla') ? ['vanilla', ...keys.filter(k => k !== 'vanilla')] : keys;
   }, [lootFiles]);
 
   /**
@@ -698,6 +697,17 @@ export function useLootData() {
     return Object.entries(lootFiles[group]).map(([file, types]) => ({ file, types }));
   }, [lootFiles]);
 
+  /**
+   * Get baseline types array for a given group and file.
+   * @param {string} group
+   * @param {string} file
+   * @returns {Type[]}
+   */
+  const getBaselineFileTypes = useCallback((group, file) => {
+    if (!baselineFiles) return [];
+    return (baselineFiles[group]?.[file]) || [];
+  }, [baselineFiles]);
+
   const storageDiff = useMemo(() => {
     /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>> }} */
     const diff = {
@@ -815,7 +825,8 @@ export function useLootData() {
       addEntry: addDefinitionEntry
     },
     setChangeEditorID,
-    reloadFromFiles
+    reloadFromFiles,
+    getBaselineFileTypes
   };
 }
 
@@ -861,14 +872,6 @@ function mergeFromFiles(files) {
   return Array.from(byName.values());
 }
 
-/**
- * Stable serialization of types for equality comparison
- * @param {Type[]} arr
- */
-function serializeTypes(arr) {
-  const sorted = [...arr].sort((a, b) => a.name.localeCompare(b.name)).map(normalizeType);
-  return JSON.stringify(sorted);
-}
 
 function normalizeType(t) {
   return {
@@ -884,26 +887,46 @@ function normalizeType(t) {
 }
 
 /**
- * Compare two normalized types and return human-readable field names that differ.
+ * Diff two normalized types; return changed field names plus old/new values for those fields.
  * @param {ReturnType<typeof normalizeType>} a
  * @param {ReturnType<typeof normalizeType>} b
- * @returns {string[]}
+ * @returns {{fields: string[], oldValues: Record<string, any>, newValues: Record<string, any>}}
  */
-function compareChangedFields(a, b) {
-  /** @type {string[]} */
-  const out = [];
-  if (a.category !== b.category) out.push('Category');
-  if (a.nominal !== b.nominal) out.push('Nominal');
-  if (a.min !== b.min) out.push('Min');
-  if (a.lifetime !== b.lifetime) out.push('Lifetime');
-  if (a.restock !== b.restock) out.push('Restock');
-  if (a.quantmin !== b.quantmin) out.push('Quantmin');
-  if (a.quantmax !== b.quantmax) out.push('Quantmax');
-  if (JSON.stringify(a.flags) !== JSON.stringify(b.flags)) out.push('Flags');
-  if (JSON.stringify(a.usage) !== JSON.stringify(b.usage)) out.push('Usage');
-  if (JSON.stringify(a.value) !== JSON.stringify(b.value)) out.push('Value');
-  if (JSON.stringify(a.tag) !== JSON.stringify(b.tag)) out.push('Tag');
-  return out;
+function diffChangedFields(a, b) {
+  const fields = [];
+  /** @type {Record<string, any>} */
+  const oldValues = {};
+  /** @type {Record<string, any>} */
+  const newValues = {};
+
+  const maybeAdd = (key, oldVal, newVal) => {
+    fields.push(key);
+    oldValues[key] = oldVal;
+    newValues[key] = newVal;
+  };
+
+  if (a.category !== b.category) maybeAdd('Category', a.category, b.category);
+  if (a.nominal !== b.nominal) maybeAdd('Nominal', a.nominal, b.nominal);
+  if (a.min !== b.min) maybeAdd('Min', a.min, b.min);
+  if (a.lifetime !== b.lifetime) maybeAdd('Lifetime', a.lifetime, b.lifetime);
+  if (a.restock !== b.restock) maybeAdd('Restock', a.restock, b.restock);
+  if (a.quantmin !== b.quantmin) maybeAdd('Quantmin', a.quantmin, b.quantmin);
+  if (a.quantmax !== b.quantmax) maybeAdd('Quantmax', a.quantmax, b.quantmax);
+
+  if (JSON.stringify(a.flags) !== JSON.stringify(b.flags)) {
+    maybeAdd('Flags', a.flags, b.flags);
+  }
+  if (JSON.stringify(a.usage) !== JSON.stringify(b.usage)) {
+    maybeAdd('Usage', a.usage, b.usage);
+  }
+  if (JSON.stringify(a.value) !== JSON.stringify(b.value)) {
+    maybeAdd('Value', a.value, b.value);
+  }
+  if (JSON.stringify(a.tag) !== JSON.stringify(b.tag)) {
+    maybeAdd('Tag', a.tag, b.tag);
+  }
+
+  return { fields, oldValues, newValues };
 }
 
 function uniq(arr) {

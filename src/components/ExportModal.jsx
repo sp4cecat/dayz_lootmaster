@@ -19,7 +19,7 @@ import { getChangeLogsForGroup } from '../utils/idb.js';
  *  onClose: () => void
  * }} props
  */
-export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGroupFiles, definitions, storageDiff, onClose }) {
+export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGroupFiles, getBaselineFileTypes, definitions, storageDiff, onClose }) {
   const [mode, setMode] = useState(/** @type {'types'|'limits'|'all'} */('types'));
   const [group, setGroup] = useState(defaultGroup || groups[0] || '');
   const filesForGroup = useMemo(() => (mode === 'types' && group ? getGroupFiles(group) : []), [mode, group, getGroupFiles]);
@@ -100,22 +100,162 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     await navigator.clipboard.writeText(xml);
   };
 
+  const formatChangeValue = (v) => {
+    if (Array.isArray(v)) return `[${v.join(', ')}]`;
+    if (v && typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  };
+
+  // Normalization compatible with diff logic in the hook
+  const normalizeType = (t) => ({
+    name: t?.name,
+    category: t?.category || null,
+    nominal: t?.nominal,
+    min: t?.min,
+    lifetime: t?.lifetime,
+    restock: t?.restock,
+    quantmin: t?.quantmin,
+    quantmax: t?.quantmax,
+    flags: t?.flags || {},
+    usage: [...(t?.usage || [])].sort(),
+    value: [...(t?.value || [])].sort(),
+    tag: [...(t?.tag || [])].sort(),
+  });
+
+  // Build inlined fields spec; if old/new not present on entry, derive from baseline vs current
+  const buildFieldsSpec = (entry, group) => {
+    let specs = [];
+    const flagDiffList = (ov = {}, nv = {}) => {
+      const keys = Array.from(new Set([...Object.keys(ov || {}), ...Object.keys(nv || {})])).sort((a, b) => a.localeCompare(b));
+      const to01 = (v) => (v ? 1 : 0);
+      const diffs = [];
+      for (const k of keys) {
+        const a = to01(ov?.[k]);
+        const b = to01(nv?.[k]);
+        if (a !== b) diffs.push(`${k}: ${a} > ${b}`);
+      }
+      return diffs;
+    };
+
+    if (entry.action === 'modified') {
+      if (entry.oldValues && entry.newValues && Array.isArray(entry.fields) && entry.fields.length) {
+        specs = entry.fields.flatMap(fkey => {
+          const ov = entry.oldValues[fkey];
+          const nv = entry.newValues[fkey];
+          if (fkey === 'Flags') {
+            const diffs = flagDiffList(ov, nv);
+            return diffs.length ? [`Flags(${diffs.join(', ')})`] : [];
+          }
+          return [`${fkey}(${formatChangeValue(ov)} > ${formatChangeValue(nv)})`];
+        });
+      } else if (entry.file && entry.typeName) {
+        // Fallback: compute old/new from baseline and current types
+        try {
+          const baseArr = getBaselineFileTypes(group, entry.file) || [];
+          const currArr = (getGroupFiles(group) || []).find(f => f.file === entry.file)?.types || [];
+          const a = normalizeType(baseArr.find(t => t.name === entry.typeName) || {});
+          const b = normalizeType(currArr.find(t => t.name === entry.typeName) || {});
+          const localSpecs = [];
+
+          const pushIf = (label, key) => { if (a[key] !== b[key]) localSpecs.push(`${label}(${formatChangeValue(a[key])} > ${formatChangeValue(b[key])})`); };
+          pushIf('Category', 'category');
+          pushIf('Nominal', 'nominal');
+          pushIf('Min', 'min');
+          pushIf('Lifetime', 'lifetime');
+          pushIf('Restock', 'restock');
+          pushIf('Quantmin', 'quantmin');
+          pushIf('Quantmax', 'quantmax');
+          if (JSON.stringify(a.flags) !== JSON.stringify(b.flags)) {
+            const diffs = flagDiffList(a.flags, b.flags);
+            if (diffs.length) localSpecs.push(`Flags(${diffs.join(', ')})`);
+          }
+          if (JSON.stringify(a.usage) !== JSON.stringify(b.usage)) localSpecs.push(`Usage(${formatChangeValue(a.usage)} > ${formatChangeValue(b.usage)})`);
+          if (JSON.stringify(a.value) !== JSON.stringify(b.value)) localSpecs.push(`Value(${formatChangeValue(a.value)} > ${formatChangeValue(b.value)})`);
+          if (JSON.stringify(a.tag) !== JSON.stringify(b.tag)) localSpecs.push(`Tag(${formatChangeValue(a.tag)} > ${formatChangeValue(b.tag)})`);
+
+          specs = localSpecs;
+        } catch (_e) {
+          // ignore; fallback to field names only
+          specs = Array.isArray(entry.fields) ? entry.fields : [];
+        }
+      }
+    } else {
+      specs = Array.isArray(entry.fields) ? entry.fields : [];
+    }
+    return specs.length ? ` [fields: ${specs.join(', ')}]` : '';
+  };
+
   const onDownloadZip = async () => {
     if (mode === 'all') {
       // Build a zip with all changed files across non-vanilla groups
       if (!anyAllChanged) return;
       const encoder = new TextEncoder();
       const files = [];
+
+      // Shared timestamp used for all changelog filenames to keep them consistent in the zip
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yy = String(now.getFullYear()).slice(-2);
+      const hh = String(now.getHours());
+      const mi = String(now.getMinutes());
+      const ss = String(now.getSeconds());
+      const changesFileName = `changes_${dd}-${mm}-${yy}_${hh}-${mi}-${ss}.txt`;
+
       for (const g of Object.keys(allChangedMap).sort((a, b) => a.localeCompare(b))) {
         const changedSet = new Set(allChangedMap[g]);
         const perFiles = getGroupFiles(g);
+
+        // Add changed XML files for this group
         for (const { file, types } of perFiles) {
           if (!changedSet.has(file)) continue;
           const name = `${g}/${file}.xml`;
           const content = generateTypesXml(types);
           files.push({ name, data: encoder.encode(content) });
         }
+
+        // Build and add per-group changelog (only for changed files)
+        try {
+          const logs = await getChangeLogsForGroup(g, changedSet);
+          const lines = [];
+          lines.push(`Change log for group "${g}"`);
+          lines.push(`Generated at ${now.toISOString()}`);
+          lines.push('');
+          if (logs.length === 0) {
+            lines.push('No changes recorded for the selected files.');
+          } else {
+            // Group by file
+            const byFile = new Map();
+            for (const e of logs) {
+              if (!byFile.has(e.file)) byFile.set(e.file, []);
+              byFile.get(e.file).push(e);
+            }
+            const sortedFiles = Array.from(byFile.keys()).sort((a, b) => a.localeCompare(b));
+            for (const f of sortedFiles) {
+              lines.push(`File: ${f}.xml`);
+              const arr = byFile.get(f);
+              for (const e of arr) {
+                const ts = new Date(e.ts);
+                const tdd = String(ts.getDate()).padStart(2, '0');
+                const tmm = String(ts.getMonth() + 1).padStart(2, '0');
+                const tyy = String(ts.getFullYear()).slice(-2);
+                const th = String(ts.getHours());
+                const tm = String(ts.getMinutes()).padStart(2, '0');
+                const ts2 = String(ts.getSeconds()).padStart(2, '0');
+
+                const fieldsSpec = buildFieldsSpec(e, g);
+                lines.push(`${tdd}-${tmm}-${tyy} ${th}:${tm}:${ts2} - [${e.editorID || 'unknown'}] ${e.typeName} ${e.action}${fieldsSpec}`);
+              }
+              lines.push(''); // spacer
+            }
+          }
+          files.push({ name: `${g}/${changesFileName}`, data: encoder.encode(lines.join('\n')) });
+        } catch (_e) {
+          const note = `Failed to load change logs for group "${g}". Exported at ${now.toISOString()}.`;
+          files.push({ name: `${g}/${changesFileName}`, data: encoder.encode(note) });
+        }
       }
+
       if (!files.length) return;
       const zip = createZip(files);
       const a = document.createElement('a');
@@ -178,15 +318,16 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
             const th = String(ts.getHours());
             const tm = String(ts.getMinutes()).padStart(2, '0');
             const ts2 = String(ts.getSeconds()).padStart(2, '0');
-            const fields = Array.isArray(e.fields) && e.fields.length ? ` [fields: ${e.fields.join(', ')}]` : '';
-            lines.push(`${tdd}-${tmm}-${tyy} ${th}:${tm}:${ts2} - [${e.editorID || 'unknown'}] ${e.typeName} ${e.action}${fields}`);
+
+            const fieldsSpec = buildFieldsSpec(e, group);
+            lines.push(`${tdd}-${tmm}-${tyy} ${th}:${tm}:${ts2} - [${e.editorID || 'unknown'}] ${e.typeName} ${e.action}${fieldsSpec}`);
           }
           lines.push(''); // spacer between files
         }
       }
 
       files.push({ name: changesFileName, data: encoder.encode(lines.join('\n')) });
-    } catch (e) {
+    } catch (_e) {
       // If logs fail, include a minimal note
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, '0');

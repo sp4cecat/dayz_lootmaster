@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 /**
  * Modal to manage entries in usage/value/tags definitions.
@@ -20,6 +20,14 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
   const isCapped = kind === 'usage' || kind === 'value';
   const cap = 32;
   const count = entries.length;
+
+  // Per-entry reference counts for information display
+  const entryCounts = useMemo(() => {
+    /** @type {Record<string, number>} */
+    const m = {};
+    for (const e of entries) m[e] = countRefs(kind, e);
+    return m;
+  }, [entries, kind, countRefs]);
 
   const onRemoveClick = (entry) => {
     const refCount = countRefs(kind, entry);
@@ -61,6 +69,16 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
           <h2>Manage {label}</h2>
         </div>
         <div className="modal-body">
+          {/* Summary info */}
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Total entries: <strong>{count}</strong>
+            {isCapped && (
+              <>
+                {' '}({count}/{cap} used, {Math.max(0, cap - count)} remaining)
+              </>
+            )}
+          </div>
+
           <div className="control" style={{ maxWidth: 320 }}>
             <span>Add new {label.toLowerCase()}</span>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -91,8 +109,8 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
           ) : (
             <div className="chips" style={{ marginTop: 12 }}>
               {entries.map(e => (
-                <span key={e} className="chip">
-                  {e}
+                <span key={e} className="chip" title={`${entryCounts[e] || 0} type(s) reference this`}>
+                  {e} <span className="muted" style={{ fontSize: 11 }}>({entryCounts[e] || 0})</span>
                   <button
                     type="button"
                     className="chip-close"

@@ -1,0 +1,23 @@
+Change log for group "windstrides"
+Generated at 2025-08-22T12:09:22.908Z
+
+File: types.xml
+22-08-25 21:44:22 - [Spacecat] Blue_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Latex_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Adidas_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Red_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Purple_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Fleece_Grey_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Latex_White_Leggings modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Poncho_Red_Checkered modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Poncho_Blue_Checkered modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] High_Knee_Sneakers modified [fields: Usage([Kiosk, Office, Pub, School, Store, Town, Village] > [Kiosk, Office, School, Store, Town, Village])]
+22-08-25 21:44:22 - [Spacecat] High_Knee_Sneakers_Black modified [fields: Usage([Kiosk, Office, Pub, School, Store, Town, Village] > [Kiosk, Office, School, Store, Town, Village])]
+22-08-25 21:44:22 - [Spacecat] Canvas_Backpack_Base modified [fields: Usage([Kiosk, Office, Pub, School, Store, Town, Village] > [Kiosk, Office, School, Store, Town, Village])]
+22-08-25 21:44:22 - [Spacecat] Canvas_Backpack_Black modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Canvas_Backpack_White modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Canvas_Backpack_Red modified [fields: Usage([Farm, Kiosk, Office, Pub, School, Store, Village] > [Farm, Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Kneepads_Jeans_Base modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Kneepads_Jeans_Black modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] FlipFlops_Colorbase modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]
+22-08-25 21:44:22 - [Spacecat] Legging_Shorts_Black modified [fields: Usage([Kiosk, Office, Pub, School, Store, Village] > [Kiosk, Office, School, Store, Village])]

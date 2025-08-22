@@ -10,7 +10,6 @@ import SummaryModal from './components/SummaryModal.jsx';
 import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
-import { generateTypesXml } from './utils/xml.js';
 
 /**
  * @typedef {import('./utils/xml.js').Type} Type
@@ -48,7 +47,8 @@ export default function App() {
     storageDirty,
     storageDiff,
     setChangeEditorID,
-    reloadFromFiles
+    reloadFromFiles,
+    getBaselineFileTypes
   } = useLootData();
 
   const [showExport, setShowExport] = useState(false);
@@ -409,6 +409,7 @@ export default function App() {
           defaultGroup={groups[0] || 'vanilla'}
           getGroupTypes={getGroupTypes}
           getGroupFiles={getGroupFiles}
+          getBaselineFileTypes={getBaselineFileTypes}
           definitions={definitions}
           storageDiff={storageDiff}
           onClose={() => setShowExport(false)}

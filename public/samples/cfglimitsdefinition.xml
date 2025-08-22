@@ -1,54 +1,51 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<lists>
+<limitsdefinition>
     <categories>
-        <category name="tools"/>
-        <category name="containers"/>
-        <category name="clothes"/>
-        <category name="lootdispatch"/>
-        <category name="food"/>
-        <category name="weapons"/>
         <category name="books"/>
+        <category name="clothes"/>
+        <category name="containers"/>
         <category name="explosives"/>
+        <category name="food"/>
+        <category name="lootdispatch"/>
+        <category name="tools"/>
+        <category name="weapons"/>
     </categories>
-    <tags>
-        <tag name="floor"/>
-        <tag name="shelves"/>
-        <tag name="ground"/>
-    </tags>
     <usageflags>
-        <usage name="Military"/>
-        <usage name="Police"/>
-        <usage name="Medic"/>
-        <usage name="Hospital"/>
-        <usage name="Firefighter"/>
-        <usage name="Industrial"/>
-        <usage name="Farm"/>
-        <usage name="Coast"/>
-        <usage name="Town"/>
-        <usage name="Village"/>
-        <usage name="Hunting"/>
-        <usage name="Office"/>
-        <usage name="School"/>
-        <usage name="Prison"/>
-        <usage name="Lunapark"/>
-        <usage name="SeasonalEvent"/>
-        <usage name="ContaminatedArea"/>
-        <usage name="Historical"/>
-        <usage name="SuperMarket"/>
-        <usage name="GreenHouse"/>
-        <usage name="Store"/>
-        <usage name="Pub"/>
-        <usage name="Kiosk"/>
-        <usage name="Convoy"/>
-        <usage name="Church"/>
-        <usage name="Bunker"/>
-        <usage name="Underground"/>
+        <flag name="Bunker"/>
+        <flag name="Coast"/>
+        <flag name="ContaminatedArea"/>
+        <flag name="Convoy"/>
+        <flag name="Farm"/>
+        <flag name="Firefighter"/>
+        <flag name="Historical"/>
+        <flag name="Hunting"/>
+        <flag name="Industrial"/>
+        <flag name="Kiosk"/>
+        <flag name="Lunapark"/>
+        <flag name="Medic"/>
+        <flag name="Military"/>
+        <flag name="Office"/>
+        <flag name="Police"/>
+        <flag name="Prison"/>
+        <flag name="Pub"/>
+        <flag name="School"/>
+        <flag name="SeasonalEvent"/>
+        <flag name="Store"/>
+        <flag name="SuperMarket"/>
+        <flag name="Town"/>
+        <flag name="Underground"/>
+        <flag name="Village"/>
     </usageflags>
     <valueflags>
-        <value name="Tier1"/>
-        <value name="Tier2"/>
-        <value name="Tier3"/>
-        <value name="Tier4"/>
-        <value name="Unique"/>
+        <flag name="Tier1"/>
+        <flag name="Tier2"/>
+        <flag name="Tier3"/>
+        <flag name="Tier4"/>
+        <flag name="Unique"/>
     </valueflags>
-</lists>
+    <tags>
+        <tag name="floor"/>
+        <tag name="ground"/>
+        <tag name="shelves"/>
+    </tags>
+</limitsdefinition>
