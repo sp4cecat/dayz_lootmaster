@@ -480,6 +480,13 @@ legend {
     color: var(--text);
 }
 
+/* Differentiate the "None" chip visually */
+.filters .chips .chip.none-chip {
+    background: color-mix(in oklab, var(--muted) 25%, var(--chip));
+    border-color: color-mix(in oklab, var(--muted) 50%, var(--border));
+    color: color-mix(in oklab, var(--text) 80%, var(--muted) 20%);
+}
+
 .table-and-form {
     display: flex;
     gap: 12px;

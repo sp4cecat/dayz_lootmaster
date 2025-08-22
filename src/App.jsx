@@ -158,8 +158,25 @@ export default function App() {
         }
       }
       if (namePattern && !namePattern.test(t.name)) return false;
-      if (usage.length && !usage.every(u => t.usage.includes(u))) return false;
-      if (value.length && !value.every(v => t.value.includes(v))) return false;
+
+        // Usage filter with 'None' handling
+        if (usage.length) {
+          if (usage.includes('None')) {
+            if ((t.usage?.length || 0) !== 0) return false;
+          } else if (!usage.every(u => t.usage.includes(u))) {
+            return false;
+          }
+        }
+
+        // Value filter with 'None' handling
+        if (value.length) {
+          if (value.includes('None')) {
+            if ((t.value?.length || 0) !== 0) return false;
+          } else if (!value.every(v => t.value.includes(v))) {
+            return false;
+          }
+        }
+
       return !(tag.length && !tag.every(g => t.tag.includes(g)));
 
     });
@@ -394,11 +411,14 @@ export default function App() {
 
 /**
  * Convert wildcard string (* ?) to RegExp.
+ * If no wildcard is provided, match as a substring (implicit *term*).
  * @param {string} pattern
  * @returns {RegExp}
  */
 function wildcardToRegExp(pattern) {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  const hasWildcards = /[*?]/.test(pattern);
+  const effective = hasWildcards ? pattern : `${pattern}*`;
+  const escaped = effective.replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*')
     .replace(/\?/g, '.');
   return new RegExp(`^${escaped}$`, 'i');

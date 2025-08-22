@@ -31,13 +31,23 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
 
   const toggleUsage = (opt) => {
     const curr = filters.usage;
-    const next = curr.includes(opt) ? curr.filter(x => x !== opt) : [...curr, opt];
+    if (opt === 'None') {
+      setField('usage', curr.includes('None') ? [] : ['None']);
+      return;
+    }
+    const cleaned = curr.filter(x => x !== 'None');
+    const next = cleaned.includes(opt) ? cleaned.filter(x => x !== opt) : [...cleaned, opt];
     setField('usage', next);
   };
 
   const toggleValue = (opt) => {
     const curr = filters.value;
-    const next = curr.includes(opt) ? curr.filter(x => x !== opt) : [...curr, opt];
+    if (opt === 'None') {
+      setField('value', curr.includes('None') ? [] : ['None']);
+      return;
+    }
+    const cleaned = curr.filter(x => x !== 'None');
+    const next = cleaned.includes(opt) ? cleaned.filter(x => x !== opt) : [...cleaned, opt];
     setField('value', next);
   };
 
@@ -127,6 +137,15 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </button>
         </legend>
         <div className="chips selectable">
+          <button
+            type="button"
+            className={`chip none-chip ${filters.usage.includes('None') ? 'selected' : ''}`}
+            onClick={() => toggleUsage('None')}
+            aria-pressed={filters.usage.includes('None')}
+            title="Types with no usage"
+          >
+            None
+          </button>
           {[...definitions.usageflags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(opt => {
             const selected = filters.usage.includes(opt);
             return (
@@ -157,6 +176,15 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </button>
         </legend>
         <div className="chips selectable">
+            <button
+              type="button"
+                className={`chip none-chip ${filters.value.includes('None') ? 'selected' : ''}`}
+              onClick={() => toggleValue('None')}
+              aria-pressed={filters.value.includes('None')}
+              title="Types with no value flags"
+            >
+              None
+            </button>
           {[...definitions.valueflags].sort((a, b) => {
             const ma = /^tier\s*(\d+)$/i.exec(String(a).trim());
             const mb = /^tier\s*(\d+)$/i.exec(String(b).trim());
