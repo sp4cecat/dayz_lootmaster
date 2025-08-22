@@ -9,6 +9,7 @@ import ThemeToggle from './components/ThemeToggle.jsx';
 import SummaryModal from './components/SummaryModal.jsx';
 import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
+import EditorLogin from './components/EditorLogin.jsx';
 import { generateTypesXml } from './utils/xml.js';
 
 /**
@@ -52,6 +53,57 @@ export default function App() {
   const [manageOpen, setManageOpen] = useState(false);
   const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
   const [showStorage, setShowStorage] = useState(false);
+
+  // Editor ID gating
+  const EDITOR_ID_SELECTED = 'dayz-editor:editorID:selected';
+  const EDITOR_ID_LIST = 'dayz-editor:editorIDs';
+
+  const [editorID, setEditorID] = useState(() => {
+    try { return localStorage.getItem(EDITOR_ID_SELECTED) || null; } catch { return null; }
+  });
+  const [editorIDs, setEditorIDs] = useState(() => {
+    try {
+      const raw = localStorage.getItem(EDITOR_ID_LIST);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  });
+
+  const selectEditorID = (id) => {
+    const v = String(id).trim();
+    if (!v) return;
+    setEditorID(v);
+    try {
+      localStorage.setItem(EDITOR_ID_SELECTED, v);
+      const set = new Set(editorIDs);
+      set.add(v);
+      const list = Array.from(set);
+      setEditorIDs(list);
+      localStorage.setItem(EDITOR_ID_LIST, JSON.stringify(list));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  // Profile dropdown state
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+  // Close on outside click
+  React.useEffect(() => {
+    if (!profileOpen) return;
+    const onDown = (e) => {
+      if (profileRef.current && profileRef.current.contains(e.target)) return;
+      setProfileOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [profileOpen]);
+
+  const signOut = () => {
+    try { localStorage.removeItem(EDITOR_ID_SELECTED); } catch { /* ignore */ }
+    setProfileOpen(false);
+    setEditorID(null);
+  };
 
   // Resizable left pane (filters)
   const [leftWidth, setLeftWidth] = useState(300); // default 300px
@@ -133,6 +185,10 @@ export default function App() {
     setSelection(new Set());
   };
 
+  if (!editorID) {
+    return <EditorLogin existingIDs={editorIDs} onSelect={selectEditorID} />;
+  }
+
   if (loading) {
     return (
       <div className="app app-center">
@@ -192,6 +248,26 @@ export default function App() {
           </button>
           <button className="btn primary" onClick={() => setShowExport(true)}>Export XML</button>
           <ThemeToggle />
+          <div className="profile" ref={profileRef}>
+            <button
+              className="btn profile-btn"
+              onClick={() => setProfileOpen(v => !v)}
+              title="Profile"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.6"/>
+                <path d="M4 19c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              <span className="profile-id">{editorID}</span>
+            </button>
+            {profileOpen && (
+              <div className="dropdown-menu" role="menu">
+                <button className="link" role="menuitem" onClick={signOut}>Sign out</button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
