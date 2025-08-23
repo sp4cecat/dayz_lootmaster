@@ -381,7 +381,7 @@ export default function App() {
           title="Drag to resize filters panel"
         />
         <section className="right-pane">
-          <div className="table-and-form">
+          <div className={`table-and-form ${selectedTypes.length > 0 ? 'has-form' : ''}`}>
             <TypesTable
               definitions={definitions}
               types={filteredTypes}

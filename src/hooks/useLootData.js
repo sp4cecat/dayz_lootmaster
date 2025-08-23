@@ -233,8 +233,12 @@ export function useLootData() {
           const vanillaRes = await fetch('/samples/db/types.xml');
           const vanillaText = await vanillaRes.text();
           let vanilla = parseTypesXml(vanillaText);
-          // Ignore world/static objects in vanilla imports
-          vanilla = vanilla.filter(t => !(t.name?.startsWith('Land_') || t.name?.startsWith('StaticObj_') || t.name?.startsWith('static_')));
+          // Ignore world/static objects in vanilla imports (case-insensitive for "static_")
+          vanilla = vanilla.filter(t => {
+            const n = t.name || '';
+            const lower = n.toLowerCase();
+            return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
+          });
           assembledFiles.vanilla = { types: vanilla };
 
           // 2) Additional groups from economy core (ordered)

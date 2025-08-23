@@ -134,12 +134,25 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
         <div className="filters-row">
             <label className="control grow">
                 <legend>Filter by text (supports * and ?)</legend>
-                <input
-                    type="text"
-                    value={filters.name}
-                    placeholder="e.g. Ammo* or *Dressing"
-                    onChange={e => setField('name', e.target.value)}
-                />
+            <div className="input-with-clear">
+              <input
+                type="text"
+                value={filters.name}
+                placeholder="e.g. Ammo* or *Dressing"
+                onChange={e => setField('name', e.target.value)}
+              />
+              {filters.name?.length > 0 && (
+                <button
+                  type="button"
+                  className="clear-input-btn"
+                  aria-label="Clear text filter"
+                  title="Clear"
+                  onClick={() => setField('name', '')}
+                >
+                  ×
+                </button>
+              )}
+            </div>
             </label>
         </div>
       <div className="filters-row">

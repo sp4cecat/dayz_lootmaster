@@ -310,6 +310,40 @@ h1 {
     color: var(--text);
 }
 
+/* Clear button inside text input */
+.input-with-clear {
+    position: relative;
+    width: 100%;
+}
+.input-with-clear > input[type="text"] {
+    padding-right: 28px; /* leave room for the clear icon */
+}
+.clear-input-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--bg-soft);
+    color: var(--muted);
+    line-height: 16px;
+    font-size: 14px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+}
+.clear-input-btn:hover {
+    color: var(--text-hover);
+    border-color: color-mix(in oklab, var(--border), var(--primary) 40%);
+}
+.clear-input-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
 .control.mixed input[type="number"]::placeholder {
     color: var(--muted);
 }
@@ -433,9 +467,18 @@ legend {
     grid-auto-rows: auto;
     /* Name, Group, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Flags fill remaining width */
     grid-template-columns: max-content min-content min-content min-content max-content max-content min-content 1.5fr 1.5fr min-content;
+    /* Prevent tracks from expanding to fill container, but let items stretch to track height */
+    align-content: start;
+    align-items: stretch;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-soft);
+}
+
+/* Virtualization spacer rows must span the entire grid to reserve scroll height */
+.spacer-row {
+    grid-column: 1 / -1;
+}
 }
 
 /* Without Group column */
@@ -495,6 +538,7 @@ legend {
     background: var(--bg-softer);
     border-bottom: 1px solid var(--border);
     font-weight: 600;
+        align-self: stretch; /* fill the header row track height */
     justify-content: center;
 }
 
@@ -572,6 +616,21 @@ legend {
     gap: 12px;
     height: 100%;
     width: 100%;
+}
+
+/* Make the types table flex and scroll properly inside the table-and-form layout */
+.table-and-form > .types-table {
+    flex: 1 1 0;
+    min-height: 0;   /* critical for enabling scrolling in flex containers */
+    overflow: auto;
+}
+
+/* When edit form is rendered, let the types list only consume content width */
+.table-and-form.has-form > .types-table {
+    flex: 0 0 auto;
+    width: max-content;
+    max-width: 70%; /* safety cap to prevent extreme overflow */
+    overflow: auto;
 }
 
 .edit-form-container {
@@ -749,6 +808,9 @@ legend {
 .chips.selectable .chip {
     cursor: pointer;
     background: var(--bg);
+    display: flex;             /* center content vertically */
+    align-items: center;        /* center content within equal-height row */
+    align-self: stretch;        /* ensure the cell fills the row track height */
 }
 
 .chips .chip.selected {

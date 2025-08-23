@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Set default theme to dark unless a saved preference exists -->
+    <script>
+      (function () {
+        try {
+          var key = 'dayz-types-editor:theme';
+          var saved = localStorage.getItem(key);
+          var theme = saved || 'dark';
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     <title>DayZ Types Editor</title>
   </head>
   <body>
