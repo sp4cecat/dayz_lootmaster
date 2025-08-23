@@ -1,6 +1,6 @@
 # DayZ Lootmaster
 
-This is a tool I've developed to help me manage my DayZ server's loot. I've implemented tools and functionality that assist me in refining the CLE based on my own methods.
+This is a tool I've developed to help me manage my DayZ server's loot. I've implemented functionality that assists me in refining the CLE based on my own methods.
 Types, spawnabletypes and events I place in a subdirectory for each mod I run, with a `vanilla_types` group for overriding the vanilla types.
 
 Thus, this tool is optimised for doing things that way.
