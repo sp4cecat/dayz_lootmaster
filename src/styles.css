@@ -1,7 +1,9 @@
 :root {
     --bg: #ffffff;
     --bg-soft: #f9f9f9;
+    --bg-softer: #d3d3d3;
     --text: #213547;
+    --text-hover: #1f2937; /* slightly darker for hover (gray-800) */
     --muted: #6b7280;
     --primary: #646cff; /* Vite brand indigo */
     --primary-hover: #747bff; /* Vite hover (light) */
@@ -16,6 +18,7 @@
     --bg-soft: rgb(59, 74, 101); /* Vite dark button bg */
     --bg-softer: rgb(70, 88, 120); /* Vite dark button bg */
     --text: rgba(255, 255, 255, 0.73); /* Vite dark text */
+    --text-hover: rgba(255, 255, 255, 0.9); /* higher contrast for hover */
     --muted: #a1a1a1;
     --primary: #646cff;
     --primary-hover: #535bf2; /* Vite hover (dark) */
@@ -356,11 +359,47 @@ legend {
     box-shadow: 0 1px 0 rgba(0,0,0,0.03);
 }
 
+/* Larger chevron for accordion toggles */
+.filters fieldset > legend .chevron {
+    font-size: 1.15rem;
+    line-height: 1;
+    display: inline-block;
+    margin-right: 4px;
+}
+
 .filters fieldset > legend > button {
     font-size: 12px;
     font-weight: 600;
-    color: var(--muted);
+    color: var(--text);
     text-decoration: none;
+}
+
+/* Improve hover color for accordion toggle buttons */
+.filters fieldset > legend > button:hover {
+    color: var(--text-hover);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* Make the 'manage' action look muted and underlined */
+.filters fieldset > legend > button.manage-link {
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* Subtle, clearer hover state for 'manage' link */
+.filters fieldset > legend > button.manage-link:hover {
+    color: color-mix(in oklab, var(--muted) 60%, var(--primary));
+    text-decoration: underline;
+}
+
+/* Remove default focus border/outline from legend buttons in Filters */
+.filters fieldset > legend > button:focus,
+.filters fieldset > legend > button:focus-visible {
+    outline: none;
+    box-shadow: none;
+    border: none;
 }
 
 .checkbox {
@@ -377,6 +416,16 @@ legend {
 
 .checkbox.indeterminate {
     background: color-mix(in oklab, var(--muted) 10%, transparent);
+}
+
+/* Subtle hover highlighting on types list rows (non-selected only) */
+.table-body .tr:not(.selected):hover > .td {
+    background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
+
+/* Slightly stronger hover for selected rows to keep feedback consistent */
+.table-body .tr.selected:hover > .td {
+    background: color-mix(in oklab, var(--primary) 16%, transparent);
 }
 
 .types-table {
@@ -431,7 +480,7 @@ legend {
     top: 0;
     z-index: 1;
     padding: 12px 18px;
-    background: var(--bg-soft);
+    background: var(--bg-softer);
     border-bottom: 1px solid var(--border);
     font-weight: 600;
     justify-content: center;
@@ -461,7 +510,7 @@ legend {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
-    background: var(--bg);
+    background: var(--bg-soft);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -483,7 +532,7 @@ legend {
 .chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 8px;
     align-items: center;
 }
 

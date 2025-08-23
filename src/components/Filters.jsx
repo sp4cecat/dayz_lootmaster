@@ -26,7 +26,7 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
   const [usageOpen, setUsageOpen] = useState(false);
   const [valueOpen, setValueOpen] = useState(false);
   const [flagsOpen, setFlagsOpen] = useState(false);
-  const [tagOpen, setTagOpen] = useState(true);
+  const [tagOpen, setTagOpen] = useState(false);
 
   // Ensure flags list is available even if not provided from parent
   const flagsList = useMemo(() => {
@@ -159,11 +159,12 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
             aria-expanded={usageOpen}
             title={usageOpen ? 'Collapse Usage' : 'Expand Usage'}
           >
-            {usageOpen ? '▾' : '▸'} Usage
+            <span className="chevron" aria-hidden="true">{usageOpen ? '▾' : '▸'}</span>
+            <span>Usage</span>
           </button>
           <button
             type="button"
-            className="link"
+            className="link manage-link"
             onClick={() => onManage('usage')}
             style={{ marginLeft: 'auto' }}
           >
@@ -208,11 +209,12 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
             aria-expanded={valueOpen}
             title={valueOpen ? 'Collapse Value' : 'Expand Value'}
           >
-            {valueOpen ? '▾' : '▸'} Value
+            <span className="chevron" aria-hidden="true">{valueOpen ? '▾' : '▸'}</span>
+            <span>Value</span>
           </button>
           <button
             type="button"
-            className="link"
+            className="link manage-link"
             onClick={() => onManage('value')}
             style={{ marginLeft: 'auto' }}
           >
@@ -262,57 +264,16 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           <button
             type="button"
             className="link"
-            onClick={() => setFlagsOpen(o => !o)}
-            aria-expanded={flagsOpen}
-            title={flagsOpen ? 'Collapse Flags' : 'Expand Flags'}
-          >
-            {flagsOpen ? '▾' : '▸'} Flags
-          </button>
-        </legend>
-        {flagsOpen && (
-          <div className="chips selectable">
-            <button
-              type="button"
-              className={`chip none-chip ${(filters.flags || []).includes('None') ? 'selected' : ''}`}
-              onClick={() => toggleFlag('None')}
-              aria-pressed={(filters.flags || []).includes('None')}
-              title="Types with no flags set"
-            >
-              None
-            </button>
-            {flagsList.map(key => {
-              const selected = (filters.flags || []).includes(key);
-              return (
-                <button
-                  type="button"
-                  key={key}
-                  className={`chip ${selected ? 'selected' : ''}`}
-                  onClick={() => toggleFlag(key)}
-                  aria-pressed={selected}
-                  title={key}
-                >
-                  {key}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </fieldset>
-
-      <fieldset className="filters-group">
-        <legend style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            type="button"
-            className="link"
             onClick={() => setTagOpen(o => !o)}
             aria-expanded={tagOpen}
             title={tagOpen ? 'Collapse Tag' : 'Expand Tag'}
           >
-            {tagOpen ? '▾' : '▸'} Tag
+            <span className="chevron" aria-hidden="true">{tagOpen ? '▾' : '▸'}</span>
+            <span>Tags</span>
           </button>
           <button
             type="button"
-            className="link"
+            className="link manage-link"
             onClick={() => onManage('tag')}
             style={{ marginLeft: 'auto' }}
           >
@@ -341,6 +302,49 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </div>
         )}
       </fieldset>
+
+        <fieldset className="filters-group">
+            <legend style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                    type="button"
+                    className="link"
+                    onClick={() => setFlagsOpen(o => !o)}
+                    aria-expanded={flagsOpen}
+                    title={flagsOpen ? 'Collapse Flags' : 'Expand Flags'}
+                >
+                    <span className="chevron" aria-hidden="true">{flagsOpen ? '▾' : '▸'}</span>
+                    <span>Flags</span>
+                </button>
+            </legend>
+            {flagsOpen && (
+                <div className="chips selectable">
+                    <button
+                        type="button"
+                        className={`chip none-chip ${(filters.flags || []).includes('None') ? 'selected' : ''}`}
+                        onClick={() => toggleFlag('None')}
+                        aria-pressed={(filters.flags || []).includes('None')}
+                        title="Types with no flags set"
+                    >
+                        None
+                    </button>
+                    {flagsList.map(key => {
+                        const selected = (filters.flags || []).includes(key);
+                        return (
+                            <button
+                                type="button"
+                                key={key}
+                                className={`chip ${selected ? 'selected' : ''}`}
+                                onClick={() => toggleFlag(key)}
+                                aria-pressed={selected}
+                                title={key}
+                            >
+                                {key}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </fieldset>
     </div>
   );
 }
