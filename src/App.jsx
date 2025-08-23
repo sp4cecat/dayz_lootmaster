@@ -219,6 +219,9 @@ export default function App() {
     return lootTypes.filter(t => selection.has(t.name));
   }, [lootTypes, selection]);
 
+  // Whether to show the Group column (hide when only vanilla exists)
+  const showGroupColumn = useMemo(() => groups.some(g => g !== 'vanilla'), [groups]);
+
   const [editKey, setEditKey] = useState(0);
   const onCancelEdit = () => {
     setEditKey(k => k + 1); // force unmount/mount
@@ -388,6 +391,7 @@ export default function App() {
               condensed={selectedTypes.length > 0}
               duplicatesByName={duplicatesByName}
               storageDiff={storageDiff}
+              showGroupColumn={showGroupColumn}
             />
             {selectedTypes.length > 0 && (
               <div className="edit-form-container" key={editKey}>

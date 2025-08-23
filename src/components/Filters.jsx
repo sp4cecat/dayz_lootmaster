@@ -22,6 +22,9 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
     [definitions.categories]
   );
 
+  // Whether any non-vanilla group exists (used to show/hide Types Groups panel)
+  const hasNonVanillaGroups = useMemo(() => groups.some(g => g !== 'vanilla'), [groups]);
+
   // Accordion state (usage/value/flags default closed, tag default open)
   const [usageOpen, setUsageOpen] = useState(false);
   const [valueOpen, setValueOpen] = useState(false);
@@ -95,35 +98,38 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
         <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
       </div>
 
-      <fieldset className="filters-group">
-        <legend>Types Groups</legend>
-        <div className="chips selectable">
-          <button
-            type="button"
-            className={`chip ${allGroupsSelected ? 'selected' : ''}`}
-            onClick={() => setField('groups', [])}
-            aria-pressed={allGroupsSelected}
-            title="Show all groups"
-          >
-            All
-          </button>
-          {groups.map(g => {
-            const selected = selectedGroupsSet.has(g);
-            return (
-              <button
-                type="button"
-                key={g}
-                className={`chip ${selected ? 'selected' : ''}`}
-                onClick={() => toggleGroup(g)}
-                aria-pressed={selected}
-                title={`Toggle group ${g}`}
-              >
-                {g}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
+      {/* Show Types Groups only if any non-vanilla group exists */}
+      {hasNonVanillaGroups && (
+        <fieldset className="filters-group">
+          <legend>Types Groups</legend>
+          <div className="chips selectable">
+            <button
+              type="button"
+              className={`chip ${allGroupsSelected ? 'selected' : ''}`}
+              onClick={() => setField('groups', [])}
+              aria-pressed={allGroupsSelected}
+              title="Show all groups"
+            >
+              All
+            </button>
+            {groups.map(g => {
+              const selected = selectedGroupsSet.has(g);
+              return (
+                <button
+                  type="button"
+                  key={g}
+                  className={`chip ${selected ? 'selected' : ''}`}
+                  onClick={() => toggleGroup(g)}
+                  aria-pressed={selected}
+                  title={`Toggle group ${g}`}
+                >
+                  {g}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
 
         <div className="filters-row">
             <label className="control grow">

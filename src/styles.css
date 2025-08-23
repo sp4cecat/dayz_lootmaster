@@ -431,11 +431,23 @@ legend {
 .types-table {
     display: grid;
     grid-auto-rows: auto;
-    /* Name, Group, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Tag fill remaining width */
+    /* Name, Group, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Flags fill remaining width */
     grid-template-columns: max-content min-content min-content min-content max-content max-content min-content 1.5fr 1.5fr min-content;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-soft);
+}
+
+/* Without Group column */
+.types-table.no-group {
+    /* Name, Nom, Min, Lifetime, Restock, Category, Usage, Value, Flags */
+    grid-template-columns: max-content min-content min-content max-content max-content min-content 1.5fr 1.5fr min-content;
+}
+
+/* Ensure condensed view is always a single column, even when no-group is present */
+.types-table.condensed,
+.types-table.condensed.no-group {
+    grid-template-columns: max-content !important;
     width: 100%;
     flex: 1 1 auto;
     align-self: flex-start;

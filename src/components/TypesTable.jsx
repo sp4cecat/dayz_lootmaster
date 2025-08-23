@@ -17,7 +17,7 @@ import { formatLifetime } from '../utils/time.js';
  *  storageDiff?: { files: Record<string, Record<string, { changedNames?: string[] }>> }
  * }} props
  */
-export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {}, storageDiff }) {
+export default function TypesTable({ definitions, types, selection, setSelection, unknowns, condensed: condensedProp, duplicatesByName = {}, storageDiff, showGroupColumn = true }) {
   const [sort, setSort] = useState(/** @type {{key: null | 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value', dir: 'asc' | 'desc'}} */({ key: 'name', dir: 'asc' }));
 
   // Virtualization state
@@ -149,7 +149,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
   return (
     <div
-      className={`types-table ${condensed ? 'condensed' : ''}`}
+      className={`types-table ${condensed ? 'condensed' : ''} ${showGroupColumn ? '' : 'no-group'}`}
       ref={containerRef}
       onScroll={handleScroll}
     >
@@ -173,14 +173,16 @@ export default function TypesTable({ definitions, types, selection, setSelection
         </div>
         {!condensed && (
           <>
-            <div
-              className="th group sortable"
-              onClick={() => handleSort('group')}
-              title="Sort by group"
-            >
-              <span>Group</span>
-              {sort.key === 'group' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
-            </div>
+            {showGroupColumn && (
+              <div
+                className="th group sortable"
+                onClick={() => handleSort('group')}
+                title="Sort by group"
+              >
+                <span>Group</span>
+                {sort.key === 'group' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+              </div>
+            )}
             <div
               className="th nums sortable"
               onClick={() => handleSort('nominal')}
@@ -270,7 +272,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
               {!condensed && (
                 <>
-                  <div className="td group">{t.group || '—'}</div>
+                  {showGroupColumn && <div className="td group">{t.group || '—'}</div>}
                   <div className="td nums">{t.nominal}</div>
                   <div className="td nums">{t.min}</div>
                   <div className="td nums" title={`${t.lifetime} seconds`}>{formatLifetime(Number(t.lifetime))}</div>
