@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 
 /**
  * @typedef {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}} Definitions
@@ -21,6 +21,12 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
     () => ['all', 'none', ...definitions.categories],
     [definitions.categories]
   );
+
+  // Accordion state (usage/value/flags default closed, tag default open)
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [valueOpen, setValueOpen] = useState(false);
+  const [flagsOpen, setFlagsOpen] = useState(false);
+  const [tagOpen, setTagOpen] = useState(true);
 
   // Ensure flags list is available even if not provided from parent
   const flagsList = useMemo(() => {
@@ -119,6 +125,17 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
         </div>
       </fieldset>
 
+        <div className="filters-row">
+            <label className="control grow">
+                <legend>Filter by text (supports * and ?)</legend>
+                <input
+                    type="text"
+                    value={filters.name}
+                    placeholder="e.g. Ammo* or *Dressing"
+                    onChange={e => setField('name', e.target.value)}
+                />
+            </label>
+        </div>
       <div className="filters-row">
         <label className="control">
           <legend>Category</legend>
@@ -132,166 +149,197 @@ export default function Filters({ definitions, groups, filters, onChange, onMana
           </select>
         </label>
       </div>
-      <div className="filters-row">
-        <label className="control grow">
-          <legend>Filter by text (supports * and ?)</legend>
-          <input
-            type="text"
-            value={filters.name}
-            placeholder="e.g. Ammo* or *Dressing"
-            onChange={e => setField('name', e.target.value)}
-          />
-        </label>
-      </div>
 
       <fieldset className="filters-group">
-        <legend>
-          Usage
+        <legend style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setUsageOpen(o => !o)}
+            aria-expanded={usageOpen}
+            title={usageOpen ? 'Collapse Usage' : 'Expand Usage'}
+          >
+            {usageOpen ? '▾' : '▸'} Usage
+          </button>
           <button
             type="button"
             className="link"
             onClick={() => onManage('usage')}
-            style={{ float: 'right' }}
+            style={{ marginLeft: 'auto' }}
           >
             manage
           </button>
         </legend>
-        <div className="chips selectable">
-          <button
-            type="button"
-            className={`chip none-chip ${filters.usage.includes('None') ? 'selected' : ''}`}
-            onClick={() => toggleUsage('None')}
-            aria-pressed={filters.usage.includes('None')}
-            title="Types with no usage"
-          >
-            None
-          </button>
-          {[...definitions.usageflags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(opt => {
-            const selected = filters.usage.includes(opt);
-            return (
-              <button
-                type="button"
-                key={opt}
-                className={`chip ${selected ? 'selected' : ''}`}
-                onClick={() => toggleUsage(opt)}
-                aria-pressed={selected}
-              >
-                {opt}
-              </button>
-            );
-          })}
-        </div>
+        {usageOpen && (
+          <div className="chips selectable">
+            <button
+              type="button"
+              className={`chip none-chip ${filters.usage.includes('None') ? 'selected' : ''}`}
+              onClick={() => toggleUsage('None')}
+              aria-pressed={filters.usage.includes('None')}
+              title="Types with no usage"
+            >
+              None
+            </button>
+            {[...definitions.usageflags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(opt => {
+              const selected = filters.usage.includes(opt);
+              return (
+                <button
+                  type="button"
+                  key={opt}
+                  className={`chip ${selected ? 'selected' : ''}`}
+                  onClick={() => toggleUsage(opt)}
+                  aria-pressed={selected}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="filters-group">
-        <legend>
-          Value
+        <legend style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setValueOpen(o => !o)}
+            aria-expanded={valueOpen}
+            title={valueOpen ? 'Collapse Value' : 'Expand Value'}
+          >
+            {valueOpen ? '▾' : '▸'} Value
+          </button>
           <button
             type="button"
             className="link"
             onClick={() => onManage('value')}
-            style={{ float: 'right' }}
+            style={{ marginLeft: 'auto' }}
           >
             manage
           </button>
         </legend>
-        <div className="chips selectable">
+        {valueOpen && (
+          <div className="chips selectable">
             <button
               type="button"
-                className={`chip none-chip ${filters.value.includes('None') ? 'selected' : ''}`}
+              className={`chip none-chip ${filters.value.includes('None') ? 'selected' : ''}`}
               onClick={() => toggleValue('None')}
               aria-pressed={filters.value.includes('None')}
               title="Types with no value flags"
             >
               None
             </button>
-          {[...definitions.valueflags].sort((a, b) => {
-            const ma = /^tier\s*(\d+)$/i.exec(String(a).trim());
-            const mb = /^tier\s*(\d+)$/i.exec(String(b).trim());
-            if (ma && mb) {
-              const na = Number(ma[1]);
-              const nb = Number(mb[1]);
-              return na - nb;
-            }
-            return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
-          }).map(opt => {
-            const selected = filters.value.includes(opt);
-            return (
-              <button
-                type="button"
-                key={opt}
-                className={`chip ${selected ? 'selected' : ''}`}
-                onClick={() => toggleValue(opt)}
-                aria-pressed={selected}
-              >
-                {opt}
-              </button>
-            );
-          })}
-        </div>
+            {[...definitions.valueflags].sort((a, b) => {
+              const ma = /^tier\s*(\d+)$/i.exec(String(a).trim());
+              const mb = /^tier\s*(\d+)$/i.exec(String(b).trim());
+              if (ma && mb) {
+                const na = Number(ma[1]);
+                const nb = Number(mb[1]);
+                return na - nb;
+              }
+              return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+            }).map(opt => {
+              const selected = filters.value.includes(opt);
+              return (
+                <button
+                  type="button"
+                  key={opt}
+                  className={`chip ${selected ? 'selected' : ''}`}
+                  onClick={() => toggleValue(opt)}
+                  aria-pressed={selected}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="filters-group">
-        <legend>Flags</legend>
-        <div className="chips selectable">
+        <legend style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
-            className={`chip none-chip ${(filters.flags || []).includes('None') ? 'selected' : ''}`}
-            onClick={() => toggleFlag('None')}
-            aria-pressed={(filters.flags || []).includes('None')}
-            title="Types with no flags set"
+            className="link"
+            onClick={() => setFlagsOpen(o => !o)}
+            aria-expanded={flagsOpen}
+            title={flagsOpen ? 'Collapse Flags' : 'Expand Flags'}
           >
-            None
+            {flagsOpen ? '▾' : '▸'} Flags
           </button>
-          {flagsList.map(key => {
-            const selected = (filters.flags || []).includes(key);
-            return (
-              <button
-                type="button"
-                key={key}
-                className={`chip ${selected ? 'selected' : ''}`}
-                onClick={() => toggleFlag(key)}
-                aria-pressed={selected}
-                title={key}
-              >
-                {key}
-              </button>
-            );
-          })}
-        </div>
+        </legend>
+        {flagsOpen && (
+          <div className="chips selectable">
+            <button
+              type="button"
+              className={`chip none-chip ${(filters.flags || []).includes('None') ? 'selected' : ''}`}
+              onClick={() => toggleFlag('None')}
+              aria-pressed={(filters.flags || []).includes('None')}
+              title="Types with no flags set"
+            >
+              None
+            </button>
+            {flagsList.map(key => {
+              const selected = (filters.flags || []).includes(key);
+              return (
+                <button
+                  type="button"
+                  key={key}
+                  className={`chip ${selected ? 'selected' : ''}`}
+                  onClick={() => toggleFlag(key)}
+                  aria-pressed={selected}
+                  title={key}
+                >
+                  {key}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="filters-group">
-        <legend>
-          Tag
+        <legend style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setTagOpen(o => !o)}
+            aria-expanded={tagOpen}
+            title={tagOpen ? 'Collapse Tag' : 'Expand Tag'}
+          >
+            {tagOpen ? '▾' : '▸'} Tag
+          </button>
           <button
             type="button"
             className="link"
             onClick={() => onManage('tag')}
-            style={{ float: 'right' }}
+            style={{ marginLeft: 'auto' }}
           >
             manage
           </button>
         </legend>
-        <div className="checkbox-grid">
-          {definitions.tags.map(opt => {
-            const selected = filters.tag.includes(opt);
-            return (
-              <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={e => {
-                    const curr = filters.tag;
-                    const next = e.target.checked ? [...curr, opt] : curr.filter(x => x !== opt);
-                    setField('tag', next);
-                  }}
-                />
-                <span>{opt}</span>
-              </label>
-            );
-          })}
-        </div>
+        {tagOpen && (
+          <div className="checkbox-grid">
+            {definitions.tags.map(opt => {
+              const selected = filters.tag.includes(opt);
+              return (
+                <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={e => {
+                      const curr = filters.tag;
+                      const next = e.target.checked ? [...curr, opt] : curr.filter(x => x !== opt);
+                      setField('tag', next);
+                    }}
+                  />
+                  <span>{opt}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
       </fieldset>
     </div>
   );

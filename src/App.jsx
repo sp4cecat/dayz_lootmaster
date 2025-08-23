@@ -456,9 +456,11 @@ export default function App() {
  */
 function wildcardToRegExp(pattern) {
   const hasWildcards = /[*?]/.test(pattern);
-  const effective = hasWildcards ? pattern : `${pattern}*`;
+  const effective = hasWildcards ? pattern : `${pattern}`;
   const escaped = effective.replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*')
     .replace(/\?/g, '.');
-  return new RegExp(`^${escaped}$`, 'i');
+  const regexPattern = hasWildcards ? `^${escaped}$` : `${escaped}`;
+  console.log("Escaped = ", escaped)
+  return new RegExp(regexPattern, 'i');
 }
