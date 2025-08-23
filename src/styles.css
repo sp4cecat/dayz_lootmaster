@@ -479,7 +479,6 @@ legend {
 .spacer-row {
     grid-column: 1 / -1;
 }
-}
 
 /* Without Group column */
 .types-table.no-group {
