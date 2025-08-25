@@ -213,6 +213,22 @@ export default function App() {
     }).length;
   }, [lootTypes]);
 
+  // Safe alias for loadWarnings; avoid ReferenceError if it isn't provided
+  const lw = typeof loadWarnings === 'undefined' ? [] : loadWarnings;
+  const lwKey = Array.isArray(lw) && lw.length ? `lw:${lw.join('|')}` : '';
+
+  // Dismissible warnings: hide current warnings until new alerts are generated
+  const [dismissedWarningsKey, setDismissedWarningsKey] = useState(/** @type {string|null} */(null));
+  const warningsKey = useMemo(() => {
+    const parts = [];
+    if (unknowns?.hasAny) parts.push('unknowns');
+    if (lwKey) parts.push(lwKey);
+    if (noFlagsCount > 0) parts.push(`noflags:${noFlagsCount}`);
+    return parts.join(';');
+  }, [unknowns?.hasAny, lwKey, noFlagsCount]);
+  const showWarnings = !!warningsKey && warningsKey !== dismissedWarningsKey;
+  const dismissWarnings = () => setDismissedWarningsKey(warningsKey);
+
   const selectedTypes = useMemo(() => {
     if (!lootTypes) return [];
     return lootTypes.filter(t => selection.has(t.name));
@@ -273,7 +289,7 @@ export default function App() {
         </div>
         <div className="header-actions">
           <button
-            className={`btn icon-only ${storageDirty ? '' : 'icon-muted'}`}
+            className={`btn icon-only ${storageDirty ? 'status-warn' : 'icon-muted'}`}
             onClick={() => setShowStorage(true)}
             title="Storage status (click to view differences)"
             aria-label="Storage status"

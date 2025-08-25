@@ -129,6 +129,11 @@ h1 {
     opacity: 0.5;
 }
 
+/* Warn color for storage status icon when changes detected */
+.status-warn {
+    color: var(--warn);
+}
+
 .profile {
     position: relative;
 }

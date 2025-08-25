@@ -149,8 +149,10 @@ export function parseEconomyCoreXml(xml) {
  */
 export function generateTypesXml(types) {
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<types>'];
-  // Ensure alphabetical order by type name
-  const sorted = [...types].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  // Ensure case-insensitive alphabetical order by type name
+  const sorted = [...types].sort((a, b) =>
+    String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
+  );
   for (const t of sorted) {
     lines.push(`  <type name="${escapeAttr(t.name)}">`);
     lines.push(`    <nominal>${t.nominal}</nominal>`);
@@ -209,7 +211,9 @@ export function generateTypesXmlFromFilesWithComments(files) {
   const sorted = [...files].sort((a, b) => String(a.file).localeCompare(String(b.file)));
   for (const { file, types } of sorted) {
     lines.push(`  <!-- ${escapeAttr(file)}.xml -->`);
-    const perFileSorted = [...types].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const perFileSorted = [...types].sort((a, b) =>
+      String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
+    );
     for (const t of perFileSorted) {
       lines.push(`  <type name="${escapeAttr(t.name)}">`);
       lines.push(`    <nominal>${t.nominal}</nominal>`);
