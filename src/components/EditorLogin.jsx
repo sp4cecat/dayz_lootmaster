@@ -21,6 +21,7 @@ export default function EditorLogin({ existingIDs, onSelect }) {
   return (
     <div className="app app-center" style={{ padding: 24 }}>
       <div
+        className="editor-login-card"
         style={{
           width: 420,
           maxWidth: '90%',
@@ -30,7 +31,7 @@ export default function EditorLogin({ existingIDs, onSelect }) {
           background: 'var(--bg)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 12
+          gap: 18
         }}
       >
         <h2 style={{ margin: 0 }}>Choose editor ID</h2>

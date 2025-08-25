@@ -60,9 +60,8 @@ export default function App() {
   const EDITOR_ID_SELECTED = 'dayz-editor:editorID:selected';
   const EDITOR_ID_LIST = 'dayz-editor:editorIDs';
 
-  const [editorID, setEditorID] = useState(() => {
-    try { return localStorage.getItem(EDITOR_ID_SELECTED) || null; } catch { return null; }
-  });
+  // Always require selecting an editor ID on each load (do not auto-load a saved selection)
+  const [editorID, setEditorID] = useState(null);
   const [editorIDs, setEditorIDs] = useState(() => {
     try {
       const raw = localStorage.getItem(EDITOR_ID_LIST);

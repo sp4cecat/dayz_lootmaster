@@ -344,6 +344,15 @@ h1 {
     box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent);
 }
 
+/* Make previous-ID chips larger on the login screen only */
+.editor-login-card .chips .chip {
+    font-size: 16px;
+    padding: 6px 14px;
+    border-radius: 10px;
+    background-color: var(--warn);
+    color: var(--bg);
+}
+
 .control.mixed input[type="number"]::placeholder {
     color: var(--muted);
 }
