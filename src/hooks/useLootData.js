@@ -795,6 +795,61 @@ export function useLootData() {
     currentEditorIdRef.current = id || '';
   }, []);
 
+  // One-time manual change logging for differences between parsed files (baseline) and IndexedDB state
+  const manualLoggedRef = useRef(false);
+  useEffect(() => {
+    if (manualLoggedRef.current) return;
+    if (!baselineFiles || !lootFiles) return;
+
+    const ts = Date.now();
+    const editorID = 'Manual Change';
+    /** @type {{ts:number, editorID:string, group:string, file:string, typeName:string, action:'added'|'modified'|'removed', fields?: string[], oldValues?: Record<string, any>, newValues?: Record<string, any>}[]} */
+    const logs = [];
+
+    const allGroups = new Set([...Object.keys(baselineFiles), ...Object.keys(lootFiles)]);
+    for (const g of allGroups) {
+      const basePer = baselineFiles[g] || {};
+      const currPer = lootFiles[g] || {};
+      const allFiles = new Set([...Object.keys(basePer), ...Object.keys(currPer)]);
+      for (const f of allFiles) {
+        const baseArr = basePer[f] || [];
+        const currArr = currPer[f] || [];
+        const baseBy = new Map(baseArr.map(t => [t.name, normalizeType(t)]));
+        const currBy = new Map(currArr.map(t => [t.name, normalizeType(t)]));
+
+        // Added
+        for (const name of currBy.keys()) {
+          if (!baseBy.has(name)) {
+            logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'added' });
+          }
+        }
+        // Removed
+        for (const name of baseBy.keys()) {
+          if (!currBy.has(name)) {
+            logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'removed' });
+          }
+        }
+        // Modified
+        for (const name of [...baseBy.keys()].filter(n => currBy.has(n))) {
+          const a = baseBy.get(name);
+          const b = currBy.get(name);
+          if (JSON.stringify(a) !== JSON.stringify(b)) {
+            const { fields, oldValues, newValues } = diffChangedFields(a, b);
+            logs.push({ ts, editorID, group: g, file: f, typeName: name, action: 'modified', fields, oldValues, newValues });
+          }
+        }
+      }
+    }
+
+    if (logs.length) {
+      appendChangeLogs(logs).finally(() => {
+        manualLoggedRef.current = true;
+      });
+    } else {
+      manualLoggedRef.current = true;
+    }
+  }, [baselineFiles, lootFiles]);
+
   return {
     loading,
     error,
