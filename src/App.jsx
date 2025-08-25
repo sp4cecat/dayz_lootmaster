@@ -226,7 +226,6 @@ export default function App() {
     if (noFlagsCount > 0) parts.push(`noflags:${noFlagsCount}`);
     return parts.join(';');
   }, [unknowns?.hasAny, lwKey, noFlagsCount]);
-  const showWarnings = !!warningsKey && warningsKey !== dismissedWarningsKey;
   const dismissWarnings = () => setDismissedWarningsKey(warningsKey);
 
   const selectedTypes = useMemo(() => {
@@ -367,9 +366,11 @@ export default function App() {
           <button className="link" onClick={() => resolveUnknowns.open()}>Review</button>
         </div>
       )}
-      {noFlagsCount > 0 && (
+      {warningsKey !== dismissedWarningsKey && noFlagsCount > 0 && (
         <div className="banner warn" role="status" aria-live="polite">
           {noFlagsCount} type{noFlagsCount === 1 ? '' : 's'} have no flags set.
+          <div className="spacer" />
+          <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
         </div>
       )}
 
