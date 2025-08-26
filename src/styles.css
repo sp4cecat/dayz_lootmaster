@@ -159,7 +159,7 @@ h1 {
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0,0,0,.2);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .2);
     padding: 8px 10px;
     min-width: 160px;
     z-index: 20;
@@ -251,9 +251,9 @@ h1 {
 
 .left-pane {
     flex: 0 0 auto;
-    width: 300px;              /* default width */
-    min-width: 300px;          /* clamp minimum */
-    max-width: 600px;          /* clamp maximum */
+    width: 300px; /* default width */
+    min-width: 300px; /* clamp minimum */
+    max-width: 600px; /* clamp maximum */
     border-right: 1px solid var(--border);
     padding: 12px;
     overflow: auto;
@@ -280,14 +280,17 @@ h1 {
     justify-content: space-between;
     align-items: flex-start;
 }
+
 .filters-row span {
     color: var(--muted);
     font-size: 11px;
 }
+
 .filters-row .panel-title {
     padding: 0;
     margin: 0;
 }
+
 .control.grow {
     flex: 1 1 auto;
 }
@@ -320,9 +323,11 @@ h1 {
     position: relative;
     width: 100%;
 }
+
 .input-with-clear > input[type="text"] {
     padding-right: 28px; /* leave room for the clear icon */
 }
+
 .clear-input-btn {
     position: absolute;
     right: 6px;
@@ -340,10 +345,12 @@ h1 {
     cursor: pointer;
     padding: 0;
 }
+
 .clear-input-btn:hover {
     color: var(--text-hover);
     border-color: color-mix(in oklab, var(--border), var(--primary) 40%);
 }
+
 .clear-input-btn:focus {
     outline: none;
     box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent);
@@ -404,7 +411,7 @@ legend {
     border-bottom: 1px solid var(--border);
     border-radius: 8px 8px 0 0;
     padding: 6px 10px;
-    box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
 }
 
 /* Larger chevron for accordion toggles */
@@ -479,8 +486,8 @@ legend {
 .types-table {
     display: grid;
     grid-auto-rows: auto;
-    /* Name, Group, Nom, Min, Lifetime, Restock (content-sized), then Category, Usage, Value, Flags fill remaining width */
-    grid-template-columns: max-content min-content min-content min-content max-content max-content min-content 1.5fr 1.5fr min-content;
+    /* Name, Group, Nom, Min, Lifetime, Restock, Qty (content-sized), then Category, Usage, Value, Flags fill remaining width */
+    grid-template-columns: max-content min-content min-content min-content max-content max-content 1fr min-content 1.5fr 1.5fr min-content;
     /* Prevent tracks from expanding to fill container, but let items stretch to track height */
     align-content: start;
     align-items: stretch;
@@ -496,8 +503,8 @@ legend {
 
 /* Without Group column */
 .types-table.no-group {
-    /* Name, Nom, Min, Lifetime, Restock, Category, Usage, Value, Flags */
-    grid-template-columns: max-content min-content min-content max-content max-content min-content 1.5fr 1.5fr min-content;
+    /* Name, Nom, Min, Lifetime, Restock, Qty, Category, Usage, Value, Flags */
+    grid-template-columns: max-content min-content min-content max-content max-content min-content min-content 1.5fr 1.5fr min-content;
 }
 
 /* Ensure condensed view is always a single column, even when no-group is present */
@@ -526,13 +533,14 @@ legend {
 
 /* Name header: left label, right-aligned "Select all" link */
 .th.name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
+
 .th.name .select-all-link {
-  margin-left: auto;
-  white-space: nowrap;
+    margin-left: auto;
+    white-space: nowrap;
 }
 
 /* Flatten header, body and rows into the same grid to align columns */
@@ -551,8 +559,9 @@ legend {
     background: var(--bg-softer);
     border-bottom: 1px solid var(--border);
     font-weight: 600;
-        align-self: stretch; /* fill the header row track height */
+    align-self: stretch; /* fill the header row track height */
     justify-content: center;
+    text-align: center;
 }
 
 .th.sortable {
@@ -562,10 +571,12 @@ legend {
     align-items: center;
     gap: 6px;
 }
+
 .th.sortable > span:first-child {
     text-decoration: underline;
     text-underline-offset: 2px;
 }
+
 .th.sortable:hover > span:first-child {
     text-decoration-thickness: 2px;
 }
@@ -634,7 +645,7 @@ legend {
 /* Make the types table flex and scroll properly inside the table-and-form layout */
 .table-and-form > .types-table {
     flex: 1 1 0;
-    min-height: 0;   /* critical for enabling scrolling in flex containers */
+    min-height: 0; /* critical for enabling scrolling in flex containers */
     overflow: auto;
 }
 
@@ -656,6 +667,7 @@ legend {
     background: var(--bg-soft);
     padding: 8px 15px;
 }
+
 /* Prevent any direct child from exceeding the container height */
 .edit-form-container > * {
     max-height: 100%;
@@ -707,11 +719,12 @@ legend {
     /* Let the panels area grow and size to its contents (fixes Firefox width) */
     flex: 1 1 auto;
     min-width: 0;
-    height: 100%;     /* enable vertical wrapping by container height */
+    height: 100%; /* enable vertical wrapping by container height */
     overflow: visible; /* allow content to be visible */
     justify-content: flex-start;
     width: max-content; /* size to content width across browsers */
 }
+
 .edit-form .panels-wrap .checkbox-grid {
     width: max-content;
 }
@@ -729,9 +742,10 @@ legend {
     display: grid;
     grid-auto-rows: max-content;
     grid-template-columns: repeat(2, max-content); /* exactly two columns */
-    gap: 3px 10px;                                  /* row gap / column gap */
-    width: max-content;                              /* size to both columns */
+    gap: 3px 10px; /* row gap / column gap */
+    width: max-content; /* size to both columns */
 }
+
 .edit-form .usage-panel .checkbox span {
     white-space: nowrap; /* keep labels on one line for stable column widths */
 }
@@ -823,9 +837,9 @@ legend {
 .chips.selectable .chip {
     cursor: pointer;
     background: var(--bg);
-    display: flex;             /* center content vertically */
-    align-items: center;        /* center content within equal-height row */
-    align-self: stretch;        /* ensure the cell fills the row track height */
+    display: flex; /* center content vertically */
+    align-items: center; /* center content within equal-height row */
+    align-self: stretch; /* ensure the cell fills the row track height */
 }
 
 .chips .chip.selected {
@@ -863,6 +877,7 @@ textarea.code-view {
     background: linear-gradient(to right, transparent, var(--border), transparent);
     border-right: 1px solid var(--border);
 }
+
 .pane-resizer:hover {
     background: linear-gradient(to right, transparent, color-mix(in oklab, var(--primary) 40%, var(--border)), transparent);
 }

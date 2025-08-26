@@ -208,6 +208,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
               <span>Restock</span>
               {sort.key === 'restock' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
             </div>
+            <div className="th nums" title="Quantmin/Quantmax" >Quantmin/max</div>
             <div className="th category">Category</div>
             <div
               className="th usage sortable"
@@ -278,6 +279,9 @@ export default function TypesTable({ definitions, types, selection, setSelection
                   <div className="td nums" title={`${t.lifetime} seconds`}>{formatLifetime(Number(t.lifetime))}</div>
                   <div className="td nums" title={`${t.restock} seconds`}>
                     {Number(t.restock) === 0 ? '0' : formatLifetime(Number(t.restock))}
+                  </div>
+                  <div className="td nums" title="Quantmin/Quantmax">
+                    {`${t.quantmin}/${t.quantmax}`}
                   </div>
                   <div className="td category">
                     <span className={!definitions.categories.includes(t.category || '') ? 'warn-text' : ''}>
