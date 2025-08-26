@@ -704,11 +704,13 @@ legend {
     flex-wrap: wrap;
     gap: 30px;
     align-content: flex-start;
-    flex: 0 0 auto;   /* fill remaining space next to basics-stack */
+    /* Let the panels area grow and size to its contents (fixes Firefox width) */
+    flex: 1 1 auto;
+    min-width: 0;
     height: 100%;     /* enable vertical wrapping by container height */
-    overflow: hidden; /* no vertical scroll needed */
+    overflow: visible; /* allow content to be visible */
     justify-content: flex-start;
-    width: auto;
+    width: max-content; /* size to content width across browsers */
 }
 .edit-form .panels-wrap .checkbox-grid {
     width: max-content;

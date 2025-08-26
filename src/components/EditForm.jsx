@@ -232,6 +232,8 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
               )}
             </label>
           ))}
+
+
         </div>
 
         <div className="panels-wrap">
