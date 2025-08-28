@@ -3,10 +3,13 @@
 This is a tool I've developed to help me manage my DayZ server's loot. I've implemented functionality that assists me in refining the CLE based on my own methods.
 Types, spawnabletypes and events I place in a subdirectory for each mod I run, with a `vanilla_types` group for overriding the vanilla types.
 
-Thus, this tool is optimised for doing things that way.
+So yeah - this tool is optimised for doing things my way, with each mod's CLE files (types / events / spawnablles) in their own directory, and loaded via cfgeconomycore.xml
 
 # Server Requirements
-Lootmaster will only work on a server that gives you access to the Windows / Windows Server desktop.
+Lootmaster will only work on a server that gives you access to the Windows / Windows Server desktop. You'll need to have the latest version of Node / npm installed globally.
+
+## Server Side
+Lootmaster is a single page app, and is served up via a Node.js server. The server does all of the reading and saving of your files.
 
 # Installation
 Clone the repo and run `npm install`
@@ -19,30 +22,29 @@ Then run `npm run dev`
 Lootmaster is currently locked to a specific folder structure. It comes with the current types.xml for the vanilla Chernarus CLE.
 
 ## Minimum Setup
-Place your cfg files in the `public/samples` folder.
+Place your cfg files in the `./data` folder.
 - cfgeconomycore.xml
 - cfglimitsdefinition.xml
- 
-Place the db/types.xml file in the samples/db folder. Ideally, this would be the vanilla file.
 
 ## Recommended Structure
-Place the `mpmissions/db/types.xml` file in the samples/db folder. Ideally, this would be the vanilla file.
+Place the `mpmissions/db/types.xml` file in the `./data/db` folder. Ideally, this would be the vanilla file.
+
 ### Types Groups
-In the `public/samples/db/types` folder, create a directory for each **types group** - usually relating to types for specific mods.
+In the `./data/db/types` folder, create a directory for each **types group** - usually relating to types for specific mods.
 
 ### Example structure
 ```aiignore
-public/
-  samples/
-  | cfgeconomycore.xml
-  | cfglimitsdefinition.xml
+data/
+    cfgeconomycore.xml
+    cfglimitsdefinition.xml
     db/
-    | types.xml
-      types/
-        mod1/
-        | types.xml
-        mod2/
-        | types.xml
+        types.xml
+        types/
+            mod1/
+                types.xml
+            mod2/
+                types.xml
+                
 ```
 # Lootmastering
 
@@ -104,11 +106,11 @@ Types that have been edited will now show in the list with a slightly different 
 
 There's Undo and redo icons at the top of the page.
 
-### Changes Status
+## Saving to ./data
+As soon as you make a change, the 'Set Changes Live' button at the top becomes active. Clicking this will save your changes to the `cfgeconomycore.xml` and `cfglimitsdefinition.xml` files as well as any types that have changed.
 
-Clicking the floppy disk icon will show you a list of all the changes you've made.
+## Preview current changes
 
-# Exporting Your Changes
+The exclamation icon at the top of the page will show you a preview of the changes that will be made when you save.
 
-As a single page client side app, we can't save directly to the file system (this will likely change in later iterations of Lootmaster)
 
