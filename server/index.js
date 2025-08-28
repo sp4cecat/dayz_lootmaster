@@ -62,6 +62,11 @@ function groupDirPath(group) {
   return join(DATA_DIR, 'db', 'types', group);
 }
 
+function economyCorePath() {
+  // Explicitly use ./data/cfgeconomycore.xml
+  return join(DATA_DIR, 'cfgeconomycore.xml');
+}
+
 function extractTypeNames(xml) {
   // Lightweight extraction of <type name="..."> occurrences
   const names = new Set();
@@ -71,6 +76,58 @@ function extractTypeNames(xml) {
     if (m[1]) names.add(m[1]);
   }
   return names;
+}
+
+/**
+ * Try to use /src/utils/xml.js parseTypesXml to parse XML into Type[] on the server.
+ * Falls back to internal regex parser if DOMParser or import is not available.
+ * @param {string} xml
+ * @returns {Promise<Record<string, any>>}
+ */
+async function parseTypesWithSrcHelpers(xml) {
+  try {
+    // Dynamic import to avoid hard dependency at startup
+    const mod = await import('../src/utils/xml.js');
+    if (mod && typeof mod.parseTypesXml === 'function') {
+      const arr = mod.parseTypesXml(xml); // may throw if DOMParser is unavailable
+      return typesArrayToMap(arr);
+    }
+  } catch {
+    // ignore and fallback
+  }
+  return parseTypesToMap(xml);
+}
+
+/**
+ * Convert Type[] from /src/utils/xml helpers into a comparable map for diffing.
+ * @param {Array<any>} arr
+ */
+function typesArrayToMap(arr) {
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const t of arr || []) {
+    out[t.name] = {
+      category: t.category || '',
+      nominal: String(t.nominal ?? ''),
+      min: String(t.min ?? ''),
+      lifetime: String(t.lifetime ?? ''),
+      restock: String(t.restock ?? ''),
+      quantmin: String(t.quantmin ?? ''),
+      quantmax: String(t.quantmax ?? ''),
+      usage: Array.isArray(t.usage) ? [...t.usage].sort() : [],
+      value: Array.isArray(t.value) ? [...t.value].sort() : [],
+      tag: Array.isArray(t.tag) ? [...t.tag].sort() : [],
+      flags: {
+        count_in_cargo: t.flags?.count_in_cargo ? 1 : 0,
+        count_in_hoarder: t.flags?.count_in_hoarder ? 1 : 0,
+        count_in_map: t.flags?.count_in_map ? 1 : 0,
+        count_in_player: t.flags?.count_in_player ? 1 : 0,
+        crafted: t.flags?.crafted ? 1 : 0,
+        deloot: t.flags?.deloot ? 1 : 0
+      }
+    };
+  }
+  return out;
 }
 
 // Minimal XML parsing for types to compute field-level diffs
@@ -255,11 +312,12 @@ const server = http.createServer(async (req, res) => {
     // GET economy core (cfgeconomycore.xml)
     if (pathname === '/api/economycore' || pathname === '/api/economycore/') {
       try {
-        const p = join(DATA_DIR, 'cfgeconomycore.xml');
-        const xml = await readFile(p, 'utf8');
+        const xml = await readFile(economyCorePath(), 'utf8');
         send(res, 200, xml, { 'Content-Type': 'application/xml; charset=utf-8' });
       } catch {
-        notFound(res);
+        // If missing, return a minimal valid empty document instead of 404
+        const empty = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<economycore></economycore>\n';
+        send(res, 200, empty, { 'Content-Type': 'application/xml; charset=utf-8' });
       }
       return;
     }
@@ -308,8 +366,8 @@ const server = http.createServer(async (req, res) => {
         // Compute detailed changes (added/removed/modified with field-level diffs)
         try {
           const editorID = (req.headers['x-editor-id'] && String(req.headers['x-editor-id'])) || 'unknown';
-          const oldMap = parseTypesToMap(prev);
-          const newMap = parseTypesToMap(body);
+          const oldMap = await parseTypesWithSrcHelpers(prev);
+          const newMap = await parseTypesWithSrcHelpers(body);
 
           const oldNames = new Set(Object.keys(oldMap));
           const newNames = new Set(Object.keys(newMap));

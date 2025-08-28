@@ -69,6 +69,109 @@ export function useLootData() {
   const [baselineFiles, setBaselineFiles] = useState(/** @type {TypeFiles|null} */(null));
   const [baselineDefinitions, setBaselineDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
 
+  // Helper to get API base
+  const getApiBase = () => {
+    const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
+    const defaultBase = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
+    return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
+  };
+
+  // Refresh baseline (definitions + files) from live API
+  const refreshBaselineFromAPI = useCallback(async () => {
+    try {
+      const API_BASE = getApiBase();
+      // Probe health
+      let apiOk = false;
+      try {
+        const health = await fetch(`${API_BASE}/api/health`);
+        apiOk = health.ok;
+      } catch {
+        apiOk = false;
+      }
+      if (!apiOk) return false;
+
+      // Definitions
+      try {
+        const limitsRes = await fetch(`${API_BASE}/api/definitions`);
+        if (limitsRes.ok) {
+          const txt = await limitsRes.text();
+          const defs = parseLimitsXml(txt);
+          setBaselineDefinitions(defs);
+        }
+      } catch {
+        // ignore defs baseline failures
+      }
+
+      /** @type {TypeFiles} */
+      const baseline = {};
+
+      // Vanilla
+      try {
+        const vr = await fetch(`${API_BASE}/api/types/vanilla/types`);
+        if (vr.ok) {
+          const vText = await vr.text();
+          let vanilla = parseTypesXml(vText);
+          vanilla = vanilla.filter(t => {
+            const n = t.name || '';
+            const lower = n.toLowerCase();
+            return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
+          });
+          baseline.vanilla = { types: vanilla };
+        }
+      } catch {}
+
+      // Additional groups via economycore
+      try {
+        const er = await fetch(`${API_BASE}/api/economycore`);
+        if (er.ok) {
+          const eText = await er.text();
+          const { order, filesByGroup } = parseEconomyCoreXml(eText);
+          for (const group of order) {
+            const filesList = filesByGroup[group] || [];
+            for (const samplePath of filesList) {
+              const parts = samplePath.split('/');
+              const fileName = parts[parts.length - 1] || 'types.xml';
+              const fileBase = fileName.replace(/\.xml$/i, '');
+              try {
+                const tr = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                if (!tr.ok) continue;
+                const tText = await tr.text();
+                const parsed = parseTypesXml(tText);
+                if (!baseline[group]) baseline[group] = {};
+                baseline[group][fileBase] = parsed;
+              } catch { /* skip */ }
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
+      if (Object.keys(baseline).length > 0) {
+        setBaselineFiles(baseline);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Prefer baseline from live API (./data) to compare in storageDiff (initial load)
+  useEffect(() => {
+    let aborted = false;
+
+    async function loadBaselineFromAPI() {
+      try {
+        const ok = await refreshBaselineFromAPI();
+        if (!ok || aborted) return;
+      } catch {
+        // ignore API baseline failures
+      }
+    }
+
+    loadBaselineFromAPI();
+    return () => { aborted = true; };
+  }, [refreshBaselineFromAPI]);
+
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
     if (!lootFiles) return;
@@ -212,18 +315,40 @@ export function useLootData() {
     let mounted = true;
     (async () => {
       try {
-        // Load definitions
-        const limitsRes = await fetch('/samples/cfglimitsdefinition.xml');
-        const limitsText = await limitsRes.text();
-        const defs = parseLimitsXml(limitsText);
+        // Determine API base
+        const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
+        const defaultBase = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
+        const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
+
+        // Probe API
+        let apiOk = false;
+        try {
+          const health = await fetch(`${API_BASE}/api/health`);
+          apiOk = health.ok;
+        } catch {
+          apiOk = false;
+        }
+        if (!apiOk) {
+          throw new Error('Live data API is unavailable. Set dayz-editor:apiBase and start the persistence server.');
+        }
+
+        // Load definitions from API
+        let defs;
+        try {
+          const limitsRes = await fetch(`${API_BASE}/api/definitions`);
+          if (!limitsRes.ok) throw new Error('definitions missing');
+          const limitsText = await limitsRes.text();
+          defs = parseLimitsXml(limitsText);
+        } catch (_e) {
+          throw new Error('cfglimitsdefinition.xml is missing or invalid in the live data API.');
+        }
 
         // Try file-level records from IndexedDB
-        let parsedFromSamples = false;
         /** @type {TypeFiles|null} */
         let files = await loadAllGrouped();
         if (files && Object.keys(files).length === 0) files = null;
 
-        // Fallback: legacy flat storage to seed IDB as vanilla/types
+        // Fallback: legacy flat storage to seed IDB as vanilla/types (optional)
         if (!files) {
           /** @type {Type[]|null} */
           const legacy = loadFromStorage(LEGACY_STORAGE_KEY_TYPES) || null;
@@ -233,47 +358,55 @@ export function useLootData() {
           }
         }
 
-        // If still empty, build from samples (vanilla + cfgeconomycore order) and seed IDB per file
+        // If still empty, build from API and seed IDB per file
         if (!files) {
           /** @type {TypeFiles} */
-          const assembledFiles = { };
+          const assembledFiles = {};
 
-          // 1) Vanilla base
-          const vanillaRes = await fetch('/samples/db/types.xml');
-          const vanillaText = await vanillaRes.text();
-          let vanilla = parseTypesXml(vanillaText);
-          // Ignore world/static objects in vanilla imports (case-insensitive for "static_")
-          vanilla = vanilla.filter(t => {
-            const n = t.name || '';
-            const lower = n.toLowerCase();
-            return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
-          });
-          assembledFiles.vanilla = { types: vanilla };
+          // 1) Vanilla base (data/db/types.xml)
+          try {
+            const vanillaRes = await fetch(`${API_BASE}/api/types/vanilla/types`);
+            if (!vanillaRes.ok) throw new Error('vanilla types missing');
+            const vanillaText = await vanillaRes.text();
+            let vanilla = parseTypesXml(vanillaText);
+            // Ignore world/static objects (case-insensitive for "static_")
+            vanilla = vanilla.filter(t => {
+              const n = t.name || '';
+              const lower = n.toLowerCase();
+              return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
+            });
+            assembledFiles.vanilla = { types: vanilla };
+          } catch {
+            throw new Error('Vanilla types are missing from the live data API.');
+          }
 
           // 2) Additional groups from economy core (ordered)
           try {
-            const econRes = await fetch('/samples/cfgeconomycore.xml');
-            const econText = await econRes.text();
-            const { order, filesByGroup } = parseEconomyCoreXml(econText);
-
-            for (const group of order) {
-              const filesList = filesByGroup[group] || [];
-              for (const filePath of filesList) {
-                const res = await fetch(filePath);
-                const text = await res.text();
-                const parsed = parseTypesXml(text);
-
-                const parts = filePath.split('/');
-                const fileName = parts[parts.length - 1] || 'types.xml';
-                const fileBase = fileName.replace(/\.xml$/i, '');
-                if (!assembledFiles[group]) assembledFiles[group] = {};
-                assembledFiles[group][fileBase] = parsed;
+            const econRes = await fetch(`${API_BASE}/api/economycore`);
+            if (econRes.ok) {
+              const econText = await econRes.text();
+              const { order, filesByGroup } = parseEconomyCoreXml(econText);
+              for (const group of order) {
+                const filesList = filesByGroup[group] || [];
+                for (const samplePath of filesList) {
+                  const parts = samplePath.split('/');
+                  const fileName = parts[parts.length - 1] || 'types.xml';
+                  const fileBase = fileName.replace(/\.xml$/i, '');
+                  const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                  if (!res.ok) continue;
+                  const text = await res.text();
+                  const parsed = parseTypesXml(text);
+                  if (!assembledFiles[group]) assembledFiles[group] = {};
+                  assembledFiles[group][fileBase] = parsed;
+                }
               }
             }
-          } catch (e) {
-            // If cfgeconomycore is missing or invalid, proceed with vanilla only
-            // eslint-disable-next-line no-console
-            console.warn('Failed to parse cfgeconomycore.xml, proceeding with vanilla only:', e);
+          } catch {
+            // ignore extra groups if economy core is missing or invalid
+          }
+
+          if (!Object.keys(assembledFiles).length) {
+            throw new Error('Live data API returned no types data.');
           }
 
           // Persist initial build per file into IndexedDB
@@ -285,7 +418,6 @@ export function useLootData() {
           }
           await saveManyTypeFiles(records);
           files = assembledFiles;
-          parsedFromSamples = true;
         }
 
         if (!mounted) return;
@@ -302,47 +434,10 @@ export function useLootData() {
         const merged = mergeFromFiles(files);
         _setLootTypes(merged);
 
-        // Always parse a fresh baseline from samples for diffing
-        try {
-          /** @type {TypeFiles} */
-          const baseline = {};
-          // Vanilla
-          const vanillaRes = await fetch('/samples/db/types.xml');
-          const vanillaText = await vanillaRes.text();
-          let vanilla = parseTypesXml(vanillaText);
-          // Ignore world/static objects in vanilla imports
-          vanilla = vanilla.filter(t => !(t.name?.startsWith('Land_') || t.name?.startsWith('StaticObj_') || t.name?.startsWith('Static_')));
-          baseline.vanilla = { types: vanilla };
-          // Other groups via cfgeconomycore
-          try {
-            const econRes = await fetch('/samples/cfgeconomycore.xml');
-            const econText = await econRes.text();
-            const { order, filesByGroup } = parseEconomyCoreXml(econText);
-            for (const g of order) {
-              const list = filesByGroup[g] || [];
-              for (const filePath of list) {
-                const res = await fetch(filePath);
-                const text = await res.text();
-                const parsed = parseTypesXml(text);
-                const parts = filePath.split('/');
-                const fileName = parts[parts.length - 1] || 'types.xml';
-                const fileBase = fileName.replace(/\.xml$/i, '');
-                if (!baseline[g]) baseline[g] = {};
-                baseline[g][fileBase] = parsed;
-              }
-            }
-          } catch (e) {
-            // ignore, baseline will include vanilla only
-          }
-          setBaselineFiles(baseline);
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn('Failed to parse baseline from samples:', e);
-        }
         setUnknowns(validateUnknowns(merged, defs));
         historyRef.current = createHistory(merged);
 
-        // Prepare and show one-time summary of loaded data (only on first parse-and-load)
+        // Prepare and show one-time summary of loaded data
         const groupOrder = Object.keys(groups).sort((a, b) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
         const summaryPayload = {
           typesTotal: merged.length,
@@ -355,7 +450,7 @@ export function useLootData() {
           groups: groupOrder.map(name => ({ name, count: (groups[name] || []).length }))
         };
         const alreadyShown = !!loadFromStorage(STORAGE_KEY_SUMMARY_SHOWN);
-        if (parsedFromSamples && !alreadyShown) {
+        if (!alreadyShown) {
           setLoadSummary(summaryPayload);
           setSummaryOpen(true);
           saveToStorage(STORAGE_KEY_SUMMARY_SHOWN, true);
@@ -608,7 +703,7 @@ export function useLootData() {
   }, [lootFiles]);
 
   /**
-   * Reload all data from sample files, clearing IndexedDB (types + change log) and local grouped keys.
+   * Reload all data from live API, clearing IndexedDB (types + change log) and local grouped keys.
    */
   const reloadFromFiles = useCallback(async () => {
     try {
@@ -625,46 +720,75 @@ export function useLootData() {
         // ignore
       }
 
-      // Reload definitions
-      const limitsRes = await fetch('/samples/cfglimitsdefinition.xml');
-      const limitsText = await limitsRes.text();
-      const defs = parseLimitsXml(limitsText);
+      // API base
+      const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
+      const defaultBase = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
+      const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
-      // Build from samples (vanilla + cfgeconomycore order)
+      // Reload definitions from API
+      let defs;
+      try {
+        const limitsRes = await fetch(`${API_BASE}/api/definitions`);
+        if (!limitsRes.ok) throw new Error('definitions not found');
+        const limitsText = await limitsRes.text();
+        defs = parseLimitsXml(limitsText);
+      } catch (_e) {
+        throw new Error('Live data API is unavailable or cfglimitsdefinition.xml is missing.');
+      }
+
+      // Build from API (vanilla + cfgeconomycore order)
       /** @type {TypeFiles} */
       const assembledFiles = {};
 
-      // Vanilla base
-      const vanillaRes = await fetch('/samples/db/types.xml');
-      const vanillaText = await vanillaRes.text();
-      let vanilla = parseTypesXml(vanillaText);
-      // Ignore world/static objects in vanilla imports
-      vanilla = vanilla.filter(t => !(t.name?.startsWith('Land_') || t.name?.startsWith('StaticObj_') || t.name?.startsWith('Static_')));
-      assembledFiles.vanilla = { types: vanilla };
-
-      // Additional groups
+      // Vanilla base (data/db/types.xml)
       try {
-        const econRes = await fetch('/samples/cfgeconomycore.xml');
-        const econText = await econRes.text();
-        const { order, filesByGroup } = parseEconomyCoreXml(econText);
-        for (const group of order) {
-          const filesList = filesByGroup[group] || [];
-          for (const filePath of filesList) {
-            const res = await fetch(filePath);
-            const text = await res.text();
-            const parsed = parseTypesXml(text);
+        const vRes = await fetch(`${API_BASE}/api/types/vanilla/types`);
+        if (vRes.ok) {
+          let vText = await vRes.text();
+          let vanilla = parseTypesXml(vText);
+          vanilla = vanilla.filter(t => {
+            const n = t.name || '';
+            const lower = n.toLowerCase();
+            return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
+          });
+          assembledFiles.vanilla = { types: vanilla };
+        } else {
+          throw new Error('vanilla types not found');
+        }
+      } catch (_e) {
+        throw new Error('Live data API is missing vanilla types.');
+      }
 
-            const parts = filePath.split('/');
-            const fileName = parts[parts.length - 1] || 'types.xml';
-            const fileBase = fileName.replace(/\.xml$/i, '');
-            if (!assembledFiles[group]) assembledFiles[group] = {};
-            assembledFiles[group][fileBase] = parsed;
+      // Additional groups via cfgeconomycore
+      try {
+        const econRes = await fetch(`${API_BASE}/api/economycore`);
+        if (econRes.ok) {
+          const econText = await econRes.text();
+          const { order, filesByGroup } = parseEconomyCoreXml(econText);
+
+          console.log('ECON', order, filesByGroup);
+
+          for (const group of order) {
+            const filesList = filesByGroup[group] || [];
+            for (const samplePath of filesList) {
+              const parts = samplePath.split('/');
+              const fileName = parts[parts.length - 1] || 'types.xml';
+              const fileBase = fileName.replace(/\.xml$/i, '');
+              const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+              if (!res.ok) continue;
+              const text = await res.text();
+              const parsed = parseTypesXml(text);
+              if (!assembledFiles[group]) assembledFiles[group] = {};
+              assembledFiles[group][fileBase] = parsed;
+            }
           }
         }
-      } catch (e) {
-        // proceed with vanilla only
-        // eslint-disable-next-line no-console
-        console.warn('Failed to parse cfgeconomycore.xml during reload:', e);
+      } catch {
+        // ignore extra groups if economy core missing
+      }
+
+      if (!Object.keys(assembledFiles).length) {
+        throw new Error('Live data API returned no types data.');
       }
 
       // Persist per file into IndexedDB
@@ -894,7 +1018,8 @@ export function useLootData() {
     },
     setChangeEditorID,
     reloadFromFiles,
-    getBaselineFileTypes
+    getBaselineFileTypes,
+    refreshBaselineFromAPI
   };
 }
 
