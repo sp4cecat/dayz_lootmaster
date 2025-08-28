@@ -274,14 +274,14 @@ h1 {
     gap: 12px;
 }
 
-.filters-row {
+.filters-row, .filters-col {
     display: flex;
     gap: 8px;
     justify-content: space-between;
     align-items: flex-start;
 }
 
-.filters-row span {
+.filters-row span, .filters-col span {
     color: var(--muted);
     font-size: 11px;
 }

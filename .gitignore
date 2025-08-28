@@ -26,3 +26,4 @@ dist-ssr
 /public/samples/cfgeconomycore.xml
 /public/samples/cfglimitsdefinition.xml
 !/public/samples/db/types.xml
+/data/

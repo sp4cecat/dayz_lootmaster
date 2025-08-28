@@ -38,7 +38,16 @@ export function useLootData() {
   // Merged array view with metadata for UI (each element augmented with "group" and source file)
   const [lootTypes, _setLootTypes] = useState(/** @type {(Type & {group: string, file: string})[]|null} */(null));
   // Filters include groups selection
-  const [filters, setFilters] = useState({ category: 'all', name: '', usage: [], value: [], tag: [], flags: [], groups: /** @type {string[]} */([]) });
+  const [filters, setFilters] = useState({
+    category: 'all',
+    name: '',
+    usage: [],
+    value: [],
+    tag: [],
+    flags: [],
+    changedOnly: false,
+    groups: /** @type {string[]} */([])
+  });
   const [selection, setSelection] = useState(new Set());
 
   const historyRef = useRef(createHistory([]));

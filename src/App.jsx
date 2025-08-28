@@ -10,6 +10,7 @@ import SummaryModal from './components/SummaryModal.jsx';
 import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
+import { generateTypesXml, generateLimitsXml } from './utils/xml.js';
 
 /**
  * @typedef {import('./utils/xml.js').Type} Type
@@ -55,6 +56,57 @@ export default function App() {
   const [manageOpen, setManageOpen] = useState(false);
   const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
   const [showStorage, setShowStorage] = useState(false);
+
+  // Persist-to-files UI state
+  const [saving, setSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState(/** @type {string|null} */(null));
+
+  async function persistAllToFiles() {
+    const ok = window.confirm('This will write the current definitions and all group types files to disk via the persistence server. Continue?');
+    if (!ok) return;
+
+    // Determine API base: use configured value or fallback to same host on port 4317
+    const savedBase = localStorage.getItem('dayz-editor:apiBase');
+    const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
+    const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/,'') : defaultBase;
+
+    setSaving(true);
+    setSaveNotice(null);
+    try {
+      // Save definitions
+      const defsXml = generateLimitsXml(definitions);
+      const defsRes = await fetch(`${API_BASE}/api/definitions`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/xml' },
+        body: defsXml
+      });
+      if (!defsRes.ok) {
+        throw new Error(`Failed to save cfglimitsdefinition.xml (${defsRes.status})`);
+      }
+
+      // Save all group type files
+      for (const g of groups) {
+        const files = getGroupFiles(g);
+        for (const { file, types } of files) {
+          const xml = generateTypesXml(types);
+          const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(g)}/${encodeURIComponent(file)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/xml' },
+            body: xml
+          });
+          if (!res.ok) {
+            throw new Error(`Failed to save ${g}/${file}.xml (${res.status})`);
+          }
+        }
+      }
+
+      setSaveNotice('Changes saved to files successfully.');
+    } catch (e) {
+      setSaveNotice(`Save failed: ${String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // Editor ID gating
   const EDITOR_ID_SELECTED = 'dayz-editor:editorID:selected';
@@ -148,13 +200,34 @@ export default function App() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [lootTypes]);
 
+  // Aggregate set of changed type names from storageDiff
+  const changedNameSet = useMemo(() => {
+    /** @type {Set<string>} */
+    const set = new Set();
+    if (storageDiff && storageDiff.files) {
+      for (const g of Object.keys(storageDiff.files)) {
+        const files = storageDiff.files[g];
+        for (const f of Object.keys(files)) {
+          const names = files[f]?.changedNames || [];
+          names.forEach(n => set.add(n));
+        }
+      }
+    }
+    return set;
+  }, [storageDiff]);
+
   const filteredTypes = useMemo(() => {
     if (!lootTypes) return [];
-    const { category, name, usage, value, tag, flags, groups: selectedGroups } = filters;
+    const { category, name, usage, value, tag, flags, changedOnly, groups: selectedGroups } = filters;
     const selectedGroupsSet = new Set(selectedGroups);
     const namePattern = name?.trim() ? wildcardToRegExp(name.trim()) : null;
 
     return lootTypes.filter(t => {
+      // Changed only filter
+      if (changedOnly && !changedNameSet.has(t.name)) {
+        return false;
+      }
+
       // Groups filter: if none selected, treat as all; otherwise must include
       if (selectedGroups.length > 0 && t.group && !selectedGroupsSet.has(t.group)) {
         return false;
@@ -290,13 +363,21 @@ export default function App() {
           <button
             className={`btn icon-only ${storageDirty ? 'status-warn' : 'icon-muted'}`}
             onClick={() => setShowStorage(true)}
-            title="Storage status (click to view differences)"
-            aria-label="Storage status"
+            title={storageDirty ? 'Changes detected — click to view' : 'Storage status (click to view differences)'}
+            aria-label={storageDirty ? 'Changes detected — storage status' : 'Storage status'}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M14 5v6H6V5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            {storageDirty ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3.5l9.5 17a1 1 0 0 1-.87 1.5H3.37a1 1 0 0 1-.87-1.5L12 3.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+                <path d="M12 9v5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                <circle cx="12" cy="16.5" r="1" fill="currentColor"/>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M14 5v6H6V5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
           </button>
           <button
             className="btn"
@@ -320,7 +401,16 @@ export default function App() {
               <path d="M16 7h3V4M19 7l-4.5-4.5M19 7h-8a6 6 0 1 0 0 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <button className="btn primary" onClick={() => setShowExport(true)}>Export XML</button>
+          <button className="btn" onClick={() => setShowExport(true)}>Export XML</button>
+          <button
+            className="btn primary"
+            onClick={persistAllToFiles}
+            disabled={saving}
+            title="Persist current state to XML files on disk"
+            aria-label="Save changes permanently"
+          >
+            {saving ? 'Saving…' : 'Set Changes Live'}
+          </button>
           <button
             className="btn"
             onClick={() => {
@@ -371,6 +461,13 @@ export default function App() {
           {noFlagsCount} type{noFlagsCount === 1 ? '' : 's'} have no flags set.
           <div className="spacer" />
           <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
+        </div>
+      )}
+      {saveNotice && (
+        <div className="banner" role="status" aria-live="polite">
+          <span>{saveNotice}</span>
+          <div className="spacer" />
+          <button className="link" onClick={() => setSaveNotice(null)} title="Dismiss">Dismiss</button>
         </div>
       )}
 
