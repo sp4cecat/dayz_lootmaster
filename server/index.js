@@ -349,6 +349,11 @@ const server = http.createServer(async (req, res) => {
           badRequest(res, 'Empty body');
           return;
         }
+        // Never allow persisting to the vanilla base file (./data/db/types.xml)
+        if (group === 'vanilla' && fileBase === 'types') {
+          badRequest(res, 'Persisting to vanilla types.xml is not allowed.');
+          return;
+        }
         const p = typesPath(group, fileBase);
 
         // Read previous content if present for diff

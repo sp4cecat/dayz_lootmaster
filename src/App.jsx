@@ -85,8 +85,9 @@ export default function App() {
                 throw new Error(`Failed to save cfglimitsdefinition.xml (${defsRes.status})`);
             }
 
-            // Save all group type files
+            // Save all group type files (skip vanilla base file entirely)
             for (const g of groups) {
+              if (g === 'vanilla') continue; // do not persist ./data/db/types.xml
                 const files = getGroupFiles(g);
                 for (const {file, types} of files) {
                     const xml = generateTypesXml(types);
