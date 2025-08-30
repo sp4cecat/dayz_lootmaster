@@ -599,8 +599,9 @@ export function useLootData() {
       if (!d) return d;
       let next = d;
       if (kind === 'usage') {
+        // Preserve original ordering; append to the end if not present
         if (d.usageflags.includes(value)) return d;
-        next = { ...d, usageflags: [...d.usageflags, value].sort() };
+        next = { ...d, usageflags: [...d.usageflags, value] };
       } else if (kind === 'value') {
         if (d.valueflags.includes(value)) return d;
         next = { ...d, valueflags: [...d.valueflags, value].sort() };

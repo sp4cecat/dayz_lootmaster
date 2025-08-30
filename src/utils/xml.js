@@ -39,11 +39,35 @@ export function parseLimitsXml(xml) {
   const tags = readNamedChildren(doc, 'tags', ['tag']);
 
   return {
+    // Keep categories sorted as before
     categories: categories.sort(),
-    usageflags: uniq(usageflags).sort(),
+    // Preserve original ordering of usage items with stable de-duplication
+    usageflags: uniqStable(usageflags),
+    // Keep value flags sorted for tiers consistency
     valueflags: uniq(valueflags).sort(),
+    // Keep tags sorted
     tags: uniq(tags).sort(),
   };
+}
+
+/**
+ * Stable unique: preserve first occurrence order.
+ * @param {string[]} arr
+ * @returns {string[]}
+ */
+function uniqStable(arr) {
+  const seen = new Set();
+  /** @type {string[]} */
+  const out = [];
+  for (const v of arr) {
+    if (v == null) continue;
+    const s = String(v);
+    if (!seen.has(s)) {
+      seen.add(s);
+      out.push(s);
+    }
+  }
+  return out;
 }
 
 /**
