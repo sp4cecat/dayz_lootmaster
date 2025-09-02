@@ -49,8 +49,9 @@ export default function App() {
         storageDiff,
         setChangeEditorID,
         reloadFromFiles,
-      getBaselineFileTypes,
-      refreshBaselineFromAPI
+        getBaselineFileTypes,
+        refreshBaselineFromAPI,
+        loadWarnings
     } = useLootData();
 
     const [showExport, setShowExport] = useState(false);
@@ -78,7 +79,10 @@ export default function App() {
             const defsXml = generateLimitsXml(definitions);
             const defsRes = await fetch(`${API_BASE}/api/definitions`, {
                 method: 'PUT',
-                headers: {'Content-Type': 'application/xml'},
+                headers: {
+                  'Content-Type': 'application/xml',
+                  'X-Editor-ID': editorID || 'unknown'
+                },
                 body: defsXml
             });
             if (!defsRes.ok) {
@@ -93,7 +97,10 @@ export default function App() {
                     const xml = generateTypesXml(types);
                     const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(g)}/${encodeURIComponent(file)}`, {
                         method: 'PUT',
-                        headers: {'Content-Type': 'application/xml'},
+                        headers: {
+                          'Content-Type': 'application/xml',
+                          'X-Editor-ID': editorID || 'unknown'
+                        },
                         body: xml
                     });
                     if (!res.ok) {
@@ -298,9 +305,9 @@ export default function App() {
         }).length;
     }, [lootTypes]);
 
-    // Safe alias for loadWarnings; avoid ReferenceError if it isn't provided
-    const lw = typeof loadWarnings === 'undefined' ? [] : loadWarnings;
-    const lwKey = Array.isArray(lw) && lw.length ? `lw:${lw.join('|')}` : '';
+    // Safe alias for loadWarnings
+    const lw = Array.isArray(loadWarnings) ? loadWarnings : [];
+    const lwKey = lw.length ? `lw:${lw.join('|')}` : '';
 
     // Dismissible warnings: hide current warnings until new alerts are generated
     const [dismissedWarningsKey, setDismissedWarningsKey] = useState(/** @type {string|null} */(null));
