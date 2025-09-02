@@ -39,8 +39,8 @@ export function parseLimitsXml(xml) {
   const tags = readNamedChildren(doc, 'tags', ['tag']);
 
   return {
-    // Keep categories sorted as before
-    categories: categories.sort(),
+    // Preserve original ordering of categories with stable de-duplication
+    categories: uniqStable(categories),
     // Preserve original ordering of usage items with stable de-duplication
     usageflags: uniqStable(usageflags),
     // Keep value flags sorted for tiers consistency
