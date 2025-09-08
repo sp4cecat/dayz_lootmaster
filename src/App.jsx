@@ -183,6 +183,42 @@ export default function App() {
         if (editorID) setChangeEditorID(editorID);
     }, [editorID, setChangeEditorID]);
 
+    // Inactivity timeout: sign out after 10 minutes of no user activity
+    React.useEffect(() => {
+      if (!editorID) return;
+      const TIMEOUT_MS = 1 * 60 * 1000; // 10 minutes
+      let timerId;
+
+      const resetTimer = () => {
+        if (timerId) clearTimeout(timerId);
+        timerId = setTimeout(() => {
+          // Auto sign out on inactivity
+          signOut();
+          // Reset filters when session ends
+          setFilters({
+            category: 'all',
+            name: '',
+            usage: [],
+            value: [],
+            tag: [],
+            flags: [],
+            changedOnly: false,
+            groups: []
+          });
+        }, TIMEOUT_MS);
+      };
+
+      const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+      events.forEach(evt => window.addEventListener(evt, resetTimer, { passive: true }));
+      // Start timer immediately
+      resetTimer();
+
+      return () => {
+        if (timerId) clearTimeout(timerId);
+        events.forEach(evt => window.removeEventListener(evt, resetTimer));
+      };
+    }, [editorID, signOut, setFilters]);
+
     // Resizable left pane (filters)
     const [leftWidth, setLeftWidth] = useState(300); // default 300px
     const dragStartXRef = useRef(0);
