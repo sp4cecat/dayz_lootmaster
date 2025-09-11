@@ -186,7 +186,7 @@ export default function App() {
     // Inactivity timeout: sign out after 10 minutes of no user activity
     React.useEffect(() => {
       if (!editorID) return;
-      const TIMEOUT_MS = 1 * 60 * 1000; // 10 minutes
+      const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
       let timerId;
 
       const resetTimer = () => {
