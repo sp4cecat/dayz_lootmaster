@@ -46,25 +46,127 @@ function defsPath() {
   return join(DATA_DIR, 'cfglimitsdefinition.xml');
 }
 
-function typesPath(group, fileBase) {
-  // Special-case vanilla to map to data/db/types.xml
-  if (group === 'vanilla') {
-    return join(DATA_DIR, 'db', 'types.xml');
-  }
-  return join(DATA_DIR, 'db', 'types', group, `${fileBase}.xml`);
-}
-
-function groupDirPath(group) {
-  // Where to place changes.txt for this group
-  if (group === 'vanilla') {
-    return join(DATA_DIR, 'db');
-  }
-  return join(DATA_DIR, 'db', 'types', group);
-}
-
 function economyCorePath() {
   // Explicitly use ./data/cfgeconomycore.xml
   return join(DATA_DIR, 'cfgeconomycore.xml');
+}
+
+// Cache of group -> folder path (relative to DATA_DIR), derived from cfgeconomycore.xml
+/** @type {Record<string, string>|null} */
+let groupFolderCache = null;
+// Cache of group -> declared type file names (from cfgeconomycore.xml)
+/** @type {Record<string, string[]>|null} */
+let groupFilesCache = null;
+
+/**
+ * Load and cache group -> folder mapping by reading cfgeconomycore.xml.
+ * The "group" is the last path segment of the folder attribute.
+ * Example: <ce folder="db/types/spacecat_colours"> => group "spacecat_colours"
+ */
+async function getGroupFolderMap() {
+  if (groupFolderCache) return groupFolderCache;
+  await loadEconomyCoreCaches();
+  return groupFolderCache || {};
+}
+
+/**
+ * Load and cache group -> declared type file names mapping.
+ * Only <file type="types"> entries are considered.
+ */
+async function getGroupFilesMap() {
+  if (groupFilesCache) return groupFilesCache;
+  await loadEconomyCoreCaches();
+  return groupFilesCache || {};
+}
+
+async function loadEconomyCoreCaches() {
+  groupFolderCache = {};
+  groupFilesCache = {};
+  try {
+    const xml = await readFile(economyCorePath(), 'utf8');
+    // Match each <ce folder="...">...</ce>
+    const ceRe = /<ce\b[^>]*\bfolder="([^"]+)"[^>]*>([\s\S]*?)<\/ce>/gi;
+    let ceMatch;
+    while ((ceMatch = ceRe.exec(xml)) !== null) {
+      const folder = ceMatch[1];
+      if (!folder) continue;
+      const parts = folder.split('/').filter(Boolean);
+      const group = parts[parts.length - 1];
+      if (!group) continue;
+      if (!groupFolderCache[group]) groupFolderCache[group] = folder;
+      const content = ceMatch[2] || '';
+      // Collect <file name="..." type="types"/>
+      const fileRe = /<file\b[^>]*\bname="([^"]+)"[^>]*\btype="([^"]+)"[^>]*\/?>/gi;
+      let fMatch;
+      const files = [];
+      while ((fMatch = fileRe.exec(content)) !== null) {
+        const name = fMatch[1];
+        const type = (fMatch[2] || '').trim().toLowerCase();
+        if (name && type === 'types') files.push(name);
+      }
+      if (files.length) groupFilesCache[group] = files;
+    }
+  } catch {
+    // leave caches as empty objects if read fails
+  }
+}
+
+// Test existence helper
+async function pathExists(p) {
+  try { await stat(p); return true; } catch { return false; }
+}
+
+/**
+ * Strictly resolve a group's declared folder relative path from cfgeconomycore.xml.
+ * Returns null if not declared (non-vanilla).
+ */
+async function getDeclaredGroupFolder(group) {
+  const map = await getGroupFolderMap();
+  return map[group] || null;
+}
+
+/**
+ * Strictly resolve the declared file name (with extension) for a group by requested base name.
+ * Case-insensitive match against declared file names' basenames.
+ * Returns null if not declared.
+ */
+async function getDeclaredFileName(group, fileBase) {
+  const filesMap = await getGroupFilesMap();
+  const declared = filesMap[group] || [];
+  const match = declared.find(n => n.replace(/\.xml$/i, '').toLowerCase() === String(fileBase).toLowerCase());
+  return match || null;
+}
+
+/**
+ * Compute the on-disk path for a types file for a given group and file base (strict to declarations).
+ * Vanilla is special-cased to DATA_DIR/db/types.xml.
+ * Returns null for undeclared non-vanilla groups or files.
+ */
+async function declaredTypesFilePath(group, fileBase) {
+
+    console.log('declaredTypesFilePath', group, fileBase);
+  if (group === 'vanilla') {
+    return join(DATA_DIR, 'db', 'types.xml');
+  }
+  // Allow saving to vanilla_overrides even if not declared; create folder on write
+  if (group === 'vanilla_overrides') {
+    return join(DATA_DIR, 'db', 'vanilla_overrides', `${fileBase}.xml`);
+  }
+  const folder = await getDeclaredGroupFolder(group);
+  if (!folder) return null;
+  const declaredName = await getDeclaredFileName(group, fileBase);
+  if (!declaredName) return null;
+  return join(DATA_DIR, folder, declaredName);
+}
+
+/**
+ * Compute the on-disk directory for a group's files (for changes.txt), strictly via declarations.
+ */
+async function declaredGroupDir(group) {
+  if (group === 'vanilla') return join(DATA_DIR, 'db');
+  if (group === 'vanilla_overrides') return join(DATA_DIR, 'db', 'vanilla_overrides');
+  const folder = await getDeclaredGroupFolder(group);
+  return folder ? join(DATA_DIR, folder) : null;
 }
 
 function extractTypeNames(xml) {
@@ -243,6 +345,56 @@ function formatTs(d) {
   return `${dd}-${mm}-${yy} ${h}:${m}:${s}`;
 }
 
+/**
+ * Build a minimal economycore XML by scanning DATA_DIR/db and DATA_DIR/db/types.
+ */
+async function synthesizeEconomyCoreXml() {
+  const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>', '<economycore>', '\t<classes></classes>', '\t<defaults></defaults>'];
+  // Helper to list group directories and XML files
+  async function listGroupsAt(relBase) {
+    const absBase = join(DATA_DIR, relBase);
+    let entries = [];
+    try {
+      entries = await (await import('node:fs/promises')).readdir(absBase, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const out = [];
+    for (const dirent of entries) {
+      if (!dirent.isDirectory()) continue;
+      const group = dirent.name;
+      const groupDir = join(absBase, group);
+      let files = [];
+      try {
+        const fEntries = await (await import('node:fs/promises')).readdir(groupDir, { withFileTypes: true });
+        files = fEntries.filter(e => e.isFile() && /\.xml$/i.test(e.name)).map(e => e.name);
+      } catch {
+        files = [];
+      }
+      if (files.length) {
+        out.push({ folder: `${relBase}/${group}`, files: files.sort((a, b) => a.localeCompare(b)) });
+      }
+    }
+    return out.sort((a, b) => a.folder.localeCompare(b.folder));
+  }
+
+  const groupsDb = await listGroupsAt('db');
+  const groupsDbTypes = await listGroupsAt('db/types');
+
+  const all = [...groupsDb, ...groupsDbTypes];
+  for (const { folder, files } of all) {
+    lines.push(`\t<ce folder="${folder}">`);
+    for (const name of files) {
+      // Only include types files (type="types")
+      lines.push(`\t\t<file name="${name}" type="types"/>`);
+    }
+    lines.push('\t</ce>');
+  }
+
+  lines.push('</economycore>');
+  return lines.join('\n');
+}
+
 async function ensureDirFor(filePath) {
   const dir = dirname(filePath);
   await mkdir(dir, { recursive: true });
@@ -313,11 +465,17 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/economycore' || pathname === '/api/economycore/') {
       try {
         const xml = await readFile(economyCorePath(), 'utf8');
-        send(res, 200, xml, { 'Content-Type': 'application/xml; charset=utf-8' });
+        const content = String(xml || '').trim();
+        if (content.length > 0) {
+          send(res, 200, xml, { 'Content-Type': 'application/xml; charset=utf-8' });
+        } else {
+          const synth = await synthesizeEconomyCoreXml();
+          send(res, 200, synth, { 'Content-Type': 'application/xml; charset=utf-8' });
+        }
       } catch {
-        // If missing, return a minimal valid empty document instead of 404
-        const empty = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<economycore></economycore>\n';
-        send(res, 200, empty, { 'Content-Type': 'application/xml; charset=utf-8' });
+        // If missing, synthesize from filesystem structure
+        const synth = await synthesizeEconomyCoreXml();
+        send(res, 200, synth, { 'Content-Type': 'application/xml; charset=utf-8' });
       }
       return;
     }
@@ -335,8 +493,11 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === 'GET') {
         try {
-          const p = typesPath(group, fileBase);
-          const xml = await readFile(p, 'utf8');
+          const target = await declaredTypesFilePath(group, fileBase);
+          console.log("Target", target)
+          if (!target) { notFound(res); return; }
+          const xml = await readFile(target, 'utf8');
+            console.log("XML", xml)
           send(res, 200, xml, { 'Content-Type': 'application/xml; charset=utf-8' });
         } catch {
           notFound(res);
@@ -345,6 +506,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'PUT') {
         const body = await readBody(req);
+        console.log("Body", body)
         if (!body || typeof body !== 'string') {
           badRequest(res, 'Empty body');
           return;
@@ -354,19 +516,24 @@ const server = http.createServer(async (req, res) => {
           badRequest(res, 'Persisting to vanilla types.xml is not allowed.');
           return;
         }
-        const p = typesPath(group, fileBase);
+        const target = await declaredTypesFilePath(group, fileBase);
+          console.log("Target", target)
+        if (!target) {
+          badRequest(res, 'Group or file not declared in cfgeconomycore.xml');
+          return;
+        }
 
         // Read previous content if present for diff
         let prev = '';
         try {
-          prev = await readFile(p, 'utf8');
+          prev = await readFile(target, 'utf8');
         } catch {
           // no previous file
         }
 
         // Write new content
-        await ensureDirFor(p);
-        await writeFile(p, body, 'utf8');
+        await ensureDirFor(target);
+        await writeFile(target, body, 'utf8');
 
         // Compute detailed changes (added/removed/modified with field-level diffs)
         try {
@@ -403,17 +570,19 @@ const server = http.createServer(async (req, res) => {
           }
 
           if (changes.length) {
-            const dir = groupDirPath(group);
-            await mkdir(dir, { recursive: true });
-            let block = `File: ${fileBase}.xml\n` + changes.join('\n') + '\n\n';
-            await appendFile(join(dir, 'changes.txt'), block, 'utf8');
+            const dir = await declaredGroupDir(group);
+            if (dir) {
+              await mkdir(dir, { recursive: true });
+              let block = `File: ${fileBase}.xml\n` + changes.join('\n') + '\n\n';
+              await appendFile(join(dir, 'changes.txt'), block, 'utf8');
+            }
           }
         } catch (e) {
           // eslint-disable-next-line no-console
           console.warn('Failed to append changes.txt:', e);
         }
 
-        send(res, 200, JSON.stringify({ ok: true, path: p }), { 'Content-Type': 'application/json' });
+        send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
         return;
       }
       methodNotAllowed(res);

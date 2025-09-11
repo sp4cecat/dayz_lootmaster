@@ -632,17 +632,35 @@ export default function App() {
 
 /**
  * Convert wildcard string (* ?) to RegExp.
- * If no wildcard is provided, match as a substring (implicit *term*).
+ * Supports optional anchors: ^ at start, $ at end.
+ * If no wildcard is provided and no anchors, match as a substring.
  * @param {string} pattern
  * @returns {RegExp}
  */
 function wildcardToRegExp(pattern) {
-    const hasWildcards = /[*?]/.test(pattern);
-    const effective = hasWildcards ? pattern : `${pattern}`;
-    const escaped = effective.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*')
+    const raw = String(pattern || '');
+    const anchoredStart = raw.startsWith('^');
+    const anchoredEnd = raw.endsWith('$');
+
+    // Strip anchors before escaping and wildcard expansion
+    const core = raw.slice(anchoredStart ? 1 : 0, anchoredEnd ? raw.length - 1 : raw.length);
+
+    const hasWildcards = /[*?]/.test(core);
+    const escaped = core
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex specials except * and ?
+        .replace(/\*/g, '.*')                 // expand wildcards
         .replace(/\?/g, '.');
-    const regexPattern = hasWildcards ? `^${escaped}$` : `${escaped}`;
-    console.log("Escaped = ", escaped)
+
+    let regexPattern;
+    if (anchoredStart || anchoredEnd) {
+        // Honor explicit anchors as provided
+        regexPattern = (anchoredStart ? '^' : '') + escaped + (anchoredEnd ? '$' : '');
+    } else {
+        // Preserve existing behavior:
+        // - If wildcards present, match full string
+        // - Otherwise, use substring match
+        regexPattern = hasWildcards ? `^${escaped}$` : escaped;
+    }
+
     return new RegExp(regexPattern, 'i');
 }

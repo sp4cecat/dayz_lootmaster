@@ -145,6 +145,17 @@ export function useLootData() {
         }
       } catch { /* ignore */ }
 
+      // Include vanilla_overrides/types in baseline if present so diffs clear after persisting overrides
+      try {
+        const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
+        if (or.ok) {
+          const oText = await or.text();
+          const overrides = parseTypesXml(oText);
+          if (!baseline['vanilla_overrides']) baseline['vanilla_overrides'] = {};
+          baseline['vanilla_overrides']['types'] = overrides;
+        }
+      } catch { /* no overrides present */ }
+
       if (Object.keys(baseline).length > 0) {
         setBaselineFiles(baseline);
         return true;

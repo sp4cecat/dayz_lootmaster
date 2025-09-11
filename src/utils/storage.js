@@ -8,6 +8,7 @@ const safe = (fn, fallback) => {
  * @returns {any}
  */
 export function loadFromStorage(key) {
+    console.log(key);
   return safe(() => JSON.parse(localStorage.getItem(key)), null);
 }
 

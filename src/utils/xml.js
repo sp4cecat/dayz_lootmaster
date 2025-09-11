@@ -149,7 +149,7 @@ export function parseEconomyCoreXml(xml) {
       console.log("Parts/group",parts, group)
 
     const typeFileNodes = Array.from(ce.getElementsByTagName('file'))
-      .filter(f => (f.getAttribute('type') || '').toLowerCase() === 'types');
+      .filter(f => ((f.getAttribute('type') || '').trim().toLowerCase() === 'types'));
 
     console.log("NODES", typeFileNodes)
 
@@ -163,6 +163,8 @@ export function parseEconomyCoreXml(xml) {
       filesByGroup[group] = files;
     }
   }
+
+  console.log(order, filesByGroup)
 
   return { order, filesByGroup };
 }
