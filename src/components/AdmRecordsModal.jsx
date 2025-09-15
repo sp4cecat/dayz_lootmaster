@@ -20,6 +20,18 @@ export default function AdmRecordsModal({ onClose }) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
   };
 
+  // If user selects a start date and end is empty, default end to the same date/time
+  const onStartChange = (val) => {
+    setStart(val);
+    if (val && (end === null || end === undefined)) {
+      try {
+        setEnd(new Date(val));
+      } catch {
+        // ignore invalid values
+      }
+    }
+  };
+
   const fetchAdm = async () => {
     setError(null);
     if (!start || !end) {
@@ -100,7 +112,7 @@ export default function AdmRecordsModal({ onClose }) {
               <span>From</span>
               <div className="dtp-wrap">
                 <DateTimePicker
-                  onChange={setStart}
+                  onChange={onStartChange}
                   value={start}
                   disableClock
                   clearIcon={null}
