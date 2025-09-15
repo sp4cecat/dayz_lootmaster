@@ -33,6 +33,18 @@ export default function AdmRecordsModal({ onClose }) {
       return;
     }
 
+    // Normalize default times if user left them blank:
+    // - Start defaults to 00:00
+    // - End defaults to 23:59
+    const sNorm = new Date(s);
+    if (sNorm.getHours() === 0 && sNorm.getMinutes() === 0) {
+      sNorm.setHours(0, 0, 0, 0);
+    }
+    const eNorm = new Date(e);
+    if (eNorm.getHours() === 0 && eNorm.getMinutes() === 0) {
+      eNorm.setHours(23, 59, 59, 999);
+    }
+
     setBusy(true);
     try {
       const savedBase = localStorage.getItem('dayz-editor:apiBase');
@@ -40,7 +52,7 @@ export default function AdmRecordsModal({ onClose }) {
       const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
       // Build payload; include spatial filter only if all three are valid numbers
-      const payload = { start: s.toISOString(), end: e.toISOString() };
+      const payload = { start: sNorm.toISOString(), end: eNorm.toISOString() };
       const xn = Number(x), yn = Number(y), rn = Number(radius);
       if (Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && radius !== '') {
         Object.assign(payload, { x: xn, y: yn, radius: rn });
@@ -93,6 +105,9 @@ export default function AdmRecordsModal({ onClose }) {
                   disableClock
                   clearIcon={null}
                   calendarIcon={null}
+                  format="y-MM-dd HH:mm"
+                  hourPlaceholder="H"
+                  minutePlaceholder="M"
                 />
               </div>
             </label>
@@ -105,6 +120,9 @@ export default function AdmRecordsModal({ onClose }) {
                   disableClock
                   clearIcon={null}
                   calendarIcon={null}
+                  format="y-MM-dd HH:mm"
+                  hourPlaceholder="H"
+                  minutePlaceholder="M"
                 />
               </div>
             </label>

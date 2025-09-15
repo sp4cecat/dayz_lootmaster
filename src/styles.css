@@ -226,21 +226,8 @@ h1 {
     flex-wrap: wrap;
 }
 .adm-xy-row .control {
-    flex: 1 1 160px;
-    min-width: 140px;
-}
-
-/* Spatial filter inputs row under date pickers */
-.adm-xy-row {
-    display: flex;
-    gap: 12px;
-    margin-top: 8px;
-    align-items: flex-end;
-    flex-wrap: wrap;
-}
-.adm-xy-row .control {
-    flex: 1 1 160px;
-    min-width: 140px;
+    flex: 0 0 100px;
+    min-width: 100px;
 }
 .react-calendar__navigation button {
     color: var(--text);
