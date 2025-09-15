@@ -10,6 +10,7 @@ import SummaryModal from './components/SummaryModal.jsx';
 import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
+import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -58,6 +59,8 @@ export default function App() {
     const [manageOpen, setManageOpen] = useState(false);
     const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
     const [showStorage, setShowStorage] = useState(false);
+    const [toolsOpen, setToolsOpen] = useState(false);
+    const [showAdm, setShowAdm] = useState(false);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -485,6 +488,39 @@ export default function App() {
                         </svg>
                         Reload from Files
                     </button>
+
+                    {/* Tools dropdown */}
+                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+                      <button
+                        className="btn"
+                        onClick={() => setToolsOpen(v => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={toolsOpen}
+                        title="Tools"
+                      >
+                        Tools ▾
+                      </button>
+                      {toolsOpen && (
+                        <div
+                          className="dropdown-menu"
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: 8,
+                            minWidth: 180,
+                            zIndex: 10
+                          }}
+                        >
+                          <button className="link" role="menuitem" onClick={() => { setShowAdm(true); setToolsOpen(false); }}>ADM records</button>
+                        </div>
+                      )}
+                    </div>
+
                     <ThemeToggle/>
                     <div className="profile" ref={profileRef}>
                         <button
@@ -625,6 +661,9 @@ export default function App() {
             )}
             {showStorage && storageDiff && (
                 <StorageStatusModal diff={storageDiff} onClose={() => setShowStorage(false)}/>
+            )}
+            {showAdm && (
+              <AdmRecordsModal onClose={() => setShowAdm(false)} />
             )}
         </div>
     );

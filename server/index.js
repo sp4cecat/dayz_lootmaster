@@ -16,18 +16,20 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { mkdir, readFile, writeFile, stat, appendFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, stat, appendFile, readdir } from 'node:fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// eslint-disable-next-line no-undef
 const PORT = Number(process.env.PORT || 4317);
+// eslint-disable-next-line no-undef
 const DATA_DIR = resolve(process.env.DATA_DIR || join(__dirname, '..', 'data'));
 
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,PUT,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Editor-ID',
   };
 }
@@ -112,10 +114,6 @@ async function loadEconomyCoreCaches() {
 }
 
 // Test existence helper
-async function pathExists(p) {
-  try { await stat(p); return true; } catch { return false; }
-}
-
 /**
  * Strictly resolve a group's declared folder relative path from cfgeconomycore.xml.
  * Returns null if not declared (non-vanilla).
@@ -167,17 +165,6 @@ async function declaredGroupDir(group) {
   if (group === 'vanilla_overrides') return join(DATA_DIR, 'db', 'vanilla_overrides');
   const folder = await getDeclaredGroupFolder(group);
   return folder ? join(DATA_DIR, folder) : null;
-}
-
-function extractTypeNames(xml) {
-  // Lightweight extraction of <type name="..."> occurrences
-  const names = new Set();
-  const re = /<type\s+[^>]*\bname="([^"]+)"/g;
-  let m;
-  while ((m = re.exec(xml)) !== null) {
-    if (m[1]) names.add(m[1]);
-  }
-  return names;
 }
 
 /**
@@ -345,6 +332,92 @@ function formatTs(d) {
   return `${dd}-${mm}-${yy} ${h}:${m}:${s}`;
 }
 
+// ----- ADM records utilities -----
+function pad2(n) { return String(n).padStart(2, '0'); }
+function fileNameFromRange(start, end) {
+  const fmt = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}-${pad2(d.getMinutes())}-${pad2(d.getSeconds())}`;
+  return `${fmt(start)}_to_${fmt(end)}.ADM`;
+}
+function isDigitsName(name) { return /^\d+$/.test(name); }
+
+async function listAdmFiles(logsRoot) {
+  /** @type {string[]} */
+  const out = [];
+  let entries = [];
+  try {
+    entries = await readdir(logsRoot, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const ent of entries) {
+    if (ent.isDirectory() && isDigitsName(ent.name)) {
+      const dir = join(logsRoot, ent.name);
+      // Recurse only numeric directories
+      const nested = await listAdmFiles(dir);
+      out.push(...nested);
+    } else if (ent.isFile() && /\.ADM$/i.test(ent.name)) {
+      out.push(join(logsRoot, ent.name));
+    }
+  }
+  return out;
+}
+
+function parseAdmStartDate(text) {
+  const m = /AdminLog started on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2}:\d{2})/i.exec(text);
+  if (!m) return null;
+  const [_, dateStr, timeStr] = m;
+  // Interpret as local time
+  const d = new Date(`${dateStr}T${timeStr}`);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function tryParseLineTime(line) {
+  const m = /^(\d{1,2}:\d{2}:\d{2})\s+\|\s+Player/i.exec(line);
+  return m ? m[1] : null;
+}
+
+async function collectAdmRecordsInRange(start, end) {
+  const root = join(DATA_DIR, 'logs');
+  const files = await listAdmFiles(root);
+
+  // Read all files and capture their start datetime and lines
+  const fileBuckets = [];
+  for (const f of files) {
+    let text = '';
+    try { text = await readFile(f, 'utf8'); } catch { continue; }
+    const startDate = parseAdmStartDate(text);
+    if (!startDate) continue;
+    const rows = text.split(/\r?\n/);
+    fileBuckets.push({ path: f, startDate, rows });
+  }
+
+  // Order files by their start datetime (earlier first), tie-breaker by path
+  fileBuckets.sort((a, b) => {
+    const diff = a.startDate - b.startDate;
+    return diff !== 0 ? diff : String(a.path).localeCompare(String(b.path));
+  });
+
+  /** @type {string[]} */
+  const lines = [];
+
+  // For each file (in start-date order), walk lines in original order and include those within range
+  for (const bucket of fileBuckets) {
+    const dateStr = `${bucket.startDate.getFullYear()}-${pad2(bucket.startDate.getMonth() + 1)}-${pad2(bucket.startDate.getDate())}`;
+    for (const row of bucket.rows) {
+      const t = tryParseLineTime(row);
+      if (!t) continue;
+      const dt = new Date(`${dateStr}T${t}`);
+      if (isNaN(dt.getTime())) continue;
+      if (dt >= start && dt <= end) {
+        lines.push(row);
+      }
+    }
+  }
+
+  // Preserve original order; do not sort here
+  return lines;
+}
+
 /**
  * Build a minimal economycore XML by scanning DATA_DIR/db and DATA_DIR/db/types.
  */
@@ -405,6 +478,7 @@ async function readBody(req) {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
+        // eslint-disable-next-line no-undef
       resolveBody(Buffer.concat(chunks).toString('utf8'));
     });
     req.on('error', reject);
@@ -480,6 +554,37 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // POST logs ADM records within range, returns a downloadable file
+    if (pathname === '/api/logs/adm') {
+      if (req.method !== 'POST') { methodNotAllowed(res); return; }
+      let body = '';
+      try {
+        body = await readBody(req);
+        const data = JSON.parse(body || '{}');
+        const start = new Date(data.start);
+        const end = new Date(data.end);
+        if (!data.start || !data.end || isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+          badRequest(res, 'Invalid start/end datetimes.');
+          return;
+        }
+        const lines = await collectAdmRecordsInRange(start, end);
+
+        // Prepend header with start datetime; keep collected order intact
+        const header = `AdminLog started on ${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(start.getDate())} at ${pad2(start.getHours())}:${pad2(start.getMinutes())}:${pad2(start.getSeconds())}`;
+        const content = [header, ...lines].join('\n');
+        const filename = fileNameFromRange(start, end);
+        send(res, 200, content, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename}"`
+        });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('ADM fetch error:', e);
+        send(res, 500, JSON.stringify({ error: 'Failed to fetch ADM records' }), { 'Content-Type': 'application/json' });
+      }
+      return;
+    }
+
     // Match /api/types/:group/:file
     const matchTypes = pathname.match(/^\/api\/types\/([^/]+)\/([^/]+)$/);
     if (matchTypes) {
@@ -492,15 +597,19 @@ const server = http.createServer(async (req, res) => {
       const fileBase = fileRaw.replace(/\.xml$/i, ''); // tolerate .xml in URL
 
       if (req.method === 'GET') {
+        const target = await declaredTypesFilePath(group, fileBase);
+        if (!target) { notFound(res); return; }
         try {
-          const target = await declaredTypesFilePath(group, fileBase);
-          console.log("Target", target)
-          if (!target) { notFound(res); return; }
           const xml = await readFile(target, 'utf8');
-            console.log("XML", xml)
           send(res, 200, xml, { 'Content-Type': 'application/xml; charset=utf-8' });
         } catch {
-          notFound(res);
+          // If vanilla_overrides/types.xml doesn't exist yet, return an empty types doc
+          if (group === 'vanilla_overrides' && fileBase === 'types') {
+            const empty = '<?xml version="1.0" encoding="UTF-8"?>\n<types></types>\n';
+            send(res, 200, empty, { 'Content-Type': 'application/xml; charset=utf-8' });
+          } else {
+            notFound(res);
+          }
         }
         return;
       }

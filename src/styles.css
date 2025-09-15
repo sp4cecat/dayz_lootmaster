@@ -134,6 +134,132 @@ h1 {
     color: var(--warn);
 }
 
+/* ===== React DateTime Picker theme fixes ===== */
+.react-datetime-picker {
+    color: var(--text);
+    font-size: 14px;
+}
+.react-datetime-picker__wrapper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    background: var(--bg);
+}
+.react-datetime-picker__inputGroup__input,
+.react-datetime-picker__inputGroup__leadingZero,
+.react-datetime-picker input,
+.react-datetime-picker select {
+    color: var(--text);
+    background: transparent;
+}
+.react-datetime-picker__button__icon {
+    stroke: var(--text);
+}
+
+.react-datetime-picker__inputGroup__divider {
+    padding: 0 5px;
+}
+
+/* Allow popovers inside modals to be fully visible */
+.modal,
+.modal .modal-body {
+    overflow: visible;
+}
+
+/* Calendar popup */
+.react-datetime-picker__calendar {
+    position: absolute; /* ensure it's overlaid on top of layout */
+    z-index: 1000; /* ensure above modals/elements */
+    right: 0; /* align to the right edge of the input wrapper */
+}
+
+/* Constrain calendar height within viewport/modal and make it scroll internally if needed */
+.react-calendar {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+    overflow: auto;              /* allow internal scroll */
+    max-height: min(70vh, 420px);/* cap height to keep it within view */
+}
+
+/* Horizontal layout for ADM controls */
+.adm-controls-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.adm-control {
+    flex: 1 1 260px; /* grow but keep reasonable min width */
+    min-width: 240px;
+}
+
+/* Prevent datetime picker calendar from clipping */
+.dtp-wrap {
+    position: relative;   /* anchor popup positioning */
+    overflow: visible;    /* allow popup to escape input box */
+}
+/* Ensure the picker itself provides a positioning context */
+.dtp-wrap .react-datetime-picker {
+    position: relative;
+}
+/* Force the calendar popup to render just below the input and above other UI */
+.dtp-wrap .react-datetime-picker__calendar {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: auto;
+    z-index: 2000;
+}
+.react-calendar__navigation button {
+    color: var(--text);
+    background: transparent;
+}
+.react-calendar__navigation button:hover {
+    background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+.react-calendar__month-view__weekdays {
+    color: var(--muted);
+}
+.react-calendar__tile {
+    color: var(--text);
+    background: transparent;
+    border-radius: 6px;
+}
+.react-calendar__tile:hover {
+    background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+.react-calendar__tile--now {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+}
+.react-calendar__tile--active,
+.react-calendar__tile--rangeStart,
+.react-calendar__tile--rangeEnd {
+    background: var(--primary);
+    color: #fff;
+}
+.react-calendar__tile--active:hover,
+.react-calendar__tile--rangeStart:hover,
+.react-calendar__tile--rangeEnd:hover {
+    background: var(--primary-hover);
+}
+
+/* Time clock popup */
+.react-clock {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.react-clock__hand__body,
+.react-clock__mark__body {
+    background: var(--primary);
+}
+
 .profile {
     position: relative;
 }
