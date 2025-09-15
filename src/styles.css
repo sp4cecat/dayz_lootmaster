@@ -216,6 +216,32 @@ h1 {
     right: auto;
     z-index: 2000;
 }
+
+/* Spatial filter inputs row under date pickers */
+.adm-xy-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.adm-xy-row .control {
+    flex: 1 1 160px;
+    min-width: 140px;
+}
+
+/* Spatial filter inputs row under date pickers */
+.adm-xy-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.adm-xy-row .control {
+    flex: 1 1 160px;
+    min-width: 140px;
+}
 .react-calendar__navigation button {
     color: var(--text);
     background: transparent;

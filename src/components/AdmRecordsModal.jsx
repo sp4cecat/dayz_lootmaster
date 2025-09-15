@@ -10,6 +10,11 @@ export default function AdmRecordsModal({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
+  // Optional spatial filter
+  const [x, setX] = useState('');
+  const [y, setY] = useState('');
+  const [radius, setRadius] = useState('');
+
   const formatForFilename = (d) => {
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
@@ -34,10 +39,17 @@ export default function AdmRecordsModal({ onClose }) {
       const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
       const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
+      // Build payload; include spatial filter only if all three are valid numbers
+      const payload = { start: s.toISOString(), end: e.toISOString() };
+      const xn = Number(x), yn = Number(y), rn = Number(radius);
+      if (Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && radius !== '') {
+        Object.assign(payload, { x: xn, y: yn, radius: rn });
+      }
+
       const res = await fetch(`${API_BASE}/api/logs/adm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start: s.toISOString(), end: e.toISOString() })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         const msg = await res.text().catch(() => '');
@@ -97,6 +109,45 @@ export default function AdmRecordsModal({ onClose }) {
               </div>
             </label>
           </div>
+
+          {/* Spatial filter row */}
+          <div className="adm-xy-row">
+            <label className="control">
+              <span>X</span>
+              <input
+                type="number"
+                value={x}
+                onChange={e => setX(e.target.value)}
+                placeholder="e.g. 12081.5"
+                step="any"
+                inputMode="decimal"
+              />
+            </label>
+            <label className="control">
+              <span>Y</span>
+              <input
+                type="number"
+                value={y}
+                onChange={e => setY(e.target.value)}
+                placeholder="e.g. 7214"
+                step="any"
+                inputMode="decimal"
+              />
+            </label>
+            <label className="control">
+              <span>Radius</span>
+              <input
+                type="number"
+                value={radius}
+                onChange={e => setRadius(e.target.value)}
+                placeholder="e.g. 250"
+                step="any"
+                inputMode="decimal"
+                min="0"
+              />
+            </label>
+          </div>
+
           {error && <div className="banner warn" style={{ marginTop: 8 }}>{error}</div>}
           <div style={{ marginTop: 12 }}>
             <button className="btn primary" onClick={fetchAdm} disabled={busy}>
