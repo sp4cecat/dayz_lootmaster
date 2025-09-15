@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 /**
  * @param {{
@@ -16,8 +16,6 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
     addValue: new Set(),
     addTag: new Set(),
     addCategory: new Set(),
-    addToDefinitions: true,
-    removeUnknownFromTypes: true
   });
 
   const toggleSet = (key, val) => {
@@ -29,19 +27,26 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
     });
   };
 
-  const apply = () => {
-    const add = state.addToDefinitions
-      ? {
-          usage: Array.from(state.addUsage),
-          value: Array.from(state.addValue),
-          tag: Array.from(state.addTag),
-          category: Array.from(state.addCategory),
-        }
-      : { usage: [], value: [], tag: [], category: [] };
+  const selectionCount = useMemo(() =>
+    state.addUsage.size + state.addValue.size + state.addTag.size + state.addCategory.size
+  , [state.addUsage, state.addValue, state.addTag, state.addCategory]);
 
+  const onAddSelected = () => {
     onApply({
-      add,
-      remove: state.removeUnknownFromTypes
+      add: {
+        usage: Array.from(state.addUsage),
+        value: Array.from(state.addValue),
+        tag: Array.from(state.addTag),
+        category: Array.from(state.addCategory),
+      },
+      remove: false
+    });
+  };
+
+  const onRemoveSelected = () => {
+    onApply({
+      add: { usage: [], value: [], tag: [], category: [] },
+      remove: true
     });
   };
 
@@ -52,10 +57,9 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
           <h3>Resolve Unknown Entries</h3>
           <div className="spacer" />
           <button className="btn" onClick={onClose}>Close</button>
-          <button className="btn primary" onClick={apply}>Apply</button>
         </div>
         <div className="modal-body">
-          <p>Select entries you want to add to definitions, or choose to remove unknown entries from affected types.</p>
+          <p>Select one or more unknown entries below, then choose an action.</p>
           <div className="resolve-grid">
             <ResolveSection
               title="Categories"
@@ -83,23 +87,24 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
             />
           </div>
 
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={state.addToDefinitions}
-              onChange={e => setState(s => ({ ...s, addToDefinitions: e.target.checked }))}
-            />
-            <span>Add selected entries to definitions</span>
-          </label>
-
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={state.removeUnknownFromTypes}
-              onChange={e => setState(s => ({ ...s, removeUnknownFromTypes: e.target.checked }))}
-            />
-            <span>Remove unknown entries from affected types</span>
-          </label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              className="btn"
+              onClick={onAddSelected}
+              disabled={selectionCount === 0}
+              title="Add selected entries to definitions"
+            >
+              Add selected entries to definitions
+            </button>
+            <button
+              className="btn"
+              onClick={onRemoveSelected}
+              disabled={selectionCount === 0}
+              title="Remove selected entries from affected types"
+            >
+              Remove selected entries from affected types
+            </button>
+          </div>
         </div>
       </div>
     </div>
