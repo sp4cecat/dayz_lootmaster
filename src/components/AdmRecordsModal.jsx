@@ -19,6 +19,7 @@ export default function AdmRecordsModal({ onClose }) {
   // Refine records further (players) UI
   const [players, setPlayers] = useState(/** @type {{id: string, aliases: string[]}[] */([]));
   const [selectedIds, setSelectedIds] = useState(/** @type {Set<string>} */(new Set()));
+  const [lastText, setLastText] = useState(/** @type {string} */(''));
 
   // Enable the checkbox only if all three numeric values are set and > 0
   const canRadiusFilter = (() => {
@@ -68,6 +69,62 @@ export default function AdmRecordsModal({ onClose }) {
       else next.add(id);
       return next;
     });
+  };
+
+  const sanitizeForFilename = (s) => String(s).replace(/[^A-Za-z0-9._-]+/g, '-');
+
+  const refineAndDownload = () => {
+    try {
+      if (!lastText || selectedIds.size === 0) return;
+      const lines = lastText.split(/\r?\n/);
+      const out = [];
+      // Keep header if present
+      if (lines.length > 0 && /^AdminLog started on\s+\d{4}-\d{2}-\d{2}\s+at\s+\d{1,2}:\d{2}:\d{2}/.test(lines[0])) {
+        out.push(lines[0]);
+      }
+      // Filter lines by selected ids (keep order)
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        const m = /\(id=(\S+)\s/i.exec(line);
+        if (m && selectedIds.has(m[1])) {
+          out.push(line);
+        }
+      }
+
+      // Filename includes aliases of selected ids (deduped)
+      const idToAliases = new Map(players.map(p => [p.id, p.aliases || []]));
+      const aliasSet = new Set();
+      selectedIds.forEach(id => {
+        const arr = idToAliases.get(id) || [];
+        if (arr.length === 0) aliasSet.add(id); // fallback to id if no alias
+        else arr.forEach(a => aliasSet.add(a));
+      });
+      const aliasesPart = Array.from(aliasSet).map(sanitizeForFilename).join('+') || 'selected';
+
+      const blob = new Blob([out.join('\n')], { type: 'text/plain;charset=utf-8' });
+      // Try to include original time range if available
+      let baseName = 'refined';
+      const header = lines[0] || '';
+      const hdrMatch = /^AdminLog started on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2}:\d{2})/.exec(header);
+      if (hdrMatch && start && end) {
+        const nameStart = formatForFilename(start instanceof Date ? start : new Date(start));
+        const nameEnd = formatForFilename(end instanceof Date ? end : new Date(end));
+        baseName = `${nameStart}_to_${nameEnd}`;
+      }
+      const filename = `${baseName}__players_${aliasesPart}.ADM`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 0);
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   // If user selects a start date and end is empty, default end to the same date/time
@@ -145,10 +202,21 @@ export default function AdmRecordsModal({ onClose }) {
       // Parse players for "Refine Records Further"
       setPlayers(parsePlayersFromText(text));
       setSelectedIds(new Set()); // reset selection
+      setLastText(text);
 
       // Download the returned content as file
       const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-      const filename = `${formatForFilename(s)}_to_${formatForFilename(e)}.ADM`;
+
+      // If spatial filter was applied, include parameters in filename
+      const filterPart =
+        (playersInRadiusOnly &&
+         Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) &&
+         xn !== 0 && yn !== 0 && rn > 0)
+          ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_y${String(y).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
+          : '';
+
+      const filename = `${formatForFilename(s)}_to_${formatForFilename(e)}${filterPart}.ADM`;
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -252,7 +320,7 @@ export default function AdmRecordsModal({ onClose }) {
                 onChange={e => setPlayersInRadiusOnly(e.target.checked)}
                 disabled={!canRadiusFilter}
               />
-              <span>Only return data for players in this target radius</span>
+              <span>Return ALL position data for players appearing in this target radius</span>
             </label>
           </div>
 
@@ -276,6 +344,18 @@ export default function AdmRecordsModal({ onClose }) {
                   );
                 })}
               </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
+                  className="btn"
+                  onClick={refineAndDownload}
+                  disabled={selectedIds.size === 0 || !lastText}
+                  title={selectedIds.size === 0 ? 'Select one or more players to refine' : 'Download refined records for selected players'}
+                >
+                  Refine and Download
+                </button>
+              </div>
+
               <p className="muted" style={{ marginTop: 6 }}>
                 Tip: Click aliases to select players for further filtering (download above already completed).
               </p>
