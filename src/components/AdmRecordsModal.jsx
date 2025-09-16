@@ -16,6 +16,10 @@ export default function AdmRecordsModal({ onClose }) {
   const [radius, setRadius] = useState('');
   const [playersInRadiusOnly, setPlayersInRadiusOnly] = useState(false);
 
+  // Refine records further (players) UI
+  const [players, setPlayers] = useState(/** @type {{id: string, aliases: string[]}[] */([]));
+  const [selectedIds, setSelectedIds] = useState(/** @type {Set<string>} */(new Set()));
+
   // Enable the checkbox only if all three numeric values are set and > 0
   const canRadiusFilter = (() => {
     const xn = Number(x), yn = Number(y), rn = Number(radius);
@@ -32,6 +36,38 @@ export default function AdmRecordsModal({ onClose }) {
   const formatForFilename = (d) => {
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+  };
+
+  // Parse unique players and their aliases from content
+  const parsePlayersFromText = (text) => {
+    /** @type {Map<string, Set<string>>} */
+    const map = new Map();
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      // Only consider lines that look like player events
+      if (!/Player/i.test(line)) continue;
+      const idMatch = /\(id=(\S+)\s/i.exec(line);
+      const aliasMatch = /Player "([^"]+)"/i.exec(line);
+      if (!idMatch) continue;
+      const id = idMatch[1];
+      const alias = aliasMatch ? aliasMatch[1] : undefined;
+      if (!map.has(id)) map.set(id, new Set());
+      if (alias) map.get(id).add(alias);
+    }
+    // Convert to array of {id, aliases[]}
+    return Array.from(map.entries()).map(([id, set]) => ({
+      id,
+      aliases: Array.from(set.values())
+    }));
+  };
+
+  const toggleSelectId = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   // If user selects a start date and end is empty, default end to the same date/time
@@ -104,7 +140,14 @@ export default function AdmRecordsModal({ onClose }) {
         const msg = await res.text().catch(() => '');
         throw new Error(`Fetch failed (${res.status}) ${msg}`);
       }
-      const blob = await res.blob();
+      const text = await res.text();
+
+      // Parse players for "Refine Records Further"
+      setPlayers(parsePlayersFromText(text));
+      setSelectedIds(new Set()); // reset selection
+
+      // Download the returned content as file
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
       const filename = `${formatForFilename(s)}_to_${formatForFilename(e)}.ADM`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -212,6 +255,32 @@ export default function AdmRecordsModal({ onClose }) {
               <span>Only return data for players in this target radius</span>
             </label>
           </div>
+
+          {players.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <h4 style={{ margin: '8px 0' }}>Refine Records Further</h4>
+              <div className="chips selectable">
+                {players.map(p => {
+                  const caption = p.aliases && p.aliases.length ? p.aliases.join(' / ') : p.id;
+                  const selected = selectedIds.has(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`chip ${selected ? 'selected' : ''}`}
+                      title={`ID: ${p.id}`}
+                      onClick={() => toggleSelectId(p.id)}
+                    >
+                      {caption}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="muted" style={{ marginTop: 6 }}>
+                Tip: Click aliases to select players for further filtering (download above already completed).
+              </p>
+            </div>
+          )}
 
           {error && <div className="banner warn" style={{ marginTop: 8 }}>{error}</div>}
           <div style={{ marginTop: 12 }}>
