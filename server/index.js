@@ -142,7 +142,6 @@ async function getDeclaredFileName(group, fileBase) {
  */
 async function declaredTypesFilePath(group, fileBase) {
 
-    console.log('declaredTypesFilePath', group, fileBase);
   if (group === 'vanilla') {
     return join(DATA_DIR, 'db', 'types.xml');
   }
@@ -388,7 +387,8 @@ function tryParseLinePos(line) {
 
 // Extract (id=XYZ ...); returns id string or null
 function tryParseLineId(line) {
-  const m = /\(id=(\S+)\s/i.exec(line);
+  const m = /\(id=([^=]+=)/i.exec(line);
+  console.log("REGEX", m?m[1]:null)
   return m ? m[1] : null;
 }
 
@@ -601,9 +601,10 @@ const server = http.createServer(async (req, res) => {
         }
         const xf = Number(data.x), yf = Number(data.y), rf = Number(data.radius);
         const hasFilter = Number.isFinite(xf) && Number.isFinite(yf) && Number.isFinite(rf);
+        const expandByIds = !!data.expandByIds;
 
         let lines;
-        if (hasFilter) {
+        if (hasFilter && expandByIds) {
           // Pass 1: collect within radius to determine unique ids
           const spatialLines = await collectAdmRecordsInRange(start, end, { x: xf, y: yf, radius: rf }, undefined);
           const idSet = new Set();
@@ -613,6 +614,9 @@ const server = http.createServer(async (req, res) => {
           }
           // Pass 2: collect by ids only (ignore positional filter), preserving order
           lines = await collectAdmRecordsInRange(start, end, undefined, idSet);
+        } else if (hasFilter) {
+          // Single-pass: only include lines matching spatial filters
+          lines = await collectAdmRecordsInRange(start, end, { x: xf, y: yf, radius: rf }, undefined);
         } else {
           // No spatial filtering; single pass
           lines = await collectAdmRecordsInRange(start, end, undefined, undefined);
@@ -675,7 +679,6 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const target = await declaredTypesFilePath(group, fileBase);
-          console.log("Target", target)
         if (!target) {
           badRequest(res, 'Group or file not declared in cfgeconomycore.xml');
           return;

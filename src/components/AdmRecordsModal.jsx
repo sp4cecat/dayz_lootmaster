@@ -47,7 +47,7 @@ export default function AdmRecordsModal({ onClose }) {
     for (const line of lines) {
       // Only consider lines that look like player events
       if (!/Player/i.test(line)) continue;
-      const idMatch = /\(id=(\S+)\s/i.exec(line);
+      const idMatch = /\(id=([^=]+=)/i.exec(line);
       const aliasMatch = /Player "([^"]+)"/i.exec(line);
       if (!idMatch) continue;
       const id = idMatch[1];
@@ -181,11 +181,12 @@ export default function AdmRecordsModal({ onClose }) {
       const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
       const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
-      // Build payload; include spatial filter only if checkbox is checked and values are valid (> 0)
+      // Build payload
       const payload = { start: sNorm.toISOString(), end: eNorm.toISOString() };
       const xn = Number(x), yn = Number(y), rn = Number(radius);
-      if (playersInRadiusOnly && Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0) {
-        Object.assign(payload, { x: xn, y: yn, radius: rn });
+      const hasSpatial = Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0;
+      if (hasSpatial) {
+        Object.assign(payload, { x: xn, y: yn, radius: rn, expandByIds: !!playersInRadiusOnly });
       }
 
       const res = await fetch(`${API_BASE}/api/logs/adm`, {
@@ -207,13 +208,10 @@ export default function AdmRecordsModal({ onClose }) {
       // Download the returned content as file
       const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
 
-      // If spatial filter was applied, include parameters in filename
-      const filterPart =
-        (playersInRadiusOnly &&
-         Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) &&
-         xn !== 0 && yn !== 0 && rn > 0)
-          ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_y${String(y).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
-          : '';
+      // If spatial parameters are set and valid, always include them in the filename
+      const filterPart = hasSpatial
+        ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_y${String(y).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
+        : '';
 
       const filename = `${formatForFilename(s)}_to_${formatForFilename(e)}${filterPart}.ADM`;
 
