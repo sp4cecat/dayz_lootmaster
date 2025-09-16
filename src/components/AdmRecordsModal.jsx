@@ -45,6 +45,17 @@ export default function AdmRecordsModal({ onClose }) {
       return;
     }
 
+    // Spatial filter validation: require all of x, y, radius or none
+    const hasX = String(x).trim() !== '';
+    const hasY = String(y).trim() !== '';
+    const hasR = String(radius).trim() !== '';
+    const anySet = hasX || hasY || hasR;
+    const allSet = hasX && hasY && hasR;
+    if (anySet && !allSet) {
+      setError('You must set a value for EACH of x, y and radius or leave them blank');
+      return;
+    }
+
     // Normalize default times if user left them blank:
     // - Start defaults to 00:00
     // - End defaults to 23:59
