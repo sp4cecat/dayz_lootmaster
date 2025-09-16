@@ -256,6 +256,12 @@ h1 {
     background: var(--primary);
     color: #fff;
 }
+
+/* Make ADM records modal taller */
+.modal.adm-modal {
+    height: 80vh;       /* substantially taller modal */
+    max-height: 80vh;
+}
 .react-calendar__tile--active:hover,
 .react-calendar__tile--rangeStart:hover,
 .react-calendar__tile--rangeEnd:hover {

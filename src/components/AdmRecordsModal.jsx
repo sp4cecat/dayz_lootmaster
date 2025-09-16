@@ -100,7 +100,7 @@ export default function AdmRecordsModal({ onClose }) {
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="ADM records">
-      <div className="modal">
+      <div className="modal adm-modal">
         <div className="modal-header">
           <h3>ADM records</h3>
           <div className="spacer" />
