@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import DateTimePicker from 'react-datetime-picker';
 import 'react-datetime-picker/dist/DateTimePicker.css';
 import 'react-calendar/dist/Calendar.css';
@@ -14,6 +14,20 @@ export default function AdmRecordsModal({ onClose }) {
   const [x, setX] = useState('');
   const [y, setY] = useState('');
   const [radius, setRadius] = useState('');
+  const [playersInRadiusOnly, setPlayersInRadiusOnly] = useState(false);
+
+  // Enable the checkbox only if all three numeric values are set and > 0
+  const canRadiusFilter = (() => {
+    const xn = Number(x), yn = Number(y), rn = Number(radius);
+    return Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0;
+  })();
+
+  // Auto-uncheck if inputs become invalid
+  useEffect(() => {
+    if (!canRadiusFilter && playersInRadiusOnly) {
+      setPlayersInRadiusOnly(false);
+    }
+  }, [canRadiusFilter, playersInRadiusOnly]);
 
   const formatForFilename = (d) => {
     const pad = (n) => String(n).padStart(2, '0');
@@ -74,10 +88,10 @@ export default function AdmRecordsModal({ onClose }) {
       const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
       const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
-      // Build payload; include spatial filter only if all three are valid numbers
+      // Build payload; include spatial filter only if checkbox is checked and values are valid (> 0)
       const payload = { start: sNorm.toISOString(), end: eNorm.toISOString() };
       const xn = Number(x), yn = Number(y), rn = Number(radius);
-      if (Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && radius !== '') {
+      if (playersInRadiusOnly && Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0) {
         Object.assign(payload, { x: xn, y: yn, radius: rn });
       }
 
@@ -186,6 +200,16 @@ export default function AdmRecordsModal({ onClose }) {
                 inputMode="decimal"
                 min="0"
               />
+            </label>
+
+            <label className="checkbox" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
+              <input
+                type="checkbox"
+                checked={playersInRadiusOnly}
+                onChange={e => setPlayersInRadiusOnly(e.target.checked)}
+                disabled={!canRadiusFilter}
+              />
+              <span>Only return data for players in this target radius</span>
             </label>
           </div>
 
