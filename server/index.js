@@ -386,7 +386,13 @@ function tryParseLinePos(line) {
   return { x, y };
 }
 
-async function collectAdmRecordsInRange(start, end, filter) {
+// Extract (id=XYZ ...); returns id string or null
+function tryParseLineId(line) {
+  const m = /\(id=(\S+)\s/i.exec(line);
+  return m ? m[1] : null;
+}
+
+async function collectAdmRecordsInRange(start, end, posFilter, idSet) {
   const root = join(DATA_DIR, 'logs');
   const files = await listAdmFiles(root);
 
@@ -410,7 +416,8 @@ async function collectAdmRecordsInRange(start, end, filter) {
   /** @type {string[]} */
   const lines = [];
 
-  const useFilter = filter && Number.isFinite(filter.x) && Number.isFinite(filter.y) && Number.isFinite(filter.radius);
+  const usePos = posFilter && Number.isFinite(posFilter.x) && Number.isFinite(posFilter.y) && Number.isFinite(posFilter.radius);
+  const useIds = idSet && idSet.size > 0;
 
   // For each file (in start-date order), walk lines in original order and include those within range
   for (const bucket of fileBuckets) {
@@ -422,13 +429,17 @@ async function collectAdmRecordsInRange(start, end, filter) {
       if (isNaN(dt.getTime())) continue;
       if (dt < start || dt > end) continue;
 
-      if (useFilter) {
+      // If idSet provided, it takes priority (ignore pos filter)
+      if (useIds) {
+        const id = tryParseLineId(row);
+        if (!id || !idSet.has(id)) continue;
+      } else if (usePos) {
         const pos = tryParseLinePos(row);
         if (!pos) continue;
-        const dx = pos.x - filter.x;
-        const dy = pos.y - filter.y;
+        const dx = pos.x - posFilter.x;
+        const dy = pos.y - posFilter.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > filter.radius) continue;
+        if (dist > posFilter.radius) continue;
       }
 
       lines.push(row);
@@ -590,7 +601,22 @@ const server = http.createServer(async (req, res) => {
         }
         const xf = Number(data.x), yf = Number(data.y), rf = Number(data.radius);
         const hasFilter = Number.isFinite(xf) && Number.isFinite(yf) && Number.isFinite(rf);
-        const lines = await collectAdmRecordsInRange(start, end, hasFilter ? { x: xf, y: yf, radius: rf } : undefined);
+
+        let lines;
+        if (hasFilter) {
+          // Pass 1: collect within radius to determine unique ids
+          const spatialLines = await collectAdmRecordsInRange(start, end, { x: xf, y: yf, radius: rf }, undefined);
+          const idSet = new Set();
+          for (const row of spatialLines) {
+            const id = tryParseLineId(row);
+            if (id) idSet.add(id);
+          }
+          // Pass 2: collect by ids only (ignore positional filter), preserving order
+          lines = await collectAdmRecordsInRange(start, end, undefined, idSet);
+        } else {
+          // No spatial filtering; single pass
+          lines = await collectAdmRecordsInRange(start, end, undefined, undefined);
+        }
 
         // Prepend header with start datetime; keep collected order intact
         const header = `AdminLog started on ${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(start.getDate())} at ${pad2(start.getHours())}:${pad2(start.getMinutes())}:${pad2(start.getSeconds())}`;
