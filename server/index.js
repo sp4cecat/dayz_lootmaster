@@ -321,6 +321,122 @@ function diffTypeFields(a = {}, b = {}) {
   return specs;
 }
 
+// Build a stash report using positions matching:
+// - Parse {<x, y, z>} at end of line and use (x, z)
+// - For each "Dug out", scan backward to find the nearest prior "Dug in" within ±1 on x and z
+//   If player ids match => dugUpOwn, otherwise dugUpOthers (ignore if no prior dug-in match)
+async function generateStashReport(start, end) {
+  const root = join(DATA_DIR, 'logs');
+  const files = await listAdmFiles(root);
+
+  // Load buckets sorted by file start datetime
+  const buckets = [];
+  for (const f of files) {
+    let text = '';
+    try { text = await readFile(f, 'utf8'); } catch { continue; }
+    const startDate = parseAdmStartDate(text);
+    if (!startDate) continue;
+    buckets.push({ path: f, startDate, rows: text.split(/\r?\n/) });
+  }
+  buckets.sort((a, b) => {
+    const diff = a.startDate - b.startDate;
+    return diff !== 0 ? diff : String(a.path).localeCompare(String(b.path));
+  });
+
+  // Aggregate per-player
+  /** @type {Map<string, { aliases: Set<string>, dugIn: number, dugUpOwn: number, dugUpOthers: number }>} */
+  const byId = new Map();
+
+  // Collect all events in time order with positions
+  /** @type {{dt: Date, type: 'in'|'out', pid: string, alias?: string, x: number, z: number}[]} */
+  const events = [];
+  const posRe = /\{\s*<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>\s*}\s*$/;
+
+  for (const bucket of buckets) {
+    const dateStr = `${bucket.startDate.getFullYear()}-${pad2(bucket.startDate.getMonth() + 1)}-${pad2(bucket.startDate.getDate())}`;
+    for (const row of bucket.rows) {
+      const t = tryParseLineTime(row);
+      if (!t) continue;
+      const dt = new Date(`${dateStr}T${t}`);
+      if (isNaN(dt.getTime())) continue;
+
+      // Time constraint (open-ended if missing)
+      if (start && dt < start) continue;
+      if (end && dt > end) continue;
+
+      // Determine event type and capture position
+      const isIn = /\bDug in\b/i.test(row);
+      const isOut = /\bDug out\b/i.test(row);
+      if (!isIn && !isOut) continue;
+
+      const idMatch = /\(id=(\S+)\s/i.exec(row);
+      if (!idMatch) continue;
+      const pid = idMatch[1];
+      const aliasMatch = /Player "([^"]+)"/i.exec(row);
+      const alias = aliasMatch ? aliasMatch[1] : undefined;
+
+      const pm = posRe.exec(row);
+      if (!pm) continue;
+      const x = Number(pm[1]);
+      const z = Number(pm[3]);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+
+      // Prime per-player entry and aliases
+      if (!byId.has(pid)) byId.set(pid, { aliases: new Set(), dugIn: 0, dugUpOwn: 0, dugUpOthers: 0 });
+      if (alias) byId.get(pid).aliases.add(alias);
+
+      if (isIn) {
+        byId.get(pid).dugIn += 1;
+        events.push({ dt, type: 'in', pid, alias, x, z });
+      } else if (isOut) {
+        events.push({ dt, type: 'out', pid, alias, x, z });
+      }
+    }
+  }
+
+  // Events are already in ascending time order due to bucket ordering and per-file order
+  // For each 'out', scan backwards to find most recent 'in' within ±1 on x and z
+  const within = (a, b) => Math.abs(a - b) <= 1;
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.type !== 'out') continue;
+    // Scan backward
+    let matched = false;
+    for (let j = i - 1; j >= 0; j--) {
+      const prev = events[j];
+      if (prev.type !== 'in') continue;
+      if (!within(prev.x, ev.x) || !within(prev.z, ev.z)) continue;
+      // Found matching dug-in
+      const entry = byId.get(ev.pid) || byId.set(ev.pid, { aliases: new Set(), dugIn: 0, dugUpOwn: 0, dugUpOthers: 0 }).get(ev.pid);
+      if (prev.pid === ev.pid) entry.dugUpOwn += 1;
+      else entry.dugUpOthers += 1;
+      matched = true;
+      break;
+    }
+    // If no matching dug-in was found, ignore this dug-out (do not count)
+    if (!matched) {
+      // no-op
+    }
+  }
+
+  // Build final sorted report
+  const report = Array.from(byId.entries()).map(([id, v]) => ({
+    id,
+    aliases: Array.from(v.aliases.values()),
+    dugIn: v.dugIn,
+    dugUpOwn: v.dugUpOwn,
+    dugUpOthers: v.dugUpOthers
+  })).sort((a, b) =>
+    (b.dugIn - a.dugIn) ||
+    (b.dugUpOwn - a.dugUpOwn) ||
+    a.id.localeCompare(b.id)
+  );
+
+  return report;
+}
+
+
 function formatTs(d) {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -582,6 +698,28 @@ const server = http.createServer(async (req, res) => {
         // If missing, synthesize from filesystem structure
         const synth = await synthesizeEconomyCoreXml();
         send(res, 200, synth, { 'Content-Type': 'application/xml; charset=utf-8' });
+      }
+      return;
+    }
+
+    // POST stash report within range; returns JSON { players: [{id, aliases[], count}] }
+    if (pathname === '/api/logs/stash-report') {
+      if (req.method !== 'POST') { methodNotAllowed(res); return; }
+      try {
+        const body = await readBody(req);
+        const data = JSON.parse(body || '{}');
+        const start = data.start ? new Date(data.start) : null;
+        const end = data.end ? new Date(data.end) : null;
+        if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime())) || (start && end && start > end)) {
+          badRequest(res, 'Invalid start/end datetimes.');
+          return;
+        }
+        const report = await generateStashReport(start && !isNaN(start.getTime()) ? start : null, end && !isNaN(end.getTime()) ? end : null);
+        send(res, 200, JSON.stringify({ players: report }), { 'Content-Type': 'application/json' });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('Stash report error:', e);
+        send(res, 500, JSON.stringify({ error: 'Failed to generate stash report' }), { 'Content-Type': 'application/json' });
       }
       return;
     }

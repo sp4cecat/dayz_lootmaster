@@ -11,6 +11,7 @@ import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
+import StashReportModal from './components/StashReportModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -61,6 +62,7 @@ export default function App() {
     const [showStorage, setShowStorage] = useState(false);
     const [toolsOpen, setToolsOpen] = useState(false);
     const [showAdm, setShowAdm] = useState(false);
+    const [showStash, setShowStash] = useState(false);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -517,6 +519,7 @@ export default function App() {
                           }}
                         >
                           <button className="link" role="menuitem" onClick={() => { setShowAdm(true); setToolsOpen(false); }}>ADM records</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowStash(true); setToolsOpen(false); }}>Stash report</button>
                         </div>
                       )}
                     </div>
@@ -664,6 +667,9 @@ export default function App() {
             )}
             {showAdm && (
               <AdmRecordsModal onClose={() => setShowAdm(false)} />
+            )}
+            {showStash && (
+              <StashReportModal onClose={() => setShowStash(false)} />
             )}
         </div>
     );

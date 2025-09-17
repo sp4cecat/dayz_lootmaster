@@ -262,6 +262,15 @@ h1 {
     height: 80vh;       /* substantially taller modal */
     max-height: 80vh;
 }
+
+/* Full-page modal layout for Stash report */
+.modal.fullscreen-modal {
+    width: 96vw;
+    height: 90vh;
+    max-width: 96vw;
+    max-height: 90vh;
+    overflow: auto;
+}
 .react-calendar__tile--active:hover,
 .react-calendar__tile--rangeStart:hover,
 .react-calendar__tile--rangeEnd:hover {
