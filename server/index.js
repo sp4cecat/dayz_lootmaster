@@ -92,7 +92,6 @@ async function loadEconomyCoreCaches() {
     while ((ceMatch = ceRe.exec(xml)) !== null) {
       const folder = ceMatch[1];
 
-      console.log("Folder: ", folder, "Content: ", ceMatch[2], "")
       if (!folder) continue;
       const parts = folder.split('/').filter(Boolean);
       const group = parts[parts.length - 1];
@@ -331,12 +330,12 @@ async function generateStashReport(start, end) {
   const root = join(DATA_DIR, 'logs');
   const files = await listAdmFiles(root);
 
-  // Load buckets sorted by file start datetime
+  // Load buckets sorted by file start datetime (inferred from filename)
   const buckets = [];
   for (const f of files) {
     let text = '';
     try { text = await readFile(f, 'utf8'); } catch { continue; }
-    const startDate = parseAdmStartDate(text);
+    const startDate = parseAdmStartDate(f);
     if (!startDate) continue;
     buckets.push({ path: f, startDate, rows: text.split(/\r?\n/) });
   }
@@ -354,13 +353,38 @@ async function generateStashReport(start, end) {
   const events = [];
   const posRe = /\{\s*<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>\s*}\s*$/;
 
+  // Helper: HH:MM:SS -> seconds of day
+  const hmsToSec = (t) => {
+    const parts = t.split(':').map(Number);
+    if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  };
+
   for (const bucket of buckets) {
-    const dateStr = `${bucket.startDate.getFullYear()}-${pad2(bucket.startDate.getMonth() + 1)}-${pad2(bucket.startDate.getDate())}`;
+    // Compute UTC+10 "midnight" for the file date, as an absolute instant
+    const tzOffsetMs = 10 * 60 * 60 * 1000;
+    const shifted = new Date(bucket.startDate.getTime() + tzOffsetMs); // shift to get UTC+10 calendar components
+    const baseMidnightUtcPlus10Ms = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), 0, 0, 0) - tzOffsetMs;
+    const baseDate = new Date(baseMidnightUtcPlus10Ms);
+
+    let dayOffset = 0;
+    let lastSec = null;
+
     for (const row of bucket.rows) {
       const t = tryParseLineTime(row);
       if (!t) continue;
-      const dt = new Date(`${dateStr}T${t}`);
-      if (isNaN(dt.getTime())) continue;
+
+      const sec = hmsToSec(t);
+      if (sec == null) continue;
+
+      if (lastSec != null && sec < lastSec) {
+        // Midnight rollover within the same file
+        dayOffset += 1;
+      }
+      lastSec = sec;
+
+      // Build per-line timestamp as base + dayOffset + seconds-of-day (all anchored to UTC+10)
+      const dt = new Date(baseDate.getTime() + dayOffset * 24 * 60 * 60 * 1000 + sec * 1000);
 
       // Time constraint (open-ended if missing)
       if (start && dt < start) continue;
@@ -479,13 +503,38 @@ async function listAdmFiles(logsRoot) {
   return out;
 }
 
-function parseAdmStartDate(text) {
-  const m = /AdminLog started on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2}:\d{2})/i.exec(text);
-  if (!m) return null;
-  const [_, dateStr, timeStr] = m;
-  // Interpret as local time
-  const d = new Date(`${dateStr}T${timeStr}`);
-  return isNaN(d.getTime()) ? null : d;
+function parseAdmStartDate(filePath) {
+  // Interpret filename timestamps as local time in UTC+10 and convert to an absolute instant.
+  // Supports patterns like:
+  //  - YYYY-MM-DD_HH-MM-SS
+  //  - YYYY-MM-DD-HH-MM-SS
+  //  - YYYYMMDD_HHMMSS
+  //  - YYYY-MM-DD (defaults time to 00:00:00)
+  const name = String(filePath).split(/[\\/]/).pop() || '';
+  const tzOffsetMs = 10 * 60 * 60 * 1000;
+
+  let m;
+  // Full datetime variants
+  m = name.match(/(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})[T _-]?(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})/);
+  if (m) {
+    const y = Number(m[1]), mon = Number(m[2]) - 1, d = Number(m[3]);
+    const h = Number(m[4]), mi = Number(m[5]), s = Number(m[6]);
+    // Convert "UTC+10 local time" to UTC instant by subtracting the offset
+    const utcMs = Date.UTC(y, mon, d, h, mi, s) - tzOffsetMs;
+    const dt = new Date(utcMs);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  // Date-only
+  m = name.match(/(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})/);
+  if (m) {
+    const y = Number(m[1]), mon = Number(m[2]) - 1, d = Number(m[3]);
+    const utcMs = Date.UTC(y, mon, d, 0, 0, 0) - tzOffsetMs;
+    const dt = new Date(utcMs);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  // Unknown filename format => skip the file
+  return null;
 }
 
 function tryParseLineTime(line) {
@@ -493,14 +542,14 @@ function tryParseLineTime(line) {
   return m ? m[1] : null;
 }
 
-// Extract pos=<x, y, z>; returns {x, y} or null
+// Extract pos=<x, y, z>; returns {x, z} or null (planar X/Z distance)
 function tryParseLinePos(line) {
   const m = /pos=<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
   if (!m) return null;
   const x = Number(m[1]);
-  const y = Number(m[2]);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { x, y };
+  const z = Number(m[3]);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  return { x, z };
 }
 
 // Extract (id=XYZ ...); returns id string or null
@@ -513,12 +562,14 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet) {
   const root = join(DATA_DIR, 'logs');
   const files = await listAdmFiles(root);
 
-  // Read all files and capture their start datetime and lines
+  console.log('Collecting ADM records from', start, 'to', end);
+
+  // Read all files and capture their start datetime (from filename) and lines
   const fileBuckets = [];
   for (const f of files) {
     let text = '';
     try { text = await readFile(f, 'utf8'); } catch { continue; }
-    const startDate = parseAdmStartDate(text);
+    const startDate = parseAdmStartDate(f);
     if (!startDate) continue;
     const rows = text.split(/\r?\n/);
     fileBuckets.push({ path: f, startDate, rows });
@@ -533,20 +584,47 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet) {
   /** @type {string[]} */
   const lines = [];
 
-  const usePos = posFilter && Number.isFinite(posFilter.x) && Number.isFinite(posFilter.y) && Number.isFinite(posFilter.radius);
+  const usePos = posFilter && Number.isFinite(posFilter.x) && Number.isFinite(posFilter.z) && Number.isFinite(posFilter.radius);
   const useIds = idSet && idSet.size > 0;
+
+  // Helper: HH:MM:SS -> seconds of day
+  const hmsToSec = (t) => {
+    const parts = t.split(':').map(Number);
+    if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  };
 
   // For each file (in start-date order), walk lines in original order and include those within range
   for (const bucket of fileBuckets) {
-    const dateStr = `${bucket.startDate.getFullYear()}-${pad2(bucket.startDate.getMonth() + 1)}-${pad2(bucket.startDate.getDate())}`;
+    // Compute UTC+10 "midnight" for the file date, as an absolute instant
+    const tzOffsetMs = 10 * 60 * 60 * 1000;
+    const shifted = new Date(bucket.startDate.getTime() + tzOffsetMs); // shift to get UTC+10 calendar components
+    const baseMidnightUtcPlus10Ms = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), 0, 0, 0) - tzOffsetMs;
+    const baseDate = new Date(baseMidnightUtcPlus10Ms);
+
+    let dayOffset = 0;
+    let lastSec = null;
+
     for (const row of bucket.rows) {
       const t = tryParseLineTime(row);
       if (!t) continue;
-      const dt = new Date(`${dateStr}T${t}`);
-      if (isNaN(dt.getTime())) continue;
+
+      const sec = hmsToSec(t);
+      if (sec == null) continue;
+
+      if (lastSec != null && sec < lastSec) {
+        // Midnight rollover within the same file
+        dayOffset += 1;
+      }
+      lastSec = sec;
+
+      // Build per-line timestamp as base + dayOffset + seconds-of-day (all anchored to UTC+10)
+      const dt = new Date(baseDate.getTime() + dayOffset * 24 * 60 * 60 * 1000 + sec * 1000);
+
+      // Ensure the adjusted datetime lies within the requested range
       if (dt < start || dt > end) continue;
 
-      // If idSet provided, it takes priority (ignore pos filter)
+      // If idSet provided, it takes priority (ignore positional filter)
       if (useIds) {
         const id = tryParseLineId(row);
         if (!id || !idSet.has(id)) continue;
@@ -554,8 +632,8 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet) {
         const pos = tryParseLinePos(row);
         if (!pos) continue;
         const dx = pos.x - posFilter.x;
-        const dy = pos.y - posFilter.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const dz = pos.z - posFilter.z;
+        const dist = Math.hypot(dx, dz);
         if (dist > posFilter.radius) continue;
       }
 
@@ -737,14 +815,21 @@ const server = http.createServer(async (req, res) => {
           badRequest(res, 'Invalid start/end datetimes.');
           return;
         }
-        const xf = Number(data.x), yf = Number(data.y), rf = Number(data.radius);
-        const hasFilter = Number.isFinite(xf) && Number.isFinite(yf) && Number.isFinite(rf);
+
+        // Use X/Z for planar distance; accept data.z primarily, fall back to legacy data.y for compatibility
+        const xf = Number(data.x);
+        let zf = Number(data.z);
+        const rf = Number(data.radius);
+        if (!Number.isFinite(zf) && Number.isFinite(Number(data.y))) {
+          zf = Number(data.y); // backward compatibility with legacy clients
+        }
+        const hasFilter = Number.isFinite(xf) && Number.isFinite(zf) && Number.isFinite(rf);
         const expandByIds = !!data.expandByIds;
 
         let lines;
         if (hasFilter && expandByIds) {
           // Pass 1: collect within radius to determine unique ids
-          const spatialLines = await collectAdmRecordsInRange(start, end, { x: xf, y: yf, radius: rf }, undefined);
+          const spatialLines = await collectAdmRecordsInRange(start, end, { x: xf, z: zf, radius: rf }, undefined);
           const idSet = new Set();
           for (const row of spatialLines) {
             const id = tryParseLineId(row);
@@ -754,7 +839,7 @@ const server = http.createServer(async (req, res) => {
           lines = await collectAdmRecordsInRange(start, end, undefined, idSet);
         } else if (hasFilter) {
           // Single-pass: only include lines matching spatial filters
-          lines = await collectAdmRecordsInRange(start, end, { x: xf, y: yf, radius: rf }, undefined);
+          lines = await collectAdmRecordsInRange(start, end, { x: xf, z: zf, radius: rf }, undefined);
         } else {
           // No spatial filtering; single pass
           lines = await collectAdmRecordsInRange(start, end, undefined, undefined);
