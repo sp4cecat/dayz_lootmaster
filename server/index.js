@@ -17,6 +17,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { mkdir, readFile, writeFile, stat, appendFile, readdir } from 'node:fs/promises';
+import moment from 'moment';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -464,13 +465,8 @@ async function generateStashReport(start, end) {
 
 
 function formatTs(d) {
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  const h = String(d.getHours());
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const s = String(d.getSeconds()).padStart(2, '0');
-  return `${dd}-${mm}-${yy} ${h}:${m}:${s}`;
+  // Preserve original format but use moment for consistency
+  return moment(d).format('DD-MM-YY H:mm:ss');
 }
 
 // ----- ADM records utilities -----
@@ -809,12 +805,30 @@ const server = http.createServer(async (req, res) => {
       try {
         body = await readBody(req);
         const data = JSON.parse(body || '{}');
-        const start = new Date(data.start);
-        const end = new Date(data.end);
-        if (!data.start || !data.end || isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+
+        // Parse input timestamps as UTC+10 local times using moment
+        const parseUtcPlus10 = (s) => {
+          if (typeof s !== 'string') return moment.invalid();
+          const formats = [
+            'YYYY-MM-DDTHH:mm:ss',
+            'YYYY-MM-DD HH:mm:ss',
+            'YYYY-MM-DDTHH:mm',
+            'YYYY-MM-DD HH:mm',
+            'YYYY-MM-DD'
+          ];
+          const m = moment(s, formats, true);
+          if (!m.isValid()) return moment.invalid();
+          return m.utcOffset(600, true).utc();
+        };
+
+        const startM = parseUtcPlus10(data.start);
+        const endM = parseUtcPlus10(data.end);
+        if (!data.start || !data.end || !startM.isValid() || !endM.isValid() || startM.isAfter(endM)) {
           badRequest(res, 'Invalid start/end datetimes.');
           return;
         }
+        const start = startM.toDate();
+        const end = endM.toDate();
 
         // Use X/Z for planar distance; accept data.z primarily, fall back to legacy data.y for compatibility
         const xf = Number(data.x);
@@ -845,10 +859,11 @@ const server = http.createServer(async (req, res) => {
           lines = await collectAdmRecordsInRange(start, end, undefined, undefined);
         }
 
-        // Prepend header with start datetime; keep collected order intact
-        const header = `AdminLog started on ${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(start.getDate())} at ${pad2(start.getHours())}:${pad2(start.getMinutes())}:${pad2(start.getSeconds())}`;
+        // Prepend header with start datetime in UTC+10 and build filename using moment
+        const header = `AdminLog started on ${startM.clone().utcOffset(600).format('YYYY-MM-DD')} at ${startM.clone().utcOffset(600).format('HH:mm:ss')}`;
         const content = [header, ...lines].join('\n');
-        const filename = fileNameFromRange(start, end);
+
+        const filename = `${startM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}_to_${endM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}.ADM`;
         send(res, 200, content, {
           'Content-Type': 'text/plain; charset=utf-8',
           'Content-Disposition': `attachment; filename="${filename}"`
