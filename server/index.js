@@ -91,6 +91,8 @@ async function loadEconomyCoreCaches() {
     let ceMatch;
     while ((ceMatch = ceRe.exec(xml)) !== null) {
       const folder = ceMatch[1];
+
+      console.log("Folder: ", folder, "Content: ", ceMatch[2], "")
       if (!folder) continue;
       const parts = folder.split('/').filter(Boolean);
       const group = parts[parts.length - 1];
@@ -504,7 +506,6 @@ function tryParseLinePos(line) {
 // Extract (id=XYZ ...); returns id string or null
 function tryParseLineId(line) {
   const m = /\(id=([^=]+=)/i.exec(line);
-  console.log("REGEX", m?m[1]:null)
   return m ? m[1] : null;
 }
 
@@ -718,7 +719,6 @@ const server = http.createServer(async (req, res) => {
         send(res, 200, JSON.stringify({ players: report }), { 'Content-Type': 'application/json' });
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.error('Stash report error:', e);
         send(res, 500, JSON.stringify({ error: 'Failed to generate stash report' }), { 'Content-Type': 'application/json' });
       }
       return;
@@ -806,7 +806,6 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'PUT') {
         const body = await readBody(req);
-        console.log("Body", body)
         if (!body || typeof body !== 'string') {
           badRequest(res, 'Empty body');
           return;
