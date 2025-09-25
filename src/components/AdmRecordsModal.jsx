@@ -3,6 +3,7 @@ import DateTimePicker from 'react-datetime-picker';
 import 'react-datetime-picker/dist/DateTimePicker.css';
 import 'react-calendar/dist/Calendar.css';
 import 'react-clock/dist/Clock.css';
+import moment from 'moment';
 
 export default function AdmRecordsModal({ onClose }) {
   const [start, setStart] = useState(/** @type {Date|null} */(null));
@@ -35,8 +36,8 @@ export default function AdmRecordsModal({ onClose }) {
   }, [canRadiusFilter, playersInRadiusOnly]);
 
   const formatForFilename = (d) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    const m = moment(d);
+    return m.isValid() ? m.format('YYYY-MM-DD_HH-mm-ss') : 'invalid-date';
   };
 
   // Parse unique players and their aliases from content
@@ -127,15 +128,26 @@ export default function AdmRecordsModal({ onClose }) {
     }
   };
 
-  // If user selects a start date and end is empty, default end to the same date/time
+  // When start changes, ensure end is after start; if not, set end to same date at 23:59
   const onStartChange = (val) => {
     setStart(val);
-    if (val && (end === null || end === undefined)) {
-      try {
-        setEnd(new Date(val));
-      } catch {
-        // ignore invalid values
+    if (!val) return;
+    try {
+      const startDate = val instanceof Date ? new Date(val) : new Date(val);
+      const endDate = end ? (end instanceof Date ? new Date(end) : new Date(end)) : null;
+
+      const needAdjust =
+        !endDate ||
+        isNaN(endDate.getTime()) ||
+        endDate <= startDate;
+
+      if (needAdjust) {
+        const d = new Date(startDate);
+        d.setHours(23, 59, 0, 0);
+        setEnd(d);
       }
+    } catch {
+      // ignore invalid values
     }
   };
 
@@ -145,9 +157,10 @@ export default function AdmRecordsModal({ onClose }) {
       setError('Please choose both start and end.');
       return;
     }
-    const s = start instanceof Date ? start : new Date(start);
-    const e = end instanceof Date ? end : new Date(end);
-    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) {
+
+    const sM = moment(start);
+    const eM = moment(end);
+    if (!sM.isValid() || !eM.isValid() || !eM.isSameOrAfter(sM)) {
       setError('Invalid date/time range.');
       return;
     }
@@ -166,13 +179,13 @@ export default function AdmRecordsModal({ onClose }) {
     // Normalize default times if user left them blank:
     // - Start defaults to 00:00
     // - End defaults to 23:59
-    const sNorm = new Date(s);
-    if (sNorm.getHours() === 0 && sNorm.getMinutes() === 0) {
-      sNorm.setHours(0, 0, 0, 0);
+    const sNorm = sM.clone();
+    if (sNorm.hour() === 0 && sNorm.minute() === 0) {
+      sNorm.set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
     }
-    const eNorm = new Date(e);
-    if (eNorm.getHours() === 0 && eNorm.getMinutes() === 0) {
-      eNorm.setHours(23, 59, 59, 999);
+    const eNorm = eM.clone();
+    if (eNorm.hour() === 0 && eNorm.minute() === 0) {
+      eNorm.set({ hour: 23, minute: 59, second: 59, millisecond: 999 });
     }
 
     setBusy(true);
@@ -181,8 +194,12 @@ export default function AdmRecordsModal({ onClose }) {
       const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
       const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
-      // Build payload
-      const payload = { start: sNorm.toISOString(), end: eNorm.toISOString() };
+      // Build payload: send as UTC+10 local strings (no timezone), matching server expectations
+      const payload = {
+        start: sNorm.clone().utcOffset(600, true).format('YYYY-MM-DD HH:mm:ss'),
+        end: eNorm.clone().utcOffset(600, true).format('YYYY-MM-DD HH:mm:ss')
+      };
+
       const xn = Number(x), yn = Number(y), rn = Number(radius);
       const hasSpatial = Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0;
       if (hasSpatial) {
@@ -213,7 +230,7 @@ export default function AdmRecordsModal({ onClose }) {
         ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_y${String(y).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
         : '';
 
-      const filename = `${formatForFilename(s)}_to_${formatForFilename(e)}${filterPart}.ADM`;
+      const filename = `${formatForFilename(sNorm.toDate())}_to_${formatForFilename(eNorm.toDate())}${filterPart}.ADM`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
