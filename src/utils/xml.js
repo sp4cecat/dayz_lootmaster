@@ -208,7 +208,7 @@ export function generateLimitsXml(defs) {
   const esc = (s) => escapeAttr(s);
   const lines = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-    '<limitsdefinition>',
+    '<lists>',
     '  <categories>',
     ...defs.categories.map(c => `    <category name="${esc(c)}"/>`),
     '  </categories>',
