@@ -221,7 +221,7 @@ export function generateLimitsXml(defs) {
     '  <tags>',
     ...defs.tags.map(t => `    <tag name="${esc(t)}"/>`),
     '  </tags>',
-    '</limitsdefinition>'
+    '</lists>'
   ];
   return lines.join('\n');
 }
