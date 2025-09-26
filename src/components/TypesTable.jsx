@@ -260,8 +260,8 @@ export default function TypesTable({ definitions, types, selection, setSelection
                   return count > 0 ? (
                     <span
                       className="chip"
-                      title={`Also in: ${others.join(', ')}`}
-                      aria-label={`Also in ${others.join(', ')}`}
+                      title={`Overrides: ${others.join(', ')}`}
+                      aria-label={`Overrides ${others.join(', ')}`}
                       style={{ marginLeft: '6px' }}
                     >
                       +{count}
