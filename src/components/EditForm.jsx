@@ -327,19 +327,28 @@ function renderTriStateGroup(group, form, options, cycleTri) {
  */
 function applyToType(t, form, defs) {
   const next = { ...t };
+  const edited = { ...(t._edited || {}) };
 
   // Category
   if (form.category !== null && form.category !== undefined && form.category !== '') {
+    if (form.category !== t.category) edited.category = true;
     next.category = form.category;
   }
 
   // Numeric
   ['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].forEach(k => {
-    if (form[k] !== null && form[k] !== '') next[k] = Number(form[k]);
+    if (form[k] !== null && form[k] !== '') {
+      const nv = Number(form[k]);
+      if (nv !== t[k]) edited[k] = true;
+      next[k] = nv;
+    }
   });
 
   // Flags
-  next.flags = { ...t.flags, ...form.flags };
+  const mergedFlags = { ...t.flags, ...form.flags };
+  const flagsChanged = Object.keys(mergedFlags).some(k => mergedFlags[k] !== t.flags[k]);
+  if (flagsChanged) edited.flags = true;
+  next.flags = mergedFlags;
 
   // Arrays: apply tri-state
   const applyTri = (groupKey, allowed) => {
@@ -352,12 +361,16 @@ function applyToType(t, form, defs) {
     });
     // Filter to allowed space
     set = new Set(Array.from(set).filter(x => allowed.includes(x)));
-    next[groupKey] = Array.from(set).sort();
+    const arr = Array.from(set).sort();
+    // Mark edited if the array actually changed
+    if (JSON.stringify(arr) !== JSON.stringify(t[groupKey])) edited[groupKey] = true;
+    next[groupKey] = arr;
   };
   applyTri('usage', defs.usageflags);
   applyTri('value', defs.valueflags);
   applyTri('tag', defs.tags);
 
+  next._edited = edited;
   return next;
 }
 

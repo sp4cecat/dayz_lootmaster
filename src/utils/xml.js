@@ -22,6 +22,8 @@
  * @property {string[]} value
  * @property {string[]} tag
  * @property {Flags} flags
+ * @property {{[k:string]: boolean}=} _present
+ * @property {{[k:string]: boolean}=} _edited
  */
 
 /**
@@ -104,6 +106,21 @@ export function parseTypesXml(xml) {
     const value = uniq(Array.from(node.getElementsByTagName('value')).map(u => u.getAttribute('name')).filter(Boolean));
     const tag = uniq(Array.from(node.getElementsByTagName('tag')).map(u => u.getAttribute('name')).filter(Boolean));
 
+    // Track which children were actually present in source XML
+    const present = {
+      nominal: !!node.getElementsByTagName('nominal')[0],
+      min: !!node.getElementsByTagName('min')[0],
+      lifetime: !!node.getElementsByTagName('lifetime')[0],
+      restock: !!node.getElementsByTagName('restock')[0],
+      quantmin: !!node.getElementsByTagName('quantmin')[0],
+      quantmax: !!node.getElementsByTagName('quantmax')[0],
+      flags: !!flagsEl,
+      category: !!categoryEl,
+      usage: Array.from(node.getElementsByTagName('usage')).length > 0,
+      value: Array.from(node.getElementsByTagName('value')).length > 0,
+      tag: Array.from(node.getElementsByTagName('tag')).length > 0,
+    };
+
     return {
       name,
       category,
@@ -116,7 +133,9 @@ export function parseTypesXml(xml) {
       usage: /** @type {string[]} */(usage),
       value: /** @type {string[]} */(value),
       tag: /** @type {string[]} */(tag),
-      flags
+      flags,
+      _present: present,
+      _edited: {}
     };
   });
 }
@@ -180,14 +199,19 @@ export function generateTypesXml(types) {
     String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
   );
   for (const t of sorted) {
+    const present = t._present || {};
+    const edited = t._edited || {};
+    const shouldEmit = (key) => !!(edited[key] || present[key]);
+
     lines.push(`  <type name="${escapeAttr(t.name)}">`);
-    lines.push(`    <nominal>${t.nominal}</nominal>`);
-    lines.push(`    <min>${t.min}</min>`);
+    if (shouldEmit('nominal')) lines.push(`    <nominal>${t.nominal}</nominal>`);
+    if (shouldEmit('min')) lines.push(`    <min>${t.min}</min>`);
+    // Lifetime is required by the DayZ economy schema; always output it
     lines.push(`    <lifetime>${t.lifetime}</lifetime>`);
-    lines.push(`    <restock>${t.restock}</restock>`);
-    lines.push(`    <quantmin>${t.quantmin}</quantmin>`);
-    lines.push(`    <quantmax>${t.quantmax}</quantmax>`);
-    lines.push(`    <flags count_in_cargo="${to01(t.flags.count_in_cargo)}" count_in_hoarder="${to01(t.flags.count_in_hoarder)}" count_in_map="${to01(t.flags.count_in_map)}" count_in_player="${to01(t.flags.count_in_player)}" crafted="${to01(t.flags.crafted)}" deloot="${to01(t.flags.deloot)}"/>`);
+    if (shouldEmit('restock')) lines.push(`    <restock>${t.restock}</restock>`);
+    if (shouldEmit('quantmin')) lines.push(`    <quantmin>${t.quantmin}</quantmin>`);
+    if (shouldEmit('quantmax')) lines.push(`    <quantmax>${t.quantmax}</quantmax>`);
+    if (shouldEmit('flags')) lines.push(`    <flags count_in_cargo="${to01(t.flags.count_in_cargo)}" count_in_hoarder="${to01(t.flags.count_in_hoarder)}" count_in_map="${to01(t.flags.count_in_map)}" count_in_player="${to01(t.flags.count_in_player)}" crafted="${to01(t.flags.crafted)}" deloot="${to01(t.flags.deloot)}"/>`);
     if (t.category) lines.push(`    <category name="${escapeAttr(t.category)}"/>`);
     for (const u of t.usage) lines.push(`    <usage name="${escapeAttr(u)}"/>`);
     for (const v of t.value) lines.push(`    <value name="${escapeAttr(v)}"/>`);
@@ -241,14 +265,19 @@ export function generateTypesXmlFromFilesWithComments(files) {
       String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
     );
     for (const t of perFileSorted) {
+      const present = t._present || {};
+      const edited = t._edited || {};
+      const shouldEmit = (key) => !!(edited[key] || present[key]);
+
       lines.push(`  <type name="${escapeAttr(t.name)}">`);
-      lines.push(`    <nominal>${t.nominal}</nominal>`);
-      lines.push(`    <min>${t.min}</min>`);
+      if (shouldEmit('nominal')) lines.push(`    <nominal>${t.nominal}</nominal>`);
+      if (shouldEmit('min')) lines.push(`    <min>${t.min}</min>`);
+      // Always include lifetime
       lines.push(`    <lifetime>${t.lifetime}</lifetime>`);
-      lines.push(`    <restock>${t.restock}</restock>`);
-      lines.push(`    <quantmin>${t.quantmin}</quantmin>`);
-      lines.push(`    <quantmax>${t.quantmax}</quantmax>`);
-      lines.push(`    <flags count_in_cargo="${to01(t.flags.count_in_cargo)}" count_in_hoarder="${to01(t.flags.count_in_hoarder)}" count_in_map="${to01(t.flags.count_in_map)}" count_in_player="${to01(t.flags.count_in_player)}" crafted="${to01(t.flags.crafted)}" deloot="${to01(t.flags.deloot)}"/>`);
+      if (shouldEmit('restock')) lines.push(`    <restock>${t.restock}</restock>`);
+      if (shouldEmit('quantmin')) lines.push(`    <quantmin>${t.quantmin}</quantmin>`);
+      if (shouldEmit('quantmax')) lines.push(`    <quantmax>${t.quantmax}</quantmax>`);
+      if (shouldEmit('flags')) lines.push(`    <flags count_in_cargo="${to01(t.flags.count_in_cargo)}" count_in_hoarder="${to01(t.flags.count_in_hoarder)}" count_in_map="${to01(t.flags.count_in_map)}" count_in_player="${to01(t.flags.count_in_player)}" crafted="${to01(t.flags.crafted)}" deloot="${to01(t.flags.deloot)}"/>`);
       if (t.category) lines.push(`    <category name="${escapeAttr(t.category)}"/>`);
       for (const u of t.usage) lines.push(`    <usage name="${escapeAttr(u)}"/>`);
       for (const v of t.value) lines.push(`    <value name="${escapeAttr(v)}"/>`);

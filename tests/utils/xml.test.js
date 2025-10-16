@@ -46,3 +46,32 @@ describe('xml parsing', () => {
     expect(out).toContain('<usage name="Village"/>');
   });
 });
+
+describe('minimal types persistence', () => {
+  it('emits only lifetime for minimal type and adds new elements only when edited', () => {
+    const minimal = '<types>\n  <type name="SurvivorF_Baty">\n    <lifetime>86400</lifetime>\n  </type>\n</types>';
+    const types = parseTypesXml(minimal);
+    expect(types).toHaveLength(1);
+    const t = types[0];
+    // Presence map should reflect only lifetime
+    expect(t._present?.lifetime).toBe(true);
+    expect(t._present?.nominal).toBeFalsy();
+    expect(t._present?.flags).toBeFalsy();
+
+    // Generate without edits: should NOT include nominal/min/restock/quant*/flags
+    const out1 = generateTypesXml(types);
+    expect(out1).toContain('<lifetime>86400</lifetime>');
+    expect(out1).not.toContain('<nominal>');
+    expect(out1).not.toContain('<min>');
+    expect(out1).not.toContain('<restock>');
+    expect(out1).not.toContain('<quantmin>');
+    expect(out1).not.toContain('<quantmax>');
+    expect(out1).not.toContain('<flags ');
+
+    // Simulate an edit: set nominal and mark edited
+    t.nominal = 1;
+    t._edited = { ...(t._edited || {}), nominal: true };
+    const out2 = generateTypesXml([t]);
+    expect(out2).toContain('<nominal>1</nominal>');
+  });
+});
