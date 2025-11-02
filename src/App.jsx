@@ -12,6 +12,11 @@ import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import StashReportModal from './components/StashReportModal.jsx';
+import ExpansionCategoriesModal from './components/expansion/ExpansionCategoriesModal.jsx';
+import ExpansionTraderZonesModal from './components/expansion/ExpansionTraderZonesModal.jsx';
+import ExpansionTradersModal from './components/expansion/ExpansionTradersModal.jsx';
+import ExpansionAppearanceModal from './components/expansion/ExpansionAppearanceModal.jsx';
+import ExpansionApplyModal from './components/expansion/ExpansionApplyModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -63,6 +68,14 @@ export default function App() {
     const [toolsOpen, setToolsOpen] = useState(false);
     const [showAdm, setShowAdm] = useState(false);
     const [showStash, setShowStash] = useState(false);
+
+    // Expansion UI state
+    const [expansionOpen, setExpansionOpen] = useState(false);
+    const [showExpCategories, setShowExpCategories] = useState(false);
+    const [showExpTraders, setShowExpTraders] = useState(false);
+    const [showExpZones, setShowExpZones] = useState(false);
+    const [showExpAppearance, setShowExpAppearance] = useState(false);
+    const [showApplyExpansion, setShowApplyExpansion] = useState(false);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -524,6 +537,43 @@ export default function App() {
                       )}
                     </div>
 
+                    {/* Expansion dropdown */}
+                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+                      <button
+                        className="btn"
+                        onClick={() => setExpansionOpen(v => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={expansionOpen}
+                        title="Expansion"
+                      >
+                        Expansion ▾
+                      </button>
+                      {expansionOpen && (
+                        <div
+                          className="dropdown-menu"
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: 8,
+                            minWidth: 220,
+                            zIndex: 10
+                          }}
+                        >
+                          <button className="link" role="menuitem" onClick={() => { setShowExpCategories(true); setExpansionOpen(false); }}>Categories</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowExpTraders(true); setExpansionOpen(false); }}>Traders (options)</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowExpZones(true); setExpansionOpen(false); }}>Trader Zones (stock)</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowExpAppearance(true); setExpansionOpen(false); }}>Trader Appearance (.map)</button>
+                          <hr/>
+                          <button className="link" role="menuitem" disabled={selection.size === 0} onClick={() => { setShowApplyExpansion(true); setExpansionOpen(false); }}>Apply selected types…</button>
+                        </div>
+                      )}
+                    </div>
+
                     <ThemeToggle/>
                     <div className="profile" ref={profileRef}>
                         <button
@@ -670,6 +720,22 @@ export default function App() {
             )}
             {showStash && (
               <StashReportModal onClose={() => setShowStash(false)} />
+            )}
+
+            {showExpCategories && (
+              <ExpansionCategoriesModal onClose={() => setShowExpCategories(false)} />
+            )}
+            {showExpTraders && (
+              <ExpansionTradersModal onClose={() => setShowExpTraders(false)} onOpenAppearance={() => setShowExpAppearance(true)} />
+            )}
+            {showExpZones && (
+              <ExpansionTraderZonesModal onClose={() => setShowExpZones(false)} />
+            )}
+            {showExpAppearance && (
+              <ExpansionAppearanceModal onClose={() => setShowExpAppearance(false)} />
+            )}
+            {showApplyExpansion && (
+              <ExpansionApplyModal selectedTypes={selectedTypes.map(t => t.name)} onClose={() => setShowApplyExpansion(false)} />
             )}
         </div>
     );
