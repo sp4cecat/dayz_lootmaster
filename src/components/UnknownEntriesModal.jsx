@@ -56,7 +56,7 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
         <div className="modal-header">
           <h3>Resolve Unknown Entries</h3>
           <div className="spacer" />
-          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" onClick={onClose} aria-label="Close" title="Close">Close</button>
         </div>
         <div className="modal-body">
           <p>Select one or more unknown entries below, then choose an action.</p>

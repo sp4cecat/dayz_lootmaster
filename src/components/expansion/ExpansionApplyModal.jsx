@@ -79,6 +79,8 @@ export default function ExpansionApplyModal({ selectedTypes, onClose }) {
       <div className="modal" style={{ maxWidth: 1000, width: '92vw' }}>
         <div className="modal-header">
           <h2>Apply to Expansion</h2>
+          <div className="spacer" />
+          <button className="btn" onClick={onClose} aria-label="Close" title="Close">Close</button>
         </div>
         <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, minHeight: 420 }}>
           <div>
@@ -122,7 +124,6 @@ export default function ExpansionApplyModal({ selectedTypes, onClose }) {
           <div className="spacer" />
           {status && <span className="chip" title="Status">{status}</span>}
           {error && <span className="chip warn" title="Error">{String(error)}</span>}
-          <button className="btn" onClick={onClose} disabled={running}>Close</button>
           <button className="btn primary" onClick={apply} disabled={disabled}>{running ? 'Applying…' : 'Apply'}</button>
         </div>
       </div>

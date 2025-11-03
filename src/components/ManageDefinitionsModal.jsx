@@ -67,6 +67,8 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
       <div className="modal">
         <div className="modal-header">
           <h2>Manage {label}</h2>
+          <div className="spacer" />
+          <button className="btn" onClick={onClose} aria-label="Close" title="Close">Close</button>
         </div>
         <div className="modal-body">
           {/* Summary info */}
@@ -131,9 +133,6 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
               ))}
             </div>
           )}
-        </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>

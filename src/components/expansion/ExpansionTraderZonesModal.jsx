@@ -171,9 +171,6 @@ export default function ExpansionTraderZonesModal({ onClose }) {
             )}
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Close</button>
-        </div>
       </div>
     </div>
   );

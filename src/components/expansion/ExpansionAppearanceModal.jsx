@@ -47,6 +47,8 @@ export default function ExpansionAppearanceModal({ onClose }) {
       <div className="modal" style={{ maxWidth: 1000, width: '92vw' }}>
         <div className="modal-header">
           <h2>Expansion: Trader Appearance (.map)</h2>
+          <div className="spacer" />
+          <button className="btn" onClick={onClose} aria-label="Close" title="Close">Close</button>
         </div>
         <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 12, minHeight: 480 }}>
           <div style={{ borderRight: '1px solid var(--border)', paddingRight: 8 }}>
@@ -86,9 +88,6 @@ export default function ExpansionAppearanceModal({ onClose }) {
               </>
             )}
           </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>

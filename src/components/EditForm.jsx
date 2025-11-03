@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { validateTypeAgainstDefinitions } from '../utils/validation.js';
 import { formatLifetime } from '../utils/time.js';
+import { listMarketFiles, getMarketFile, saveMarketFile, listTraderZoneFiles, getTraderZoneFile, saveTraderZoneFile } from '../utils/expansionApi.js';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -15,7 +16,6 @@ import { formatLifetime } from '../utils/time.js';
  * }} props
  */
 export default function EditForm({ definitions, selectedTypes, onCancel, onSave }) {
-  const single = selectedTypes.length === 1;
   const base = selectedTypes[0];
 
   // Initialize local form state with mixed awareness
@@ -102,6 +102,159 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
     const apply = (t) => applyToType(t, form, definitions);
     onSave(apply);
   };
+
+  // --- Expansion integration state & data ---
+  const [expMarketFiles, setExpMarketFiles] = useState(/** @type {string[]} */([]));
+  const [expZoneFiles, setExpZoneFiles] = useState(/** @type {string[]} */([]));
+  const [expSelCategory, setExpSelCategory] = useState('');
+  const [expPickedZones, setExpPickedZones] = useState(/** @type {Set<string>} */(new Set()));
+  const [expZoneQty, setExpZoneQty] = useState(1);
+  const [expBusy, setExpBusy] = useState(false);
+  const [expStatus, setExpStatus] = useState('');
+  const [expError, setExpError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setExpError('');
+        const [cats, zones] = await Promise.all([
+          listMarketFiles().catch(() => []),
+          listTraderZoneFiles().catch(() => []),
+        ]);
+        if (cancelled) return;
+        setExpMarketFiles(Array.isArray(cats) ? cats : []);
+        setExpZoneFiles(Array.isArray(zones) ? zones : []);
+        if (!expSelCategory && cats && cats.length) setExpSelCategory(cats[0]);
+      } catch (e) {
+        if (!cancelled) setExpError(String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleZonePick = (name) => {
+    setExpPickedZones(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  async function addSelectedTypesToCategory() {
+    if (!expSelCategory) { setExpError('Pick a market category file first.'); return; }
+    setExpBusy(true); setExpError(''); setExpStatus('');
+    try {
+      const json = await getMarketFile(expSelCategory);
+      const items = Array.isArray(json?.Items) ? [...json.Items] : [];
+      const have = new Set(items.map(it => String(it?.ClassName || '')));
+      let added = 0;
+      for (const t of selectedTypes) {
+        if (!have.has(t.name)) {
+          items.push({
+            ClassName: t.name,
+            MaxPriceThreshold: 0,
+            MinPriceThreshold: 0,
+            SellPricePercent: -1.0,
+            MaxStockThreshold: 0,
+            MinStockThreshold: 0,
+            QuantityPercent: -1,
+            SpawnAttachments: [],
+            Variants: []
+          });
+          added++;
+        }
+      }
+      await saveMarketFile(expSelCategory, { ...(json || {}), Items: items });
+      setExpStatus(added ? `Added ${added} item(s) to ${expSelCategory}.` : 'Nothing to add. All present.');
+    } catch (e) {
+      setExpError(String(e));
+    } finally {
+      setExpBusy(false);
+    }
+  }
+
+  async function removeSelectedTypesFromCategory() {
+    if (!expSelCategory) { setExpError('Pick a market category file first.'); return; }
+    setExpBusy(true); setExpError(''); setExpStatus('');
+    try {
+      const json = await getMarketFile(expSelCategory);
+      const before = Array.isArray(json?.Items) ? json.Items : [];
+      const names = new Set(selectedTypes.map(t => t.name));
+      const after = before.filter(it => !names.has(String(it?.ClassName || '')));
+      const removed = before.length - after.length;
+      await saveMarketFile(expSelCategory, { ...(json || {}), Items: after });
+      setExpStatus(removed ? `Removed ${removed} item(s) from ${expSelCategory}.` : 'Nothing to remove.');
+    } catch (e) {
+      setExpError(String(e));
+    } finally {
+      setExpBusy(false);
+    }
+  }
+
+  async function zonesAdd() {
+    if (expPickedZones.size === 0) { setExpError('Pick one or more Trader Zones.'); return; }
+    setExpBusy(true); setExpError(''); setExpStatus('');
+    try {
+      let totalChanged = 0; let filesTouched = 0;
+      for (const z of expPickedZones) {
+        const json = await getTraderZoneFile(z);
+        const stock = json && typeof json.Stock === 'object' && json.Stock !== null ? { ...json.Stock } : {};
+        let changed = 0;
+        for (const t of selectedTypes) {
+          if (!(t.name in stock)) { stock[t.name] = Number(expZoneQty) || 1; changed++; }
+        }
+        if (changed) {
+          await saveTraderZoneFile(z, { ...(json || {}), Stock: stock });
+          filesTouched++; totalChanged += changed;
+        }
+      }
+      setExpStatus(filesTouched ? `Added ${totalChanged} entr${totalChanged===1?'y':'ies'} across ${filesTouched} zone file(s).` : 'Nothing to add.');
+    } catch (e) {
+      setExpError(String(e));
+    } finally { setExpBusy(false); }
+  }
+
+  async function zonesSet() {
+    if (expPickedZones.size === 0) { setExpError('Pick one or more Trader Zones.'); return; }
+    setExpBusy(true); setExpError(''); setExpStatus('');
+    try {
+      let totalSet = 0; let filesTouched = 0;
+      for (const z of expPickedZones) {
+        const json = await getTraderZoneFile(z);
+        const stock = json && typeof json.Stock === 'object' && json.Stock !== null ? { ...json.Stock } : {};
+        for (const t of selectedTypes) {
+          stock[t.name] = Number(expZoneQty) || 1;
+          totalSet++;
+        }
+        await saveTraderZoneFile(z, { ...(json || {}), Stock: stock });
+        filesTouched++;
+      }
+      setExpStatus(`Set quantity for ${totalSet} entr${totalSet===1?'y':'ies'} across ${filesTouched} zone file(s).`);
+    } catch (e) { setExpError(String(e)); } finally { setExpBusy(false); }
+  }
+
+  async function zonesRemove() {
+    if (expPickedZones.size === 0) { setExpError('Pick one or more Trader Zones.'); return; }
+    setExpBusy(true); setExpError(''); setExpStatus('');
+    try {
+      let totalRemoved = 0; let filesTouched = 0;
+      for (const z of expPickedZones) {
+        const json = await getTraderZoneFile(z);
+        const stock = json && typeof json.Stock === 'object' && json.Stock !== null ? { ...json.Stock } : {};
+        let removedHere = 0;
+        for (const t of selectedTypes) {
+          if (t.name in stock) { delete stock[t.name]; removedHere++; }
+        }
+        if (removedHere) {
+          await saveTraderZoneFile(z, { ...(json || {}), Stock: stock });
+          filesTouched++; totalRemoved += removedHere;
+        }
+      }
+      setExpStatus(filesTouched ? `Removed ${totalRemoved} entr${totalRemoved===1?'y':'ies'} across ${filesTouched} zone file(s).` : 'Nothing to remove.');
+    } catch (e) { setExpError(String(e)); } finally { setExpBusy(false); }
+  }
 
   return (
     <div className="edit-form">
@@ -253,6 +406,113 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave 
           </fieldset>
 
           {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
+        </div>
+      </div>
+
+      {/* Expansion integration */}
+      <div className="card" style={{ marginTop: 12, padding: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h4 style={{ margin: 0 }}>Expansion</h4>
+          <span className="muted">Quickly manage Expansion Market and Trader Zone stock for the selected type(s).</span>
+          <div className="spacer" />
+          {expStatus && <span className="chip" title="Status">{expStatus}</span>}
+          {expError && <span className="chip warn" title="Error">{expError}</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
+          {/* Market Category block */}
+          <div className="control" style={{ borderRight: '1px solid var(--border)', paddingRight: 12 }}>
+            <label style={{ display: 'block' }}>
+              <span>Market category file</span>
+              <select
+                value={expSelCategory}
+                onChange={e => setExpSelCategory(e.target.value)}
+              >
+                {expMarketFiles.length === 0 && <option value="">— No market files found —</option>}
+                {expMarketFiles.map(f => (
+                  <option key={f} value={f}>{f}.json</option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+              <button
+                className="btn"
+                onClick={addSelectedTypesToCategory}
+                disabled={expBusy || !expSelCategory}
+                aria-label="Add selected types to market category"
+                title="Add selected types to market category"
+              >
+                Add to category
+              </button>
+              <button
+                className="btn"
+                onClick={removeSelectedTypesFromCategory}
+                disabled={expBusy || !expSelCategory}
+                aria-label="Remove selected types from market category"
+                title="Remove selected types from market category"
+              >
+                Remove from category
+              </button>
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Types: {selectedTypes.map(t => t.name).join(', ')}
+            </div>
+          </div>
+
+          {/* Trader Zones block */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h5 style={{ margin: 0 }}>Trader Zones</h5>
+              <div className="spacer" />
+              <label className="control" style={{ margin: 0, minWidth: 160 }}>
+                <span>Quantity</span>
+                <input
+                  type="number"
+                  value={expZoneQty}
+                  onChange={e => setExpZoneQty(Number(e.target.value))}
+                  title="Quantity to set when adding/setting stock"
+                  aria-label="Stock quantity"
+                  min={0}
+                />
+              </label>
+            </div>
+            <div className="list" style={{ maxHeight: 160, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, marginTop: 6 }}>
+              {expZoneFiles.length === 0 && <div className="muted" style={{ padding: 8 }}>No trader zone files found.</div>}
+              {expZoneFiles.map(z => (
+                <label key={z} className="list-row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px' }}>
+                  <input type="checkbox" checked={expPickedZones.has(z)} onChange={() => toggleZonePick(z)} /> {z}.json
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                className="btn"
+                onClick={zonesAdd}
+                disabled={expBusy || expPickedZones.size === 0}
+                aria-label="Add selected types to zone stock if missing"
+                title="Add selected types to zone stock if missing"
+              >
+                Add if missing
+              </button>
+              <button
+                className="btn"
+                onClick={zonesSet}
+                disabled={expBusy || expPickedZones.size === 0}
+                aria-label="Set quantity for selected types in zones"
+                title="Set quantity for selected types in zones"
+              >
+                Set quantity
+              </button>
+              <button
+                className="btn"
+                onClick={zonesRemove}
+                disabled={expBusy || expPickedZones.size === 0}
+                aria-label="Remove selected types from zones"
+                title="Remove selected types from zones"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
