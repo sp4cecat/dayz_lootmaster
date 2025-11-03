@@ -895,7 +895,10 @@ function PillArrayEditor({ value, onChange, options, allowEditWhenMixed = false,
           <span key={v} className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--chip-bg, rgba(128,128,128,.12))' }}>
             <span>{v}</span>
             {!disabled && (
-              <button type="button" className="link" aria-label={`Remove ${v}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(v); }} style={{ lineHeight: 1 }}>
+              <button type="button" className="link" aria-label={`Remove ${v}`} 
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(v); }} 
+                style={{ lineHeight: 1 }}>
                 ×
               </button>
             )}
@@ -922,6 +925,7 @@ function PillArrayEditor({ value, onChange, options, allowEditWhenMixed = false,
           <button
             type="button"
             className="btn"
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange([]); }}
             title="Clear all"
             style={{ padding: '2px 10px', borderRadius: 999, background: 'var(--chip-clear-bg, rgba(255,0,0,.08))', border: '1px solid var(--border)', fontSize: 12 }}
