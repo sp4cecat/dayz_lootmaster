@@ -175,7 +175,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
           if (JSON.stringify(a.tag) !== JSON.stringify(b.tag)) localSpecs.push(`Tag(${formatChangeValue(a.tag)} > ${formatChangeValue(b.tag)})`);
 
           specs = localSpecs;
-        } catch {
+        } catch (_e) {
           // ignore; fallback to field names only
           specs = Array.isArray(entry.fields) ? entry.fields : [];
         }
@@ -362,6 +362,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
         <div className="modal-header">
           <h3>Export Changed Types</h3>
           <div className="spacer" />
+          <button className="btn" onClick={onClose}>Close</button>
           {(mode === 'types' && typesFormat === 'zip') || (mode === 'all' && (anyAllChanged || downloadAll)) ? (
             <button
               className="btn primary"
@@ -402,7 +403,6 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
               <span>Copy to Clipboard</span>
             </button>
           )}
-          <button className="btn" onClick={onClose} aria-label="Close" title="Close">Close</button>
         </div>
         <div className="modal-body">
           <div className="filters-row" style={{ alignItems: 'center', gap: 16 }}>

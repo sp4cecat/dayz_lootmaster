@@ -14,8 +14,6 @@ export default function SummaryModal({ summary, onClose }) {
       <div className="modal">
         <div className="modal-header">
           <h2>Configuration loaded</h2>
-          <div className="spacer" />
-          <button className="btn" onClick={onClose} aria-label="Close" title="Close">Close</button>
         </div>
         <div className="modal-body">
           <p>

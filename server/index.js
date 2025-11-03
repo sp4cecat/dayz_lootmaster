@@ -16,7 +16,7 @@
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve} from 'node:path';
-import {mkdir, readFile, writeFile, stat, appendFile, readdir, rm} from 'node:fs/promises';
+import {mkdir, readFile, writeFile, stat, appendFile, readdir} from 'node:fs/promises';
 import moment from 'moment';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,7 +30,7 @@ const DATA_DIR = resolve(process.env.DATA_DIR || join(__dirname, '..', 'data'));
 function corsHeaders() {
     return {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE,OPTIONS',
+        'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, X-Editor-ID',
     };
 }
@@ -45,20 +45,6 @@ function isSafeName(s) {
     return typeof s === 'string' && /^[A-Za-z0-9._-]+$/.test(s);
 }
 
-// --- Expansion paths ---
-function expMarketDir() {
-    return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Market');
-}
-function expTradersDir() {
-    return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Traders');
-}
-function expTraderZonesDir() {
-    return join(DATA_DIR, 'expansion', 'traderzones');
-}
-function expAppearanceDir() {
-    return join(DATA_DIR, 'expansion', 'traders');
-}
-
 function defsPath() {
     return join(DATA_DIR, 'cfglimitsdefinition.xml');
 }
@@ -66,6 +52,11 @@ function defsPath() {
 function economyCorePath() {
     // Explicitly use ./data/cfgeconomycore.xml
     return join(DATA_DIR, 'cfgeconomycore.xml');
+}
+
+function marketDirPath() {
+    // Expansion Market categories directory
+    return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Market');
 }
 
 // Cache of group -> folder path (relative to DATA_DIR), derived from cfgeconomycore.xml
@@ -492,7 +483,7 @@ function pad2(n) {
     return String(n).padStart(2, '0');
 }
 
-function _fileNameFromRange(start, end) {
+function fileNameFromRange(start, end) {
     const fmt = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}-${pad2(d.getMinutes())}-${pad2(d.getSeconds())}`;
     return `${fmt(start)}_to_${fmt(end)}.ADM`;
 }
@@ -821,7 +812,7 @@ const server = http.createServer(async (req, res) => {
                 }
                 const report = await generateStashReport(start && !isNaN(start.getTime()) ? start : null, end && !isNaN(end.getTime()) ? end : null);
                 send(res, 200, JSON.stringify({players: report}), {'Content-Type': 'application/json'});
-            } catch {
+            } catch (e) {
                 send(res, 500, JSON.stringify({error: 'Failed to generate stash report'}), {'Content-Type': 'application/json'});
             }
             return;
@@ -907,138 +898,6 @@ const server = http.createServer(async (req, res) => {
                 send(res, 500, JSON.stringify({error: 'Failed to fetch ADM records'}), {'Content-Type': 'application/json'});
             }
             return;
-        }
-
-        // Expansion: Market categories (profiles/ExpansionMod/Market/*.json)
-        {
-            const m = pathname.match(/^\/api\/expansion\/market(?:\/([^/]+))?\/?$/);
-            if (m) {
-                const nameRaw = m[1];
-                if (!nameRaw) {
-                    if (req.method !== 'GET') { methodNotAllowed(res); return; }
-                    try {
-                        await mkdir(expMarketDir(), {recursive: true});
-                        const entries = await readdir(expMarketDir(), {withFileTypes: true});
-                        const files = entries.filter(e => e.isFile() && /\.json$/i.test(e.name)).map(e => e.name.replace(/\.json$/i, ''));
-                        send(res, 200, JSON.stringify({files: files.sort((a,b)=>a.localeCompare(b))}), { 'Content-Type': 'application/json' });
-                    } catch {
-                        send(res, 200, JSON.stringify({files: []}), { 'Content-Type': 'application/json' });
-                    }
-                    return;
-                }
-                if (!isSafeName(nameRaw)) { badRequest(res, 'Invalid file name'); return; }
-                const base = nameRaw.replace(/\.json$/i, '');
-                const target = join(expMarketDir(), `${base}.json`);
-                if (req.method === 'GET') {
-                    try {
-                        const txt = await readFile(target, 'utf8');
-                        send(res, 200, txt, {'Content-Type': 'application/json; charset=utf-8'});
-                    } catch { notFound(res); }
-                    return;
-                }
-                if (req.method === 'PUT') {
-                    const body = await readBody(req);
-                    try { JSON.parse(body || '{}'); } catch { badRequest(res, 'Invalid JSON'); return; }
-                    await ensureDirFor(target);
-                    await writeFile(target, body, 'utf8');
-                    send(res, 200, JSON.stringify({ok:true, path: target}), {'Content-Type':'application/json'});
-                    return;
-                }
-                if (req.method === 'DELETE') {
-                    try { await rm(target, {force: true}); send(res, 200, JSON.stringify({ok:true}), {'Content-Type':'application/json'}); }
-                    catch { notFound(res); }
-                    return;
-                }
-                methodNotAllowed(res); return;
-            }
-        }
-
-        // Expansion: Traders options (profiles/ExpansionMod/Traders/*.json)
-        {
-            const m = pathname.match(/^\/api\/expansion\/traders(?:\/([^/]+))?\/?$/);
-            if (m) {
-                const nameRaw = m[1];
-                if (!nameRaw) {
-                    if (req.method !== 'GET') { methodNotAllowed(res); return; }
-                    try {
-                        await mkdir(expTradersDir(), {recursive: true});
-                        const entries = await readdir(expTradersDir(), {withFileTypes: true});
-                        const files = entries.filter(e => e.isFile() && /\.json$/i.test(e.name)).map(e => e.name.replace(/\.json$/i, ''));
-                        send(res, 200, JSON.stringify({files: files.sort((a,b)=>a.localeCompare(b))}), { 'Content-Type': 'application/json' });
-                    } catch {
-                        send(res, 200, JSON.stringify({files: []}), { 'Content-Type': 'application/json' });
-                    }
-                    return;
-                }
-                if (!isSafeName(nameRaw)) { badRequest(res, 'Invalid file name'); return; }
-                const base = nameRaw.replace(/\.json$/i, '');
-                const target = join(expTradersDir(), `${base}.json`);
-                if (req.method === 'GET') {
-                    try { const txt = await readFile(target, 'utf8'); send(res, 200, txt, {'Content-Type':'application/json; charset=utf-8'});} catch { notFound(res);} return;
-                }
-                if (req.method === 'PUT') {
-                    const body = await readBody(req);
-                    try { JSON.parse(body || '{}'); } catch { badRequest(res, 'Invalid JSON'); return; }
-                    await ensureDirFor(target); await writeFile(target, body, 'utf8');
-                    send(res, 200, JSON.stringify({ok:true, path: target}), {'Content-Type':'application/json'}); return;
-                }
-                if (req.method === 'DELETE') {
-                    try { await rm(target, {force:true}); send(res,200, JSON.stringify({ok:true}), {'Content-Type':'application/json'});} catch { notFound(res);} return;
-                }
-                methodNotAllowed(res); return;
-            }
-        }
-
-        // Expansion: Trader Zones (data/expansion/traderzones/*.json)
-        {
-            const m = pathname.match(/^\/api\/expansion\/traderzones(?:\/([^/]+))?\/?$/);
-            if (m) {
-                const nameRaw = m[1];
-                if (!nameRaw) {
-                    if (req.method !== 'GET') { methodNotAllowed(res); return; }
-                    try {
-                        await mkdir(expTraderZonesDir(), {recursive:true});
-                        const entries = await readdir(expTraderZonesDir(), {withFileTypes: true});
-                        const files = entries.filter(e => e.isFile() && /\.json$/i.test(e.name)).map(e => e.name.replace(/\.json$/i, ''));
-                        send(res, 200, JSON.stringify({files: files.sort((a,b)=>a.localeCompare(b))}), {'Content-Type':'application/json'});
-                    } catch {
-                        send(res, 200, JSON.stringify({files: []}), {'Content-Type':'application/json'});
-                    }
-                    return;
-                }
-                if (!isSafeName(nameRaw)) { badRequest(res, 'Invalid file name'); return; }
-                const base = nameRaw.replace(/\.json$/i, '');
-                const target = join(expTraderZonesDir(), `${base}.json`);
-                if (req.method === 'GET') { try { const txt = await readFile(target, 'utf8'); send(res,200, txt, {'Content-Type':'application/json; charset=utf-8'});} catch { notFound(res);} return; }
-                if (req.method === 'PUT') { const body = await readBody(req); try { JSON.parse(body || '{}'); } catch { badRequest(res,'Invalid JSON'); return;} await ensureDirFor(target); await writeFile(target, body, 'utf8'); send(res,200, JSON.stringify({ok:true, path: target}), {'Content-Type':'application/json'}); return; }
-                if (req.method === 'DELETE') { try { await rm(target, {force:true}); send(res,200, JSON.stringify({ok:true}), {'Content-Type':'application/json'});} catch { notFound(res);} return; }
-                methodNotAllowed(res); return;
-            }
-        }
-
-        // Expansion: Trader appearance .map files (data/expansion/traders/*.map)
-        {
-            const m = pathname.match(/^\/api\/expansion\/appearance(?:\/([^/]+))?\/?$/);
-            if (m) {
-                const nameRaw = m[1];
-                if (!nameRaw) {
-                    if (req.method !== 'GET') { methodNotAllowed(res); return; }
-                    try {
-                        await mkdir(expAppearanceDir(), {recursive:true});
-                        const entries = await readdir(expAppearanceDir(), {withFileTypes:true});
-                        const files = entries.filter(e => e.isFile() && /\.map$/i.test(e.name)).map(e => e.name);
-                        send(res, 200, JSON.stringify({files: files.sort((a,b)=>a.localeCompare(b))}), {'Content-Type':'application/json'});
-                    } catch { send(res,200, JSON.stringify({files:[]}), {'Content-Type':'application/json'}); }
-                    return;
-                }
-                if (!isSafeName(nameRaw)) { badRequest(res, 'Invalid file name'); return; }
-                const fileName = /\.map$/i.test(nameRaw) ? nameRaw : `${nameRaw}.map`;
-                const target = join(expAppearanceDir(), fileName);
-                if (req.method === 'GET') { try { const txt = await readFile(target, 'utf8'); send(res,200, txt, {'Content-Type':'text/plain; charset=utf-8'});} catch { notFound(res);} return; }
-                if (req.method === 'PUT') { const body = await readBody(req); await ensureDirFor(target); await writeFile(target, body ?? '', 'utf8'); send(res,200, JSON.stringify({ok:true, path: target}), {'Content-Type':'application/json'}); return; }
-                if (req.method === 'DELETE') { try { await rm(target, {force:true}); send(res,200, JSON.stringify({ok:true}), {'Content-Type':'application/json'});} catch { notFound(res);} return; }
-                methodNotAllowed(res); return;
-            }
         }
 
         // Match /api/types/:group/:file
@@ -1148,6 +1007,73 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 send(res, 200, JSON.stringify({ok: true, path: target}), {'Content-Type': 'application/json'});
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // Market categories: list
+        if (pathname === '/api/market/categories') {
+            if (req.method !== 'GET') {
+                methodNotAllowed(res);
+                return;
+            }
+            try {
+                const dir = marketDirPath();
+                const entries = await readdir(dir, { withFileTypes: true });
+                const names = entries
+                    .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+                    .map(e => e.name.replace(/\.json$/i, ''))
+                    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+                send(res, 200, JSON.stringify({ categories: names }), { 'Content-Type': 'application/json' });
+            } catch {
+                send(res, 200, JSON.stringify({ categories: [] }), { 'Content-Type': 'application/json' });
+            }
+            return;
+        }
+
+        // Market category read/write
+        const matchMarketCat = pathname.match(/^\/api\/market\/category\/([^/]+)$/);
+        if (matchMarketCat) {
+            const [, nameRaw] = matchMarketCat;
+            if (!isSafeName(nameRaw)) {
+                badRequest(res, 'Invalid category name');
+                return;
+            }
+            const fileBase = nameRaw.replace(/\.json$/i, '');
+            const target = join(marketDirPath(), `${fileBase}.json`);
+
+            if (req.method === 'GET') {
+                try {
+                    const json = await readFile(target, 'utf8');
+                    send(res, 200, json, { 'Content-Type': 'application/json; charset=utf-8' });
+                } catch {
+                    notFound(res);
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                if (!body || typeof body !== 'string') {
+                    badRequest(res, 'Empty body');
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(body);
+                } catch {
+                    badRequest(res, 'Invalid JSON');
+                    return;
+                }
+                try {
+                    await ensureDirFor(target);
+                    const formatted = JSON.stringify(parsed, null, 4);
+                    await writeFile(target, formatted + (formatted.endsWith('\n') ? '' : '\n'), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
+                } catch {
+                    send(res, 500, JSON.stringify({ error: 'Failed to write category' }), { 'Content-Type': 'application/json' });
+                }
                 return;
             }
             methodNotAllowed(res);
