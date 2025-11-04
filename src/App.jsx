@@ -12,6 +12,7 @@ import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import StashReportModal from './components/StashReportModal.jsx';
+import TraderEditorModal from './components/TraderEditorModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -98,6 +99,8 @@ export default function App() {
     const [toolsOpen, setToolsOpen] = useState(false);
     const [showAdm, setShowAdm] = useState(false);
     const [showStash, setShowStash] = useState(false);
+    const [marketOpen, setMarketOpen] = useState(false);
+    const [showTraderEditor, setShowTraderEditor] = useState(false);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -526,6 +529,39 @@ export default function App() {
                         Reload from Files
                     </button>
 
+                    {/* Marketplace dropdown */}
+                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block', marginRight: 8 }}>
+                      <button
+                        className="btn"
+                        onClick={() => setMarketOpen(v => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={marketOpen}
+                        title="Marketplace"
+                      >
+                        Marketplace ▾
+                      </button>
+                      {marketOpen && (
+                        <div
+                          className="dropdown-menu"
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: 8,
+                            minWidth: 200,
+                            zIndex: 10
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, padding: '4px 6px', opacity: 0.7 }}>Traders</div>
+                          <button className="link" role="menuitem" onClick={() => { setShowTraderEditor(true); setMarketOpen(false); }}>Open Traders editor</button>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Tools dropdown */}
                     <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
                       <button
@@ -707,6 +743,9 @@ export default function App() {
             )}
             {showStash && (
               <StashReportModal onClose={() => setShowStash(false)} />
+            )}
+            {showTraderEditor && (
+              <TraderEditorModal onClose={() => setShowTraderEditor(false)} />
             )}
         </div>
     );

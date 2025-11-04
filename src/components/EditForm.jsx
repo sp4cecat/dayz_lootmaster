@@ -104,6 +104,9 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
     onSave(apply);
   };
 
+  // Tab control: CLE vs Marketplace
+  const [activeTab, setActiveTab] = useState('CLE');
+
   // ---------------- Expansion Market categories integration ----------------
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketSaving, setMarketSaving] = useState(false);
@@ -550,307 +553,320 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
         <button className="btn primary" onClick={onSaveClick} disabled={!canSave}>Save</button>
       </div>
 
+      {/* Tab bar */}
+      <div className="tabbar" style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <button type="button" className={`btn ${activeTab === 'CLE' ? 'primary' : ''}`} onClick={() => setActiveTab('CLE')}>CLE</button>
+        <button type="button" className={`btn ${activeTab === 'Marketplace' ? 'primary' : ''}`} onClick={() => setActiveTab('Marketplace')}>marketplace</button>
+      </div>
+
       <div className="form-grid">
-        <div className="basics-stack">
-          <label className={`control ${form.category && !definitions.categories.includes(form.category) ? 'error' : ''}`}>
-            <span>Category</span>
-            <select
-              value={form.category}
-              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-            >
-              <option value="">—</option>
-              {definitions.categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-
-          {['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].map(k => (
-            <label
-              key={k}
-              className={`control ${form[k] === null ? 'mixed' : ''}`}
-              style={{ position: 'relative' }}
-              ref={k === 'lifetime' ? lifetimeRef : null}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {labelFor(k)}
-                {k === 'lifetime' && (
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(true); }}
-                    title="Open lifetime picker"
-                    aria-label="Open lifetime picker"
-                    style={{ textDecoration: 'none', padding: 0, display: 'inline-flex', alignItems: 'center' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M12 7v5l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
-                )}
-              </span>
-              <input
-                type="number"
-                placeholder={form[k] === null ? 'Mixed' : ''}
-                value={form[k] === null ? '' : form[k]}
-                onChange={e => setNum(k, e.target.value)}
-              />
-
-              {k === 'lifetime' && showLifetimePicker && (
-                <div
-                  className="lifetime-popover"
-                  role="dialog"
-                  aria-label="Lifetime picker"
-                  ref={popoverRef}
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    marginTop: 6,
-                    zIndex: 2,
-                    background: 'var(--bg)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    padding: 10,
-                    boxShadow: '0 4px 18px rgba(0,0,0,.2)',
-                    minWidth: 260
-                  }}
+        {/* CLE tab content */}
+        {activeTab === 'CLE' && (
+          <>
+            <div className="basics-stack">
+              <label className={`control ${form.category && !definitions.categories.includes(form.category) ? 'error' : ''}`}>
+                <span>Category</span>
+                <select
+                  value={form.category}
+                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                 >
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                  <option value="">—</option>
+                  {definitions.categories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+
+              {['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].map(k => (
+                <label
+                  key={k}
+                  className={`control ${form[k] === null ? 'mixed' : ''}`}
+                  style={{ position: 'relative' }}
+                  ref={k === 'lifetime' ? lifetimeRef : null}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {labelFor(k)}
+                    {k === 'lifetime' && (
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(true); }}
+                        title="Open lifetime picker"
+                        aria-label="Open lifetime picker"
+                        style={{ textDecoration: 'none', padding: 0, display: 'inline-flex', alignItems: 'center' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M12 7v5l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    )}
+                  </span>
+                  <input
+                    type="number"
+                    placeholder={form[k] === null ? 'Mixed' : ''}
+                    value={form[k] === null ? '' : form[k]}
+                    onChange={e => setNum(k, e.target.value)}
+                  />
+
+                  {k === 'lifetime' && showLifetimePicker && (
+                    <div
+                      className="lifetime-popover"
+                      role="dialog"
+                      aria-label="Lifetime picker"
+                      ref={popoverRef}
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        marginTop: 6,
+                        zIndex: 2,
+                        background: 'var(--bg)',
+                        color: 'var(--text)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 8,
+                        padding: 10,
+                        boxShadow: '0 4px 18px rgba(0,0,0,.2)',
+                        minWidth: 260
+                      }}
+                    >
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                        {[
+                          { key: 'weeks', label: 'Weeks' },
+                          { key: 'days', label: 'Days' },
+                          { key: 'hours', label: 'Hours' },
+                          { key: 'minutes', label: 'Minutes' },
+                          { key: 'seconds', label: 'Seconds' },
+                        ].map(f => (
+                          <label key={f.key} className="control" style={{ margin: 0 }}>
+                            <span style={{ fontSize: 11 }}>{f.label}</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={lp[f.key]}
+                              onChange={e => setLp(prev => ({ ...prev, [f.key]: Math.max(0, Number(e.target.value || 0)) }))}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(false); }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn primary"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const total = unitsToSeconds(lp);
+                            setNum('lifetime', String(total));
+                            setShowLifetimePicker(false);
+                            if (document && document.activeElement instanceof HTMLElement) {
+                              document.activeElement.blur();
+                            }
+                          }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {k === 'lifetime' && form[k] !== null && form[k] !== '' && Number.isFinite(Number(form[k])) && (
+                    <div className="muted" style={{ fontSize: '11px' }}>
+                      ≈ {formatLifetime(Number(form[k]))}
+                    </div>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="panels-wrap">
+              {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
+              {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
+
+              <fieldset className="control panels-item">
+                <legend>Flags</legend>
+                <div className="checkbox-grid">
+                  {Object.keys(base.flags).map(k => (
+                    <label key={k} className="checkbox">
+                      <input type="checkbox" checked={!!form.flags[k]} onChange={() => toggleFlag(k)} />
+                      <span>{k}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
+            </div>
+          </>
+        )}
+
+        {/* Marketplace tab content */}
+        {activeTab === 'Marketplace' && (
+          <>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
+                <legend>Expansion Market</legend>
+                <label className="control" style={{ alignItems: 'stretch' }}>
+                  <span>Categories</span>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                    <select multiple size={Math.min(8, Math.max(3, marketCategories.length))}
+                            value={selectedMarketCats}
+                            onChange={e => {
+                              const opts = Array.from(e.target.selectedOptions).map(o => o.value);
+                              setSelectedMarketCats(opts);
+                            }}
+                            style={{ flex: 1 }}
+                            disabled={marketLoading}
+                    >
+                      {marketCategories.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn" onClick={onApplyMarketMove}
+                            disabled={marketSaving || marketLoading || selectedMarketCats.length !== 1}
+                            title={selectedMarketCats.length !== 1 ? 'Select exactly one category to apply' : 'Move selected types to this category'}
+                    >Apply</button>
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                    {marketLoading ? 'Loading categories…' : (uncategorizedCount ? `${uncategorizedCount} of ${selectedTypes.length} not categorised` : '')}
+                    {marketError ? <span className="error-line"> — {marketError}</span> : null}
+                  </div>
+                </label>
+
+                <div className="market-props" style={{ marginTop: 10 }}>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                    Edit item properties for existing category entries. Leave a field blank to keep it unchanged.
+                  </div>
+                  <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
                     {[
-                      { key: 'weeks', label: 'Weeks' },
-                      { key: 'days', label: 'Days' },
-                      { key: 'hours', label: 'Hours' },
-                      { key: 'minutes', label: 'Minutes' },
-                      { key: 'seconds', label: 'Seconds' },
-                    ].map(f => (
-                      <label key={f.key} className="control" style={{ margin: 0 }}>
-                        <span style={{ fontSize: 11 }}>{f.label}</span>
+                      { key: 'MaxPriceThreshold', label: 'Max Price' },
+                      { key: 'MinPriceThreshold', label: 'Min Price' },
+                      { key: 'SellPricePercent', label: 'Sell %' },
+                      { key: 'MaxStockThreshold', label: 'Max Stock' },
+                      { key: 'MinStockThreshold', label: 'Min Stock' },
+                      { key: 'QuantityPercent', label: 'Quantity %' },
+                    ].map(fld => (
+                      <label key={fld.key} className={`control ${marketForm[fld.key] === '' ? 'mixed' : ''}`}>
+                        <span>{fld.label}</span>
                         <input
-                          type="number"
-                          min={0}
-                          value={lp[f.key]}
-                          onChange={e => setLp(prev => ({ ...prev, [f.key]: Math.max(0, Number(e.target.value || 0)) }))}
+                          type="text"
+                          placeholder={marketForm[fld.key] === '' ? 'Mixed' : ''}
+                          value={marketForm[fld.key] ?? ''}
+                          onChange={e => setMarketForm(m => ({ ...m, [fld.key]: e.target.value }))}
                         />
                       </label>
                     ))}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(false); }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="btn primary"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const total = unitsToSeconds(lp);
-                        setNum('lifetime', String(total));
-                        setShowLifetimePicker(false);
-                        if (document && document.activeElement instanceof HTMLElement) {
-                          document.activeElement.blur();
-                        }
-                      }}
-                    >
-                      Apply
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              {k === 'lifetime' && form[k] !== null && form[k] !== '' && Number.isFinite(Number(form[k])) && (
-                <div className="muted" style={{ fontSize: '11px' }}>
-                  ≈ {formatLifetime(Number(form[k]))}
-                </div>
-              )}
-            </label>
-          ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginTop: '10px', flexWrap: 'wrap' }}>
+                      {/* SpawnAttachments pill editor */}
+                      <div className={`control ${marketArrays.SpawnAttachments === null ? 'mixed' : ''}`}>
+                        <span>Spawn Attachments</span>
+                        <PillArrayEditor
+                          value={marketArrays.SpawnAttachments}
+                          onChange={(arr) => setMarketArrays(s => ({ ...s, SpawnAttachments: arr }))}
+                          options={typeOptions}
+                          allowEditWhenMixed={true}
+                          allowClear
+                        />
+                      </div>
 
-
-        </div>
-
-        <div className="panels-wrap">
-          {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
-          {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
-
-          <fieldset className="control panels-item">
-            <legend>Flags</legend>
-            <div className="checkbox-grid">
-              {Object.keys(base.flags).map(k => (
-                <label key={k} className="checkbox">
-                  <input type="checkbox" checked={!!form.flags[k]} onChange={() => toggleFlag(k)} />
-                  <span>{k}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
-        </div>
-
-          <div style={{"display": "flex", "gap": "10px"}}>
-
-        <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
-          <legend>Expansion Market</legend>
-          <label className="control" style={{ alignItems: 'stretch' }}>
-            <span>Categories</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-              <select multiple size={Math.min(8, Math.max(3, marketCategories.length))}
-                      value={selectedMarketCats}
-                      onChange={e => {
-                        const opts = Array.from(e.target.selectedOptions).map(o => o.value);
-                        setSelectedMarketCats(opts);
-                      }}
-                      style={{ flex: 1 }}
-                      disabled={marketLoading}
-              >
-                {marketCategories.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <button type="button" className="btn" onClick={onApplyMarketMove}
-                      disabled={marketSaving || marketLoading || selectedMarketCats.length !== 1}
-                      title={selectedMarketCats.length !== 1 ? 'Select exactly one category to apply' : 'Move selected types to this category'}
-              >Apply</button>
-            </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              {marketLoading ? 'Loading categories…' : (uncategorizedCount ? `${uncategorizedCount} of ${selectedTypes.length} not categorised` : '')}
-              {marketError ? <span className="error-line"> — {marketError}</span> : null}
-            </div>
-          </label>
-
-          <div className="market-props" style={{ marginTop: 10 }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-              Edit item properties for existing category entries. Leave a field blank to keep it unchanged.
-            </div>
-            <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-              {[
-                { key: 'MaxPriceThreshold', label: 'Max Price' },
-                { key: 'MinPriceThreshold', label: 'Min Price' },
-                { key: 'SellPricePercent', label: 'Sell %' },
-                { key: 'MaxStockThreshold', label: 'Max Stock' },
-                { key: 'MinStockThreshold', label: 'Min Stock' },
-                { key: 'QuantityPercent', label: 'Quantity %' },
-              ].map(fld => (
-                <label key={fld.key} className={`control ${marketForm[fld.key] === '' ? 'mixed' : ''}`}>
-                  <span>{fld.label}</span>
-                  <input
-                    type="text"
-                    placeholder={marketForm[fld.key] === '' ? 'Mixed' : ''}
-                    value={marketForm[fld.key] ?? ''}
-                    onChange={e => setMarketForm(m => ({ ...m, [fld.key]: e.target.value }))}
-                  />
-                </label>
-              ))}
-
-                <div style={{"display": "flex", "justifyContent": "space-between", "gap": "10px","width": "100%", "marginTop": "10px", "flexwrap": "wrap"}}>
-              {/* SpawnAttachments pill editor */}
-              <div className={`control ${marketArrays.SpawnAttachments === null ? 'mixed' : ''}`}>
-                <span>Spawn Attachments</span>
-                <PillArrayEditor
-                  value={marketArrays.SpawnAttachments}
-                  onChange={(arr) => setMarketArrays(s => ({ ...s, SpawnAttachments: arr }))}
-                  options={typeOptions}
-                  allowEditWhenMixed={true}
-                  allowClear
-                />
-              </div>
-
-              {/* Variants pill editor (restricted to same-category types) */}
-              <div className={`control ${marketArrays.Variants === null ? 'mixed' : ''}`}>
-                <span>Variants</span>
-                <PillArrayEditor
-                  value={marketArrays.Variants}
-                  onChange={(arr) => setMarketArrays(s => ({ ...s, Variants: arr }))}
-                  options={allSelectedSameCategory ? (typeOptionsByCategory[sharedCategory] || []) : []}
-                  allowEditWhenMixed={allSelectedSameCategory}
-                  disabled={!allSelectedSameCategory}
-                  allowClear
-                />
-                {!allSelectedSameCategory && (
-                  <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Select items with the same category to edit variants.</div>
-                )}
-              </div>
-                </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-              <button type="button" className="btn" onClick={onApplyMarketValues} disabled={marketSaving || marketLoading}>Apply values</button>
-            </div>
-          </div>
-        </fieldset>
-
-        {/* Stock levels (Trader Zones) */}
-        <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
-          <legend>Stock levels</legend>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-            Manage per-zone stock for the selected item(s). Enter a value to update existing entries. Use “Add”/“Add missing” to create entries for absent types.
-          </div>
-          {tzError && (
-            <div className="error-line" role="alert" style={{ marginBottom: 6 }}>{tzError}</div>
-          )}
-          <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 180px 1fr', gap: 8, alignItems: 'center' }}>
-            <div className="muted" style={{ fontSize: 12 }}>Trader zone</div>
-            <div className="muted" style={{ fontSize: 12 }}>Stock</div>
-            <div className="muted" style={{ fontSize: 12 }}>Actions</div>
-            {traderZones.map(zone => {
-              const info = tzAggregate[zone] || { present: 0, missing: selectedTypes.length, value: undefined };
-              const mixed = info.value === null;
-              const nonePresent = info.present === 0 && info.missing > 0;
-              const someMissing = info.present > 0 && info.missing > 0;
-              return (
-                <React.Fragment key={zone}>
-                  <div className="muted">{zone}</div>
-                  <label className={`control ${mixed ? 'mixed' : ''}`} style={{ margin: 0 }}>
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      placeholder={mixed ? 'Mixed' : ''}
-                      value={tzForm[zone] ?? ''}
-                      onChange={e => {
-                        const v = e.target.value;
-                        // Allow empty string for no change; else keep only digits
-                        if (v === '') setTzForm(f => ({ ...f, [zone]: '' }));
-                        else if (/^\d+$/.test(v)) setTzForm(f => ({ ...f, [zone]: v }));
-                      }}
-                    />
-                    <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-                      {info.present} present, {info.missing} missing
+                      {/* Variants pill editor (restricted to same-category types) */}
+                      <div className={`control ${marketArrays.Variants === null ? 'mixed' : ''}`}>
+                        <span>Variants</span>
+                        <PillArrayEditor
+                          value={marketArrays.Variants}
+                          onChange={(arr) => setMarketArrays(s => ({ ...s, Variants: arr }))}
+                          options={allSelectedSameCategory ? (typeOptionsByCategory[sharedCategory] || []) : []}
+                          allowEditWhenMixed={allSelectedSameCategory}
+                          disabled={!allSelectedSameCategory}
+                          allowClear
+                        />
+                        {!allSelectedSameCategory && (
+                          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Select items with the same category to edit variants.</div>
+                        )}
+                      </div>
                     </div>
-                  </label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    {nonePresent && (
-                      <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
-                              onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
-                              title="Add selected item(s) to this zone when applying">
-                        {tzAddMissing[zone] ? 'Will add' : 'Add'}
-                      </button>
-                    )}
-                    {someMissing && (
-                      <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
-                              onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
-                              title="Add missing selected item(s) to this zone when applying">
-                        {tzAddMissing[zone] ? 'Will add missing' : 'Add missing'}
-                      </button>
-                    )}
                   </div>
-                </React.Fragment>
-              );
-            })}
-          </div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            {tzLoading ? 'Loading trader zones…' : null}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <button type="button" className="btn" onClick={onApplyTraderZones} disabled={tzSaving || tzLoading}>Apply stock</button>
-          </div>
-        </fieldset>
-      </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button type="button" className="btn" onClick={onApplyMarketValues} disabled={marketSaving || marketLoading}>Apply values</button>
+                  </div>
+                </div>
+              </fieldset>
+
+              {/* Stock levels (Trader Zones) */}
+              <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
+                <legend>Stock levels</legend>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                  Manage per-zone stock for the selected item(s). Enter a value to update existing entries. Use “Add”/“Add missing” to create entries for absent types.
+                </div>
+                {tzError && (
+                  <div className="error-line" role="alert" style={{ marginBottom: 6 }}>{tzError}</div>
+                )}
+                <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 180px 1fr', gap: 8, alignItems: 'center' }}>
+                  <div className="muted" style={{ fontSize: 12 }}>Trader zone</div>
+                  <div className="muted" style={{ fontSize: 12 }}>Stock</div>
+                  <div className="muted" style={{ fontSize: 12 }}>Actions</div>
+                  {traderZones.map(zone => {
+                    const info = tzAggregate[zone] || { present: 0, missing: selectedTypes.length, value: undefined };
+                    const mixed = info.value === null;
+                    const nonePresent = info.present === 0 && info.missing > 0;
+                    const someMissing = info.present > 0 && info.missing > 0;
+                    return (
+                      <React.Fragment key={zone}>
+                        <div className="muted">{zone}</div>
+                        <label className={`control ${mixed ? 'mixed' : ''}`} style={{ margin: 0 }}>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            placeholder={mixed ? 'Mixed' : ''}
+                            value={tzForm[zone] ?? ''}
+                            onChange={e => {
+                              const v = e.target.value;
+                              // Allow empty string for no change; else keep only digits
+                              if (v === '') setTzForm(f => ({ ...f, [zone]: '' }));
+                              else if (/^\d+$/.test(v)) setTzForm(f => ({ ...f, [zone]: v }));
+                            }}
+                          />
+                          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                            {info.present} present, {info.missing} missing
+                          </div>
+                        </label>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          {nonePresent && (
+                            <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
+                                    onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
+                                    title="Add selected item(s) to this zone when applying">
+                              {tzAddMissing[zone] ? 'Will add' : 'Add'}
+                            </button>
+                          )}
+                          {someMissing && (
+                            <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
+                                    onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
+                                    title="Add missing selected item(s) to this zone when applying">
+                              {tzAddMissing[zone] ? 'Will add missing' : 'Add missing'}
+                            </button>
+                          )}
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                  {tzLoading ? 'Loading trader zones…' : null}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button type="button" className="btn" onClick={onApplyTraderZones} disabled={tzSaving || tzLoading}>Apply stock</button>
+                </div>
+              </fieldset>
+            </div>
+          </>
+        )}
       </div>
 
       {Object.keys(errors).length > 0 && (

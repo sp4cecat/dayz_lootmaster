@@ -64,6 +64,16 @@ function traderZonesDirPath() {
     return join(DATA_DIR, 'expansion', 'traderzones');
 }
 
+function tradersDirPath() {
+    // Expansion Traders (.map files) directory
+    return join(DATA_DIR, 'expansion', 'traders');
+}
+
+function traderProfilesDirPath() {
+    // Expansion Trader profiles JSON directory
+    return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Traders');
+}
+
 // Cache of group -> folder path (relative to DATA_DIR), derived from cfgeconomycore.xml
 /** @type {Record<string, string>|null} */
 let groupFolderCache = null;
@@ -743,6 +753,44 @@ function badRequest(res, message) {
     send(res, 400, JSON.stringify({error: message || 'Bad request'}), {'Content-Type': 'application/json'});
 }
 
+// Parse a single-line trader .map entry into structured data
+function parseTraderMapLine(line) {
+    const raw = String(line || '').trim();
+    // Expected: Class.File|x y z|ox oy oz|a,b,c
+    const parts = raw.split('|');
+    const head = (parts[0] || '').trim();
+    const dotIdx = head.lastIndexOf('.');
+    const className = dotIdx > 0 ? head.slice(0, dotIdx) : '';
+    const traderFileName = dotIdx > 0 ? head.slice(dotIdx + 1) : '';
+    const pos = (parts[1] || '').trim().split(/\s+/).map(Number).filter(n => !Number.isNaN(n));
+    while (pos.length < 3) pos.push(0);
+    const ori = (parts[2] || '').trim().split(/\s+/).map(Number).filter(n => !Number.isNaN(n));
+    while (ori.length < 3) ori.push(0);
+    const gear = (parts[3] || '').trim().length
+        ? (parts[3] || '').split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+    return {
+        className,
+        traderFileName,
+        position: pos.slice(0, 3),
+        orientation: ori.slice(0, 3),
+        gear
+    };
+}
+
+// Build a single-line trader .map entry from structured data
+function buildTraderMapLine({ className, traderFileName, position, orientation, gear }) {
+    const pos = (Array.isArray(position) ? position : []).map(n => Number(n)).slice(0, 3);
+    while (pos.length < 3) pos.push(0);
+    const ori = (Array.isArray(orientation) ? orientation : []).map(n => Number(n)).slice(0, 3);
+    while (ori.length < 3) ori.push(0);
+    const posStr = `${pos[0]} ${pos[1]} ${pos[2]}`;
+    const oriStr = `${ori[0]} ${ori[1]} ${ori[2]}`;
+    const gearArr = Array.isArray(gear) ? gear.map(s => String(s).trim()).filter(Boolean) : [];
+    const gearStr = gearArr.join(',');
+    return `${String(className)}.${String(traderFileName)}|${posStr}|${oriStr}|${gearStr}`;
+}
+
 const server = http.createServer(async (req, res) => {
     try {
         // Preflight CORS
@@ -1078,6 +1126,158 @@ const server = http.createServer(async (req, res) => {
                     send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
                 } catch {
                     send(res, 500, JSON.stringify({ error: 'Failed to write category' }), { 'Content-Type': 'application/json' });
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // Traders: list (.map files)
+        if (pathname === '/api/traders') {
+            if (req.method !== 'GET') {
+                methodNotAllowed(res);
+                return;
+            }
+            try {
+                const dir = tradersDirPath();
+                const entries = await readdir(dir, { withFileTypes: true });
+                const names = entries
+                    .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.map'))
+                    .map(e => e.name.replace(/\.map$/i, ''))
+                    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+                send(res, 200, JSON.stringify({ traders: names }), { 'Content-Type': 'application/json' });
+            } catch {
+                send(res, 200, JSON.stringify({ traders: [] }), { 'Content-Type': 'application/json' });
+            }
+            return;
+        }
+
+        // Trader read/write (.map)
+        const matchTrader = pathname.match(/^\/api\/traders\/([^/]+)$/);
+        if (matchTrader) {
+            const [, traderRaw] = matchTrader;
+            if (!isSafeName(traderRaw)) {
+                badRequest(res, 'Invalid trader name');
+                return;
+            }
+            const fileBase = traderRaw.replace(/\.map$/i, '');
+            const target = join(tradersDirPath(), `${fileBase}.map`);
+
+            if (req.method === 'GET') {
+                try {
+                    const text = await readFile(target, 'utf8');
+                    const line = (text || '').split(/\r?\n/)[0] || '';
+                    const parsed = parseTraderMapLine(line);
+                    send(res, 200, JSON.stringify({ name: fileBase, ...parsed }), { 'Content-Type': 'application/json' });
+                } catch {
+                    notFound(res);
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                if (!body || typeof body !== 'string') {
+                    badRequest(res, 'Empty body');
+                    return;
+                }
+                let payload;
+                try {
+                    payload = JSON.parse(body);
+                } catch {
+                    badRequest(res, 'Invalid JSON');
+                    return;
+                }
+                const { className, traderFileName, position, orientation, gear } = payload || {};
+                if (typeof className !== 'string' || !className || typeof traderFileName !== 'string' || !traderFileName) {
+                    badRequest(res, 'Missing className or traderFileName');
+                    return;
+                }
+                const pos = Array.isArray(position) ? position.map(Number) : [];
+                const ori = Array.isArray(orientation) ? orientation.map(Number) : [];
+                const att = Array.isArray(gear) ? gear.map(x => String(x)).filter(Boolean) : [];
+                if (pos.length !== 3 || pos.some(n => Number.isNaN(n))) {
+                    badRequest(res, 'Invalid position');
+                    return;
+                }
+                if (ori.length !== 3 || ori.some(n => Number.isNaN(n))) {
+                    badRequest(res, 'Invalid orientation');
+                    return;
+                }
+                const line = buildTraderMapLine({ className, traderFileName, position: pos, orientation: ori, gear: att });
+                try {
+                    await ensureDirFor(target);
+                    await writeFile(target, line + (line.endsWith('\n') ? '' : '\n'), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
+                } catch {
+                    send(res, 500, JSON.stringify({ error: 'Failed to write trader map' }), { 'Content-Type': 'application/json' });
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // Trader profiles: list
+        if (pathname === '/api/trader-profiles') {
+            if (req.method !== 'GET') {
+                methodNotAllowed(res);
+                return;
+            }
+            try {
+                const dir = traderProfilesDirPath();
+                const entries = await readdir(dir, { withFileTypes: true });
+                const names = entries
+                    .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+                    .map(e => e.name.replace(/\.json$/i, ''))
+                    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+                send(res, 200, JSON.stringify({ profiles: names }), { 'Content-Type': 'application/json' });
+            } catch {
+                send(res, 200, JSON.stringify({ profiles: [] }), { 'Content-Type': 'application/json' });
+            }
+            return;
+        }
+
+        // Trader profile read/write
+        const matchTraderProfile = pathname.match(/^\/api\/trader-profile\/([^/]+)$/);
+        if (matchTraderProfile) {
+            const [, nameRaw] = matchTraderProfile;
+            if (!isSafeName(nameRaw)) {
+                badRequest(res, 'Invalid trader profile name');
+                return;
+            }
+            const fileBase = nameRaw.replace(/\.json$/i, '');
+            const target = join(traderProfilesDirPath(), `${fileBase}.json`);
+
+            if (req.method === 'GET') {
+                try {
+                    const json = await readFile(target, 'utf8');
+                    send(res, 200, json, { 'Content-Type': 'application/json; charset=utf-8' });
+                } catch {
+                    notFound(res);
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                if (!body || typeof body !== 'string') {
+                    badRequest(res, 'Empty body');
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(body);
+                } catch {
+                    badRequest(res, 'Invalid JSON');
+                    return;
+                }
+                try {
+                    await ensureDirFor(target);
+                    const formatted = JSON.stringify(parsed, null, 4);
+                    await writeFile(target, formatted + (formatted.endsWith('\n') ? '' : '\n'), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
+                } catch {
+                    send(res, 500, JSON.stringify({ error: 'Failed to write trader profile' }), { 'Content-Type': 'application/json' });
                 }
                 return;
             }
