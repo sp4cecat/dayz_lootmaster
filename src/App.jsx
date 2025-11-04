@@ -13,6 +13,7 @@ import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import StashReportModal from './components/StashReportModal.jsx';
 import TraderEditorModal from './components/TraderEditorModal.jsx';
+import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -101,6 +102,7 @@ export default function App() {
     const [showStash, setShowStash] = useState(false);
     const [marketOpen, setMarketOpen] = useState(false);
     const [showTraderEditor, setShowTraderEditor] = useState(false);
+    const [showMarketCategories, setShowMarketCategories] = useState(false);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -556,8 +558,9 @@ export default function App() {
                             zIndex: 10
                           }}
                         >
-                          <div style={{ fontWeight: 600, padding: '4px 6px', opacity: 0.7 }}>Traders</div>
-                          <button className="link" role="menuitem" onClick={() => { setShowTraderEditor(true); setMarketOpen(false); }}>Open Traders editor</button>
+                          <div style={{ fontWeight: 600, padding: '4px 6px', opacity: 0.7 }}>Marketplace</div>
+                          <button className="link" role="menuitem" onClick={() => { setShowTraderEditor(true); setMarketOpen(false); }}>Traders</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowMarketCategories(true); setMarketOpen(false); }}>Categories</button>
                         </div>
                       )}
                     </div>
@@ -746,6 +749,9 @@ export default function App() {
             )}
             {showTraderEditor && (
               <TraderEditorModal onClose={() => setShowTraderEditor(false)} />
+            )}
+            {showMarketCategories && (
+              <MarketCategoryEditorModal onClose={() => setShowMarketCategories(false)} />
             )}
         </div>
     );
