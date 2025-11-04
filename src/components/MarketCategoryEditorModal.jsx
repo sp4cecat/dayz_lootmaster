@@ -140,6 +140,48 @@ export default function MarketCategoryEditorModal({ onClose }) {
     });
   };
 
+  // Persist helper: PUT category JSON immediately and reload to reflect canonical formatting
+  const persistCategory = async (nextItems, successMsg) => {
+    if (!categoryJson || !selectedCategory) return false;
+    try {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      const payload = { ...categoryJson, Items: nextItems };
+      const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Editor-ID': editorID || 'unknown',
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => '');
+        throw new Error(`Save failed (${res.status}) ${msg}`);
+      }
+      // Reload to reflect server-side formatting
+      try {
+        const r = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`);
+        if (r.ok) {
+          const j = await r.json();
+          setCategoryJson(j);
+          const arr = Array.isArray(j.Items) ? j.Items : [];
+          setItems(arr.map(x => ({ ...x })));
+        }
+      } catch {
+        // ignore reload errors
+      }
+      if (successMsg) setNotice(successMsg);
+      return true;
+    } catch (e) {
+      setError(String(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Inline edit handlers
   const startEdit = (row) => {
     setEditingKey(row.ClassName);
@@ -155,9 +197,10 @@ export default function MarketCategoryEditorModal({ onClose }) {
     setEditDraft({});
   };
 
-  const applyEdit = () => {
+  const applyEdit = async () => {
     if (!editingKey) return;
-    setItems(prev => prev.map(it => {
+    const prevItems = items;
+    const nextItems = items.map(it => {
       if (String(it.ClassName) !== String(editingKey)) return it;
       const next = { ...it };
       for (const k of EDIT_FIELDS) {
@@ -167,29 +210,39 @@ export default function MarketCategoryEditorModal({ onClose }) {
         next[k] = num;
       }
       return next;
-    }));
+    });
+    setItems(nextItems);
     setEditingKey(null);
     setEditDraft({});
+    const ok = await persistCategory(nextItems, `Saved ${editingKey}.`);
+    if (!ok) {
+      setItems(prevItems);
+    }
   };
 
   const filteredCount = filteredItems.length;
 
-  const applyBulk = () => {
+  const applyBulk = async () => {
     const keys = EDIT_FIELDS.filter(k => String(bulkDraft[k]).trim() !== '');
     if (keys.length === 0) return;
-    setItems(prev => {
-      const f = (filterText || '').trim().toLowerCase();
-      return prev.map(it => {
-        const matches = !f || String(it.ClassName || '').toLowerCase().includes(f);
-        if (!matches) return it;
-        const next = { ...it };
-        for (const k of keys) {
-          const num = Number(bulkDraft[k]);
-          if (Number.isFinite(num)) next[k] = num;
-        }
-        return next;
-      });
+    const f = (filterText || '').trim().toLowerCase();
+    const prevItems = items;
+    const nextItems = items.map(it => {
+      const matches = !f || String(it.ClassName || '').toLowerCase().includes(f);
+      if (!matches) return it;
+      const next = { ...it };
+      for (const k of keys) {
+        const num = Number(bulkDraft[k]);
+        if (Number.isFinite(num)) next[k] = num;
+      }
+      return next;
     });
+    setItems(nextItems);
+    const affected = nextItems.filter((it, idx) => it !== prevItems[idx]).length;
+    const ok = await persistCategory(nextItems, affected > 0 ? `Bulk changes saved for ${affected} item${affected === 1 ? '' : 's'}.` : 'No items changed.');
+    if (!ok) {
+      setItems(prevItems);
+    }
   };
 
   const clearBulk = () => {
@@ -260,7 +313,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Market categories editor">
-      <div className="modal">
+      <div className="modal fullscreen-modal">
         <div className="modal-header">
           <h3>Market Categories</h3>
           <div className="spacer" />
