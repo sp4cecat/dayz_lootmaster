@@ -260,7 +260,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Market categories editor">
-      <div className="modal fullscreen-modal">
+      <div className="modal">
         <div className="modal-header">
           <h3>Market Categories</h3>
           <div className="spacer" />
