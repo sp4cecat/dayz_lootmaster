@@ -2,7 +2,7 @@
 
 This document captures project-specific knowledge to accelerate development and debugging. It focuses on how this repo is wired (build, server, data layout), how tests are set up and verified, and implementation nuances that matter when changing logic.
 
-Last verified on: 2025-10-16
+Last verified on: 2025-11-04
 
 
 ## 1) Build and Configuration
@@ -11,6 +11,8 @@ Last verified on: 2025-10-16
   - Vite 7 with @vitejs/plugin-react; React 19 ESM project ("type": "module").
   - ESLint is enabled with recommended + react-hooks + react-refresh rules.
   - Vitest 2 (jsdom environment) for tests.
+  - Server dependency: moment (used in server/index.js for date/time parsing and formatting)
+  - UI date/time controls: react-datetime-picker (+ react-calendar, react-clock) for ADM and stash report date range pickers
 - Node version
   - Use a modern LTS Node (18+). The project is ESM and uses native fetch/DOM shims in tests via jsdom.
 - Install
@@ -123,21 +125,46 @@ The XML utility module at src/utils/xml.js encodes several important invariants 
   - Extracts the group order and file paths from cfgeconomycore.xml. Only <file type="types"/> are included. Returned file paths are normalized for UI consumption.
 
 Backend server specifics (server/index.js):
-- Endpoints
+- Endpoints (all responses include permissive CORS; allowed headers include Content-Type and X-Editor-ID)
+  - GET /api/health → basic health JSON { ok, dataDir, dataAvailable }
   - GET /api/definitions → DATA_DIR/cfglimitsdefinition.xml
-  - PUT /api/definitions → replace cfglimitsdefinition.xml with request body
-  - GET /api/types/:group/:file → DATA_DIR/db/types/:group/:file.xml
-  - PUT /api/types/:group/:file → replace that XML with request body
+  - PUT /api/definitions → replace cfglimitsdefinition.xml with request body (UI sets X-Editor-ID)
+  - GET /api/economycore → returns DATA_DIR/cfgeconomycore.xml; if missing or empty, synthesizes from DATA_DIR/db and DATA_DIR/db/types
+  - GET /api/types/:group/:file → reads declared types file. Special cases:
+    - group=vanilla, file=types → DATA_DIR/db/types.xml
+    - group=vanilla_overrides, file=types → if file is missing, returns an empty `<types/>` doc
+  - PUT /api/types/:group/:file → writes declared file. Protections and behavior:
+    - Denies writing to vanilla/types.xml
+    - Requires group/file to be declared in cfgeconomycore.xml (except vanilla_overrides which is always allowed and auto-creates folder)
+    - Accepts header X-Editor-ID; writes a per-group changes.txt with added/removed/modified entries and field-level diffs
+  - POST /api/logs/stash-report → body: { start?: ISO, end?: ISO } → returns { players: [{ id, aliases[], dugIn, dugUpOwn, dugUpOthers }] }
+  - POST /api/logs/adm → body: { start: string, end: string, x?: number, z?: number, y?: number, radius?: number, expandByIds?: boolean } → returns a text/plain ADM file for download. Notes:
+    - Timestamps are interpreted as UTC+10 local times and normalized using moment
+    - If x/z/radius provided, collects within planar radius; if expandByIds=true, expands to all lines by those ids in the range
+    - ADM filename is derived from the requested UTC+10 range
+  - GET /api/market/categories → lists category JSON file bases under profiles/ExpansionMod/Market
+  - GET /api/market/category/:name → returns a market category JSON
+  - PUT /api/market/category/:name → pretty-writes a market category JSON, creating directories as needed
+  - GET /api/traderzones → lists trader zone JSON file bases under expansion/traderzones
+  - GET /api/traderzones/:name → returns a trader zone JSON
+  - PUT /api/traderzones/:name → pretty-writes a trader zone JSON, creating directories as needed
 - Security/validation
-  - Filenames and group names are validated with a conservative regex (letters, numbers, dash, underscore, dot) to prevent traversal.
+  - Filenames and group names validated with conservative regex (letters, numbers, dash, underscore, dot). Requests failing validation get 400.
+  - Writing to vanilla base types file is prohibited by design.
 - Caching
-  - The server caches group→folder and group→files derived from cfgeconomycore.xml. Restart the server or adjust the code if you need immediate cache invalidation after large structural changes.
+  - The server caches group→folder and group→files derived from cfgeconomycore.xml. Restart the server to fully refresh caches after structural changes.
+  - If cfgeconomycore.xml is empty or absent, the GET endpoint synthesizes a minimal document from the filesystem structure for UI consumption.
 
 Frontend build nuance:
 - vite.config.js sets base: './' so that a built app can be served from any sub-path (e.g., file:// or nested folders) without broken asset URLs.
 
 ESLint nuance:
 - 'no-unused-vars' is enabled; variables that are intentionally unused should be ALL_CAPS or prefixed appropriately to satisfy varsIgnorePattern: '^[A-Z_]'.
+
+Frontend runtime/config nuance:
+- API base override: Set localStorage key `dayz-editor:apiBase` to the server base URL (protocol+host+port, no trailing slash). Default is `${window.location.protocol}//${window.location.hostname}:4317` when not set.
+- Editor ID gating: The UI requires selecting an Editor ID on each load; writes send it via `X-Editor-ID` and the server records it in per-group `changes.txt` along with added/removed/modified field-level diffs. IDs are stored in `dayz-editor:editorIDs` and selection in `dayz-editor:editorID:selected`.
+- Persist flow: "Save to files" writes `cfglimitsdefinition.xml` and all declared group types except `vanilla/types.xml` (never written). On success, UI refreshes its baseline from the API so diffs reset.
 
 
 ## 4) Typical Dev Flows
@@ -159,6 +186,10 @@ ESLint nuance:
   - cfglimitsdefinition.xml
   - cfgeconomycore.xml (declares groups and their files)
   - db/types/<group>/<file>.xml for each types file declared in cfgeconomycore.xml
+  - db/vanilla_overrides/types.xml is allowed for overrides; the server will auto-create the folder when writing
+  - profiles/ExpansionMod/Market/*.json for Expansion Market categories (used by /api/market/*)
+  - expansion/traderzones/*.json for Trader Zones (used by /api/traderzones/*)
+  - logs/ for server Admin logs (used by stash report and ADM export)
 - Keep in mind the determinism rules from utils when round-tripping: type entries are sorted by name on generation, and some flags arrays are sorted. If you depend on a particular order in diffs, align with these rules.
 
 

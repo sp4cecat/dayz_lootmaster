@@ -112,6 +112,17 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
   const [marketFiles, setMarketFiles] = useState(/** @type {Record<string, any>} */({}));
   const [selectedMarketCats, setSelectedMarketCats] = useState(/** @type {string[]} */([]));
 
+  // ---------------- Trader Zones (Stock levels) ----------------
+  const [tzLoading, setTzLoading] = useState(false);
+  const [tzSaving, setTzSaving] = useState(false);
+  const [tzError, setTzError] = useState('');
+  const [traderZones, setTraderZones] = useState(/** @type {string[]} */([]));
+  const [traderZoneFiles, setTraderZoneFiles] = useState(/** @type {Record<string, any>} */({}));
+  // Per-zone input values ('' => untouched / mixed placeholder)
+  const [tzForm, setTzForm] = useState(/** @type {Record<string, string>} */({}));
+  // Per-zone add toggles: when true, add missing selected types to that zone with the tzForm value
+  const [tzAddMissing, setTzAddMissing] = useState(/** @type {Record<string, boolean>} */({}));
+
   function getApiBase() {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
     const fallback = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
@@ -164,6 +175,43 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTypes.map(t => t.name).join('|')]);
 
+  // Load trader zones and their JSON files
+  useEffect(() => {
+    let aborted = false;
+    async function loadZones() {
+      setTzLoading(true);
+      setTzError('');
+      try {
+        const API = getApiBase();
+        const r = await fetch(`${API}/api/traderzones`);
+        if (!r.ok) throw new Error(`Failed to list trader zones (${r.status})`);
+        const list = await r.json();
+        const names = Array.isArray(list.zones) ? list.zones : [];
+        const entries = await Promise.all(names.map(async (name) => {
+          try {
+            const rr = await fetch(`${API}/api/traderzones/${encodeURIComponent(name)}`);
+            if (!rr.ok) throw new Error('bad');
+            const json = await rr.json();
+            return [name, json];
+          } catch {
+            return [name, null];
+          }
+        }));
+        if (aborted) return;
+        const files = Object.fromEntries(entries.filter(e => e[1] != null));
+        setTraderZones(names);
+        setTraderZoneFiles(files);
+      } catch (e) {
+        if (!aborted) setTzError(String(e && e.message ? e.message : 'Failed to load trader zones'));
+      } finally {
+        if (!aborted) setTzLoading(false);
+      }
+    }
+    loadZones();
+    return () => { aborted = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTypes.map(t => t.name).join('|')]);
+
   const uncategorizedCount = useMemo(() => {
     const files = marketFiles;
     return selectedTypes.reduce((acc, t) => {
@@ -172,6 +220,51 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
       return acc + (inAny ? 0 : 1);
     }, 0);
   }, [marketFiles, selectedTypes]);
+
+  // ----- Trader zones aggregation -----
+  const tzAggregate = useMemo(() => {
+    /** @type {Record<string, { present:number, missing:number, value:number|null|undefined }>} */
+    const agg = {};
+    const names = traderZones || [];
+    const sel = selectedTypes.map(t => ({ name: String(t.name || ''), lower: String(t.name || '').toLowerCase() }));
+    for (const zone of names) {
+      const file = traderZoneFiles[zone];
+      const stockObj = file && (file.stock || file.Stock) && typeof (file.stock || file.Stock) === 'object' ? (file.stock || file.Stock) : {};
+      let present = 0; let missing = 0;
+      let firstSet = false; let firstVal = 0; let mixed = false;
+      for (const t of sel) {
+        // case-insensitive lookup in stock map
+        let found = false; let val = 0;
+        for (const [k, v] of Object.entries(stockObj)) {
+          if (String(k).toLowerCase() === t.lower) { found = true; val = Number(v) || 0; break; }
+        }
+        if (found) {
+          present++;
+          if (!firstSet) { firstSet = true; firstVal = val; }
+          else if (firstVal !== val) { mixed = true; }
+        } else {
+          missing++;
+        }
+      }
+      agg[zone] = { present, missing, value: present === 0 ? undefined : (mixed ? null : firstVal) };
+    }
+    return agg;
+  }, [traderZoneFiles, traderZones, selectedTypes]);
+
+  // Rehydrate per-zone input values based on aggregation
+  useEffect(() => {
+    const next = {};
+    for (const z of traderZones) {
+      const info = tzAggregate[z];
+      if (!info) continue;
+      if (info.value === undefined || info.value === null) next[z] = '';
+      else next[z] = String(info.value);
+    }
+    setTzForm(next);
+    // Default addMissing flags off
+    const adds = {};
+    setTzAddMissing(adds);
+  }, [tzAggregate, traderZones]);
 
   // Aggregate existing entries for selected types across all categories
   const marketAggregate = useMemo(() => {
@@ -385,6 +478,69 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
     }
   };
 
+  const onApplyTraderZones = async () => {
+    setTzSaving(true);
+    setTzError('');
+    try {
+      const API = getApiBase();
+      const selected = selectedTypes
+        .map(t => ({ name: String(t.name || ''), lower: String(t.name || '').toLowerCase() }))
+        .filter(x => x.name);
+      /** @type {string[]} */
+      const changed = [];
+
+      for (const zone of traderZones) {
+        const valStr = tzForm[zone];
+        if (typeof valStr !== 'string' || valStr.trim() === '') continue; // no change for this zone
+        if (!/^\d+$/.test(valStr.trim())) continue; // ignore invalid
+        const val = parseInt(valStr.trim(), 10);
+        if (!Number.isFinite(val) || val < 0) continue;
+
+        const file = traderZoneFiles[zone];
+        if (!file || typeof file !== 'object') continue;
+
+        const hasLower = Object.prototype.hasOwnProperty.call(file, 'stock');
+        const hasUpper = Object.prototype.hasOwnProperty.call(file, 'Stock');
+        const prop = hasLower ? 'stock' : (hasUpper ? 'Stock' : 'stock');
+        let stock = file[prop];
+        if (!stock || typeof stock !== 'object' || Array.isArray(stock)) stock = {};
+
+        const lowerMap = {};
+        for (const k of Object.keys(stock)) lowerMap[String(k).toLowerCase()] = k;
+
+        let any = false;
+        const addMissing = !!tzAddMissing[zone];
+        for (const t of selected) {
+          const existKey = lowerMap[t.lower];
+          if (existKey) {
+            if (Number(stock[existKey]) !== val) { stock[existKey] = val; any = true; }
+          } else if (addMissing) {
+            stock[t.name] = val; any = true;
+          }
+        }
+        if (any) {
+          file[prop] = stock;
+          traderZoneFiles[zone] = file;
+          changed.push(zone);
+        }
+      }
+
+      for (const zone of changed) {
+        const body = JSON.stringify(traderZoneFiles[zone] || {});
+        const res = await fetch(`${API}/api/traderzones/${encodeURIComponent(zone)}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body
+        });
+        if (!res.ok) throw new Error(`Failed to write trader zone ${zone} (${res.status})`);
+      }
+
+      if (changed.length) setTraderZoneFiles({ ...traderZoneFiles });
+    } catch (e) {
+      setTzError(String(e && e.message ? e.message : 'Failed to apply stock'));
+    } finally {
+      setTzSaving(false);
+    }
+  };
+
   return (
     <div className="edit-form">
       <div className="edit-form-header">
@@ -537,6 +693,8 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
           {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
         </div>
 
+          <div style={{"display": "flex", "gap": "10px"}}>
+
         <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
           <legend>Expansion Market</legend>
           <label className="control" style={{ alignItems: 'stretch' }}>
@@ -561,7 +719,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
               >Apply</button>
             </div>
             <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              {marketLoading ? 'Loading categories…' : `${uncategorizedCount} of ${selectedTypes.length} not categorised`}
+              {marketLoading ? 'Loading categories…' : (uncategorizedCount ? `${uncategorizedCount} of ${selectedTypes.length} not categorised` : '')}
               {marketError ? <span className="error-line"> — {marketError}</span> : null}
             </div>
           </label>
@@ -625,6 +783,74 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
             </div>
           </div>
         </fieldset>
+
+        {/* Stock levels (Trader Zones) */}
+        <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
+          <legend>Stock levels</legend>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+            Manage per-zone stock for the selected item(s). Enter a value to update existing entries. Use “Add”/“Add missing” to create entries for absent types.
+          </div>
+          {tzError && (
+            <div className="error-line" role="alert" style={{ marginBottom: 6 }}>{tzError}</div>
+          )}
+          <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 180px 1fr', gap: 8, alignItems: 'center' }}>
+            <div className="muted" style={{ fontSize: 12 }}>Trader zone</div>
+            <div className="muted" style={{ fontSize: 12 }}>Stock</div>
+            <div className="muted" style={{ fontSize: 12 }}>Actions</div>
+            {traderZones.map(zone => {
+              const info = tzAggregate[zone] || { present: 0, missing: selectedTypes.length, value: undefined };
+              const mixed = info.value === null;
+              const nonePresent = info.present === 0 && info.missing > 0;
+              const someMissing = info.present > 0 && info.missing > 0;
+              return (
+                <React.Fragment key={zone}>
+                  <div className="muted">{zone}</div>
+                  <label className={`control ${mixed ? 'mixed' : ''}`} style={{ margin: 0 }}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder={mixed ? 'Mixed' : ''}
+                      value={tzForm[zone] ?? ''}
+                      onChange={e => {
+                        const v = e.target.value;
+                        // Allow empty string for no change; else keep only digits
+                        if (v === '') setTzForm(f => ({ ...f, [zone]: '' }));
+                        else if (/^\d+$/.test(v)) setTzForm(f => ({ ...f, [zone]: v }));
+                      }}
+                    />
+                    <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                      {info.present} present, {info.missing} missing
+                    </div>
+                  </label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {nonePresent && (
+                      <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
+                              onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
+                              title="Add selected item(s) to this zone when applying">
+                        {tzAddMissing[zone] ? 'Will add' : 'Add'}
+                      </button>
+                    )}
+                    {someMissing && (
+                      <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
+                              onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
+                              title="Add missing selected item(s) to this zone when applying">
+                        {tzAddMissing[zone] ? 'Will add missing' : 'Add missing'}
+                      </button>
+                    )}
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            {tzLoading ? 'Loading trader zones…' : null}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <button type="button" className="btn" onClick={onApplyTraderZones} disabled={tzSaving || tzLoading}>Apply stock</button>
+          </div>
+        </fieldset>
+      </div>
       </div>
 
       {Object.keys(errors).length > 0 && (

@@ -59,6 +59,11 @@ function marketDirPath() {
     return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Market');
 }
 
+function traderZonesDirPath() {
+    // Expansion Trader Zones directory (per user spec)
+    return join(DATA_DIR, 'expansion', 'traderzones');
+}
+
 // Cache of group -> folder path (relative to DATA_DIR), derived from cfgeconomycore.xml
 /** @type {Record<string, string>|null} */
 let groupFolderCache = null;
@@ -483,7 +488,7 @@ function pad2(n) {
     return String(n).padStart(2, '0');
 }
 
-function fileNameFromRange(start, end) {
+function FILE_NAME_FROM_RANGE(start, end) {
     const fmt = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}-${pad2(d.getMinutes())}-${pad2(d.getSeconds())}`;
     return `${fmt(start)}_to_${fmt(end)}.ADM`;
 }
@@ -812,7 +817,7 @@ const server = http.createServer(async (req, res) => {
                 }
                 const report = await generateStashReport(start && !isNaN(start.getTime()) ? start : null, end && !isNaN(end.getTime()) ? end : null);
                 send(res, 200, JSON.stringify({players: report}), {'Content-Type': 'application/json'});
-            } catch (e) {
+            } catch {
                 send(res, 500, JSON.stringify({error: 'Failed to generate stash report'}), {'Content-Type': 'application/json'});
             }
             return;
@@ -1073,6 +1078,73 @@ const server = http.createServer(async (req, res) => {
                     send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
                 } catch {
                     send(res, 500, JSON.stringify({ error: 'Failed to write category' }), { 'Content-Type': 'application/json' });
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // Trader zones: list
+        if (pathname === '/api/traderzones') {
+            if (req.method !== 'GET') {
+                methodNotAllowed(res);
+                return;
+            }
+            try {
+                const dir = traderZonesDirPath();
+                const entries = await readdir(dir, { withFileTypes: true });
+                const names = entries
+                    .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+                    .map(e => e.name.replace(/\.json$/i, ''))
+                    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+                send(res, 200, JSON.stringify({ zones: names }), { 'Content-Type': 'application/json' });
+            } catch {
+                send(res, 200, JSON.stringify({ zones: [] }), { 'Content-Type': 'application/json' });
+            }
+            return;
+        }
+
+        // Trader zone read/write
+        const matchTraderZone = pathname.match(/^\/api\/traderzones\/([^/]+)$/);
+        if (matchTraderZone) {
+            const [, zoneRaw] = matchTraderZone;
+            if (!isSafeName(zoneRaw)) {
+                badRequest(res, 'Invalid trader zone name');
+                return;
+            }
+            const fileBase = zoneRaw.replace(/\.json$/i, '');
+            const target = join(traderZonesDirPath(), `${fileBase}.json`);
+
+            if (req.method === 'GET') {
+                try {
+                    const json = await readFile(target, 'utf8');
+                    send(res, 200, json, { 'Content-Type': 'application/json; charset=utf-8' });
+                } catch {
+                    notFound(res);
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                if (!body || typeof body !== 'string') {
+                    badRequest(res, 'Empty body');
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(body);
+                } catch {
+                    badRequest(res, 'Invalid JSON');
+                    return;
+                }
+                try {
+                    await ensureDirFor(target);
+                    const formatted = JSON.stringify(parsed, null, 4);
+                    await writeFile(target, formatted + (formatted.endsWith('\n') ? '' : '\n'), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
+                } catch {
+                    send(res, 500, JSON.stringify({ error: 'Failed to write trader zone' }), { 'Content-Type': 'application/json' });
                 }
                 return;
             }
