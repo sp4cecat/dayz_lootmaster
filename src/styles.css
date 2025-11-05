@@ -884,9 +884,9 @@ legend {
 }
 
 .edit-form .panels-item {
-    flex: 1 0 max-content;
-    width: max-content;
-    min-width: 220px;
+    flex: 1 1;
+    /*width: max-content;*/
+    /*min-width: 220px;*/
     background: var(--bg-softer);
     padding: 10px;
 }
@@ -898,6 +898,11 @@ legend {
     grid-template-columns: repeat(2, max-content); /* exactly two columns */
     gap: 3px 10px; /* row gap / column gap */
     width: max-content; /* size to both columns */
+}
+
+.panels-item {
+    height: min-content !important;
+    flex-grow: 0 !important;
 }
 
 .edit-form .usage-panel .checkbox span {
@@ -1034,4 +1039,12 @@ textarea.code-view {
 
 .pane-resizer:hover {
     background: linear-gradient(to right, transparent, color-mix(in oklab, var(--primary) 40%, var(--border)), transparent);
+}
+
+.cle-tab {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    height: 60vh;
+    justify-items: flex-start;
 }

@@ -225,7 +225,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave }) {
         ))}
       </div>
 
-      <div className="panels-wrap">
+      <div className="panels-wrap" style={{display: "flex", flexDirection: "column", flexWrap: "wrap", gap: 10, marginTop: 10, flexGrow: 0}}>
         {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
         {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
 
@@ -244,7 +244,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave }) {
         {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+      <div style={{ display: 'flex', flexDirection: "column", marginTop: 10 }}>
         <button className="btn primary" onClick={onSaveClick} disabled={!canSave}>Save</button>
       </div>
 
