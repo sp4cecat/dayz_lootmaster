@@ -24,6 +24,21 @@ const EDIT_FIELDS = [
   'QuantityPercent',
 ];
 
+// De-duplicate items by ClassName (case-insensitive, first occurrence wins)
+function dedupeItemsByClassName(list) {
+  const out = [];
+  const seen = new Set();
+  for (const it of Array.isArray(list) ? list : []) {
+    const name = String(it && it.ClassName || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // Preserve item fields as-is; ensure ClassName remains unchanged
+    out.push({ ...it, ClassName: it.ClassName });
+  }
+  return out;
+}
 
 export default function MarketCategoryEditorModal({ onClose }) {
   const API_BASE = useApiBase();
@@ -90,8 +105,13 @@ export default function MarketCategoryEditorModal({ onClose }) {
         const json = await res.json();
         setCategoryJson(json);
         const arr = Array.isArray(json.Items) ? json.Items : [];
+        const deduped = dedupeItemsByClassName(arr);
         // Defensive clone to avoid mutation of original object references
-        setItems(arr.map(x => ({ ...x })));
+        setItems(deduped.map(x => ({ ...x })));
+        const removed = arr.length - deduped.length;
+        if (removed > 0) {
+          setNotice(`Removed ${removed} duplicate item${removed === 1 ? '' : 's'} by ClassName (first kept).`);
+        }
         setEditingKey(null);
         setEditDraft({});
       } catch (e) {
@@ -147,7 +167,12 @@ export default function MarketCategoryEditorModal({ onClose }) {
       setBusy(true);
       setError(null);
       setNotice(null);
-      const payload = { ...categoryJson, Items: nextItems };
+      // De-duplicate by ClassName before persisting
+      const deduped = dedupeItemsByClassName(nextItems);
+      const removed = (Array.isArray(nextItems) ? nextItems.length : 0) - deduped.length;
+      // Optimistically reflect deduped list in UI
+      setItems(deduped);
+      const payload = { ...categoryJson, Items: deduped };
       const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
         method: 'PUT',
         headers: {
@@ -167,12 +192,17 @@ export default function MarketCategoryEditorModal({ onClose }) {
           const j = await r.json();
           setCategoryJson(j);
           const arr = Array.isArray(j.Items) ? j.Items : [];
-          setItems(arr.map(x => ({ ...x })));
+          const after = dedupeItemsByClassName(arr);
+          setItems(after.map(x => ({ ...x })));
         }
       } catch {
         // ignore reload errors
       }
-      if (successMsg) setNotice(successMsg);
+      if (successMsg) {
+        setNotice(removed > 0 ? `${successMsg} (removed ${removed} duplicate item${removed === 1 ? '' : 's'})` : successMsg);
+      } else if (removed > 0) {
+        setNotice(`Removed ${removed} duplicate item${removed === 1 ? '' : 's'} by ClassName.`);
+      }
       return true;
     } catch (e) {
       setError(String(e));
@@ -262,8 +292,11 @@ export default function MarketCategoryEditorModal({ onClose }) {
       setBusy(true);
       setError(null);
       setNotice(null);
+      // De-duplicate before saving via footer button as well
+      const deduped = dedupeItemsByClassName(items);
+      const removed = (Array.isArray(items) ? items.length : 0) - deduped.length;
       // Rebuild JSON preserving everything but Items replaced by our edited array
-      const payload = { ...categoryJson, Items: items };
+      const payload = { ...categoryJson, Items: deduped };
       const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
         method: 'PUT',
         headers: {
@@ -276,7 +309,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
         const msg = await res.text().catch(() => '');
         throw new Error(`Save failed (${res.status}) ${msg}`);
       }
-      setNotice('Category saved.');
+      setNotice(removed > 0 ? `Category saved. Removed ${removed} duplicate item${removed === 1 ? '' : 's'}.` : 'Category saved.');
       // Optionally reload to reflect server formatting
       try {
         const r = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`);
@@ -284,7 +317,8 @@ export default function MarketCategoryEditorModal({ onClose }) {
           const j = await r.json();
           setCategoryJson(j);
           const arr = Array.isArray(j.Items) ? j.Items : [];
-          setItems(arr.map(x => ({ ...x })));
+          const after = dedupeItemsByClassName(arr);
+          setItems(after.map(x => ({ ...x })));
         }
       } catch {
         // ignore

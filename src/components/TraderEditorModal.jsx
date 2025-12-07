@@ -49,17 +49,38 @@ function useEditorID() {
 }
 
 function parseCategories(arr) {
+  /** @type {{name:string, flag:number}[]} */
   const out = [];
+  const seen = new Set(); // case-insensitive de-dupe (first occurrence wins)
   for (const v of Array.isArray(arr) ? arr : []) {
     if (typeof v !== 'string') continue;
     const idx = v.lastIndexOf(':');
-    if (idx >= 0) {
-      const name = v.slice(0, idx);
-      const flag = Number(v.slice(idx + 1));
-      out.push({ name, flag: Number.isFinite(flag) ? flag : 1 });
-    } else {
-      out.push({ name: v, flag: 1 });
-    }
+    const rawName = idx >= 0 ? v.slice(0, idx) : v;
+    const rawFlag = idx >= 0 ? v.slice(idx + 1) : '';
+    const name = String(rawName).trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    const f = Number(rawFlag);
+    const flag = Number.isFinite(f) ? f : 1;
+    seen.add(key);
+    out.push({ name, flag });
+  }
+  return out;
+}
+
+function dedupeCategoryList(list) {
+  /** @type {{name:string, flag:number}[]} */
+  const out = [];
+  const seen = new Set();
+  for (const item of Array.isArray(list) ? list : []) {
+    const name = String(item && item.name || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const flagNum = Number(item && item.flag);
+    out.push({ name, flag: Number.isFinite(flagNum) ? flagNum : 1 });
   }
   return out;
 }
@@ -201,7 +222,8 @@ export default function TraderEditorModal({ onClose }) {
       }
       // Save profile
       if (profileJson) {
-        const updated = { ...profileJson, Categories: serializeCategories(categories) };
+        const deduped = dedupeCategoryList(categories);
+        const updated = { ...profileJson, Categories: serializeCategories(deduped) };
         const profRes = await fetch(`${API_BASE}/api/trader-profile/${encodeURIComponent(traderFileName)}`, {
           method: 'PUT',
           headers: {
@@ -235,9 +257,13 @@ export default function TraderEditorModal({ onClose }) {
   }, [className]);
 
   const addableCategories = useMemo(() => {
-    const existing = new Set((categories || []).map(c => c.name));
+    const existing = new Set((categories || []).map(c => String(c.name).toLowerCase()));
     return (marketCategories || [])
-      .filter((n) => n && !existing.has(n))
+      .filter((n) => {
+        const name = String(n || '').trim();
+        if (!name) return false;
+        return !existing.has(name.toLowerCase());
+      })
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [marketCategories, categories]);
 
@@ -253,7 +279,7 @@ export default function TraderEditorModal({ onClose }) {
   const onAddCategory = () => {
     const name = (newCategory || '').trim();
     if (!name) return;
-    const exists = categories.some(c => c.name === name);
+    const exists = categories.some(c => String(c.name).toLowerCase() === name.toLowerCase());
     if (exists) return;
     setCategories(prev => [...prev, { name, flag: 1 }]);
     setNewCategory('');

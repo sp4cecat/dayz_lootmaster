@@ -73,15 +73,33 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
 
   const anyAllChanged = useMemo(() => Object.keys(allChangedMap).length > 0, [allChangedMap]);
 
+  // Helper: for vanilla_overrides/types, rehydrate _present from baseline vanilla
+  const rehydrateOverrides = (types) => {
+    const baseVanilla = Array.isArray(getBaselineFileTypes?.('vanilla', 'types'))
+      ? getBaselineFileTypes('vanilla', 'types')
+      : [];
+    const baseByName = new Map(baseVanilla.map(t => [t.name, t]));
+    return types.map(t => {
+      const base = baseByName.get(t.name);
+      if (!base || !base._present) return t;
+      return { ...t, _present: { ...base._present } };
+    });
+  };
+
   const xml = useMemo(() => {
     if (mode === 'limits') {
       return generateLimitsXml(definitions);
     }
     if (hasMultipleFiles && typesFormat === 'single' && mode === 'types') {
-      return generateTypesXmlFromFilesWithComments(filesForGroup);
+      // If exporting vanilla_overrides, rehydrate each file's types where applicable
+      const prepared = group === 'vanilla_overrides'
+        ? filesForGroup.map(({ file, types }) => ({ file, types: file === 'types' ? rehydrateOverrides(types) : types }))
+        : filesForGroup;
+      return generateTypesXmlFromFilesWithComments(prepared);
     }
     if (mode === 'types') {
-      const arr = getGroupTypes(group) || [];
+      let arr = getGroupTypes(group) || [];
+      if (group === 'vanilla_overrides') arr = rehydrateOverrides(arr);
       return generateTypesXml(arr);
     }
     return ''; // no single-XML preview for "all" zip mode
@@ -175,7 +193,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
           if (JSON.stringify(a.tag) !== JSON.stringify(b.tag)) localSpecs.push(`Tag(${formatChangeValue(a.tag)} > ${formatChangeValue(b.tag)})`);
 
           specs = localSpecs;
-        } catch (_e) {
+        } catch {
           // ignore; fallback to field names only
           specs = Array.isArray(entry.fields) ? entry.fields : [];
         }
@@ -213,7 +231,9 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
         for (const { file, types } of perFiles) {
           if (changedSet && !changedSet.has(file)) continue;
           const name = `${g}/${file}.xml`;
-          const content = generateTypesXml(types);
+          const content = (g === 'vanilla_overrides' && file === 'types')
+            ? generateTypesXml(rehydrateOverrides(types))
+            : generateTypesXml(types);
           files.push({ name, data: encoder.encode(content) });
         }
 
@@ -253,7 +273,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
             }
           }
           files.push({ name: `${g}/${changesFileName}`, data: encoder.encode(lines.join('\n')) });
-        } catch (_e) {
+        } catch {
           const note = `Failed to load change logs for group "${g}". Exported at ${now.toISOString()}.`;
           files.push({ name: `${g}/${changesFileName}`, data: encoder.encode(note) });
         }
@@ -279,7 +299,9 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     const files = (downloadAll ? filesForGroup : filesForGroup.filter(({ file }) => changedFilesSet.has(file)))
       .map(({ file, types }) => {
         const name = `${file}.xml`;
-        const content = generateTypesXml(types);
+        const content = (group === 'vanilla_overrides' && file === 'types')
+          ? generateTypesXml(rehydrateOverrides(types))
+          : generateTypesXml(types);
         return { name, data: encoder.encode(content) };
       });
 
@@ -329,7 +351,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
       }
 
       files.push({ name: changesFileName, data: encoder.encode(lines.join('\n')) });
-    } catch (_e) {
+    } catch {
       // If logs fail, include a minimal note
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, '0');

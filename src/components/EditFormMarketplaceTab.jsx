@@ -39,6 +39,20 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     return (saved && saved.trim()) ? saved.trim().replace(/\/+$/,'') : fallback;
   }
 
+  // Stable fingerprint of current selection (names + categories)
+  const selectionFp = useMemo(() => {
+    const parts = selectedTypes.map(t => `${String(t.name || '')}|${String(t.category || '')}`);
+    parts.sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+    return parts.join(',');
+  }, [selectedTypes]);
+
+  // Shared category across selected types (non-empty only if all selected share the same category string)
+  const sharedCategory = useMemo(() => {
+    const cats = selectedTypes.map(t => String(t.category || ''));
+    return cats.every(c => c === cats[0]) ? cats[0] : '';
+  }, [selectionFp]);
+  const allSelectedSameCategory = !!sharedCategory;
+
   // Load market categories and their JSON files after first activation and when selection changes
   useEffect(() => {
     if (!activated) return;
@@ -84,7 +98,20 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     load();
     return () => { aborted = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activated, selectedTypes.map(t => t.name).join('|')]);
+  }, [activated]);
+
+  // Recompute preselected categories when selection changes (no refetch)
+  useEffect(() => {
+    if (!activated) return;
+    if (!marketCategories.length) return;
+    const selectedNames = marketCategories.filter(cat => {
+      const file = marketFiles[cat];
+      if (!file || !Array.isArray(file.Items)) return false;
+      const items = file.Items;
+      return selectedTypes.some(t => items.some(it => String(it.ClassName || '').toLowerCase() === String(t.name || '').toLowerCase()));
+    });
+    setSelectedMarketCats(selectedNames);
+  }, [activated, selectionFp, marketFiles, marketCategories, selectedTypes]);
 
   // Load trader zones and their JSON files
   useEffect(() => {
@@ -122,7 +149,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     loadZones();
     return () => { aborted = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activated, selectedTypes.map(t => t.name).join('|')]);
+  }, [activated]);
 
   const uncategorizedCount = useMemo(() => {
     const files = marketFiles;
@@ -131,7 +158,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       const inAny = Object.values(files).some(file => Array.isArray(file.Items) && file.Items.some(it => String(it.ClassName || '').toLowerCase() === name));
       return acc + (inAny ? 0 : 1);
     }, 0);
-  }, [marketFiles, selectedTypes]);
+  }, [marketFiles, selectionFp]);
 
   // ----- Trader zones aggregation -----
   const tzAggregate = useMemo(() => {
@@ -161,7 +188,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       agg[zone] = { present, missing, value: present === 0 ? undefined : (mixed ? null : firstVal) };
     }
     return agg;
-  }, [traderZoneFiles, traderZones, selectedTypes]);
+  }, [traderZoneFiles, traderZones, selectionFp]);
 
   // Rehydrate per-zone input values based on aggregation
   useEffect(() => {
@@ -227,12 +254,12 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     const va = merge('Variants', arrNorm, arrCmp);
     agg.Variants = va == null ? null : va;
     return agg;
-  }, [marketFiles, selectedTypes]);
+  }, [marketFiles, selectionFp]);
 
   const [marketForm, setMarketForm] = useState(/** @type {Record<string, any>} */({}));
   // Arrays editor state (null => Mixed/indeterminate, string[] => explicit)
   const [marketArrays, setMarketArrays] = useState(/** @type {{ SpawnAttachments: string[]|null, Variants: string[]|null }} */({ SpawnAttachments: null, Variants: null }));
-  // Rehydrate form whenever aggregation changes
+  // Rehydrate form whenever aggregation changes; preserve compatible drafts
   useEffect(() => {
     const f = {};
     const fill = (k, v) => {
@@ -246,20 +273,19 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     fill('MaxStockThreshold', marketAggregate.MaxStockThreshold);
     fill('MinStockThreshold', marketAggregate.MinStockThreshold);
     fill('QuantityPercent', marketAggregate.QuantityPercent);
-    // Arrays: keep separate state for pill editor
-    setMarketArrays({
-      SpawnAttachments: Array.isArray(marketAggregate.SpawnAttachments) ? [...marketAggregate.SpawnAttachments] : null,
-      Variants: Array.isArray(marketAggregate.Variants) ? [...marketAggregate.Variants] : null,
+    // Arrays: preserve explicit user drafts when compatible
+    setMarketArrays(prev => {
+      const aggSA = Array.isArray(marketAggregate.SpawnAttachments) ? [...marketAggregate.SpawnAttachments] : null;
+      const aggVA = Array.isArray(marketAggregate.Variants) ? [...marketAggregate.Variants] : null;
+      const next = {
+        SpawnAttachments: (prev && Array.isArray(prev.SpawnAttachments)) ? prev.SpawnAttachments : aggSA,
+        Variants: allSelectedSameCategory ? ((prev && Array.isArray(prev.Variants)) ? prev.Variants : aggVA) : null,
+      };
+      return next;
     });
     setMarketForm(f);
-  }, [marketAggregate]);
+  }, [marketAggregate, allSelectedSameCategory, selectionFp]);
 
-  // Shared category across selected types (non-empty only if all selected share the same category string)
-  const sharedCategory = useMemo(() => {
-    const cats = selectedTypes.map(t => String(t.category || ''));
-    return cats.every(c => c === cats[0]) ? cats[0] : '';
-  }, [selectedTypes]);
-  const allSelectedSameCategory = !!sharedCategory;
 
   const onApplyMarketMove = async () => {
     if (selectedMarketCats.length !== 1) return;
@@ -510,6 +536,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
               <div className={`control ${marketArrays.SpawnAttachments === null ? 'mixed' : ''}`}>
                 <span>Spawn Attachments</span>
                 <PillArrayEditor
+                  key={`sa-${selectionFp}`}
                   value={marketArrays.SpawnAttachments}
                   onChange={(arr) => setMarketArrays(s => ({ ...s, SpawnAttachments: arr }))}
                   options={typeOptions}
@@ -522,6 +549,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
               <div className={`control ${marketArrays.Variants === null ? 'mixed' : ''}`}>
                 <span>Variants</span>
                 <PillArrayEditor
+                  key={`va-${selectionFp}-${sharedCategory}`}
                   value={marketArrays.Variants}
                   onChange={(arr) => setMarketArrays(s => ({ ...s, Variants: arr }))}
                   options={allSelectedSameCategory ? (typeOptionsByCategory[sharedCategory] || []) : []}

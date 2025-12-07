@@ -137,21 +137,38 @@ export default function App() {
             // Save all group type files (skip vanilla base file entirely)
             for (const g of groups) {
               if (g === 'vanilla') continue; // do not persist ./data/db/types.xml
-                const files = getGroupFiles(g);
-                for (const {file, types} of files) {
-                    const xml = generateTypesXml(types);
-                    const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(g)}/${encodeURIComponent(file)}`, {
-                        method: 'PUT',
-                        headers: {
-                          'Content-Type': 'application/xml',
-                          'X-Editor-ID': editorID || 'unknown'
-                        },
-                        body: xml
-                    });
-                    if (!res.ok) {
-                        throw new Error(`Failed to save ${g}/${file}.xml (${res.status})`);
-                    }
+              const files = getGroupFiles(g);
+              for (const { file, types } of files) {
+                // Preservation fix for overrides: when persisting vanilla_overrides/types,
+                // rehydrate `_present` from the baseline vanilla type so numeric fields
+                // (nominal/min/restock/quantmin/quantmax) are emitted even after reloads.
+                let toWrite = types;
+                if (g === 'vanilla_overrides' && file === 'types') {
+                  const baselineVanilla = Array.isArray(getBaselineFileTypes?.('vanilla', 'types'))
+                    ? getBaselineFileTypes('vanilla', 'types')
+                    : [];
+                  const baseByName = new Map(baselineVanilla.map(t => [t.name, t]));
+                  toWrite = types.map(t => {
+                    const base = baseByName.get(t.name);
+                    if (!base || !base._present) return t;
+                    // Clone and replace _present with vanilla's map
+                    return { ...t, _present: { ...base._present } };
+                  });
                 }
+
+                const xml = generateTypesXml(toWrite);
+                const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(g)}/${encodeURIComponent(file)}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/xml',
+                    'X-Editor-ID': editorID || 'unknown'
+                  },
+                  body: xml
+                });
+                if (!res.ok) {
+                  throw new Error(`Failed to save ${g}/${file}.xml (${res.status})`);
+                }
+              }
             }
 
             // Refresh baseline from API so storageDiff reflects the persisted state
