@@ -118,7 +118,7 @@ export function useLootData() {
           });
           baseline.vanilla = { types: vanilla };
         }
-      } catch {}
+      } catch { /* ignore vanilla baseline failures */ }
 
       // Additional groups via economycore
       try {
@@ -350,7 +350,7 @@ export function useLootData() {
           if (!limitsRes.ok) throw new Error('definitions missing');
           const limitsText = await limitsRes.text();
           defs = parseLimitsXml(limitsText);
-        } catch (_e) {
+        } catch {
           throw new Error('cfglimitsdefinition.xml is missing or invalid in the live data API.');
         }
 
@@ -414,6 +414,20 @@ export function useLootData() {
             }
           } catch {
             // ignore extra groups if economy core is missing or invalid
+          }
+
+          // 3) Include canonical overrides if present (treat like any other group)
+          // Server returns an empty <types/> doc if the file doesn't exist yet.
+          try {
+            const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
+            if (or.ok) {
+              const oText = await or.text();
+              const overrides = parseTypesXml(oText);
+              // Insert overrides last so they take precedence in mergeFromFiles
+              assembledFiles['vanilla_overrides'] = { types: overrides };
+            }
+          } catch {
+            // ignore overrides if endpoint fails
           }
 
           if (!Object.keys(assembledFiles).length) {
@@ -767,7 +781,7 @@ export function useLootData() {
         } else {
           throw new Error('vanilla types not found');
         }
-      } catch (_e) {
+      } catch {
         throw new Error('Live data API is missing vanilla types.');
       }
 
@@ -797,6 +811,18 @@ export function useLootData() {
         }
       } catch {
         // ignore extra groups if economy core missing
+      }
+
+      // Include canonical overrides as a proper group (always last to be canonical)
+      try {
+        const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
+        if (or.ok) {
+          const oText = await or.text();
+          const overrides = parseTypesXml(oText);
+          assembledFiles['vanilla_overrides'] = { types: overrides };
+        }
+      } catch {
+        // ignore if not available
       }
 
       if (!Object.keys(assembledFiles).length) {
@@ -1059,7 +1085,7 @@ function combineFilesToGroups(files) {
  * @param {TypeFiles} files
  * @returns {(Type & {group: string, file: string})[]}
  */
-function mergeFromFiles(files) {
+export function mergeFromFiles(files) {
   const groups = Object.keys(files);
   const orderedGroups = groups.sort((a, b) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
 
