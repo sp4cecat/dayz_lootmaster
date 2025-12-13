@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateTypeAgainstDefinitions } from '../utils/validation.js';
 import { formatLifetime } from '../utils/time.js';
 
@@ -12,9 +12,11 @@ import { formatLifetime } from '../utils/time.js';
  *  definitions: {categories: string[], usageflags: string[], valueflags: string[], tags: string[]},
  *  selectedTypes: Type[],
  *  onSave: (apply: (t: Type) => Type) => void,
+ *  onCanSaveChange?: (can: boolean) => void,
+ *  registerSaveHandler?: (fn: null | (() => void)) => void,
  * }} props
  */
-export default function EditFormCLETab({ definitions, selectedTypes, onSave }) {
+export default function EditFormCLETab({ definitions, selectedTypes, onSave, onCanSaveChange, registerSaveHandler }) {
   const base = selectedTypes[0];
 
   // Initialize local form state with mixed awareness
@@ -97,10 +99,21 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave }) {
     return Object.keys(issues).length === 0;
   }, [form, selectedTypes, definitions]);
 
-  const onSaveClick = () => {
+  const onSaveClick = useCallback(() => {
     const apply = (t) => applyToType(t, form, definitions);
     onSave(apply);
-  };
+  }, [form, definitions, onSave]);
+
+  // Notify parent of canSave changes so it can enable/disable header Save button
+  useEffect(() => {
+    if (onCanSaveChange) onCanSaveChange(!!canSave);
+  }, [canSave, onCanSaveChange]);
+
+  // Provide parent with a save handler it can invoke from the header button
+  useEffect(() => {
+    if (registerSaveHandler) registerSaveHandler(onSaveClick);
+    return () => { if (registerSaveHandler) registerSaveHandler(null); };
+  }, [registerSaveHandler, onSaveClick]);
 
   return (
     <div className="cle-tab">
@@ -244,9 +257,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave }) {
         {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: "column", marginTop: 10 }}>
-        <button className="btn primary" onClick={onSaveClick} disabled={!canSave}>Save</button>
-      </div>
+      {/* Save button moved to the EditForm header; keep area for layout spacing if needed */}
 
       {Object.keys(errors).length > 0 && (
         <div className="errors" style={{ marginTop: 8 }}>

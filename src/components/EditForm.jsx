@@ -22,13 +22,22 @@ import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
 export default function EditForm({ definitions, selectedTypes, onCancel, onSave, typeOptions = [], typeOptionsByCategory = {} }) {
   const [activeTab, setActiveTab] = useState('CLE');
   const [marketTabOpened, setMarketTabOpened] = useState(false);
+  const [canSaveCLE, setCanSaveCLE] = useState(false);
+  const [saveCLE, setSaveCLE] = useState(/** @type {null | (() => void)} */(null));
+  // Wrap setter so function values are stored, not invoked as updaters
+  const registerSaveHandler = React.useCallback((fn /** @type {null | (() => void)} */) => {
+    setSaveCLE(() => fn);
+  }, []);
 
   return (
     <div className="edit-form">
       <div className="edit-form-header">
         <h3>Edit {selectedTypes.length} item{selectedTypes.length > 1 ? 's' : ''}</h3>
         <div className="spacer" />
-        <button className="btn" onClick={onCancel}>Cancel</button>
+        {activeTab === 'CLE' && (
+          <button type="button" className="btn primary" onClick={() => saveCLE && saveCLE()} disabled={!canSaveCLE || !saveCLE}>Save</button>
+        )}
+        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
       </div>
 
       <div className="tabbar" style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
@@ -42,6 +51,8 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
           definitions={definitions}
           selectedTypes={selectedTypes}
           onSave={onSave}
+          onCanSaveChange={setCanSaveCLE}
+          registerSaveHandler={registerSaveHandler}
         />
       </div>
 
