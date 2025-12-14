@@ -645,6 +645,21 @@ export default function App() {
                     <button className="link" onClick={() => resolveUnknowns.open()}>Review</button>
                 </div>
             )}
+            {warningsKey !== dismissedWarningsKey && lw.length > 0 && (
+                <div className="banner warn" role="status" aria-live="polite">
+                    <div>
+                        Issues while reading types files: {lw.length}
+                        <details>
+                            <summary>Show details</summary>
+                            <ul>
+                                {lw.map((m, i) => (<li key={i}>{m}</li>))}
+                            </ul>
+                        </details>
+                    </div>
+                    <div className="spacer"/>
+                    <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
+                </div>
+            )}
             {warningsKey !== dismissedWarningsKey && noFlagsCount > 0 && (
                 <div className="banner warn" role="status" aria-live="polite">
                     {noFlagsCount} type{noFlagsCount === 1 ? '' : 's'} have no flags set.

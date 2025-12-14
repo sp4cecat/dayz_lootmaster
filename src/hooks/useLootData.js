@@ -54,6 +54,9 @@ export function useLootData() {
 
   const [unknowns, setUnknowns] = useState(makeUnknownsEmpty());
 
+  // Warnings collected during loading (missing files, parse errors, etc.)
+  const [loadWarnings, setLoadWarnings] = useState(/** @type {string[]} */([]));
+
   /**
    * Summary data computed after initial load.
    * Contains counts of types and definition entries, plus optional group breakdown.
@@ -373,6 +376,8 @@ export function useLootData() {
         if (!files) {
           /** @type {TypeFiles} */
           const assembledFiles = {};
+          /** @type {string[]} */
+          const warnings = [];
 
           // 1) Vanilla base (data/db/types.xml)
           try {
@@ -403,12 +408,23 @@ export function useLootData() {
                   const parts = samplePath.split('/');
                   const fileName = parts[parts.length - 1] || 'types.xml';
                   const fileBase = fileName.replace(/\.xml$/i, '');
-                  const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
-                  if (!res.ok) continue;
-                  const text = await res.text();
-                  const parsed = parseTypesXml(text);
-                  if (!assembledFiles[group]) assembledFiles[group] = {};
-                  assembledFiles[group][fileBase] = parsed;
+                  try {
+                    const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                    if (!res.ok) {
+                      warnings.push(`Group "${group}" file "${fileBase}": not found or cannot be read.`);
+                      continue;
+                    }
+                    const text = await res.text();
+                    try {
+                      const parsed = parseTypesXml(text);
+                      if (!assembledFiles[group]) assembledFiles[group] = {};
+                      assembledFiles[group][fileBase] = parsed;
+                    } catch (e) {
+                      warnings.push(`Group "${group}" file "${fileBase}": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+                    }
+                  } catch {
+                    warnings.push(`Group "${group}" file "${fileBase}": request failed.`);
+                  }
                 }
               }
             }
@@ -422,9 +438,13 @@ export function useLootData() {
             const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
             if (or.ok) {
               const oText = await or.text();
-              const overrides = parseTypesXml(oText);
-              // Insert overrides last so they take precedence in mergeFromFiles
-              assembledFiles['vanilla_overrides'] = { types: overrides };
+              try {
+                const overrides = parseTypesXml(oText);
+                // Insert overrides last so they take precedence in mergeFromFiles
+                assembledFiles['vanilla_overrides'] = { types: overrides };
+              } catch (e) {
+                warnings.push(`Group "vanilla_overrides" file "types": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+              }
             }
           } catch {
             // ignore overrides if endpoint fails
@@ -443,6 +463,13 @@ export function useLootData() {
           }
           await saveManyTypeFiles(records);
           files = assembledFiles;
+
+          // Publish any warnings discovered during build
+          setLoadWarnings(warnings);
+        }
+        else {
+          // Loading from IndexedDB/legacy path: no file parsing performed here → clear warnings
+          setLoadWarnings([]);
         }
 
         if (!mounted) return;
@@ -735,6 +762,7 @@ export function useLootData() {
     try {
       setLoading(true);
       setError(null);
+      setLoadWarnings([]);
 
       // Clear IndexedDB stores and any legacy/local grouped cache
       await clearAllTypeFiles();
@@ -758,13 +786,15 @@ export function useLootData() {
         if (!limitsRes.ok) throw new Error('definitions not found');
         const limitsText = await limitsRes.text();
         defs = parseLimitsXml(limitsText);
-      } catch (_e) {
+      } catch {
         throw new Error('Live data API is unavailable or cfglimitsdefinition.xml is missing.');
       }
 
       // Build from API (vanilla + cfgeconomycore order)
       /** @type {TypeFiles} */
       const assembledFiles = {};
+      /** @type {string[]} */
+      const warnings = [];
 
       // Vanilla base (data/db/types.xml)
       try {
@@ -800,12 +830,23 @@ export function useLootData() {
               const parts = samplePath.split('/');
               const fileName = parts[parts.length - 1] || 'types.xml';
               const fileBase = fileName.replace(/\.xml$/i, '');
-              const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
-              if (!res.ok) continue;
-              const text = await res.text();
-              const parsed = parseTypesXml(text);
-              if (!assembledFiles[group]) assembledFiles[group] = {};
-              assembledFiles[group][fileBase] = parsed;
+              try {
+                const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                if (!res.ok) {
+                  warnings.push(`Group "${group}" file "${fileBase}": not found or cannot be read.`);
+                  continue;
+                }
+                const text = await res.text();
+                try {
+                  const parsed = parseTypesXml(text);
+                  if (!assembledFiles[group]) assembledFiles[group] = {};
+                  assembledFiles[group][fileBase] = parsed;
+                } catch (e) {
+                  warnings.push(`Group "${group}" file "${fileBase}": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+                }
+              } catch {
+                warnings.push(`Group "${group}" file "${fileBase}": request failed.`);
+              }
             }
           }
         }
@@ -818,8 +859,12 @@ export function useLootData() {
         const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
         if (or.ok) {
           const oText = await or.text();
-          const overrides = parseTypesXml(oText);
-          assembledFiles['vanilla_overrides'] = { types: overrides };
+          try {
+            const overrides = parseTypesXml(oText);
+            assembledFiles['vanilla_overrides'] = { types: overrides };
+          } catch (e) {
+            warnings.push(`Group "vanilla_overrides" file "types": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+          }
         }
       } catch {
         // ignore if not available
@@ -854,6 +899,9 @@ export function useLootData() {
 
       // Reset baselines to newly parsed
       setBaselineFiles(assembledFiles);
+
+      // Publish warnings collected during reload
+      setLoadWarnings(warnings);
 
       setLoading(false);
     } catch (e) {
@@ -1026,6 +1074,7 @@ export function useLootData() {
     error,
     definitions,
     lootTypes,
+    loadWarnings,
     setLootTypes,
     filters,
     setFilters,
