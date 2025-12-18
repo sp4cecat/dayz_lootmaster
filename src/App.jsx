@@ -13,6 +13,7 @@ import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import StashReportModal from './components/StashReportModal.jsx';
 import TraderEditorModal from './components/TraderEditorModal.jsx';
+import LintFilesModal from './components/LintFilesModal.jsx';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
@@ -103,6 +104,7 @@ export default function App() {
     const [marketOpen, setMarketOpen] = useState(false);
     const [showTraderEditor, setShowTraderEditor] = useState(false);
     const [showMarketCategories, setShowMarketCategories] = useState(false);
+    const [showLint, setShowLint] = useState(false);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -611,6 +613,7 @@ export default function App() {
                         >
                           <button className="link" role="menuitem" onClick={() => { setShowAdm(true); setToolsOpen(false); }}>ADM records</button>
                           <button className="link" role="menuitem" onClick={() => { setShowStash(true); setToolsOpen(false); }}>Stash report</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowLint(true); setToolsOpen(false); }}>Lint files</button>
                         </div>
                       )}
                     </div>
@@ -778,6 +781,9 @@ export default function App() {
             )}
             {showStash && (
               <StashReportModal onClose={() => setShowStash(false)} />
+            )}
+            {showLint && (
+              <LintFilesModal onClose={() => setShowLint(false)} />
             )}
             {showTraderEditor && (
               <TraderEditorModal onClose={() => setShowTraderEditor(false)} />
