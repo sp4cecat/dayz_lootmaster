@@ -250,6 +250,47 @@ export default function MarketCategoryEditorModal({ onClose }) {
     }
   };
 
+  const removeItemFromCategory = async (className) => {
+    if (!window.confirm(`Are you sure you want to remove "${className}" from this category?`)) return;
+    const nextItems = items.filter(it => String(it.ClassName).toLowerCase() !== String(className).toLowerCase());
+    setItems(nextItems);
+    await persistCategory(nextItems, `Removed ${className} from category.`);
+  };
+
+  const removeItemFromMarketplaceCompletely = async (className) => {
+    if (!window.confirm(`Are you sure you want to remove "${className}" from ALL category files and ALL trader zone stock records?\n\nThis action is irreversible.`)) return;
+    try {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      const res = await fetch(`${API_BASE}/api/market/remove-item-completely`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Editor-ID': editorID || 'unknown',
+        },
+        body: JSON.stringify({ className })
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => '');
+        throw new Error(`Removal failed (${res.status}) ${msg}`);
+      }
+      const json = await res.json();
+      let msg = `Successfully removed "${className}" from ${json.results.marketFiles} market files and ${json.results.traderZoneFiles} trader zones.`;
+      if (json.results.traderFiles > 0) {
+        msg += ` Also removed from ${json.results.traderFiles} trader profiles.`;
+      }
+      setNotice(msg);
+
+      // Update local state if the item was in the current category
+      setItems(prev => prev.filter(it => String(it.ClassName).toLowerCase() !== String(className).toLowerCase()));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const filteredCount = filteredItems.length;
 
   const applyBulk = async () => {
@@ -392,8 +433,14 @@ export default function MarketCategoryEditorModal({ onClose }) {
             </div>
           </fieldset>
 
-          {error && <div className="banner warn" style={{ marginTop: 8 }}>{String(error)}</div>}
-          {notice && <div className="banner" style={{ marginTop: 8 }}>{String(notice)}</div>}
+          {error && <div className="banner error" role="alert" style={{ marginTop: 8 }}>{String(error)}</div>}
+          {notice && (
+            <div className="banner" role="status" aria-live="polite" style={{ marginTop: 8 }}>
+              <span>{String(notice)}</span>
+              <div className="spacer" />
+              <button className="link" onClick={() => setNotice(null)} title="Dismiss">Dismiss</button>
+            </div>
+          )}
 
           {/* Items table */}
           <div style={{ marginTop: 12, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -415,7 +462,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
                   const isEditing = editingKey === row.ClassName;
                   return (
                     <tr key={row.ClassName}>
-                      <td style={{ padding: '8px', textAlign: 'left', fontFamily: 'monospace' }}>{row.ClassName}</td>
+                      <td className="classname-cell" style={{ padding: '8px', textAlign: 'left', fontFamily: 'monospace' }}>{row.ClassName}</td>
                       {EDIT_FIELDS.map((field) => (
                         <td key={field} style={{ padding: '4px 8px', textAlign: 'right' }}>
                           {isEditing ? (
@@ -434,9 +481,17 @@ export default function MarketCategoryEditorModal({ onClose }) {
                       ))}
                       <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                         {!isEditing ? (
-                          <button className="link" title="Edit row" onClick={() => startEdit(row)} aria-label={`Edit ${row.ClassName}`}>
-                            ✎
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            <button className="link" title="Edit row" onClick={() => startEdit(row)} aria-label={`Edit ${row.ClassName}`}>
+                              ✎
+                            </button>
+                            <button className="link warn" title="Remove from this category" onClick={() => removeItemFromCategory(row.ClassName)} aria-label={`Remove ${row.ClassName} from category`}>
+                              🗑
+                            </button>
+                            <button className="link error" title="Remove from Marketplace completely" onClick={() => removeItemFromMarketplaceCompletely(row.ClassName)} aria-label={`Remove ${row.ClassName} from marketplace`}>
+                              ❌
+                            </button>
+                          </div>
                         ) : (
                           <>
                             <button className="link" title="Apply" onClick={applyEdit} style={{ marginRight: 6 }}>Save</button>

@@ -69,9 +69,147 @@ function tradersDirPath() {
     return join(DATA_DIR, 'expansion', 'traders');
 }
 
-function traderProfilesDirPath() {
+async function traderProfilesDirPath() {
     // Expansion Trader profiles JSON directory
     return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Traders');
+}
+
+async function removeItemFromMarketplaceCompletely(className) {
+    const classNameLower = className.toLowerCase();
+    const marketDir = marketDirPath();
+    const traderZonesDir = traderZonesDirPath();
+
+    const report = {
+        marketFiles: 0,
+        traderZoneFiles: 0,
+        traderFiles: 0
+    };
+
+    // 1. Remove from all Market category files
+    try {
+        const marketFiles = await readdir(marketDir);
+        for (const file of marketFiles) {
+            if (!file.toLowerCase().endsWith('.json')) continue;
+            const filePath = join(marketDir, file);
+            const content = await readFile(filePath, 'utf8');
+            let json;
+            try {
+                json = JSON.parse(content);
+            } catch { continue; }
+
+            if (json && Array.isArray(json.Items)) {
+                let changed = false;
+                const initialLen = json.Items.length;
+                json.Items = json.Items.filter(it => (it.ClassName || '').toLowerCase() !== classNameLower);
+                if (json.Items.length !== initialLen) {
+                    changed = true;
+                }
+
+                // Also remove from Variants and SpawnAttachments of other items
+                for (const item of json.Items) {
+                    if (Array.isArray(item.Variants)) {
+                        const vLen = item.Variants.length;
+                        item.Variants = item.Variants.filter(v => (v || '').toLowerCase() !== classNameLower);
+                        if (item.Variants.length !== vLen) {
+                            changed = true;
+                        }
+                    }
+                    if (Array.isArray(item.SpawnAttachments)) {
+                        const aLen = item.SpawnAttachments.length;
+                        item.SpawnAttachments = item.SpawnAttachments.filter(a => (a || '').toLowerCase() !== classNameLower);
+                        if (item.SpawnAttachments.length !== aLen) {
+                            changed = true;
+                        }
+                    }
+                }
+
+                if (changed) {
+                    await writeFile(filePath, JSON.stringify(json, null, 4) + '\n', 'utf8');
+                    report.marketFiles++;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Error removing from market files:', e);
+    }
+
+    // 2. Remove from all Trader Zone files
+    try {
+        const tzFiles = await readdir(traderZonesDir);
+        for (const file of tzFiles) {
+            if (!file.toLowerCase().endsWith('.json')) continue;
+            const filePath = join(traderZonesDir, file);
+            const content = await readFile(filePath, 'utf8');
+            let json;
+            try {
+                json = JSON.parse(content);
+            } catch { continue; }
+
+            let changed = false;
+            if (json && typeof json === 'object') {
+                // Check top-level
+                for (const key of Object.keys(json)) {
+                    if (key.toLowerCase() === classNameLower) {
+                        delete json[key];
+                        changed = true;
+                    }
+                }
+                // Check "Stock" object (common in Expansion Trader Zones)
+                if (json.Stock && typeof json.Stock === 'object' && !Array.isArray(json.Stock)) {
+                    for (const key of Object.keys(json.Stock)) {
+                        if (key.toLowerCase() === classNameLower) {
+                            delete json.Stock[key];
+                            changed = true;
+                        }
+                    }
+                }
+            }
+
+            if (changed) {
+                await writeFile(filePath, JSON.stringify(json, null, 4) + '\n', 'utf8');
+                report.traderZoneFiles++;
+            }
+        }
+    } catch (e) {
+        console.error('Error removing from trader zone files:', e);
+    }
+
+    // 3. Remove from all Trader profile files
+    try {
+        const traderDir = await traderProfilesDirPath();
+        const traderFiles = await readdir(traderDir);
+        for (const file of traderFiles) {
+            if (!file.toLowerCase().endsWith('.json')) continue;
+            const filePath = join(traderDir, file);
+            const content = await readFile(filePath, 'utf8');
+            let json;
+            try {
+                json = JSON.parse(content);
+            } catch { continue; }
+
+            let changed = false;
+            if (json && typeof json === 'object') {
+                // Check "Items" object (common in Expansion Trader profiles)
+                if (json.Items && typeof json.Items === 'object' && !Array.isArray(json.Items)) {
+                    for (const key of Object.keys(json.Items)) {
+                        if (key.toLowerCase() === classNameLower) {
+                            delete json.Items[key];
+                            changed = true;
+                        }
+                    }
+                }
+            }
+
+            if (changed) {
+                await writeFile(filePath, JSON.stringify(json, null, 4) + '\n', 'utf8');
+                report.traderFiles++;
+            }
+        }
+    } catch (e) {
+        console.error('Error removing from trader files:', e);
+    }
+
+    return report;
 }
 
 // Cache of group -> folder path (relative to DATA_DIR), derived from cfgeconomycore.xml
@@ -753,6 +891,96 @@ function badRequest(res, message) {
     send(res, 400, JSON.stringify({error: message || 'Bad request'}), {'Content-Type': 'application/json'});
 }
 
+/**
+ * Recursively walk a directory and collect files accepted by the predicate.
+ * @param {string} base
+ * @param {(name:string)=>boolean} accept
+ * @returns {Promise<string[]>}
+ */
+async function walkFiles(base, accept) {
+    /** @type {string[]} */
+    const out = [];
+    async function walk(dir) {
+        let entries = [];
+        try {
+            entries = await readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const e of entries) {
+            const p = join(dir, e.name);
+            if (e.isDirectory()) {
+                await walk(p);
+                continue;
+            }
+            if (e.isFile()) {
+                if (accept(e.name)) out.push(p);
+                continue;
+            }
+            // Follow symlinks/junctions: determine target type via stat
+            // This is important on Windows where junctions may appear as reparse points (isSymbolicLink)
+            // and Dirent.isDirectory()/isFile() can both be false.
+            if (typeof e.isSymbolicLink === 'function' && e.isSymbolicLink()) {
+                try {
+                    const s = await stat(p);
+                    // Node's Stat has isDirectory/isFile
+                    if (typeof s.isDirectory === 'function' && s.isDirectory()) {
+                        await walk(p);
+                    } else if (typeof s.isFile === 'function' && s.isFile()) {
+                        if (accept(e.name)) out.push(p);
+                    }
+                } catch {
+                    // Broken link or inaccessible target: skip
+                }
+                continue;
+            }
+        }
+    }
+    await walk(base);
+    return out;
+}
+
+/**
+ * Lint .xml and .json files under DATA_DIR using shared utils in src/utils/lint.js
+ */
+async function lintDataDir() {
+    const { lintText } = await import('../src/utils/lint.js');
+    const files = await walkFiles(DATA_DIR, (name) => /\.(xml|json)$/i.test(name));
+    /** @type {{ path: string, type: 'xml'|'json', error: string }[]} */
+    const failures = [];
+    let okCount = 0;
+    for (const p of files) {
+        let content = '';
+        try {
+            content = await readFile(p, 'utf8');
+        } catch (e) {
+            failures.push({ path: p, type: p.toLowerCase().endsWith('.json') ? 'json' : 'xml', error: 'Failed to read: ' + (e && e.message ? e.message : String(e)) });
+            continue;
+        }
+        const kind = p.toLowerCase().endsWith('.json') ? 'json' : 'xml';
+        const res = lintText(kind, content);
+        if (res.ok) {
+            okCount++;
+        } else {
+            /** @type {{ path: string, type: 'xml'|'json', error: string, line?: number, column?: number }} */
+            const fail = { path: p, type: /** @type {'xml'|'json'} */(kind), error: res.error };
+            if (Number.isFinite(res.line) && Number.isFinite(res.column)) {
+                // @ts-ignore - runtime check above
+                fail.line = res.line;
+                // @ts-ignore - runtime check above
+                fail.column = res.column;
+            }
+            failures.push(fail);
+        }
+    }
+    return {
+        ok: failures.length === 0,
+        dataDir: DATA_DIR,
+        totals: { files: files.length, ok: okCount, failed: failures.length },
+        failures
+    };
+}
+
 // Parse a single-line trader .map entry into structured data
 function parseTraderMapLine(line) {
     const raw = String(line || '').trim();
@@ -1133,6 +1361,35 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // Market remove item from everywhere
+        if (pathname === '/api/market/remove-item-completely') {
+            if (req.method !== 'POST') {
+                methodNotAllowed(res);
+                return;
+            }
+            const body = await readBody(req);
+            let parsed;
+            try {
+                parsed = JSON.parse(body);
+            } catch {
+                badRequest(res, 'Invalid JSON');
+                return;
+            }
+            const { className } = parsed;
+            if (!className) {
+                badRequest(res, 'Missing className');
+                return;
+            }
+
+            try {
+                const results = await removeItemFromMarketplaceCompletely(className);
+                send(res, 200, JSON.stringify({ ok: true, results }), { 'Content-Type': 'application/json' });
+            } catch (e) {
+                send(res, 500, JSON.stringify({ error: 'Failed to remove item', detail: String(e) }), { 'Content-Type': 'application/json' });
+            }
+            return;
+        }
+
         // Traders: list (.map files)
         if (pathname === '/api/traders') {
             if (req.method !== 'GET') {
@@ -1349,6 +1606,21 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             methodNotAllowed(res);
+            return;
+        }
+
+        // Lint files (.xml, .json) under DATA_DIR
+        if (pathname === '/api/lint') {
+            if (req.method !== 'GET') {
+                methodNotAllowed(res);
+                return;
+            }
+            try {
+                const report = await lintDataDir();
+                send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json' });
+            } catch (e) {
+                send(res, 500, JSON.stringify({ error: 'Lint failed', detail: e && e.message ? e.message : String(e) }), { 'Content-Type': 'application/json' });
+            }
             return;
         }
 

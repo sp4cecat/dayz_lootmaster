@@ -452,8 +452,14 @@ export default function TraderEditorModal({ onClose }) {
             )}
           </div>
 
-          {error && <div className="banner warn" style={{ marginTop: 12 }}>{String(error)}</div>}
-          {notice && <div className="banner" style={{ marginTop: 12 }}>{String(notice)}</div>}
+          {error && <div className="banner error" role="alert" style={{ marginTop: 12 }}>{String(error)}</div>}
+          {notice && (
+            <div className="banner" role="status" aria-live="polite" style={{ marginTop: 12 }}>
+              <span>{String(notice)}</span>
+              <div className="spacer" />
+              <button className="link" onClick={() => setNotice(null)} title="Dismiss">Dismiss</button>
+            </div>
+          )}
         </div>
         <div className="modal-footer">
           <button className="btn primary" onClick={onSave} disabled={busy || !selectedTrader || !traderFileName}>

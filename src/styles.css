@@ -365,10 +365,19 @@ h1 {
     align-items: center;
     padding: 8px 16px;
     border-bottom: 1px solid var(--border);
+    background: color-mix(in oklab, var(--bg) 10%, transparent);
+    color: var(--warn);
+    font-weight: 500;
 }
 
 .banner.warn {
     background: color-mix(in oklab, var(--warn) 10%, transparent);
+    color: var(--warn);
+}
+
+.banner.error {
+    background: color-mix(in oklab, var(--error) 10%, transparent);
+    color: var(--error);
 }
 
 .warn-text {
@@ -934,6 +943,14 @@ legend {
     color: var(--error);
     border-radius: 8px;
     background: color-mix(in oklab, var(--error) 10%, transparent);
+}
+
+.table tr:hover td.classname-cell {
+    background-color: var(--bg-soft);
+}
+
+.table tr.selected:hover td.classname-cell {
+    background-color: var(--bg-softer);
 }
 
 .modal-backdrop {
