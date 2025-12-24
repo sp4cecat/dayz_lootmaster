@@ -69,7 +69,7 @@ function tradersDirPath() {
     return join(DATA_DIR, 'expansion', 'traders');
 }
 
-async function traderProfilesDirPath() {
+function traderProfilesDirPath() {
     // Expansion Trader profiles JSON directory
     return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Traders');
 }
@@ -176,7 +176,7 @@ async function removeItemFromMarketplaceCompletely(className) {
 
     // 3. Remove from all Trader profile files
     try {
-        const traderDir = await traderProfilesDirPath();
+        const traderDir = traderProfilesDirPath();
         const traderFiles = await readdir(traderDir);
         for (const file of traderFiles) {
             if (!file.toLowerCase().endsWith('.json')) continue;
