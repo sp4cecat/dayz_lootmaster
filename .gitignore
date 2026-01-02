@@ -27,3 +27,4 @@ dist-ssr
 /public/samples/cfglimitsdefinition.xml
 !/public/samples/db/types.xml
 /data/*
+/data/profiles
