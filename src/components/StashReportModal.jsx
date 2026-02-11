@@ -4,7 +4,7 @@ import 'react-datetime-picker/dist/DateTimePicker.css';
 import 'react-calendar/dist/Calendar.css';
 import 'react-clock/dist/Clock.css';
 
-export default function StashReportModal({ onClose }) {
+export default function StashReportModal({ onClose, selectedProfileId }) {
   const [start, setStart] = useState(/** @type {Date|null} */(null));
   const [end, setEnd] = useState(/** @type {Date|null} */(null));
   const [busy, setBusy] = useState(false);
@@ -28,7 +28,10 @@ export default function StashReportModal({ onClose }) {
 
       const res = await fetch(`${API_BASE}/api/logs/stash-report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Profile-ID': selectedProfileId
+        },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {

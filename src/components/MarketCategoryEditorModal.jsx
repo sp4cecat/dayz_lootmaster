@@ -40,7 +40,7 @@ function dedupeItemsByClassName(list) {
   return out;
 }
 
-export default function MarketCategoryEditorModal({ onClose }) {
+export default function MarketCategoryEditorModal({ onClose, selectedProfileId }) {
   const API_BASE = useApiBase();
   const editorID = useEditorID();
 
@@ -77,7 +77,9 @@ export default function MarketCategoryEditorModal({ onClose }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/market/categories`);
+        const res = await fetch(`${API_BASE}/api/market/categories`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         const json = await res.json().catch(() => ({ categories: [] }));
         const names = Array.isArray(json.categories) ? json.categories : [];
         setCategoryNames(names);
@@ -86,7 +88,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
         setError(String(e));
       }
     })();
-  }, [API_BASE]);
+  }, [API_BASE, selectedProfileId]);
 
   // Load selected category JSON
   useEffect(() => {
@@ -100,7 +102,9 @@ export default function MarketCategoryEditorModal({ onClose }) {
         setBusy(true);
         setError(null);
         setNotice(null);
-        const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`);
+        const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (!res.ok) throw new Error(`Failed to load category ${selectedCategory}`);
         const json = await res.json();
         setCategoryJson(json);
@@ -178,6 +182,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
         headers: {
           'Content-Type': 'application/json',
           'X-Editor-ID': editorID || 'unknown',
+          'X-Profile-ID': selectedProfileId
         },
         body: JSON.stringify(payload)
       });
@@ -187,7 +192,9 @@ export default function MarketCategoryEditorModal({ onClose }) {
       }
       // Reload to reflect server-side formatting
       try {
-        const r = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`);
+        const r = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (r.ok) {
           const j = await r.json();
           setCategoryJson(j);
@@ -268,6 +275,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
         headers: {
           'Content-Type': 'application/json',
           'X-Editor-ID': editorID || 'unknown',
+          'X-Profile-ID': selectedProfileId
         },
         body: JSON.stringify({ className })
       });
@@ -343,6 +351,7 @@ export default function MarketCategoryEditorModal({ onClose }) {
         headers: {
           'Content-Type': 'application/json',
           'X-Editor-ID': editorID || 'unknown',
+          'X-Profile-ID': selectedProfileId
         },
         body: JSON.stringify(payload)
       });
@@ -353,7 +362,9 @@ export default function MarketCategoryEditorModal({ onClose }) {
       setNotice(removed > 0 ? `Category saved. Removed ${removed} duplicate item${removed === 1 ? '' : 's'}.` : 'Category saved.');
       // Optionally reload to reflect server formatting
       try {
-        const r = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`);
+        const r = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (r.ok) {
           const j = await r.json();
           setCategoryJson(j);

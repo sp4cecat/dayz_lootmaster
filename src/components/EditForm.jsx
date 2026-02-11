@@ -16,10 +16,11 @@ import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
  *  onCancel: () => void,
  *  onSave: (apply: (t: Type) => Type) => void,
  *  typeOptions?: string[],
- *  typeOptionsByCategory?: Record<string, string[]>
+ *  typeOptionsByCategory?: Record<string, string[]>,
+ *  selectedProfileId: string
  * }} props
  */
-export default function EditForm({ definitions, selectedTypes, onCancel, onSave, typeOptions = [], typeOptionsByCategory = {} }) {
+export default function EditForm({ definitions, selectedTypes, onCancel, onSave, typeOptions = [], typeOptionsByCategory = {}, selectedProfileId }) {
   const [activeTab, setActiveTab] = useState('CLE');
   const [marketTabOpened, setMarketTabOpened] = useState(false);
   const [canSaveCLE, setCanSaveCLE] = useState(false);
@@ -63,6 +64,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
             typeOptions={typeOptions}
             typeOptionsByCategory={typeOptionsByCategory}
             activated={marketTabOpened}
+            selectedProfileId={selectedProfileId}
           />
         </div>
       )}

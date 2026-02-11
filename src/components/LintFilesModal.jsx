@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function LintFilesModal({ onClose }) {
+export default function LintFilesModal({ onClose, selectedProfileId }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [report, setReport] = useState(/** @type {null|{ ok:boolean, dataDir:string, totals:{files:number,ok:number,failed:number}, failures:{path:string,type:'xml'|'json',error:string}[] }} */(null));
@@ -15,7 +15,10 @@ export default function LintFilesModal({ onClose }) {
       const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
       const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 
-      const res = await fetch(`${API_BASE}/api/lint`, { method: 'GET' });
+      const res = await fetch(`${API_BASE}/api/lint`, { 
+        method: 'GET',
+        headers: { 'X-Profile-ID': selectedProfileId }
+      });
       if (!res.ok) {
         const msg = await res.text().catch(() => '');
         throw new Error(`Lint failed (${res.status}) ${msg}`);

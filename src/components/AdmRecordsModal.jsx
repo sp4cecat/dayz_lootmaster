@@ -5,7 +5,7 @@ import 'react-calendar/dist/Calendar.css';
 import 'react-clock/dist/Clock.css';
 import moment from 'moment';
 
-export default function AdmRecordsModal({ onClose }) {
+export default function AdmRecordsModal({ onClose, selectedProfileId }) {
   const [start, setStart] = useState(/** @type {Date|null} */(null));
   const [end, setEnd] = useState(/** @type {Date|null} */(null));
   const [busy, setBusy] = useState(false);
@@ -18,9 +18,9 @@ export default function AdmRecordsModal({ onClose }) {
   const [playersInRadiusOnly, setPlayersInRadiusOnly] = useState(false);
 
   // Refine records further (players) UI
-  const [players, setPlayers] = useState(/** @type {{id: string, aliases: string[]}[] */([]));
-  const [selectedIds, setSelectedIds] = useState(/** @type {Set<string>} */(new Set()));
-  const [lastText, setLastText] = useState(/** @type {string} */(''));
+  const [players, setPlayers] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [lastText, setLastText] = useState('');
 
   // Enable the checkbox only if all three numeric values are set and > 0
   const canRadiusFilter = (() => {
@@ -208,7 +208,10 @@ export default function AdmRecordsModal({ onClose }) {
 
       const res = await fetch(`${API_BASE}/api/logs/adm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Profile-ID': selectedProfileId
+        },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {

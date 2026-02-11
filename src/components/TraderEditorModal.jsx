@@ -89,7 +89,7 @@ function serializeCategories(list) {
   return list.map(({ name, flag }) => `${name}:${Number(flag) | 0}`);
 }
 
-export default function TraderEditorModal({ onClose }) {
+export default function TraderEditorModal({ onClose, selectedProfileId }) {
   const API_BASE = useApiBase();
   const editorID = useEditorID();
 
@@ -117,9 +117,9 @@ export default function TraderEditorModal({ onClose }) {
     (async () => {
       try {
         const [tRes, pRes, mRes] = await Promise.all([
-          fetch(`${API_BASE}/api/traders`),
-          fetch(`${API_BASE}/api/trader-profiles`),
-          fetch(`${API_BASE}/api/market/categories`),
+          fetch(`${API_BASE}/api/traders`, { headers: { 'X-Profile-ID': selectedProfileId } }),
+          fetch(`${API_BASE}/api/trader-profiles`, { headers: { 'X-Profile-ID': selectedProfileId } }),
+          fetch(`${API_BASE}/api/market/categories`, { headers: { 'X-Profile-ID': selectedProfileId } }),
         ]);
         const tJson = await tRes.json().catch(() => ({ traders: [] }));
         const pJson = await pRes.json().catch(() => ({ profiles: [] }));
@@ -134,7 +134,7 @@ export default function TraderEditorModal({ onClose }) {
         setError(String(e));
       }
     })();
-  }, [API_BASE]);
+  }, [API_BASE, selectedProfileId]);
 
   // Load selected trader
   useEffect(() => {
@@ -143,7 +143,9 @@ export default function TraderEditorModal({ onClose }) {
       setBusy(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/traders/${encodeURIComponent(selectedTrader)}`);
+        const res = await fetch(`${API_BASE}/api/traders/${encodeURIComponent(selectedTrader)}`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (!res.ok) throw new Error(`Failed to load trader ${selectedTrader}`);
         const json = await res.json();
         setClassName(json.className || ENTITY_CLASSES[0]);
@@ -170,7 +172,9 @@ export default function TraderEditorModal({ onClose }) {
       setBusy(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/trader-profile/${encodeURIComponent(traderFileName)}`);
+        const res = await fetch(`${API_BASE}/api/trader-profile/${encodeURIComponent(traderFileName)}`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (!res.ok) throw new Error(`Failed to load profile ${traderFileName}`);
         const json = await res.json();
         setProfileJson(json);
@@ -213,6 +217,7 @@ export default function TraderEditorModal({ onClose }) {
         headers: {
           'Content-Type': 'application/json',
           'X-Editor-ID': editorID || 'unknown',
+          'X-Profile-ID': selectedProfileId
         },
         body: JSON.stringify(payloadMap),
       });
@@ -229,6 +234,7 @@ export default function TraderEditorModal({ onClose }) {
           headers: {
             'Content-Type': 'application/json',
             'X-Editor-ID': editorID || 'unknown',
+            'X-Profile-ID': selectedProfileId
           },
           body: JSON.stringify(updated),
         });

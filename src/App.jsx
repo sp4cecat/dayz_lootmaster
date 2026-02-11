@@ -1,4 +1,4 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useMemo, useRef, useState, useEffect} from 'react';
 import {useLootData} from './hooks/useLootData.js';
 import Filters from './components/Filters.jsx';
 import TypesTable from './components/TypesTable.jsx';
@@ -15,6 +15,7 @@ import StashReportModal from './components/StashReportModal.jsx';
 import TraderEditorModal from './components/TraderEditorModal.jsx';
 import LintFilesModal from './components/LintFilesModal.jsx';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.jsx';
+import ProfileManager from './components/ProfileManager.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -56,7 +57,13 @@ export default function App() {
         reloadFromFiles,
         getBaselineFileTypes,
         refreshBaselineFromAPI,
-        loadWarnings
+        loadWarnings,
+        // Profiles
+        profiles,
+        selectedProfileId,
+        setSelectedProfileId,
+        selectedProfile,
+        getApiBase
     } = useLootData();
 
     // Options for pill-based editors in EditForm
@@ -105,6 +112,13 @@ export default function App() {
     const [showTraderEditor, setShowTraderEditor] = useState(false);
     const [showMarketCategories, setShowMarketCategories] = useState(false);
     const [showLint, setShowLint] = useState(false);
+    const [showProfileManager, setShowProfileManager] = useState(false);
+
+    useEffect(() => {
+        if (!loading && !selectedProfileId) {
+            setShowProfileManager(true);
+        }
+    }, [loading, selectedProfileId]);
 
     // Persist-to-files UI state
     const [saving, setSaving] = useState(false);
@@ -128,7 +142,8 @@ export default function App() {
                 method: 'PUT',
                 headers: {
                   'Content-Type': 'application/xml',
-                  'X-Editor-ID': editorID || 'unknown'
+                  'X-Editor-ID': editorID || 'unknown',
+                  'X-Profile-ID': selectedProfileId
                 },
                 body: defsXml
             });
@@ -138,7 +153,7 @@ export default function App() {
 
             // Save all group type files (skip vanilla base file entirely)
             for (const g of groups) {
-              if (g === 'vanilla') continue; // do not persist ./data/db/types.xml
+              if (g === 'vanilla') continue; // do not persist mission_path/db/types.xml
               const files = getGroupFiles(g);
               for (const { file, types } of files) {
                 // Preservation fix for overrides: when persisting vanilla_overrides/types,
@@ -163,7 +178,8 @@ export default function App() {
                   method: 'PUT',
                   headers: {
                     'Content-Type': 'application/xml',
-                    'X-Editor-ID': editorID || 'unknown'
+                    'X-Editor-ID': editorID || 'unknown',
+                    'X-Profile-ID': selectedProfileId
                   },
                   body: xml
                 });
@@ -455,22 +471,93 @@ export default function App() {
         return <EditorLogin existingIDs={editorIDs} onSelect={selectEditorID}/>;
     }
 
-    if (loading) {
+    const mainContent = (() => {
+        if (loading) {
+            return (
+                <div className="app app-center">
+                    <div className="spinner" aria-label="Loading"/>
+                    <div>Loading configuration...</div>
+                </div>
+            );
+        }
+        if (error) {
+            return (
+                <div className="app app-center error">
+                    <div style={{marginBottom: 16}}>Failed to load: {String(error)}</div>
+                    <button className="btn" onClick={() => setShowProfileManager(true)}>
+                        Switch Server Installation
+                    </button>
+                </div>
+            );
+        }
+        if (!definitions || !lootTypes) {
+            return (
+                <div className="app app-center">
+                    <div>Please select a server installation to begin.</div>
+                    <button className="btn primary" style={{marginTop: 12}} onClick={() => setShowProfileManager(true)}>
+                        Select Server
+                    </button>
+                </div>
+            );
+        }
+
         return (
-            <div className="app app-center">
-                <div className="spinner" aria-label="Loading"/>
-                <div>Loading configuration...</div>
-            </div>
+            <main className="content two-pane">
+                <aside className="left-pane" style={{width: `${leftWidth}px`}}>
+                    <Filters
+                        definitions={definitions}
+                        groups={groups}
+                        filters={filters}
+                        onChange={setFilters}
+                        onManage={(kind) => {
+                            setManageKind(kind);
+                            setManageOpen(true);
+                        }}
+                        matchingCount={filteredTypes.length}
+                        flagOptions={flagOptions}
+                    />
+                </aside>
+                <div
+                    className="pane-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-valuemin={300}
+                    aria-valuemax={600}
+                    aria-valuenow={leftWidth}
+                    onMouseDown={onResizeStart}
+                    title="Drag to resize filters panel"
+                />
+                <section className="right-pane">
+                    <div className={`table-and-form ${selectedTypes.length > 0 ? 'has-form' : ''}`}>
+                        <TypesTable
+                            definitions={definitions}
+                            types={filteredTypes}
+                            selection={selection}
+                            setSelection={setSelection}
+                            unknowns={unknowns}
+                            condensed={selectedTypes.length > 0}
+                            duplicatesByName={duplicatesByName}
+                            storageDiff={storageDiff}
+                            showGroupColumn={showGroupColumn}
+                        />
+                        {selectedTypes.length > 0 && (
+                            <div className="edit-form-container" key={editKey}>
+                                <EditForm
+                                    definitions={definitions}
+                                    selectedTypes={selectedTypes}
+                                    onCancel={onCancelEdit}
+                                    onSave={onSaveEdit}
+                                    typeOptions={allTypeNames}
+                                    typeOptionsByCategory={typeNamesByCategory}
+                                    selectedProfileId={selectedProfileId}
+                                />
+                            </div>
+                        )}
+                    </div>
+                </section>
+            </main>
         );
-    }
-    if (error) {
-        return (
-            <div className="app app-center error">
-                <div>Failed to load: {String(error)}</div>
-            </div>
-        );
-    }
-    if (!definitions || !lootTypes) return null;
+    })();
 
     return (
         <div className="app">
@@ -619,6 +706,19 @@ export default function App() {
                     </div>
 
                     <ThemeToggle/>
+                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block', marginRight: 8 }}>
+                        <button
+                            className="btn"
+                            onClick={() => setShowProfileManager(true)}
+                            title="Switch DayZ Server Installation"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 6}}>
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                            </svg>
+                            {selectedProfile ? selectedProfile.name : 'Select Server'}
+                        </button>
+                    </div>
                     <div className="profile" ref={profileRef}>
                         <button
                             className="btn profile-btn"
@@ -678,59 +778,7 @@ export default function App() {
                 </div>
             )}
 
-            <main className="content two-pane">
-                <aside className="left-pane" style={{width: `${leftWidth}px`}}>
-                    <Filters
-                        definitions={definitions}
-                        groups={groups}
-                        filters={filters}
-                        onChange={setFilters}
-                        onManage={(kind) => {
-                            setManageKind(kind);
-                            setManageOpen(true);
-                        }}
-                        matchingCount={filteredTypes.length}
-                        flagOptions={flagOptions}
-                    />
-                </aside>
-                <div
-                    className="pane-resizer"
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-valuemin={300}
-                    aria-valuemax={600}
-                    aria-valuenow={leftWidth}
-                    onMouseDown={onResizeStart}
-                    title="Drag to resize filters panel"
-                />
-                <section className="right-pane">
-                    <div className={`table-and-form ${selectedTypes.length > 0 ? 'has-form' : ''}`}>
-                        <TypesTable
-                            definitions={definitions}
-                            types={filteredTypes}
-                            selection={selection}
-                            setSelection={setSelection}
-                            unknowns={unknowns}
-                            condensed={selectedTypes.length > 0}
-                            duplicatesByName={duplicatesByName}
-                            storageDiff={storageDiff}
-                            showGroupColumn={showGroupColumn}
-                        />
-                        {selectedTypes.length > 0 && (
-                            <div className="edit-form-container" key={editKey}>
-                                <EditForm
-                                    definitions={definitions}
-                                    selectedTypes={selectedTypes}
-                                    onCancel={onCancelEdit}
-                                    onSave={onSaveEdit}
-                                    typeOptions={allTypeNames}
-                                    typeOptionsByCategory={typeNamesByCategory}
-                                />
-                            </div>
-                        )}
-                    </div>
-                </section>
-            </main>
+            {mainContent}
 
             {showExport && (
                 <ExportModal
@@ -777,19 +825,31 @@ export default function App() {
                 <StorageStatusModal diff={storageDiff} onClose={() => setShowStorage(false)}/>
             )}
             {showAdm && (
-              <AdmRecordsModal onClose={() => setShowAdm(false)} />
+              <AdmRecordsModal onClose={() => setShowAdm(false)} selectedProfileId={selectedProfileId} />
             )}
             {showStash && (
-              <StashReportModal onClose={() => setShowStash(false)} />
+              <StashReportModal onClose={() => setShowStash(false)} selectedProfileId={selectedProfileId} />
             )}
             {showLint && (
-              <LintFilesModal onClose={() => setShowLint(false)} />
+              <LintFilesModal onClose={() => setShowLint(false)} selectedProfileId={selectedProfileId} />
             )}
             {showTraderEditor && (
-              <TraderEditorModal onClose={() => setShowTraderEditor(false)} />
+              <TraderEditorModal onClose={() => setShowTraderEditor(false)} selectedProfileId={selectedProfileId} />
             )}
             {showMarketCategories && (
-              <MarketCategoryEditorModal onClose={() => setShowMarketCategories(false)} />
+              <MarketCategoryEditorModal onClose={() => setShowMarketCategories(false)} selectedProfileId={selectedProfileId} />
+            )}
+            {showProfileManager && (
+                <ProfileManager
+                    profiles={profiles}
+                    selectedProfileId={selectedProfileId}
+                    onSelect={(id) => {
+                        setSelectedProfileId(id);
+                        setShowProfileManager(false);
+                    }}
+                    onClose={() => setShowProfileManager(false)}
+                    getApiBase={getApiBase}
+                />
             )}
         </div>
     );

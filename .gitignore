@@ -28,3 +28,4 @@ dist-ssr
 !/public/samples/db/types.xml
 /data/*
 /data/profiles
+/example dayz server directory/

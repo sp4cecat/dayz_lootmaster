@@ -11,9 +11,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
  *   typeOptions?: string[],
  *   typeOptionsByCategory?: Record<string, string[]>,
  *   activated?: boolean,
+ *   selectedProfileId: string
  * }} props
  */
-export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = [], typeOptionsByCategory = {}, activated = false }) {
+export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = [], typeOptionsByCategory = {}, activated = false, selectedProfileId }) {
   // ---------------- Expansion Market categories integration ----------------
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketSaving, setMarketSaving] = useState(false);
@@ -62,14 +63,18 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       setMarketError('');
       try {
         const API = getApiBase();
-        const r = await fetch(`${API}/api/market/categories`);
+        const r = await fetch(`${API}/api/market/categories`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (!r.ok) throw new Error(`Failed to list categories (${r.status})`);
         const list = await r.json();
         const names = Array.isArray(list.categories) ? list.categories : [];
         // Fetch all JSONs
         const entries = await Promise.all(names.map(async (name) => {
           try {
-            const rr = await fetch(`${API}/api/market/category/${encodeURIComponent(name)}`);
+            const rr = await fetch(`${API}/api/market/category/${encodeURIComponent(name)}`, {
+              headers: { 'X-Profile-ID': selectedProfileId }
+            });
             if (!rr.ok) throw new Error('bad');
             const json = await rr.json();
             return [name, json];
@@ -98,7 +103,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     load();
     return () => { aborted = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activated]);
+  }, [activated, selectedProfileId]);
 
   // Recompute preselected categories when selection changes (no refetch)
   useEffect(() => {
@@ -122,13 +127,17 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       setTzError('');
       try {
         const API = getApiBase();
-        const r = await fetch(`${API}/api/traderzones`);
+        const r = await fetch(`${API}/api/traderzones`, {
+          headers: { 'X-Profile-ID': selectedProfileId }
+        });
         if (!r.ok) throw new Error(`Failed to list trader zones (${r.status})`);
         const list = await r.json();
         const names = Array.isArray(list.zones) ? list.zones : [];
         const entries = await Promise.all(names.map(async (name) => {
           try {
-            const rr = await fetch(`${API}/api/traderzones/${encodeURIComponent(name)}`);
+            const rr = await fetch(`${API}/api/traderzones/${encodeURIComponent(name)}`, {
+              headers: { 'X-Profile-ID': selectedProfileId }
+            });
             if (!rr.ok) throw new Error('bad');
             const json = await rr.json();
             return [name, json];
@@ -149,7 +158,7 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
     loadZones();
     return () => { aborted = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activated]);
+  }, [activated, selectedProfileId]);
 
   const uncategorizedCount = useMemo(() => {
     const files = marketFiles;
@@ -334,7 +343,12 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       for (const cat of changed) {
         const body = JSON.stringify(marketFiles[cat] || { Items: [] });
         const res = await fetch(`${API}/api/market/category/${encodeURIComponent(cat)}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Profile-ID': selectedProfileId
+          },
+          body
         });
         if (!res.ok) throw new Error(`Failed to write category ${cat} (${res.status})`);
       }
@@ -401,7 +415,12 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       for (const cat of changed) {
         const body = JSON.stringify(marketFiles[cat]);
         const res = await fetch(`${API}/api/market/category/${encodeURIComponent(cat)}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Profile-ID': selectedProfileId
+          },
+          body
         });
         if (!res.ok) throw new Error(`Failed to write category ${cat} (${res.status})`);
       }
@@ -463,7 +482,12 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
       for (const zone of changed) {
         const body = JSON.stringify(traderZoneFiles[zone] || {});
         const res = await fetch(`${API}/api/traderzones/${encodeURIComponent(zone)}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Profile-ID': selectedProfileId
+          },
+          body
         });
         if (!res.ok) throw new Error(`Failed to write trader zone ${zone} (${res.status})`);
       }

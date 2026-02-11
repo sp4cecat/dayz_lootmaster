@@ -17,6 +17,7 @@ import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve} from 'node:path';
 import {mkdir, readFile, writeFile, stat, appendFile, readdir} from 'node:fs/promises';
+import crypto from 'node:crypto';
 import moment from 'moment';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,14 +25,32 @@ const __dirname = dirname(__filename);
 
 // eslint-disable-next-line no-undef
 const PORT = Number(process.env.PORT || 4317);
-// eslint-disable-next-line no-undef
-const DATA_DIR = resolve(process.env.DATA_DIR || join(__dirname, '..', 'data'));
+
+const PROFILES_FILE = resolve(join(__dirname, 'profiles.json'));
+let profiles = [];
+
+async function loadProfiles() {
+    try {
+        const data = await readFile(PROFILES_FILE, 'utf8');
+        profiles = JSON.parse(data);
+    } catch {
+        profiles = [];
+        await saveProfiles();
+    }
+}
+
+async function saveProfiles() {
+    await writeFile(PROFILES_FILE, JSON.stringify(profiles, null, 2), 'utf8');
+}
+
+// Ensure profiles are loaded on start
+await loadProfiles();
 
 function corsHeaders() {
     return {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Editor-ID',
+        'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS,DELETE',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Editor-ID, X-Profile-ID',
     };
 }
 
@@ -45,39 +64,30 @@ function isSafeName(s) {
     return typeof s === 'string' && /^[A-Za-z0-9._-]+$/.test(s);
 }
 
-function defsPath() {
-    return join(DATA_DIR, 'cfglimitsdefinition.xml');
+function getPaths(profile) {
+    if (!profile) return null;
+    const { serverPath, missionName } = profile;
+    const missionPath = join(serverPath, 'mpmissions', missionName);
+    const profilesPath = join(serverPath, 'profiles');
+
+    return {
+        defsPath: join(missionPath, 'cfglimitsdefinition.xml'),
+        economyCorePath: join(missionPath, 'cfgeconomycore.xml'),
+        marketDirPath: join(profilesPath, 'ExpansionMod', 'Market'),
+        traderZonesDirPath: join(missionPath, 'expansion', 'traderzones'),
+        tradersDirPath: join(missionPath, 'expansion', 'traders'),
+        traderProfilesDirPath: join(profilesPath, 'ExpansionMod', 'Traders'),
+        dbDirPath: join(missionPath, 'db'),
+        logsDirPath: join(serverPath, 'logs'),
+        missionPath,
+        profilesPath
+    };
 }
 
-function economyCorePath() {
-    // Explicitly use ./data/cfgeconomycore.xml
-    return join(DATA_DIR, 'cfgeconomycore.xml');
-}
-
-function marketDirPath() {
-    // Expansion Market categories directory
-    return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Market');
-}
-
-function traderZonesDirPath() {
-    // Expansion Trader Zones directory (per user spec)
-    return join(DATA_DIR, 'expansion', 'traderzones');
-}
-
-function tradersDirPath() {
-    // Expansion Traders (.map files) directory
-    return join(DATA_DIR, 'expansion', 'traders');
-}
-
-function traderProfilesDirPath() {
-    // Expansion Trader profiles JSON directory
-    return join(DATA_DIR, 'profiles', 'ExpansionMod', 'Traders');
-}
-
-async function removeItemFromMarketplaceCompletely(className) {
+async function removeItemFromMarketplaceCompletely(className, paths) {
     const classNameLower = className.toLowerCase();
-    const marketDir = marketDirPath();
-    const traderZonesDir = traderZonesDirPath();
+    const marketDir = paths.marketDirPath;
+    const traderZonesDir = paths.traderZonesDirPath;
 
     const report = {
         marketFiles: 0,
@@ -176,7 +186,7 @@ async function removeItemFromMarketplaceCompletely(className) {
 
     // 3. Remove from all Trader profile files
     try {
-        const traderDir = traderProfilesDirPath();
+        const traderDir = paths.traderProfilesDirPath;
         const traderFiles = await readdir(traderDir);
         for (const file of traderFiles) {
             if (!file.toLowerCase().endsWith('.json')) continue;
@@ -212,39 +222,30 @@ async function removeItemFromMarketplaceCompletely(className) {
     return report;
 }
 
-// Cache of group -> folder path (relative to DATA_DIR), derived from cfgeconomycore.xml
-/** @type {Record<string, string>|null} */
-let groupFolderCache = null;
-// Cache of group -> declared type file names (from cfgeconomycore.xml)
-/** @type {Record<string, string[]>|null} */
-let groupFilesCache = null;
+const groupFolderCaches = new Map();
+const groupFilesCaches = new Map();
 
-/**
- * Load and cache group -> folder mapping by reading cfgeconomycore.xml.
- * The "group" is the last path segment of the folder attribute.
- * Example: <ce folder="db/types/spacecat_colours"> => group "spacecat_colours"
- */
-async function getGroupFolderMap() {
-    if (groupFolderCache) return groupFolderCache;
-    await loadEconomyCoreCaches();
-    return groupFolderCache || {};
+async function getGroupFolderMap(profile, paths) {
+    let cache = groupFolderCaches.get(profile.id);
+    if (cache) return cache;
+    await loadEconomyCoreCaches(profile, paths);
+    return groupFolderCaches.get(profile.id) || {};
 }
 
-/**
- * Load and cache group -> declared type file names mapping.
- * Only <file type="types"> entries are considered.
- */
-async function getGroupFilesMap() {
-    if (groupFilesCache) return groupFilesCache;
-    await loadEconomyCoreCaches();
-    return groupFilesCache || {};
+async function getGroupFilesMap(profile, paths) {
+    let cache = groupFilesCaches.get(profile.id);
+    if (cache) return cache;
+    await loadEconomyCoreCaches(profile, paths);
+    return groupFilesCaches.get(profile.id) || {};
 }
 
-async function loadEconomyCoreCaches() {
-    groupFolderCache = {};
-    groupFilesCache = {};
+async function loadEconomyCoreCaches(profile, paths) {
+    const folderCache = {};
+    const filesCache = {};
+    groupFolderCaches.set(profile.id, folderCache);
+    groupFilesCaches.set(profile.id, filesCache);
     try {
-        const xml = await readFile(economyCorePath(), 'utf8');
+        const xml = await readFile(paths.economyCorePath, 'utf8');
         // Match each <ce folder="...">...</ce>
         const ceRe = /<ce\b[^>]*\bfolder="([^"]+)"[^>]*>([\s\S]*?)<\/ce>/gi;
         let ceMatch;
@@ -255,7 +256,7 @@ async function loadEconomyCoreCaches() {
             const parts = folder.split('/').filter(Boolean);
             const group = parts[parts.length - 1];
             if (!group) continue;
-            if (!groupFolderCache[group]) groupFolderCache[group] = folder;
+            if (!folderCache[group]) folderCache[group] = folder;
             const content = ceMatch[2] || '';
             // Collect <file name="..." type="types"/>
             const fileRe = /<file\b[^>]*\bname="([^"]+)"[^>]*\btype="([^"]+)"[^>]*\/?>/gi;
@@ -266,64 +267,44 @@ async function loadEconomyCoreCaches() {
                 const type = (fMatch[2] || '').trim().toLowerCase();
                 if (name && type === 'types') files.push(name);
             }
-            if (files.length) groupFilesCache[group] = files;
+            if (files.length) filesCache[group] = files;
         }
     } catch {
         // leave caches as empty objects if read fails
     }
 }
 
-// Test existence helper
-/**
- * Strictly resolve a group's declared folder relative path from cfgeconomycore.xml.
- * Returns null if not declared (non-vanilla).
- */
-async function getDeclaredGroupFolder(group) {
-    const map = await getGroupFolderMap();
+async function getDeclaredGroupFolder(profile, paths, group) {
+    const map = await getGroupFolderMap(profile, paths);
     return map[group] || null;
 }
 
-/**
- * Strictly resolve the declared file name (with extension) for a group by requested base name.
- * Case-insensitive match against declared file names' basenames.
- * Returns null if not declared.
- */
-async function getDeclaredFileName(group, fileBase) {
-    const filesMap = await getGroupFilesMap();
+async function getDeclaredFileName(profile, paths, group, fileBase) {
+    const filesMap = await getGroupFilesMap(profile, paths);
     const declared = filesMap[group] || [];
     const match = declared.find(n => n.replace(/\.xml$/i, '').toLowerCase() === String(fileBase).toLowerCase());
     return match || null;
 }
 
-/**
- * Compute the on-disk path for a types file for a given group and file base (strict to declarations).
- * Vanilla is special-cased to DATA_DIR/db/types.xml.
- * Returns null for undeclared non-vanilla groups or files.
- */
-async function declaredTypesFilePath(group, fileBase) {
-
+async function declaredTypesFilePath(profile, paths, group, fileBase) {
     if (group === 'vanilla') {
-        return join(DATA_DIR, 'db', 'types.xml');
+        return join(paths.dbDirPath, 'types.xml');
     }
-    // Allow saving to vanilla_overrides even if not declared; create folder on write
     if (group === 'vanilla_overrides') {
-        return join(DATA_DIR, 'db', 'vanilla_overrides', `${fileBase}.xml`);
+        return join(paths.dbDirPath, 'vanilla_overrides', `${fileBase}.xml`);
     }
-    const folder = await getDeclaredGroupFolder(group);
+    const folder = await getDeclaredGroupFolder(profile, paths, group);
     if (!folder) return null;
-    const declaredName = await getDeclaredFileName(group, fileBase);
+    const declaredName = await getDeclaredFileName(profile, paths, group, fileBase);
     if (!declaredName) return null;
-    return join(DATA_DIR, folder, declaredName);
+    return join(paths.missionPath, folder, declaredName);
 }
 
-/**
- * Compute the on-disk directory for a group's files (for changes.txt), strictly via declarations.
- */
-async function declaredGroupDir(group) {
-    if (group === 'vanilla') return join(DATA_DIR, 'db');
-    if (group === 'vanilla_overrides') return join(DATA_DIR, 'db', 'vanilla_overrides');
-    const folder = await getDeclaredGroupFolder(group);
-    return folder ? join(DATA_DIR, folder) : null;
+async function declaredGroupDir(profile, paths, group) {
+    if (group === 'vanilla') return paths.dbDirPath;
+    if (group === 'vanilla_overrides') return join(paths.dbDirPath, 'vanilla_overrides');
+    const folder = await getDeclaredGroupFolder(profile, paths, group);
+    return folder ? join(paths.missionPath, folder) : null;
 }
 
 /**
@@ -485,8 +466,8 @@ function diffTypeFields(a = {}, b = {}) {
 // - Parse {<x, y, z>} at end of line and use (x, z)
 // - For each "Dug out", scan backward to find the nearest prior "Dug in" within ±1 on x and z
 //   If player ids match => dugUpOwn, otherwise dugUpOthers (ignore if no prior dug-in match)
-async function generateStashReport(start, end) {
-    const root = join(DATA_DIR, 'logs');
+async function generateStashReport(start, end, paths) {
+    const root = paths.logsDirPath;
     const files = await listAdmFiles(root);
 
     // Load buckets sorted by file start datetime (inferred from filename)
@@ -722,8 +703,8 @@ function tryParseLineId(line) {
     return m ? m[1] : null;
 }
 
-async function collectAdmRecordsInRange(start, end, posFilter, idSet) {
-    const root = join(DATA_DIR, 'logs');
+async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
+    const root = paths.logsDirPath;
     const files = await listAdmFiles(root);
 
     // Read all files and capture their start datetime (from filename) and lines
@@ -812,14 +793,14 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet) {
 }
 
 /**
- * Build a minimal economycore XML by scanning DATA_DIR/db and DATA_DIR/db/types.
+ * Build a minimal economycore XML by scanning missionPath/db and missionPath/db/types.
  */
-async function synthesizeEconomyCoreXml() {
+async function synthesizeEconomyCoreXml(paths) {
     const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>', '<economycore>', '\t<classes></classes>', '\t<defaults></defaults>'];
 
     // Helper to list group directories and XML files
     async function listGroupsAt(relBase) {
-        const absBase = join(DATA_DIR, relBase);
+        const absBase = join(paths.missionPath, relBase);
         let entries = [];
         try {
             entries = await (await import('node:fs/promises')).readdir(absBase, {withFileTypes: true});
@@ -941,11 +922,11 @@ async function walkFiles(base, accept) {
 }
 
 /**
- * Lint .xml and .json files under DATA_DIR using shared utils in src/utils/lint.js
+ * Lint .xml and .json files under a directory using shared utils in src/utils/lint.js
  */
-async function lintDataDir() {
+async function lintDataDir(root) {
     const { lintText } = await import('../src/utils/lint.js');
-    const files = await walkFiles(DATA_DIR, (name) => /\.(xml|json)$/i.test(name));
+    const files = await walkFiles(root, (name) => /\.(xml|json)$/i.test(name));
     /** @type {{ path: string, type: 'xml'|'json', error: string }[]} */
     const failures = [];
     let okCount = 0;
@@ -975,7 +956,7 @@ async function lintDataDir() {
     }
     return {
         ok: failures.length === 0,
-        dataDir: DATA_DIR,
+        dataDir: root,
         totals: { files: files.length, ok: okCount, failed: failures.length },
         failures
     };
@@ -1030,11 +1011,123 @@ const server = http.createServer(async (req, res) => {
         const url = new URL(req.url || '/', `http://${req.headers.host}`);
         const {pathname} = url;
 
+        // Profile Management
+        if (pathname === '/api/profiles' || pathname === '/api/profiles/') {
+            if (req.method === 'GET') {
+                send(res, 200, JSON.stringify(profiles), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method === 'POST') {
+                const body = await readBody(req);
+                const data = JSON.parse(body || '{}');
+                if (!data.name || !data.serverPath || !data.missionName) {
+                    badRequest(res, 'Missing name, serverPath or missionName');
+                    return;
+                }
+                const newProfile = {
+                    id: crypto.randomUUID(),
+                    name: data.name,
+                    serverPath: resolve(data.serverPath),
+                    missionName: data.missionName
+                };
+                profiles.push(newProfile);
+                await saveProfiles();
+                send(res, 201, JSON.stringify(newProfile), {'Content-Type': 'application/json'});
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        const matchProfile = pathname.match(/^\/api\/profiles\/([^/]+)$/);
+        if (matchProfile) {
+            const id = matchProfile[1];
+            const index = profiles.findIndex(p => p.id === id);
+            if (index === -1) {
+                notFound(res);
+                return;
+            }
+
+            if (req.method === 'GET') {
+                send(res, 200, JSON.stringify(profiles[index]), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                const data = JSON.parse(body || '{}');
+                profiles[index] = { ...profiles[index], ...data, id }; // keep original id
+                await saveProfiles();
+                // Clear cache for this profile
+                groupFolderCaches.delete(id);
+                groupFilesCaches.delete(id);
+                send(res, 200, JSON.stringify(profiles[index]), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method === 'DELETE') {
+                profiles.splice(index, 1);
+                await saveProfiles();
+                groupFolderCaches.delete(id);
+                groupFilesCaches.delete(id);
+                send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        if (pathname.startsWith('/api/profiles/') && pathname.endsWith('/missions')) {
+            const id = pathname.split('/')[3];
+            const profile = profiles.find(p => p.id === id);
+            if (!profile) {
+                notFound(res);
+                return;
+            }
+            try {
+                const mpmissionsPath = join(profile.serverPath, 'mpmissions');
+                const entries = await readdir(mpmissionsPath, { withFileTypes: true });
+                const missions = entries.filter(e => e.isDirectory()).map(e => e.name);
+                send(res, 200, JSON.stringify(missions), {'Content-Type': 'application/json'});
+            } catch {
+                send(res, 200, JSON.stringify([]), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // Helper to scan missions for a raw path (used when creating a new profile)
+        if (pathname === '/api/scan-missions' && req.method === 'POST') {
+            const body = await readBody(req);
+            const data = JSON.parse(body || '{}');
+            if (!data.serverPath) {
+                badRequest(res, 'Missing serverPath');
+                return;
+            }
+            try {
+                const mpmissionsPath = join(resolve(data.serverPath), 'mpmissions');
+                const entries = await readdir(mpmissionsPath, { withFileTypes: true });
+                const missions = entries.filter(e => e.isDirectory()).map(e => e.name);
+                send(res, 200, JSON.stringify(missions), {'Content-Type': 'application/json'});
+            } catch {
+                send(res, 200, JSON.stringify([]), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // All other /api/ endpoints require a profile ID header
+        const profileId = req.headers['x-profile-id'];
+        const profile = profiles.find(p => p.id === profileId);
+
+        if (!profile && pathname.startsWith('/api/') && pathname !== '/api/health') {
+            send(res, 400, JSON.stringify({error: 'Missing or invalid X-Profile-ID header'}), {'Content-Type': 'application/json'});
+            return;
+        }
+
+        const paths = profile ? getPaths(profile) : null;
+
         // GET/PUT definitions (allow optional trailing slash)
         if (pathname === '/api/definitions' || pathname === '/api/definitions/') {
             if (req.method === 'GET') {
                 try {
-                    const xml = await readFile(defsPath(), 'utf8');
+                    const xml = await readFile(paths.defsPath, 'utf8');
                     send(res, 200, xml, {'Content-Type': 'application/xml; charset=utf-8'});
                 } catch {
                     notFound(res);
@@ -1047,7 +1140,7 @@ const server = http.createServer(async (req, res) => {
                     badRequest(res, 'Empty body');
                     return;
                 }
-                const p = defsPath();
+                const p = paths.defsPath;
                 await ensureDirFor(p);
                 await writeFile(p, body, 'utf8');
                 send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
@@ -1060,17 +1153,17 @@ const server = http.createServer(async (req, res) => {
         // GET economy core (cfgeconomycore.xml)
         if (pathname === '/api/economycore' || pathname === '/api/economycore/') {
             try {
-                const xml = await readFile(economyCorePath(), 'utf8');
+                const xml = await readFile(paths.economyCorePath, 'utf8');
                 const content = String(xml || '').trim();
                 if (content.length > 0) {
                     send(res, 200, xml, {'Content-Type': 'application/xml; charset=utf-8'});
                 } else {
-                    const synth = await synthesizeEconomyCoreXml();
+                    const synth = await synthesizeEconomyCoreXml(paths);
                     send(res, 200, synth, {'Content-Type': 'application/xml; charset=utf-8'});
                 }
             } catch {
                 // If missing, synthesize from filesystem structure
-                const synth = await synthesizeEconomyCoreXml();
+                const synth = await synthesizeEconomyCoreXml(paths);
                 send(res, 200, synth, {'Content-Type': 'application/xml; charset=utf-8'});
             }
             return;
@@ -1091,7 +1184,7 @@ const server = http.createServer(async (req, res) => {
                     badRequest(res, 'Invalid start/end datetimes.');
                     return;
                 }
-                const report = await generateStashReport(start && !isNaN(start.getTime()) ? start : null, end && !isNaN(end.getTime()) ? end : null);
+                const report = await generateStashReport(start && !isNaN(start.getTime()) ? start : null, end && !isNaN(end.getTime()) ? end : null, paths);
                 send(res, 200, JSON.stringify({players: report}), {'Content-Type': 'application/json'});
             } catch {
                 send(res, 500, JSON.stringify({error: 'Failed to generate stash report'}), {'Content-Type': 'application/json'});
@@ -1147,7 +1240,7 @@ const server = http.createServer(async (req, res) => {
                 let lines;
                 if (hasFilter) {
                     // Pass 1: collect within radius to determine unique ids
-                    const spatialLines = await collectAdmRecordsInRange(start, end, {x: xf, z: zf, radius: rf}, undefined);
+                    const spatialLines = await collectAdmRecordsInRange(start, end, {x: xf, z: zf, radius: rf}, undefined, paths);
                     const idSet = new Set();
                     for (const row of spatialLines) {
                         const id = tryParseLineId(row);
@@ -1156,13 +1249,13 @@ const server = http.createServer(async (req, res) => {
 
                     if (expandByIds) {
                         // Pass 2: collect by ids only (ignore positional filter), preserving order
-                        lines = await collectAdmRecordsInRange(start, end, undefined, idSet);
+                        lines = await collectAdmRecordsInRange(start, end, undefined, idSet, paths);
                     }
                     else
                         lines = spatialLines;
                 } else {
                     // No spatial filtering; single pass
-                    lines = await collectAdmRecordsInRange(start, end, undefined, undefined);
+                    lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);
                 }
 
                 // Prepend header with start datetime in UTC+10 and build filename using moment
@@ -1193,7 +1286,7 @@ const server = http.createServer(async (req, res) => {
             const fileBase = fileRaw.replace(/\.xml$/i, ''); // tolerate .xml in URL
 
             if (req.method === 'GET') {
-                const target = await declaredTypesFilePath(group, fileBase);
+                const target = await declaredTypesFilePath(profile, paths, group, fileBase);
                 if (!target) {
                     notFound(res);
                     return;
@@ -1218,12 +1311,12 @@ const server = http.createServer(async (req, res) => {
                     badRequest(res, 'Empty body');
                     return;
                 }
-                // Never allow persisting to the vanilla base file (./data/db/types.xml)
+                // Never allow persisting to the vanilla base file (db/types.xml)
                 if (group === 'vanilla' && fileBase === 'types') {
                     badRequest(res, 'Persisting to vanilla types.xml is not allowed.');
                     return;
                 }
-                const target = await declaredTypesFilePath(group, fileBase);
+                const target = await declaredTypesFilePath(profile, paths, group, fileBase);
                 if (!target) {
                     badRequest(res, 'Group or file not declared in cfgeconomycore.xml');
                     return;
@@ -1276,7 +1369,7 @@ const server = http.createServer(async (req, res) => {
                     }
 
                     if (changes.length) {
-                        const dir = await declaredGroupDir(group);
+                        const dir = await declaredGroupDir(profile, paths, group);
                         if (dir) {
                             await mkdir(dir, {recursive: true});
                             let block = `File: ${fileBase}.xml\n` + changes.join('\n') + '\n\n';
@@ -1301,7 +1394,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             try {
-                const dir = marketDirPath();
+                const dir = paths.marketDirPath;
                 const entries = await readdir(dir, { withFileTypes: true });
                 const names = entries
                     .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
@@ -1323,7 +1416,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             const fileBase = nameRaw.replace(/\.json$/i, '');
-            const target = join(marketDirPath(), `${fileBase}.json`);
+            const target = join(paths.marketDirPath, `${fileBase}.json`);
 
             if (req.method === 'GET') {
                 try {
@@ -1382,7 +1475,7 @@ const server = http.createServer(async (req, res) => {
             }
 
             try {
-                const results = await removeItemFromMarketplaceCompletely(className);
+                const results = await removeItemFromMarketplaceCompletely(className, paths);
                 send(res, 200, JSON.stringify({ ok: true, results }), { 'Content-Type': 'application/json' });
             } catch (e) {
                 send(res, 500, JSON.stringify({ error: 'Failed to remove item', detail: String(e) }), { 'Content-Type': 'application/json' });
@@ -1397,7 +1490,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             try {
-                const dir = tradersDirPath();
+                const dir = paths.tradersDirPath;
                 const entries = await readdir(dir, { withFileTypes: true });
                 const names = entries
                     .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.map'))
@@ -1419,7 +1512,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             const fileBase = traderRaw.replace(/\.map$/i, '');
-            const target = join(tradersDirPath(), `${fileBase}.map`);
+            const target = join(paths.tradersDirPath, `${fileBase}.map`);
 
             if (req.method === 'GET') {
                 try {
@@ -1482,7 +1575,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             try {
-                const dir = traderProfilesDirPath();
+                const dir = paths.traderProfilesDirPath;
                 const entries = await readdir(dir, { withFileTypes: true });
                 const names = entries
                     .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
@@ -1504,7 +1597,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             const fileBase = nameRaw.replace(/\.json$/i, '');
-            const target = join(traderProfilesDirPath(), `${fileBase}.json`);
+            const target = join(paths.traderProfilesDirPath, `${fileBase}.json`);
 
             if (req.method === 'GET') {
                 try {
@@ -1549,7 +1642,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             try {
-                const dir = traderZonesDirPath();
+                const dir = paths.traderZonesDirPath;
                 const entries = await readdir(dir, { withFileTypes: true });
                 const names = entries
                     .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
@@ -1571,7 +1664,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             const fileBase = zoneRaw.replace(/\.json$/i, '');
-            const target = join(traderZonesDirPath(), `${fileBase}.json`);
+            const target = join(paths.traderZonesDirPath, `${fileBase}.json`);
 
             if (req.method === 'GET') {
                 try {
@@ -1609,34 +1702,33 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // Lint files (.xml, .json) under DATA_DIR
+        // Lint files (.xml, .json)
         if (pathname === '/api/lint') {
             if (req.method !== 'GET') {
                 methodNotAllowed(res);
                 return;
             }
             try {
-                const report = await lintDataDir();
-                send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json' });
+                // Lint both mission and profiles
+                const missionReport = await lintDataDir(paths.missionPath);
+                const profilesReport = await lintDataDir(paths.profilesPath);
+                send(res, 200, JSON.stringify({
+                    ok: missionReport.ok && profilesReport.ok,
+                    mission: missionReport,
+                    profiles: profilesReport
+                }), {'Content-Type': 'application/json'});
             } catch (e) {
-                send(res, 500, JSON.stringify({ error: 'Lint failed', detail: e && e.message ? e.message : String(e) }), { 'Content-Type': 'application/json' });
+                send(res, 500, JSON.stringify({error: 'Failed to lint files', detail: String(e)}), {'Content-Type': 'application/json'});
             }
             return;
         }
 
         // Health check / root
         if (pathname === '/' || pathname === '/api/health') {
-            // Also indicate if data dir exists
-            let dataOk = true;
-            try {
-                await stat(DATA_DIR);
-            } catch {
-                dataOk = false;
-            }
             send(
                 res,
                 200,
-                JSON.stringify({ok: true, dataDir: DATA_DIR, dataAvailable: dataOk}),
+                JSON.stringify({ok: true, profilesCount: profiles.length}),
                 {'Content-Type': 'application/json'}
             );
             return;
@@ -1650,10 +1742,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, async () => {
-    try {
-        await mkdir(DATA_DIR, {recursive: true});
-    } catch {
-        // ignore directory creation errors; health endpoint will report availability
-    }
-    console.log(`XML persistence server listening on http://localhost:${PORT}\nData dir: ${DATA_DIR}`);
+    console.log(`XML persistence server listening on http://localhost:${PORT}`);
 });

@@ -73,20 +73,63 @@ export function useLootData() {
   const [baselineDefinitions, setBaselineDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
 
   // Helper to get API base
-  const getApiBase = () => {
+  const getApiBase = useCallback(() => {
     const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
     const defaultBase = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
     return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
-  };
+  }, []);
+
+  const [profiles, setProfiles] = useState(/** @type {{id: string, name: string, serverPath: string, missionName: string}[]} */([]));
+  const [selectedProfileId, setSelectedProfileId] = useState(localStorage.getItem('dayz-editor:selectedProfileId') || '');
+  const selectedProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
+
+  useEffect(() => {
+    if (selectedProfileId) {
+      localStorage.setItem('dayz-editor:selectedProfileId', selectedProfileId);
+    } else {
+      localStorage.removeItem('dayz-editor:selectedProfileId');
+    }
+  }, [selectedProfileId]);
+
+  const fetchWithProfile = useCallback(async (url, options = {}) => {
+    const opts = { ...options };
+    opts.headers = {
+      ...opts.headers,
+      'X-Profile-ID': selectedProfileId
+    };
+    return fetch(url, opts);
+  }, [selectedProfileId]);
+
+  const loadProfiles = useCallback(async () => {
+    try {
+      const API_BASE = getApiBase();
+      const res = await fetch(`${API_BASE}/api/profiles`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfiles(data);
+        // If no profile selected but we have some, select first one if nothing was stored
+        if (!selectedProfileId && data.length > 0 && !localStorage.getItem('dayz-editor:selectedProfileId')) {
+          setSelectedProfileId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load profiles:', e);
+    }
+  }, [getApiBase, selectedProfileId]);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
 
   // Refresh baseline (definitions + files) from live API
   const refreshBaselineFromAPI = useCallback(async () => {
+    if (!selectedProfileId) return false;
     try {
       const API_BASE = getApiBase();
       // Probe health
       let apiOk = false;
       try {
-        const health = await fetch(`${API_BASE}/api/health`);
+        const health = await fetchWithProfile(`${API_BASE}/api/health`);
         apiOk = health.ok;
       } catch {
         apiOk = false;
@@ -95,7 +138,7 @@ export function useLootData() {
 
       // Definitions
       try {
-        const limitsRes = await fetch(`${API_BASE}/api/definitions`);
+        const limitsRes = await fetchWithProfile(`${API_BASE}/api/definitions`);
         if (limitsRes.ok) {
           const txt = await limitsRes.text();
           const defs = parseLimitsXml(txt);
@@ -110,7 +153,7 @@ export function useLootData() {
 
       // Vanilla
       try {
-        const vr = await fetch(`${API_BASE}/api/types/vanilla/types`);
+        const vr = await fetchWithProfile(`${API_BASE}/api/types/vanilla/types`);
         if (vr.ok) {
           const vText = await vr.text();
           let vanilla = parseTypesXml(vText);
@@ -125,7 +168,7 @@ export function useLootData() {
 
       // Additional groups via economycore
       try {
-        const er = await fetch(`${API_BASE}/api/economycore`);
+        const er = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (er.ok) {
           const eText = await er.text();
           const { order, filesByGroup } = parseEconomyCoreXml(eText);
@@ -136,7 +179,7 @@ export function useLootData() {
               const fileName = parts[parts.length - 1] || 'types.xml';
               const fileBase = fileName.replace(/\.xml$/i, '');
               try {
-                const tr = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                const tr = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
                 if (!tr.ok) continue;
                 const tText = await tr.text();
                 const parsed = parseTypesXml(tText);
@@ -150,7 +193,7 @@ export function useLootData() {
 
       // Include vanilla_overrides/types in baseline if present so diffs clear after persisting overrides
       try {
-        const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
+        const or = await fetchWithProfile(`${API_BASE}/api/types/vanilla_overrides/types`);
         if (or.ok) {
           const oText = await or.text();
           const overrides = parseTypesXml(oText);
@@ -169,7 +212,7 @@ export function useLootData() {
     }
   }, []);
 
-  // Prefer baseline from live API (./data) to compare in storageDiff (initial load)
+  // Prefer baseline from live API to compare in storageDiff (initial load)
   useEffect(() => {
     let aborted = false;
 
@@ -326,9 +369,22 @@ export function useLootData() {
   }, [setFromMergedTypes]);
 
   useEffect(() => {
+    if (!selectedProfileId) {
+      setLoading(false);
+      setError(null);
+      setDefinitions(null);
+      setLootFiles(null);
+      setLootGroups(null);
+      _setLootTypes(null);
+      return;
+    }
+
     let mounted = true;
     (async () => {
       try {
+        setLoading(true);
+        setError(null);
+
         // Determine API base
         const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
         const defaultBase = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
@@ -337,7 +393,7 @@ export function useLootData() {
         // Probe API
         let apiOk = false;
         try {
-          const health = await fetch(`${API_BASE}/api/health`);
+          const health = await fetchWithProfile(`${API_BASE}/api/health`);
           apiOk = health.ok;
         } catch {
           apiOk = false;
@@ -349,7 +405,7 @@ export function useLootData() {
         // Load definitions from API
         let defs;
         try {
-          const limitsRes = await fetch(`${API_BASE}/api/definitions`);
+          const limitsRes = await fetchWithProfile(`${API_BASE}/api/definitions`);
           if (!limitsRes.ok) throw new Error('definitions missing');
           const limitsText = await limitsRes.text();
           defs = parseLimitsXml(limitsText);
@@ -381,7 +437,7 @@ export function useLootData() {
 
           // 1) Vanilla base (data/db/types.xml)
           try {
-            const vanillaRes = await fetch(`${API_BASE}/api/types/vanilla/types`);
+            const vanillaRes = await fetchWithProfile(`${API_BASE}/api/types/vanilla/types`);
             if (!vanillaRes.ok) throw new Error('vanilla types missing');
             const vanillaText = await vanillaRes.text();
             let vanilla = parseTypesXml(vanillaText);
@@ -398,7 +454,7 @@ export function useLootData() {
 
           // 2) Additional groups from economy core (ordered)
           try {
-            const econRes = await fetch(`${API_BASE}/api/economycore`);
+            const econRes = await fetchWithProfile(`${API_BASE}/api/economycore`);
             if (econRes.ok) {
               const econText = await econRes.text();
               const { order, filesByGroup } = parseEconomyCoreXml(econText);
@@ -409,7 +465,7 @@ export function useLootData() {
                   const fileName = parts[parts.length - 1] || 'types.xml';
                   const fileBase = fileName.replace(/\.xml$/i, '');
                   try {
-                    const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                    const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
                     if (!res.ok) {
                       warnings.push(`Group "${group}" file "${fileBase}": not found or cannot be read.`);
                       continue;
@@ -435,7 +491,7 @@ export function useLootData() {
           // 3) Include canonical overrides if present (treat like any other group)
           // Server returns an empty <types/> doc if the file doesn't exist yet.
           try {
-            const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
+            const or = await fetchWithProfile(`${API_BASE}/api/types/vanilla_overrides/types`);
             if (or.ok) {
               const oText = await or.text();
               try {
@@ -516,7 +572,7 @@ export function useLootData() {
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [selectedProfileId, fetchWithProfile]);
 
   const pushHistory = useCallback((state) => {
     historyRef.current.push(state);
@@ -782,7 +838,7 @@ export function useLootData() {
       // Reload definitions from API
       let defs;
       try {
-        const limitsRes = await fetch(`${API_BASE}/api/definitions`);
+        const limitsRes = await fetchWithProfile(`${API_BASE}/api/definitions`);
         if (!limitsRes.ok) throw new Error('definitions not found');
         const limitsText = await limitsRes.text();
         defs = parseLimitsXml(limitsText);
@@ -798,7 +854,7 @@ export function useLootData() {
 
       // Vanilla base (data/db/types.xml)
       try {
-        const vRes = await fetch(`${API_BASE}/api/types/vanilla/types`);
+        const vRes = await fetchWithProfile(`${API_BASE}/api/types/vanilla/types`);
         if (vRes.ok) {
           let vText = await vRes.text();
           let vanilla = parseTypesXml(vText);
@@ -817,7 +873,7 @@ export function useLootData() {
 
       // Additional groups via cfgeconomycore
       try {
-        const econRes = await fetch(`${API_BASE}/api/economycore`);
+        const econRes = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (econRes.ok) {
           const econText = await econRes.text();
           const { order, filesByGroup } = parseEconomyCoreXml(econText);
@@ -831,7 +887,7 @@ export function useLootData() {
               const fileName = parts[parts.length - 1] || 'types.xml';
               const fileBase = fileName.replace(/\.xml$/i, '');
               try {
-                const res = await fetch(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
                 if (!res.ok) {
                   warnings.push(`Group "${group}" file "${fileBase}": not found or cannot be read.`);
                   continue;
@@ -856,7 +912,7 @@ export function useLootData() {
 
       // Include canonical overrides as a proper group (always last to be canonical)
       try {
-        const or = await fetch(`${API_BASE}/api/types/vanilla_overrides/types`);
+        const or = await fetchWithProfile(`${API_BASE}/api/types/vanilla_overrides/types`);
         if (or.ok) {
           const oText = await or.text();
           try {
@@ -1106,7 +1162,15 @@ export function useLootData() {
     setChangeEditorID,
     reloadFromFiles,
     getBaselineFileTypes,
-    refreshBaselineFromAPI
+    refreshBaselineFromAPI,
+    // Profiles
+    profiles,
+    selectedProfileId,
+    setSelectedProfileId,
+    selectedProfile,
+    loadProfiles,
+    getApiBase,
+    fetchWithProfile
   };
 }
 
