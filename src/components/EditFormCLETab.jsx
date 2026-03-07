@@ -166,27 +166,53 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
     })();
   }, [selectedProfileId, selectedProfile, getApiBase]);
 
-  const divingTriState = useMemo(() => {
-      if (!divingConfig) return { normal: false, elite: false };
-      const check = (listName) => {
-          const list = divingConfig[listName] || [];
-          const count = selectedTypes.filter(t => list.includes(t.name)).length;
-          if (count === 0) return false;
-          if (count === selectedTypes.length) return true;
-          return 'mixed';
-      };
-      return {
-          normal: check('divingLootListNormal'),
-          elite: check('divingLootListElite')
-      };
+  const divingCounts = useMemo(() => {
+    if (!divingConfig) return { normal: 0, elite: 0 };
+    const getCount = (listName) => {
+      const list = divingConfig[listName] || [];
+      const counts = selectedTypes.map(t => list.filter(n => n === t.name).length);
+      const first = counts[0];
+      const allSame = counts.every(c => c === first);
+      return allSame ? first : null;
+    };
+    return {
+      normal: getCount('divingLootListNormal'),
+      elite: getCount('divingLootListElite')
+    };
   }, [divingConfig, selectedTypes]);
 
-  const toggleDiving = (listName) => {
+  const divingTriState = useMemo(() => {
+    return {
+      normal: divingCounts.normal === 0 ? false : (divingCounts.normal === null ? 'mixed' : true),
+      elite: divingCounts.elite === 0 ? false : (divingCounts.elite === null ? 'mixed' : true)
+    };
+  }, [divingCounts]);
+
+  const setDivingCount = (listName, val) => {
+      const num = val === '' ? 1 : Math.max(1, parseInt(val, 10) || 1);
       setDivingConfig(prev => {
           if (!prev) return prev;
-          const tri = divingTriState[listName === 'divingLootListNormal' ? 'normal' : 'elite'];
-          const next = tri !== true;
-          
+          let newList = [...(prev[listName] || [])];
+          selectedTypes.forEach(t => {
+              // Remove all existing occurrences of this type
+              newList = newList.filter(n => n !== t.name);
+              // Add it num times
+              for (let i = 0; i < num; i++) {
+                  newList.push(t.name);
+              }
+          });
+          setDivingConfigDirty(true);
+          return { ...prev, [listName]: newList };
+      });
+  };
+
+  const toggleDiving = (listName) => {
+      const typeKey = listName === 'divingLootListNormal' ? 'normal' : 'elite';
+      const tri = divingTriState[typeKey];
+      const next = tri !== true;
+      
+      setDivingConfig(prev => {
+          if (!prev) return prev;
           let newList = [...(prev[listName] || [])];
           if (next === true) {
               selectedTypes.forEach(t => {
@@ -348,18 +374,33 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
             <div className="checkbox-grid">
               {['divingLootListNormal', 'divingLootListElite'].map(listName => {
                 const label = listName === 'divingLootListNormal' ? 'Normal Diving Loot' : 'Elite Diving Loot';
-                const tri = divingTriState[listName === 'divingLootListNormal' ? 'normal' : 'elite'];
+                const typeKey = listName === 'divingLootListNormal' ? 'normal' : 'elite';
+                const tri = divingTriState[typeKey];
+                const count = divingCounts[typeKey];
                 const indeterminate = tri === 'mixed';
                 return (
-                  <label key={listName} className={`checkbox ${indeterminate ? 'indeterminate' : tri ? 'checked' : ''}`}>
-                    <input
-                      type="checkbox"
-                      checked={tri === true}
-                      ref={el => { if (el) el.indeterminate = indeterminate; }}
-                      onChange={() => toggleDiving(listName)}
-                    />
-                    <span>{label}</span>
-                  </label>
+                  <div key={listName} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <label className={`checkbox ${indeterminate ? 'indeterminate' : tri ? 'checked' : ''}`} style={{ margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={tri === true}
+                        ref={el => { if (el) el.indeterminate = indeterminate; }}
+                        onChange={() => toggleDiving(listName)}
+                      />
+                      <span>{label}</span>
+                    </label>
+                    {(tri === true || tri === 'mixed') && (
+                      <input
+                        type="number"
+                        min="1"
+                        style={{ width: 50, padding: '2px 4px', fontSize: '12px' }}
+                        value={count === null ? '' : count}
+                        placeholder={count === null ? 'Mixed' : ''}
+                        onChange={e => setDivingCount(listName, e.target.value)}
+                        title="Number of times in list"
+                      />
+                    )}
+                  </div>
                 );
               })}
             </div>
