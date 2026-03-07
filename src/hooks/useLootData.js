@@ -79,7 +79,7 @@ export function useLootData() {
     return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
   }, []);
 
-  const [profiles, setProfiles] = useState(/** @type {{id: string, name: string, serverPath: string, missionName: string}[]} */([]));
+  const [profiles, setProfiles] = useState(/** @type {{id: string, name: string, serverPath: string, missionName: string, addons?: string[]}[]} */([]));
   const [selectedProfileId, setSelectedProfileId] = useState(localStorage.getItem('dayz-editor:selectedProfileId') || '');
   const selectedProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
 

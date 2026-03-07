@@ -16,11 +16,16 @@ import TraderEditorModal from './components/TraderEditorModal.jsx';
 import LintFilesModal from './components/LintFilesModal.jsx';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.jsx';
 import ProfileManager from './components/ProfileManager.jsx';
+import AddonEditorModal from './components/AddonEditorModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
  * @typedef {import('./utils/xml.js').Type} Type
  */
+
+const KNOWN_ADDONS = [
+    { id: 'deerisle', name: 'Deerisle' }
+];
 
 /**
  * Main application component orchestrating data, filters, selection, editing and exporting.
@@ -112,6 +117,7 @@ export default function App() {
     const [showTraderEditor, setShowTraderEditor] = useState(false);
     const [showMarketCategories, setShowMarketCategories] = useState(false);
     const [showLint, setShowLint] = useState(false);
+    const [activeAddon, setActiveAddon] = useState(null); // { id, name }
     const [showProfileManager, setShowProfileManager] = useState(false);
 
     useEffect(() => {
@@ -701,6 +707,13 @@ export default function App() {
                           <button className="link" role="menuitem" onClick={() => { setShowAdm(true); setToolsOpen(false); }}>ADM records</button>
                           <button className="link" role="menuitem" onClick={() => { setShowStash(true); setToolsOpen(false); }}>Stash report</button>
                           <button className="link" role="menuitem" onClick={() => { setShowLint(true); setToolsOpen(false); }}>Lint files</button>
+                          {selectedProfile?.addons?.map(addonId => {
+                              const addon = KNOWN_ADDONS.find(a => a.id === addonId);
+                              if (!addon) return null;
+                              return (
+                                  <button key={addonId} className="link" role="menuitem" onClick={() => { setActiveAddon(addon); setToolsOpen(false); }}>{addon.name} Config</button>
+                              );
+                          })}
                         </div>
                       )}
                     </div>
@@ -831,7 +844,17 @@ export default function App() {
               <StashReportModal onClose={() => setShowStash(false)} selectedProfileId={selectedProfileId} />
             )}
             {showLint && (
-              <LintFilesModal onClose={() => setShowLint(false)} selectedProfileId={selectedProfileId} />
+                <LintFilesModal onClose={() => setShowLint(false)} selectedProfileId={selectedProfileId} />
+            )}
+
+            {activeAddon && (
+                <AddonEditorModal 
+                    addonId={activeAddon.id} 
+                    addonName={activeAddon.name} 
+                    onClose={() => setActiveAddon(null)} 
+                    selectedProfileId={selectedProfileId}
+                    getApiBase={getApiBase}
+                />
             )}
             {showTraderEditor && (
               <TraderEditorModal onClose={() => setShowTraderEditor(false)} selectedProfileId={selectedProfileId} />

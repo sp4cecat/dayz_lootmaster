@@ -29,6 +29,28 @@ const PORT = Number(process.env.PORT || 4317);
 const PROFILES_FILE = resolve(join(__dirname, 'profiles.json'));
 let profiles = [];
 
+const KNOWN_ADDONS = [
+    { id: 'deerisle', folder: 'Deerisle', name: 'Deerisle' }
+];
+
+async function getDetectedAddons(serverPath) {
+    if (!serverPath) return [];
+    const addons = [];
+    const profilesPath = join(serverPath, 'profiles');
+    for (const addon of KNOWN_ADDONS) {
+        try {
+            const addonPath = join(profilesPath, addon.folder);
+            const s = await stat(addonPath);
+            if (s.isDirectory()) {
+                addons.push(addon.id);
+            }
+        } catch {
+            // ignore
+        }
+    }
+    return addons;
+}
+
 async function loadProfiles() {
     try {
         const data = await readFile(PROFILES_FILE, 'utf8');
@@ -1014,7 +1036,13 @@ const server = http.createServer(async (req, res) => {
         // Profile Management
         if (pathname === '/api/profiles' || pathname === '/api/profiles/') {
             if (req.method === 'GET') {
-                send(res, 200, JSON.stringify(profiles), {'Content-Type': 'application/json'});
+                const profilesWithAddons = await Promise.all(profiles.map(async (p) => {
+                    return {
+                        ...p,
+                        addons: await getDetectedAddons(p.serverPath)
+                    };
+                }));
+                send(res, 200, JSON.stringify(profilesWithAddons), {'Content-Type': 'application/json'});
                 return;
             }
             if (req.method === 'POST') {
@@ -1049,7 +1077,12 @@ const server = http.createServer(async (req, res) => {
             }
 
             if (req.method === 'GET') {
-                send(res, 200, JSON.stringify(profiles[index]), {'Content-Type': 'application/json'});
+                const profile = profiles[index];
+                const profileWithAddons = {
+                    ...profile,
+                    addons: await getDetectedAddons(profile.serverPath)
+                };
+                send(res, 200, JSON.stringify(profileWithAddons), {'Content-Type': 'application/json'});
                 return;
             }
             if (req.method === 'PUT') {
@@ -1385,6 +1418,71 @@ const server = http.createServer(async (req, res) => {
             }
             methodNotAllowed(res);
             return;
+        }
+
+        // Addon-specific files (e.g. Deerisle)
+        if (pathname.startsWith('/api/addons/')) {
+            const parts = pathname.split('/');
+            if (parts.length < 5) {
+                badRequest(res, 'Invalid addon API path');
+                return;
+            }
+            const addonId = parts[3];
+            const action = parts[4];
+            const addon = KNOWN_ADDONS.find(a => a.id === addonId);
+            if (!addon) {
+                notFound(res);
+                return;
+            }
+
+            const addonDir = join(paths.profilesPath, addon.folder);
+
+            // GET /api/addons/:addon/files
+            if (action === 'files' && req.method === 'GET') {
+                try {
+                    const entries = await readdir(addonDir, { withFileTypes: true });
+                    const files = entries
+                        .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+                        .map(e => e.name.replace(/\.json$/i, ''));
+                    send(res, 200, JSON.stringify(files), {'Content-Type': 'application/json'});
+                } catch {
+                    send(res, 200, JSON.stringify([]), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+
+            // GET/PUT /api/addons/:addon/file/:name
+            if (action === 'file' && parts[5]) {
+                const fileName = parts[5];
+                if (!isSafeName(fileName)) {
+                    badRequest(res, 'Invalid file name');
+                    return;
+                }
+                const filePath = join(addonDir, `${fileName}.json`);
+
+                if (req.method === 'GET') {
+                    try {
+                        const content = await readFile(filePath, 'utf8');
+                        send(res, 200, content, {'Content-Type': 'application/json'});
+                    } catch {
+                        notFound(res);
+                    }
+                    return;
+                }
+                if (req.method === 'PUT') {
+                    const body = await readBody(req);
+                    try {
+                        // Validate JSON
+                        const parsed = JSON.parse(body);
+                        await ensureDirFor(filePath);
+                        await writeFile(filePath, JSON.stringify(parsed, null, 4), 'utf8');
+                        send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
+                    } catch (e) {
+                        badRequest(res, `Invalid JSON or write error: ${e.message}`);
+                    }
+                    return;
+                }
+            }
         }
 
         // Market categories: list
