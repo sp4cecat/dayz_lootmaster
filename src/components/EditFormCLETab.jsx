@@ -181,13 +181,6 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
     };
   }, [divingConfig, selectedTypes]);
 
-  const divingTriState = useMemo(() => {
-    return {
-      normal: divingCounts.normal === 0 ? false : (divingCounts.normal === null ? 'mixed' : true),
-      elite: divingCounts.elite === 0 ? false : (divingCounts.elite === null ? 'mixed' : true)
-    };
-  }, [divingCounts]);
-
   const setDivingCount = (listName, val) => {
       const num = val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0);
       setDivingConfig(prev => {
@@ -201,27 +194,6 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
                   newList.push(t.name);
               }
           });
-          setDivingConfigDirty(true);
-          return { ...prev, [listName]: newList };
-      });
-  };
-
-  const toggleDiving = (listName) => {
-      const typeKey = listName === 'divingLootListNormal' ? 'normal' : 'elite';
-      const tri = divingTriState[typeKey];
-      const next = tri !== true;
-      
-      setDivingConfig(prev => {
-          if (!prev) return prev;
-          let newList = [...(prev[listName] || [])];
-          if (next === true) {
-              selectedTypes.forEach(t => {
-                  if (!newList.includes(t.name)) newList.push(t.name);
-              });
-          } else {
-              const namesToRemove = selectedTypes.map(t => t.name);
-              newList = newList.filter(n => !namesToRemove.includes(n));
-          }
           setDivingConfigDirty(true);
           return { ...prev, [listName]: newList };
       });
@@ -371,28 +343,18 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
         {hasDivingConfig && (
           <fieldset className="control panels-item">
             <legend>Deerisle Diving Loot</legend>
-            <div className="checkbox-grid">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '5px 0' }}>
               {['divingLootListNormal', 'divingLootListElite'].map(listName => {
                 const label = listName === 'divingLootListNormal' ? 'Normal Diving Loot' : 'Elite Diving Loot';
                 const typeKey = listName === 'divingLootListNormal' ? 'normal' : 'elite';
-                const tri = divingTriState[typeKey];
                 const count = divingCounts[typeKey];
-                const indeterminate = tri === 'mixed';
                 return (
                   <div key={listName} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <label className={`checkbox ${indeterminate ? 'indeterminate' : tri ? 'checked' : ''}`} style={{ margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={tri === true}
-                        ref={el => { if (el) el.indeterminate = indeterminate; }}
-                        onChange={() => toggleDiving(listName)}
-                      />
-                      <span>{label}</span>
-                    </label>
+                    <span style={{ fontSize: '13px', minWidth: '130px' }}>{label}</span>
                     <input
                       type="number"
                       min="0"
-                      style={{ width: 50, padding: '2px 4px', fontSize: '12px' }}
+                      style={{ width: 60, padding: '4px 6px', fontSize: '12px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)' }}
                       value={count === null ? '' : count}
                       placeholder={count === null ? 'Mixed' : ''}
                       onChange={e => setDivingCount(listName, e.target.value)}
