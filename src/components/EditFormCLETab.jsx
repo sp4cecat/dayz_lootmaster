@@ -189,7 +189,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
   }, [divingCounts]);
 
   const setDivingCount = (listName, val) => {
-      const num = val === '' ? 1 : Math.max(1, parseInt(val, 10) || 1);
+      const num = val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0);
       setDivingConfig(prev => {
           if (!prev) return prev;
           let newList = [...(prev[listName] || [])];
@@ -389,17 +389,15 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
                       />
                       <span>{label}</span>
                     </label>
-                    {(tri === true || tri === 'mixed') && (
-                      <input
-                        type="number"
-                        min="1"
-                        style={{ width: 50, padding: '2px 4px', fontSize: '12px' }}
-                        value={count === null ? '' : count}
-                        placeholder={count === null ? 'Mixed' : ''}
-                        onChange={e => setDivingCount(listName, e.target.value)}
-                        title="Number of times in list"
-                      />
-                    )}
+                    <input
+                      type="number"
+                      min="0"
+                      style={{ width: 50, padding: '2px 4px', fontSize: '12px' }}
+                      value={count === null ? '' : count}
+                      placeholder={count === null ? 'Mixed' : ''}
+                      onChange={e => setDivingCount(listName, e.target.value)}
+                      title="Number of times in list"
+                    />
                   </div>
                 );
               })}
