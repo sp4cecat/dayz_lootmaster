@@ -45,6 +45,11 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
 
   const [errors, setErrors] = useState({});
 
+  // Deerisle Diving Loot Addon support
+  const [divingConfig, setDivingConfig] = useState(null);
+  const [divingConfigDirty, setDivingConfigDirty] = useState(false);
+  const [hasDivingConfig, setHasDivingConfig] = useState(false);
+
   // Lifetime popover state
   const [showLifetimePicker, setShowLifetimePicker] = useState(false);
   const [lp, setLp] = useState({ weeks: 0, days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -89,7 +94,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
     setForm(f => {
       const cur = f[group][key];
       // On user click: mixed or false -> true, true -> false
-      const next = cur === true ? false : true;
+      const next = cur !== true;
       return { ...f, [group]: { ...f[group], [key]: next } };
     });
   };
@@ -134,11 +139,6 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
     if (registerSaveHandler) registerSaveHandler(onSaveClick);
     return () => { if (registerSaveHandler) registerSaveHandler(null); };
   }, [registerSaveHandler, onSaveClick]);
-
-  // Deerisle Diving Loot Addon support
-  const [divingConfig, setDivingConfig] = useState(null);
-  const [divingConfigDirty, setDivingConfigDirty] = useState(false);
-  const [hasDivingConfig, setHasDivingConfig] = useState(false);
 
   useEffect(() => {
     if (!selectedProfile?.addons?.includes('deerisle')) {
@@ -185,7 +185,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
       setDivingConfig(prev => {
           if (!prev) return prev;
           const tri = divingTriState[listName === 'divingLootListNormal' ? 'normal' : 'elite'];
-          const next = tri === true ? false : true;
+          const next = tri !== true;
           
           let newList = [...(prev[listName] || [])];
           if (next === true) {
