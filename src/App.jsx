@@ -556,6 +556,8 @@ export default function App() {
                                     typeOptions={allTypeNames}
                                     typeOptionsByCategory={typeNamesByCategory}
                                     selectedProfileId={selectedProfileId}
+                                    selectedProfile={selectedProfile}
+                                    getApiBase={getApiBase}
                                 />
                             </div>
                         )}

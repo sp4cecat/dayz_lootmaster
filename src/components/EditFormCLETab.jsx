@@ -14,9 +14,12 @@ import { formatLifetime } from '../utils/time.js';
  *  onSave: (apply: (t: Type) => Type) => void,
  *  onCanSaveChange?: (can: boolean) => void,
  *  registerSaveHandler?: (fn: null | (() => void)) => void,
+ *  selectedProfileId: string,
+ *  selectedProfile?: {id: string, addons?: string[]},
+ *  getApiBase: () => string
  * }} props
  */
-export default function EditFormCLETab({ definitions, selectedTypes, onSave, onCanSaveChange, registerSaveHandler }) {
+export default function EditFormCLETab({ definitions, selectedTypes, onSave, onCanSaveChange, registerSaveHandler, selectedProfileId, selectedProfile, getApiBase }) {
   const base = selectedTypes[0];
 
   // Initialize local form state with mixed awareness
@@ -99,10 +102,27 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
     return Object.keys(issues).length === 0;
   }, [form, selectedTypes, definitions]);
 
-  const onSaveClick = useCallback(() => {
+  const onSaveClick = useCallback(async () => {
+    if (hasDivingConfig && divingConfigDirty && divingConfig) {
+      try {
+        const API_BASE = getApiBase();
+        const res = await fetch(`${API_BASE}/api/addons/deerisle/file/DivingLootConfig`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Profile-ID': selectedProfileId
+          },
+          body: JSON.stringify(divingConfig)
+        });
+        if (!res.ok) throw new Error('Failed to save DivingLootConfig');
+      } catch (e) {
+        console.error(e);
+        alert('Failed to save Deerisle Diving Loot configuration.');
+      }
+    }
     const apply = (t) => applyToType(t, form, definitions);
     onSave(apply);
-  }, [form, definitions, onSave]);
+  }, [form, definitions, onSave, divingConfig, divingConfigDirty, hasDivingConfig, getApiBase, selectedProfileId]);
 
   // Notify parent of canSave changes so it can enable/disable header Save button
   useEffect(() => {
@@ -114,6 +134,72 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
     if (registerSaveHandler) registerSaveHandler(onSaveClick);
     return () => { if (registerSaveHandler) registerSaveHandler(null); };
   }, [registerSaveHandler, onSaveClick]);
+
+  // Deerisle Diving Loot Addon support
+  const [divingConfig, setDivingConfig] = useState(null);
+  const [divingConfigDirty, setDivingConfigDirty] = useState(false);
+  const [hasDivingConfig, setHasDivingConfig] = useState(false);
+
+  useEffect(() => {
+    if (!selectedProfile?.addons?.includes('deerisle')) {
+        setHasDivingConfig(false);
+        return;
+    }
+    (async () => {
+        try {
+            const API_BASE = getApiBase();
+            // Check if DivingLootConfig.json exists by fetching it
+            const res = await fetch(`${API_BASE}/api/addons/deerisle/file/DivingLootConfig`, {
+                headers: { 'X-Profile-ID': selectedProfileId }
+            });
+            if (res.ok) {
+                const json = await res.json();
+                setDivingConfig(json);
+                setHasDivingConfig(true);
+            } else {
+                setHasDivingConfig(false);
+            }
+        } catch (e) {
+            console.error('Error fetching DivingLootConfig:', e);
+            setHasDivingConfig(false);
+        }
+    })();
+  }, [selectedProfileId, selectedProfile, getApiBase]);
+
+  const divingTriState = useMemo(() => {
+      if (!divingConfig) return { normal: false, elite: false };
+      const check = (listName) => {
+          const list = divingConfig[listName] || [];
+          const count = selectedTypes.filter(t => list.includes(t.name)).length;
+          if (count === 0) return false;
+          if (count === selectedTypes.length) return true;
+          return 'mixed';
+      };
+      return {
+          normal: check('divingLootListNormal'),
+          elite: check('divingLootListElite')
+      };
+  }, [divingConfig, selectedTypes]);
+
+  const toggleDiving = (listName) => {
+      setDivingConfig(prev => {
+          if (!prev) return prev;
+          const tri = divingTriState[listName === 'divingLootListNormal' ? 'normal' : 'elite'];
+          const next = tri === true ? false : true;
+          
+          let newList = [...(prev[listName] || [])];
+          if (next === true) {
+              selectedTypes.forEach(t => {
+                  if (!newList.includes(t.name)) newList.push(t.name);
+              });
+          } else {
+              const namesToRemove = selectedTypes.map(t => t.name);
+              newList = newList.filter(n => !namesToRemove.includes(n));
+          }
+          setDivingConfigDirty(true);
+          return { ...prev, [listName]: newList };
+      });
+  };
 
   return (
     <div className="cle-tab">
@@ -255,6 +341,30 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
         </fieldset>
 
         {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
+
+        {hasDivingConfig && (
+          <fieldset className="control panels-item">
+            <legend>Deerisle Diving Loot</legend>
+            <div className="checkbox-grid">
+              {['divingLootListNormal', 'divingLootListElite'].map(listName => {
+                const label = listName === 'divingLootListNormal' ? 'Normal Diving Loot' : 'Elite Diving Loot';
+                const tri = divingTriState[listName === 'divingLootListNormal' ? 'normal' : 'elite'];
+                const indeterminate = tri === 'mixed';
+                return (
+                  <label key={listName} className={`checkbox ${indeterminate ? 'indeterminate' : tri ? 'checked' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={tri === true}
+                      ref={el => { if (el) el.indeterminate = indeterminate; }}
+                      onChange={() => toggleDiving(listName)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        )}
       </div>
 
       {/* Save button moved to the EditForm header; keep area for layout spacing if needed */}
