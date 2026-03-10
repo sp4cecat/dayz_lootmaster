@@ -31,7 +31,7 @@ Last verified on: 2025-11-04
       - DATA_DIR: default ./data (absolute or relative path).
     - CORS is open (Access-Control-Allow-Origin: *). Frontend and server can run on different ports during development.
   - Data layout expectations:
-    - cfglimitsdefinition.xml lives under DATA_DIR.
+    - log_storage/ lives under deployments/<deployment name> (where serverPath is the deployment root).
     - cfgeconomycore.xml under DATA_DIR governs how types are organized into groups/folders.
     - Types files are under DATA_DIR/db/types/<group>/<file>.xml
   - The server parses cfgeconomycore.xml to cache:
@@ -127,21 +127,22 @@ The XML utility module at src/utils/xml.js encodes several important invariants 
 Backend server specifics (server/index.js):
 - Endpoints (all responses include permissive CORS; allowed headers include Content-Type and X-Editor-ID)
   - GET /api/health → basic health JSON { ok, dataDir, dataAvailable }
-  - GET /api/definitions → DATA_DIR/cfglimitsdefinition.xml
-  - PUT /api/definitions → replace cfglimitsdefinition.xml with request body (UI sets X-Editor-ID)
-  - GET /api/economycore → returns DATA_DIR/cfgeconomycore.xml; if missing or empty, synthesizes from DATA_DIR/db and DATA_DIR/db/types
-  - GET /api/types/:group/:file → reads declared types file. Special cases:
-    - group=vanilla, file=types → DATA_DIR/db/types.xml
-    - group=vanilla_overrides, file=types → if file is missing, returns an empty `<types/>` doc
+  - GET /api/definitions → missionPath/cfglimitsdefinition.xml (where missionPath is defined in profile)
+  - PUT /api/definitions → replace cfglimitsdefinition.xml with request body (UI sets X-Editor-ID and X-Profile-ID)
+  - GET /api/economycore → returns missionPath/cfgeconomycore.xml; if missing or empty, synthesizes from missionPath/db and missionPath/db/types
+  - GET /api/types/:group/:file → reads declared types file from missionPath/db/types/:group/:file.xml. Special cases:
+    - group=vanilla, file=types → missionPath/db/types.xml
+    - group=vanilla_overrides, file=types → if file is missing, returns an empty `<types/>` doc from missionPath/db/vanilla_overrides/types.xml
   - PUT /api/types/:group/:file → writes declared file. Protections and behavior:
     - Denies writing to vanilla/types.xml
     - Requires group/file to be declared in cfgeconomycore.xml (except vanilla_overrides which is always allowed and auto-creates folder)
     - Accepts header X-Editor-ID; writes a per-group changes.txt with added/removed/modified entries and field-level diffs
-  - POST /api/logs/stash-report → body: { start?: ISO, end?: ISO } → returns { players: [{ id, aliases[], dugIn, dugUpOwn, dugUpOthers }] }
+  - POST /api/logs/stash-report → body: { start?: ISO, end?: ISO } → returns { players: [{ id, aliases[], dugIn, dugUpOwn, dugUpOthers }] }. Looks in serverPath/log_storage.
   - POST /api/logs/adm → body: { start: string, end: string, x?: number, z?: number, y?: number, radius?: number, expandByIds?: boolean } → returns a text/plain ADM file for download. Notes:
     - Timestamps are interpreted as UTC+10 local times and normalized using moment
     - If x/z/radius provided, collects within planar radius; if expandByIds=true, expands to all lines by those ids in the range
     - ADM filename is derived from the requested UTC+10 range
+    - Looks in serverPath/log_storage (which is deployments/<deployment name>/log_storage if serverPath is the deployment root).
   - GET /api/market/categories → lists category JSON file bases under profiles/ExpansionMod/Market
   - GET /api/market/category/:name → returns a market category JSON
   - PUT /api/market/category/:name → pretty-writes a market category JSON, creating directories as needed
@@ -173,7 +174,7 @@ Frontend runtime/config nuance:
   - npm ci
   - npm run dev
 - Local development (UI + XML backend)
-  - In a second terminal, run: node server/index.js (optionally set DATA_DIR to point at your DayZ economy files). The UI will communicate with the backend via the /api routes; CORS is open.
+  - In a second terminal, run: node server/index.js. Ensure profiles are configured via UI.
 - Build and smoke test
   - npm run build && npm run preview
 - Run tests
@@ -189,7 +190,7 @@ Frontend runtime/config nuance:
   - db/vanilla_overrides/types.xml is allowed for overrides; the server will auto-create the folder when writing
   - profiles/ExpansionMod/Market/*.json for Expansion Market categories (used by /api/market/*)
   - expansion/traderzones/*.json for Trader Zones (used by /api/traderzones/*)
-  - logs/ for server Admin logs (used by stash report and ADM export)
+  - logs/ for server Admin logs (used by stash report and ADM export) changed to log_storage/ in deployments/<deployment name> (where serverPath is the deployment root).
 - Keep in mind the determinism rules from utils when round-tripping: type entries are sorted by name on generation, and some flags arrays are sorted. If you depend on a particular order in diffs, align with these rules.
 
 

@@ -100,7 +100,7 @@ function getPaths(profile) {
         tradersDirPath: join(missionPath, 'expansion', 'traders'),
         traderProfilesDirPath: join(profilesPath, 'ExpansionMod', 'Traders'),
         dbDirPath: join(missionPath, 'db'),
-        logsDirPath: join(serverPath, 'logs'),
+        logsDirPath: join(serverPath, 'log_storage'),
         missionPath,
         profilesPath
     };
