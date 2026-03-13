@@ -991,6 +991,24 @@ legend {
     position: sticky;
     top: 0;
     background: var(--bg);
+    z-index: 10;
+}
+
+.close-button {
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    color: var(--muted);
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.close-button:hover {
+    color: var(--text);
+    background: var(--bg-soft);
 }
 
 .modal-body {

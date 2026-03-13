@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import DateTimePicker from 'react-datetime-picker';
 import 'react-datetime-picker/dist/DateTimePicker.css';
 import 'react-calendar/dist/Calendar.css';
@@ -28,6 +28,13 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
     const [mapLoaded, setMapLoaded] = useState(false);
+
+    const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+    const transformRef = useRef(transform);
+    transformRef.current = transform;
+
+    const [isPanning, setIsPanning] = useState(false);
+    const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
     const API_BASE = getApiBase();
 
@@ -94,20 +101,93 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         drawHeatMap();
     }, [coords, mapLoaded, pointRadius, opacity]);
 
+    useEffect(() => {
+        if (containerRef.current && mapLoaded) {
+            const { width, height } = containerRef.current.getBoundingClientRect();
+            const s = Math.min(width / 2048, height / 2048);
+            setTransform({
+                x: (width - 2048 * s) / 2,
+                y: (height - 2048 * s) / 2,
+                scale: s
+            });
+        }
+    }, [mapLoaded]);
+
+    const handleWheel = useCallback((e) => {
+        if (!containerRef.current) return;
+        const zoomSpeed = 0.001;
+        const delta = -e.deltaY * zoomSpeed;
+        const newScale = Math.min(Math.max(transformRef.current.scale + delta, 0.05), 5);
+        
+        if (newScale === transformRef.current.scale) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const contentMouseX = (mouseX - transformRef.current.x) / transformRef.current.scale;
+        const contentMouseY = (mouseY - transformRef.current.y) / transformRef.current.scale;
+
+        setTransform({
+            x: mouseX - contentMouseX * newScale,
+            y: mouseY - contentMouseY * newScale,
+            scale: newScale
+        });
+    }, []);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleWheelEvent = (e) => {
+            e.preventDefault();
+            handleWheel(e);
+        };
+
+        container.addEventListener('wheel', handleWheelEvent, { passive: false });
+        return () => container.removeEventListener('wheel', handleWheelEvent);
+    }, [handleWheel]);
+
+    const handleMouseDown = (e) => {
+        if (e.button !== 0) return;
+        setIsPanning(true);
+        setLastMousePos({ x: e.clientX, y: e.clientY });
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isPanning) return;
+        const dx = e.clientX - lastMousePos.x;
+        const dy = e.clientY - lastMousePos.y;
+        setTransform(prev => ({
+            ...prev,
+            x: prev.x + dx,
+            y: prev.y + dy
+        }));
+        setLastMousePos({ x: e.clientX, y: e.clientY });
+    };
+
+    const handleMouseUp = () => {
+        setIsPanning(false);
+    };
+
     const handleImageLoad = () => {
         setMapLoaded(true);
     };
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-content" style={{ width: '95vw', height: '95vh', maxWidth: 'none', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-backdrop" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onClick={onClose}>
+            <div className="modal full" style={{ width: '90vw', height: '90vh', maxWidth: 'none', padding: 0 }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h3>Deer Isle Heat Map</h3>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: '20px' }}>
                         <label>Start:</label>
-                        <DateTimePicker value={start} onChange={setStart} format="y-MM-dd HH:mm:ss" />
+                        <div className="dtp-wrap">
+                            <DateTimePicker value={start} onChange={setStart} format="y-MM-dd HH:mm:ss" />
+                        </div>
                         <label>End:</label>
-                        <DateTimePicker value={end} onChange={setEnd} format="y-MM-dd HH:mm:ss" />
+                        <div className="dtp-wrap">
+                            <DateTimePicker value={end} onChange={setEnd} format="y-MM-dd HH:mm:ss" />
+                        </div>
                         <button className="btn-primary" onClick={fetchData} disabled={loading}>
                             {loading ? 'Loading...' : 'Fetch Data'}
                         </button>
@@ -125,20 +205,29 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                     </div>
                     <button className="close-button" onClick={onClose}>&times;</button>
                 </div>
-                <div className="modal-body" style={{ flex: 1, overflow: 'hidden', position: 'relative', background: '#000', padding: 0 }}>
+                <div 
+                    className="modal-body" 
+                    style={{ flex: 1, overflow: 'hidden', position: 'relative', background: '#000', padding: 0, cursor: isPanning ? 'grabbing' : 'grab' }}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                >
                     {error && <div className="error-message" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: 'rgba(255,0,0,0.8)', color: 'white', padding: '5px 10px', borderRadius: '4px' }}>{error}</div>}
                     <div 
                         ref={containerRef}
                         style={{ 
                             width: '100%', 
                             height: '100%', 
-                            overflow: 'auto', 
-                            display: 'flex', 
-                            justifyContent: 'center', 
-                            alignItems: 'center' 
+                            position: 'relative',
+                            userSelect: 'none'
                         }}
                     >
-                        <div style={{ position: 'relative', width: '2048px', height: '2048px' }}>
+                        <div style={{ 
+                            position: 'absolute', 
+                            width: '2048px', 
+                            height: '2048px',
+                            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                            transformOrigin: '0 0'
+                        }}>
                             <img 
                                 src={deerIsleMap} 
                                 alt="Deer Isle Map" 

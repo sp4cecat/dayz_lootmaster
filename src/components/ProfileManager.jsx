@@ -117,8 +117,8 @@ export default function ProfileManager({
     };
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-content profile-manager" style={{ maxWidth: '600px' }}>
+        <div className="modal-backdrop" onClick={onClose}>
+            <div className="modal profile-manager" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h3>Manage Server Installations</h3>
                     <button className="close-button" onClick={onClose}>&times;</button>
