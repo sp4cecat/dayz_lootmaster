@@ -243,6 +243,25 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         return () => container.removeEventListener('wheel', handleWheelEvent);
     }, [handleWheel]);
 
+    const adjustZoom = useCallback((deltaIndex) => {
+        setZoomIndex(activeBreakpointIndex + deltaIndex);
+    }, [activeBreakpointIndex, setZoomIndex]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                adjustZoom(1);
+            } else if (e.key === '-') {
+                e.preventDefault();
+                adjustZoom(-1);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [adjustZoom]);
+
     const handleMouseDown = (e) => {
         if (e.button !== 0) return;
         setIsPanning(true);
@@ -263,10 +282,6 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
 
     const handleMouseUp = () => {
         setIsPanning(false);
-    };
-
-    const adjustZoom = (deltaIndex) => {
-        setZoomIndex(activeBreakpointIndex + deltaIndex);
     };
 
     const handleZoomSliderChange = (e) => {
@@ -316,7 +331,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <label>Radius:</label>
-                            <input type="range" min="5" max="100" value={pointRadius} onChange={e => setPointRadius(parseInt(e.target.value))} />
+                            <input type="range" min="5" max="25" value={pointRadius} onChange={e => setPointRadius(parseInt(e.target.value))} />
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <label>Opacity:</label>
