@@ -1344,10 +1344,26 @@ const server = http.createServer(async (req, res) => {
 
                 const lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);
                 const coords = [];
+                const pendingLogins = new Set(); // Player IDs who connected and need their first position
+
                 for (const line of lines) {
-                    if (dataType === 'connect' && !line.includes(' connected ')) continue;
-                    if (dataType === 'disconnect' && !line.includes(' disconnected ')) continue;
-                    if (dataType === 'kill' && !(line.includes(' killed ') || line.includes(' died '))) continue;
+                    const id = tryParseLineId(line);
+
+                    if (dataType === 'connect') {
+                        if (/\bconnected\b/i.test(line)) {
+                            if (id) pendingLogins.add(id);
+                        } else if (id && pendingLogins.has(id)) {
+                            const pos = tryParseLinePos(line);
+                            if (pos) {
+                                coords.push(pos);
+                                pendingLogins.delete(id);
+                            }
+                        }
+                        continue;
+                    }
+
+                    if (dataType === 'disconnect' && !/\bdisconnected\b/i.test(line)) continue;
+                    if (dataType === 'kill' && !(/\bkilled\b/i.test(line) || /\bdied\b/i.test(line))) continue;
 
                     const pos = tryParseLinePos(line);
                     if (pos) {
