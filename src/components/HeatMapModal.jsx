@@ -22,6 +22,10 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [coords, setCoords] = useState([]);
+    const [breakpoints, setBreakpoints] = useState([]);
+    const [activeBreakpointIndex, setActiveBreakpointIndex] = useState(0);
+    const [naturalWidth, setNaturalWidth] = useState(2048);
+    
     const mapPoints = useMemo(() => {
         return coords.map(pos => ({
             x: (pos.x / WORLD_SIZE) * 2048,
@@ -77,14 +81,14 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
 
     const drawHeatMap = useCallback(() => {
         const canvas = canvasRef.current;
-        const container = containerRef.current;
-        if (!canvas || !container || !mapLoaded) return;
+        if (!canvas || !mapLoaded || breakpoints.length === 0) return;
         
-        // Match canvas resolution to viewport size
-        const rect = container.getBoundingClientRect();
-        if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
-            canvas.width = Math.floor(rect.width);
-            canvas.height = Math.floor(rect.height);
+        const resScale = breakpoints[activeBreakpointIndex];
+        const canvasRes = Math.floor(2048 * resScale);
+        
+        if (canvas.width !== canvasRes || canvas.height !== canvasRes) {
+            canvas.width = canvasRes;
+            canvas.height = canvasRes;
         }
 
         const ctx = canvas.getContext('2d');
@@ -95,61 +99,91 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         // Draw points
         ctx.globalCompositeOperation = 'screen';
         
-        const { x: tx, y: ty, scale } = transform;
+        const drawRadius = pointRadius * resScale;
 
         mapPoints.forEach(pos => {
-            // Map space to viewport space
-            const viewX = pos.x * scale + tx;
-            const viewY = pos.y * scale + ty;
+            // Map space coordinates (0-2048) scaled by resolution
+            const drawX = pos.x * resScale;
+            const drawY = pos.y * resScale;
 
-            // Simple culling
-            if (viewX < -pointRadius || viewX > canvas.width + pointRadius || 
-                viewY < -pointRadius || viewY > canvas.height + pointRadius) {
-                return;
-            }
-
-            const grad = ctx.createRadialGradient(viewX, viewY, 0, viewX, viewY, pointRadius);
+            const grad = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, drawRadius);
             grad.addColorStop(0, `rgba(255, 69, 0, ${opacity})`);
             grad.addColorStop(1, 'rgba(255, 69, 0, 0)');
             
             ctx.fillStyle = grad;
             ctx.beginPath();
-            ctx.arc(viewX, viewY, pointRadius, 0, Math.PI * 2);
+            ctx.arc(drawX, drawY, drawRadius, 0, Math.PI * 2);
             ctx.fill();
         });
-    }, [mapPoints, mapLoaded, pointRadius, opacity, transform]);
+    }, [mapPoints, mapLoaded, pointRadius, opacity, activeBreakpointIndex, breakpoints]);
+
+    const updateBreakpoints = useCallback(() => {
+        if (!containerRef.current || !mapLoaded) return;
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        const minScale = Math.min(width / 2048, height / 2048);
+        const maxScale = Math.max(naturalWidth / 2048, 1);
+        
+        // Geometric progression for 4 breakpoints
+        const r = Math.pow(maxScale / minScale, 1/3);
+        const b = [
+            minScale,
+            minScale * r,
+            minScale * r * r,
+            maxScale
+        ];
+        setBreakpoints(b);
+        return b;
+    }, [mapLoaded, naturalWidth]);
 
     useEffect(() => {
         drawHeatMap();
-        
+    }, [drawHeatMap]);
+
+    useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
         
         const resizeObserver = new ResizeObserver(() => {
-            drawHeatMap();
+            updateBreakpoints();
         });
         resizeObserver.observe(container);
         
         return () => resizeObserver.disconnect();
-    }, [drawHeatMap]);
+    }, [updateBreakpoints]);
 
     useEffect(() => {
-        if (containerRef.current && mapLoaded) {
+        if (mapLoaded && containerRef.current) {
+            const b = updateBreakpoints();
+            // Initial fit using B1
             const { width, height } = containerRef.current.getBoundingClientRect();
-            const s = Math.min(width / 2048, height / 2048);
+            const s = b[0]; 
             setTransform({
                 x: (width - 2048 * s) / 2,
                 y: (height - 2048 * s) / 2,
                 scale: s
             });
         }
-    }, [mapLoaded]);
+    }, [mapLoaded, updateBreakpoints]);
+
+    useEffect(() => {
+        if (breakpoints.length === 0) return;
+        const currentScale = transform.scale;
+        
+        // Choose the smallest breakpoint that is >= current scale
+        let idx = breakpoints.findIndex(b => b >= currentScale);
+        if (idx === -1) idx = breakpoints.length - 1;
+        
+        if (idx !== activeBreakpointIndex) {
+            setActiveBreakpointIndex(idx);
+        }
+    }, [transform.scale, breakpoints, activeBreakpointIndex]);
 
     const handleWheel = useCallback((e) => {
         if (!containerRef.current) return;
         const zoomSpeed = 0.001;
         const delta = -e.deltaY * zoomSpeed;
-        const newScale = Math.min(Math.max(transformRef.current.scale + delta, 0.05), 5);
+        const maxScale = Math.max(8, breakpoints[3] || 8);
+        const newScale = Math.min(Math.max(transformRef.current.scale + delta, 0.05), maxScale);
         
         if (newScale === transformRef.current.scale) return;
 
@@ -202,7 +236,8 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         setIsPanning(false);
     };
 
-    const handleImageLoad = () => {
+    const handleImageLoad = (e) => {
+        setNaturalWidth(e.target.naturalWidth || 2048);
         setMapLoaded(true);
     };
 
@@ -266,18 +301,18 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                                 onLoad={handleImageLoad}
                                 style={{ width: '100%', height: '100%', display: 'block' }}
                             />
+                            <canvas 
+                                ref={canvasRef}
+                                style={{ 
+                                    position: 'absolute', 
+                                    top: 0, 
+                                    left: 0, 
+                                    width: '100%', 
+                                    height: '100%',
+                                    pointerEvents: 'none'
+                                }}
+                            />
                         </div>
-                        <canvas 
-                            ref={canvasRef}
-                            style={{ 
-                                position: 'absolute', 
-                                top: 0, 
-                                left: 0, 
-                                width: '100%', 
-                                height: '100%',
-                                pointerEvents: 'none'
-                            }}
-                        />
                     </div>
                 </div>
             </div>
