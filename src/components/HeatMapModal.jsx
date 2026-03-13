@@ -23,6 +23,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     const [isRendering, setIsRendering] = useState(false);
     const [error, setError] = useState(null);
     const [coords, setCoords] = useState([]);
+    const [dataType, setDataType] = useState('all'); // all, connect, disconnect, kill
     const [breakpoints, setBreakpoints] = useState([]);
     const [activeBreakpointIndex, setActiveBreakpointIndex] = useState(0);
     const [naturalWidth, setNaturalWidth] = useState(2048);
@@ -60,7 +61,8 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                 },
                 body: JSON.stringify({
                     start: moment(start).format('YYYY-MM-DD HH:mm:ss'),
-                    end: moment(end).format('YYYY-MM-DD HH:mm:ss')
+                    end: moment(end).format('YYYY-MM-DD HH:mm:ss'),
+                    dataType
                 })
             });
             if (res.ok) {
@@ -307,6 +309,17 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                         <div className="dtp-wrap">
                             <DateTimePicker value={end} onChange={setEnd} format="y-MM-dd HH:mm:ss" />
                         </div>
+                        <label>Filter:</label>
+                        <select 
+                            value={dataType} 
+                            onChange={e => setDataType(e.target.value)}
+                            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
+                        >
+                            <option value="all">All Positions</option>
+                            <option value="connect">Logins</option>
+                            <option value="disconnect">Logouts</option>
+                            <option value="kill">Deaths</option>
+                        </select>
                         <button className="btn-primary" onClick={fetchData} disabled={loading}>
                             {loading ? 'Loading...' : 'Fetch Data'}
                         </button>

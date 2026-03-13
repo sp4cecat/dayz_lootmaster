@@ -1340,10 +1340,15 @@ const server = http.createServer(async (req, res) => {
                 }
                 const start = startM.toDate();
                 const end = endM.toDate();
+                const dataType = data.dataType || 'all';
 
                 const lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);
                 const coords = [];
                 for (const line of lines) {
+                    if (dataType === 'connect' && !line.includes(' connected ')) continue;
+                    if (dataType === 'disconnect' && !line.includes(' disconnected ')) continue;
+                    if (dataType === 'kill' && !(line.includes(' killed ') || line.includes(' died '))) continue;
+
                     const pos = tryParseLinePos(line);
                     if (pos) {
                         coords.push(pos);
