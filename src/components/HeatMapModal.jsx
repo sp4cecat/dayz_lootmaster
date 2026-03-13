@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import DateTimePicker from 'react-datetime-picker';
 import 'react-datetime-picker/dist/DateTimePicker.css';
 import 'react-calendar/dist/Calendar.css';
@@ -22,6 +22,12 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [coords, setCoords] = useState([]);
+    const mapPoints = useMemo(() => {
+        return coords.map(pos => ({
+            x: (pos.x / WORLD_SIZE) * 2048,
+            y: (1 - (pos.z / WORLD_SIZE)) * 2048
+        }));
+    }, [coords]);
     const [pointRadius, setPointRadius] = useState(20);
     const [opacity, setOpacity] = useState(0.5);
     
@@ -69,37 +75,63 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         }
     };
 
-    const drawHeatMap = () => {
+    const drawHeatMap = useCallback(() => {
         const canvas = canvasRef.current;
-        if (!canvas || !mapLoaded) return;
+        const container = containerRef.current;
+        if (!canvas || !container || !mapLoaded) return;
+        
+        // Match canvas resolution to viewport size
+        const rect = container.getBoundingClientRect();
+        if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+            canvas.width = Math.floor(rect.width);
+            canvas.height = Math.floor(rect.height);
+        }
+
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        if (coords.length === 0) return;
+        if (mapPoints.length === 0) return;
 
         // Draw points
         ctx.globalCompositeOperation = 'screen';
         
-        coords.forEach(pos => {
-            // DayZ X -> Canvas X
-            // DayZ Z -> Canvas Y (Inverted)
-            const x = (pos.x / WORLD_SIZE) * canvas.width;
-            const y = (1 - (pos.z / WORLD_SIZE)) * canvas.height;
+        const { x: tx, y: ty, scale } = transform;
 
-            const grad = ctx.createRadialGradient(x, y, 0, x, y, pointRadius);
+        mapPoints.forEach(pos => {
+            // Map space to viewport space
+            const viewX = pos.x * scale + tx;
+            const viewY = pos.y * scale + ty;
+
+            // Simple culling
+            if (viewX < -pointRadius || viewX > canvas.width + pointRadius || 
+                viewY < -pointRadius || viewY > canvas.height + pointRadius) {
+                return;
+            }
+
+            const grad = ctx.createRadialGradient(viewX, viewY, 0, viewX, viewY, pointRadius);
             grad.addColorStop(0, `rgba(255, 69, 0, ${opacity})`);
             grad.addColorStop(1, 'rgba(255, 69, 0, 0)');
             
             ctx.fillStyle = grad;
             ctx.beginPath();
-            ctx.arc(x, y, pointRadius, 0, Math.PI * 2);
+            ctx.arc(viewX, viewY, pointRadius, 0, Math.PI * 2);
             ctx.fill();
         });
-    };
+    }, [mapPoints, mapLoaded, pointRadius, opacity, transform]);
 
     useEffect(() => {
         drawHeatMap();
-    }, [coords, mapLoaded, pointRadius, opacity]);
+        
+        const container = containerRef.current;
+        if (!container) return;
+        
+        const resizeObserver = new ResizeObserver(() => {
+            drawHeatMap();
+        });
+        resizeObserver.observe(container);
+        
+        return () => resizeObserver.disconnect();
+    }, [drawHeatMap]);
 
     useEffect(() => {
         if (containerRef.current && mapLoaded) {
@@ -234,20 +266,18 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                                 onLoad={handleImageLoad}
                                 style={{ width: '100%', height: '100%', display: 'block' }}
                             />
-                            <canvas 
-                                ref={canvasRef}
-                                width={2048}
-                                height={2048}
-                                style={{ 
-                                    position: 'absolute', 
-                                    top: 0, 
-                                    left: 0, 
-                                    width: '100%', 
-                                    height: '100%',
-                                    pointerEvents: 'none'
-                                }}
-                            />
                         </div>
+                        <canvas 
+                            ref={canvasRef}
+                            style={{ 
+                                position: 'absolute', 
+                                top: 0, 
+                                left: 0, 
+                                width: '100%', 
+                                height: '100%',
+                                pointerEvents: 'none'
+                            }}
+                        />
                     </div>
                 </div>
             </div>
