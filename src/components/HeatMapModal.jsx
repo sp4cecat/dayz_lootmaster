@@ -41,8 +41,6 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     const [mapLoaded, setMapLoaded] = useState(false);
 
     const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-    const transformRef = useRef(transform);
-    transformRef.current = transform;
 
     const [isPanning, setIsPanning] = useState(false);
     const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
@@ -168,57 +166,69 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                 y: (height - 2048 * s) / 2,
                 scale: s
             });
+            setActiveBreakpointIndex(0);
         }
     }, [mapLoaded, updateBreakpoints]);
 
     useEffect(() => {
-        if (breakpoints.length > 0 && transform.scale < breakpoints[0] - 0.001) {
-            if (!containerRef.current) return;
-            const { width, height } = containerRef.current.getBoundingClientRect();
-            const s = breakpoints[0];
-            setTransform({
-                x: (width - 2048 * s) / 2,
-                y: (height - 2048 * s) / 2,
-                scale: s
-            });
+        if (breakpoints.length > 0 && mapLoaded) {
+            const newScale = breakpoints[activeBreakpointIndex];
+            if (Math.abs(newScale - transform.scale) > 0.001) {
+                setTransform(prev => {
+                    if (!containerRef.current) return prev;
+                    const rect = containerRef.current.getBoundingClientRect();
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    
+                    const contentCenterX = (centerX - prev.x) / prev.scale;
+                    const contentCenterY = (centerY - prev.y) / prev.scale;
+                    
+                    return {
+                        x: centerX - contentCenterX * newScale,
+                        y: centerY - contentCenterY * newScale,
+                        scale: newScale
+                    };
+                });
+            }
         }
-    }, [breakpoints, transform.scale]);
+    }, [breakpoints, activeBreakpointIndex, mapLoaded, transform.scale]);
 
-    useEffect(() => {
-        if (breakpoints.length === 0) return;
-        const currentScale = transform.scale;
+    const setZoomIndex = useCallback((newIdx, focusX = null, focusY = null) => {
+        if (!containerRef.current || breakpoints.length === 0) return;
+        const clampedIdx = Math.max(0, Math.min(newIdx, breakpoints.length - 1));
         
-        // Choose the smallest breakpoint that is >= current scale
-        let idx = breakpoints.findIndex(b => b >= currentScale);
-        if (idx === -1) idx = breakpoints.length - 1;
+        const newScale = breakpoints[clampedIdx];
         
-        if (idx !== activeBreakpointIndex) {
-            setActiveBreakpointIndex(idx);
-        }
-    }, [transform.scale, breakpoints, activeBreakpointIndex]);
+        setTransform(prev => {
+            const rect = containerRef.current.getBoundingClientRect();
+            const targetX = focusX !== null ? focusX : rect.width / 2;
+            const targetY = focusY !== null ? focusY : rect.height / 2;
+            
+            const contentFocusX = (targetX - prev.x) / prev.scale;
+            const contentFocusY = (targetY - prev.y) / prev.scale;
+            
+            return {
+                x: targetX - contentFocusX * newScale,
+                y: targetY - contentFocusY * newScale,
+                scale: newScale
+            };
+        });
+        setActiveBreakpointIndex(clampedIdx);
+    }, [breakpoints]);
 
     const handleWheel = useCallback((e) => {
-        if (!containerRef.current) return;
-        const zoomSpeed = 0.001;
-        const delta = -e.deltaY * zoomSpeed;
-        const maxScale = Math.max(8, breakpoints[3] || 8);
-        const newScale = Math.min(Math.max(transformRef.current.scale + delta, breakpoints[0] || 0.05), maxScale);
+        if (!containerRef.current || breakpoints.length === 0) return;
         
-        if (newScale === transformRef.current.scale) return;
-
         const rect = containerRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-        
-        const contentMouseX = (mouseX - transformRef.current.x) / transformRef.current.scale;
-        const contentMouseY = (mouseY - transformRef.current.y) / transformRef.current.scale;
 
-        setTransform({
-            x: mouseX - contentMouseX * newScale,
-            y: mouseY - contentMouseY * newScale,
-            scale: newScale
-        });
-    }, [breakpoints]);
+        if (e.deltaY < 0) {
+            setZoomIndex(activeBreakpointIndex + 1, mouseX, mouseY);
+        } else if (e.deltaY > 0) {
+            setZoomIndex(activeBreakpointIndex - 1, mouseX, mouseY);
+        }
+    }, [breakpoints, activeBreakpointIndex, setZoomIndex]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -255,40 +265,12 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         setIsPanning(false);
     };
 
-    const adjustZoom = (factor) => {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        
-        const contentCenterX = (centerX - transform.x) / transform.scale;
-        const contentCenterY = (centerY - transform.y) / transform.scale;
-        
-        const maxScale = Math.max(8, breakpoints[3] || 8);
-        const newScale = Math.min(Math.max(transform.scale * factor, breakpoints[0] || 0.05), maxScale);
-        
-        setTransform({
-            x: centerX - contentCenterX * newScale,
-            y: centerY - contentCenterY * newScale,
-            scale: newScale
-        });
+    const adjustZoom = (deltaIndex) => {
+        setZoomIndex(activeBreakpointIndex + deltaIndex);
     };
 
     const handleZoomSliderChange = (e) => {
-        const newScale = parseFloat(e.target.value);
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        
-        const contentCenterX = (centerX - transform.x) / transform.scale;
-        const contentCenterY = (centerY - transform.y) / transform.scale;
-        
-        setTransform({
-            x: centerX - contentCenterX * newScale,
-            y: centerY - contentCenterY * newScale,
-            scale: newScale
-        });
+        setZoomIndex(parseInt(e.target.value));
     };
 
     const handleImageLoad = (e) => {
@@ -317,17 +299,17 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginLeft: 'auto', marginRight: '20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <label>Zoom:</label>
-                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(0.8)}>-</button>
+                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(-1)}>-</button>
                             <input 
                                 type="range" 
-                                min={breakpoints[0] || 0.05} 
-                                max={Math.max(8, breakpoints[3] || 8)} 
-                                step="0.01" 
-                                value={transform.scale} 
+                                min="0" 
+                                max="3" 
+                                step="1" 
+                                value={activeBreakpointIndex} 
                                 onChange={handleZoomSliderChange} 
                                 style={{ width: '100px' }}
                             />
-                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(1.2)}>+</button>
+                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(1)}>+</button>
                             <span style={{ minWidth: '45px', textAlign: 'right' }}>
                                 {breakpoints[3] ? Math.round((transform.scale / breakpoints[3]) * 100) : Math.round(transform.scale * 100)}%
                             </span>
