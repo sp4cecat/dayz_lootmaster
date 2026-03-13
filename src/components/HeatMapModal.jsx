@@ -172,6 +172,19 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     }, [mapLoaded, updateBreakpoints]);
 
     useEffect(() => {
+        if (breakpoints.length > 0 && transform.scale < breakpoints[0] - 0.001) {
+            if (!containerRef.current) return;
+            const { width, height } = containerRef.current.getBoundingClientRect();
+            const s = breakpoints[0];
+            setTransform({
+                x: (width - 2048 * s) / 2,
+                y: (height - 2048 * s) / 2,
+                scale: s
+            });
+        }
+    }, [breakpoints, transform.scale]);
+
+    useEffect(() => {
         if (breakpoints.length === 0) return;
         const currentScale = transform.scale;
         
@@ -189,7 +202,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         const zoomSpeed = 0.001;
         const delta = -e.deltaY * zoomSpeed;
         const maxScale = Math.max(8, breakpoints[3] || 8);
-        const newScale = Math.min(Math.max(transformRef.current.scale + delta, 0.05), maxScale);
+        const newScale = Math.min(Math.max(transformRef.current.scale + delta, breakpoints[0] || 0.05), maxScale);
         
         if (newScale === transformRef.current.scale) return;
 
@@ -252,7 +265,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         const contentCenterY = (centerY - transform.y) / transform.scale;
         
         const maxScale = Math.max(8, breakpoints[3] || 8);
-        const newScale = Math.min(Math.max(transform.scale * factor, 0.05), maxScale);
+        const newScale = Math.min(Math.max(transform.scale * factor, breakpoints[0] || 0.05), maxScale);
         
         setTransform({
             x: centerX - contentCenterX * newScale,
@@ -307,7 +320,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                             <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(0.8)}>-</button>
                             <input 
                                 type="range" 
-                                min="0.05" 
+                                min={breakpoints[0] || 0.05} 
                                 max={Math.max(8, breakpoints[3] || 8)} 
                                 step="0.01" 
                                 value={transform.scale} 
