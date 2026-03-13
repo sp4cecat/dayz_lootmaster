@@ -315,7 +315,9 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                                 style={{ width: '100px' }}
                             />
                             <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(1.2)}>+</button>
-                            <span style={{ minWidth: '45px', textAlign: 'right' }}>{Math.round(transform.scale * 100)}%</span>
+                            <span style={{ minWidth: '45px', textAlign: 'right' }}>
+                                {breakpoints[3] ? Math.round((transform.scale / breakpoints[3]) * 100) : Math.round(transform.scale * 100)}%
+                            </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <label>Radius:</label>
