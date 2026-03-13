@@ -714,7 +714,7 @@ function tryParseLinePos(line) {
     const m = /pos=<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
     if (!m) return null;
     const x = Number(m[1]);
-    const z = Number(m[2]);
+    const z = Number(m[3]);
     if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
     return {x, z};
 }
@@ -1303,6 +1303,57 @@ const server = http.createServer(async (req, res) => {
             } catch (e) {
                 console.error('ADM fetch error:', e);
                 send(res, 500, JSON.stringify({error: 'Failed to fetch ADM records'}), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // POST logs heatmap-data, returns JSON coordinates array
+        if (pathname === '/api/logs/heatmap-data') {
+            if (req.method !== 'POST') {
+                methodNotAllowed(res);
+                return;
+            }
+            let body = '';
+            try {
+                body = await readBody(req);
+                const data = JSON.parse(body || '{}');
+
+                const parseUtcPlus10 = (s) => {
+                    if (typeof s !== 'string') return moment.invalid();
+                    const formats = [
+                        'YYYY-MM-DDTHH:mm:ss',
+                        'YYYY-MM-DD HH:mm:ss',
+                        'YYYY-MM-DDTHH:mm',
+                        'YYYY-MM-DD HH:mm',
+                        'YYYY-MM-DD'
+                    ];
+                    const m = moment(s, formats, true);
+                    if (!m.isValid()) return moment.invalid();
+                    return m.utcOffset(600, true).utc();
+                };
+
+                const startM = parseUtcPlus10(data.start);
+                const endM = parseUtcPlus10(data.end);
+                if (!data.start || !data.end || !startM.isValid() || !endM.isValid() || startM.isAfter(endM)) {
+                    badRequest(res, 'Invalid start/end datetimes.');
+                    return;
+                }
+                const start = startM.toDate();
+                const end = endM.toDate();
+
+                const lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);
+                const coords = [];
+                for (const line of lines) {
+                    const pos = tryParseLinePos(line);
+                    if (pos) {
+                        coords.push(pos);
+                    }
+                }
+
+                send(res, 200, JSON.stringify({coords}), {'Content-Type': 'application/json'});
+            } catch (e) {
+                console.error('Heatmap data fetch error:', e);
+                send(res, 500, JSON.stringify({error: 'Failed to fetch heatmap data'}), {'Content-Type': 'application/json'});
             }
             return;
         }

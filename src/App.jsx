@@ -17,6 +17,7 @@ import LintFilesModal from './components/LintFilesModal.jsx';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.jsx';
 import ProfileManager from './components/ProfileManager.jsx';
 import AddonEditorModal from './components/AddonEditorModal.jsx';
+import HeatMapModal from './components/HeatMapModal.jsx';
 import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
 
 /**
@@ -117,6 +118,8 @@ export default function App() {
     const [showTraderEditor, setShowTraderEditor] = useState(false);
     const [showMarketCategories, setShowMarketCategories] = useState(false);
     const [showLint, setShowLint] = useState(false);
+    const [mapToolsOpen, setMapToolsOpen] = useState(false);
+    const [showHeatMap, setShowHeatMap] = useState(false);
     const [activeAddon, setActiveAddon] = useState(null); // { id, name }
     const [showProfileManager, setShowProfileManager] = useState(false);
 
@@ -679,6 +682,38 @@ export default function App() {
                       )}
                     </div>
 
+                    {/* Map tools dropdown */}
+                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+                      <button
+                        className="btn"
+                        onClick={() => setMapToolsOpen(v => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={mapToolsOpen}
+                        title="Map tools"
+                      >
+                        Map tools ▾
+                      </button>
+                      {mapToolsOpen && (
+                        <div
+                          className="dropdown-menu"
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: 8,
+                            minWidth: 180,
+                            zIndex: 10
+                          }}
+                        >
+                          <button className="link" role="menuitem" onClick={() => { setShowHeatMap(true); setMapToolsOpen(false); }}>Heat map</button>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Tools dropdown */}
                     <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
                       <button
@@ -847,6 +882,10 @@ export default function App() {
             )}
             {showLint && (
                 <LintFilesModal onClose={() => setShowLint(false)} selectedProfileId={selectedProfileId} />
+            )}
+
+            {showHeatMap && (
+                <HeatMapModal onClose={() => setShowHeatMap(false)} selectedProfileId={selectedProfileId} getApiBase={getApiBase} />
             )}
 
             {activeAddon && (
