@@ -1083,3 +1083,43 @@ textarea.code-view {
     height: 60vh;
     justify-items: flex-start;
 }
+
+/* Button variants */
+.btn-primary {
+    background-color: var(--primary);
+    color: #fff;
+    border: 1px solid transparent;
+    transition: background-color 0.2s;
+}
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+}
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background-color: var(--bg-soft);
+    color: var(--text);
+    border: 1px solid var(--border);
+    transition: background-color 0.2s;
+}
+.btn-secondary:hover:not(:disabled) {
+    background-color: var(--bg-softer);
+}
+
+.btn-danger {
+    background-color: var(--error);
+    color: #fff;
+    border: 1px solid transparent;
+}
+.btn-danger:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.btn-small {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+}

@@ -20,6 +20,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         return d;
     });
     const [loading, setLoading] = useState(false);
+    const [isRendering, setIsRendering] = useState(false);
     const [error, setError] = useState(null);
     const [coords, setCoords] = useState([]);
     const [breakpoints, setBreakpoints] = useState([]);
@@ -136,7 +137,12 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
     }, [mapLoaded, naturalWidth]);
 
     useEffect(() => {
-        drawHeatMap();
+        setIsRendering(true);
+        const timer = setTimeout(() => {
+            drawHeatMap();
+            setIsRendering(false);
+        }, 50);
+        return () => clearTimeout(timer);
     }, [drawHeatMap]);
 
     useEffect(() => {
@@ -199,7 +205,7 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
             y: mouseY - contentMouseY * newScale,
             scale: newScale
         });
-    }, []);
+    }, [breakpoints]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -236,6 +242,42 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         setIsPanning(false);
     };
 
+    const adjustZoom = (factor) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const contentCenterX = (centerX - transform.x) / transform.scale;
+        const contentCenterY = (centerY - transform.y) / transform.scale;
+        
+        const maxScale = Math.max(8, breakpoints[3] || 8);
+        const newScale = Math.min(Math.max(transform.scale * factor, 0.05), maxScale);
+        
+        setTransform({
+            x: centerX - contentCenterX * newScale,
+            y: centerY - contentCenterY * newScale,
+            scale: newScale
+        });
+    };
+
+    const handleZoomSliderChange = (e) => {
+        const newScale = parseFloat(e.target.value);
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const contentCenterX = (centerX - transform.x) / transform.scale;
+        const contentCenterY = (centerY - transform.y) / transform.scale;
+        
+        setTransform({
+            x: centerX - contentCenterX * newScale,
+            y: centerY - contentCenterY * newScale,
+            scale: newScale
+        });
+    };
+
     const handleImageLoad = (e) => {
         setNaturalWidth(e.target.naturalWidth || 2048);
         setMapLoaded(true);
@@ -261,6 +303,21 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                     </div>
                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginLeft: 'auto', marginRight: '20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <label>Zoom:</label>
+                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(0.8)}>-</button>
+                            <input 
+                                type="range" 
+                                min="0.05" 
+                                max={Math.max(8, breakpoints[3] || 8)} 
+                                step="0.01" 
+                                value={transform.scale} 
+                                onChange={handleZoomSliderChange} 
+                                style={{ width: '100px' }}
+                            />
+                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(1.2)}>+</button>
+                            <span style={{ minWidth: '45px', textAlign: 'right' }}>{Math.round(transform.scale * 100)}%</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <label>Radius:</label>
                             <input type="range" min="5" max="100" value={pointRadius} onChange={e => setPointRadius(parseInt(e.target.value))} />
                         </div>
@@ -279,6 +336,26 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
                     onMouseMove={handleMouseMove}
                 >
                     {error && <div className="error-message" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: 'rgba(255,0,0,0.8)', color: 'white', padding: '5px 10px', borderRadius: '4px' }}>{error}</div>}
+                    {isRendering && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            background: 'rgba(0,0,0,0.8)',
+                            color: 'white',
+                            padding: '15px 30px',
+                            borderRadius: '8px',
+                            zIndex: 1000,
+                            pointerEvents: 'none',
+                            fontSize: '1.2em',
+                            fontWeight: 'bold',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                            border: '1px solid rgba(255,255,255,0.2)'
+                        }}>
+                            Rendering Heatmap...
+                        </div>
+                    )}
                     <div 
                         ref={containerRef}
                         style={{ 
