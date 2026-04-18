@@ -710,12 +710,12 @@ function tryParseLineTime(line) {
     return m ? m[1] : null;
 }
 
-// Extract pos=<x, z, y>; returns {x, z} or null (planar X/Z distance)
+// Extract pos=<x, y, z>; returns {x, z} or null (planar X/Z distance, y is vertical/height)
 function tryParseLinePos(line) {
     const m = /pos=<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
     if (!m) return null;
     const x = Number(m[1]);
-    const z = Number(m[2]);
+    const z = Number(m[3]);
     if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
     return {x, z};
 }
