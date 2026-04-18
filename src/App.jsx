@@ -11,6 +11,7 @@ import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
+import ExpansionLogModal from './components/ExpansionLogModal.jsx';
 import StashReportModal from './components/StashReportModal.jsx';
 import TraderEditorModal from './components/TraderEditorModal.jsx';
 import LintFilesModal from './components/LintFilesModal.jsx';
@@ -113,6 +114,7 @@ export default function App() {
     const [showStorage, setShowStorage] = useState(false);
     const [toolsOpen, setToolsOpen] = useState(false);
     const [showAdm, setShowAdm] = useState(false);
+    const [showExpansionLog, setShowExpansionLog] = useState(false);
     const [showStash, setShowStash] = useState(false);
     const [marketOpen, setMarketOpen] = useState(false);
     const [showTraderEditor, setShowTraderEditor] = useState(false);
@@ -742,6 +744,7 @@ export default function App() {
                           }}
                         >
                           <button className="link" role="menuitem" onClick={() => { setShowAdm(true); setToolsOpen(false); }}>ADM records</button>
+                          <button className="link" role="menuitem" onClick={() => { setShowExpansionLog(true); setToolsOpen(false); }}>Expansion Log</button>
                           <button className="link" role="menuitem" onClick={() => { setShowStash(true); setToolsOpen(false); }}>Stash report</button>
                           <button className="link" role="menuitem" onClick={() => { setShowLint(true); setToolsOpen(false); }}>Lint files</button>
                           {selectedProfile?.addons?.map(addonId => {
@@ -876,6 +879,9 @@ export default function App() {
             )}
             {showAdm && (
               <AdmRecordsModal onClose={() => setShowAdm(false)} selectedProfileId={selectedProfileId} />
+            )}
+            {showExpansionLog && (
+              <ExpansionLogModal onClose={() => setShowExpansionLog(false)} selectedProfileId={selectedProfileId} />
             )}
             {showStash && (
               <StashReportModal onClose={() => setShowStash(false)} selectedProfileId={selectedProfileId} />

@@ -101,6 +101,7 @@ function getPaths(profile) {
         traderProfilesDirPath: join(profilesPath, 'ExpansionMod', 'Traders'),
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
+        expansionLogsDirPath: join(profilesPath, 'ExpansionMod', 'Logs'),
         missionPath,
         profilesPath
     };
@@ -725,6 +726,131 @@ function tryParseLineId(line) {
     return m ? m[1] : null;
 }
 
+// ── Expansion Log helpers ──
+
+async function listExpansionLogFiles(logsRoot) {
+    /** @type {string[]} */
+    const out = [];
+    let entries = [];
+    try {
+        entries = await readdir(logsRoot, {withFileTypes: true});
+    } catch {
+        return out;
+    }
+    for (const ent of entries) {
+        if (ent.isFile() && /\.log$/i.test(ent.name)) {
+            out.push(join(logsRoot, ent.name));
+        }
+    }
+    return out;
+}
+
+function parseExpLogStartDate(filePath) {
+    // ExpLog_YYYY-MM-DD_HH-mm-ss.log — interpret as UTC+10 local time
+    const name = String(filePath).split(/[\\/]/).pop() || '';
+    const tzOffsetMs = 10 * 60 * 60 * 1000;
+
+    const m = name.match(/ExpLog_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/i);
+    if (m) {
+        const y = Number(m[1]), mon = Number(m[2]) - 1, d = Number(m[3]);
+        const h = Number(m[4]), mi = Number(m[5]), s = Number(m[6]);
+        const utcMs = Date.UTC(y, mon, d, h, mi, s) - tzOffsetMs;
+        const dt = new Date(utcMs);
+        return isNaN(dt.getTime()) ? null : dt;
+    }
+    return null;
+}
+
+function tryParseExpLineTime(line) {
+    // Expansion lines start with HH:MM:SS.mmm (milliseconds)
+    const m = /^(\d{1,2}:\d{2}:\d{2})\.\d+/.exec(line);
+    return m ? m[1] : null;
+}
+
+async function collectExpansionRecordsInRange(start, end, posFilter, idSet, paths) {
+    const root = paths.expansionLogsDirPath;
+    const files = await listExpansionLogFiles(root);
+
+    // Read all files and capture their start datetime (from filename) and lines
+    const fileBuckets = [];
+    for (const f of files) {
+        let text = '';
+        try {
+            text = await readFile(f, 'utf8');
+        } catch {
+            continue;
+        }
+        const startDate = parseExpLogStartDate(f);
+        if (!startDate) continue;
+        const rows = text.split(/\r?\n/);
+        fileBuckets.push({path: f, startDate, rows});
+    }
+
+    // Order files by their start datetime (earlier first), tie-breaker by path
+    fileBuckets.sort((a, b) => {
+        const diff = a.startDate - b.startDate;
+        return diff !== 0 ? diff : String(a.path).localeCompare(String(b.path));
+    });
+
+    /** @type {string[]} */
+    const lines = [];
+
+    const usePos = posFilter && Number.isFinite(posFilter.x) && Number.isFinite(posFilter.z) && Number.isFinite(posFilter.radius);
+    const useIds = idSet && idSet.size > 0;
+
+    // Helper: HH:MM:SS -> seconds of day
+    const hmsToSec = (t) => {
+        const parts = t.split(':').map(Number);
+        if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    };
+
+    // For each file (in start-date order), walk lines in original order and include those within range
+    for (const bucket of fileBuckets) {
+        // Compute UTC+10 "midnight" for the file date, as an absolute instant
+        const tzOffsetMs = 10 * 60 * 60 * 1000;
+        const shifted = new Date(bucket.startDate.getTime() + tzOffsetMs);
+        const baseMidnightUtcPlus10Ms = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), 0, 0, 0) - tzOffsetMs;
+        const baseDate = new Date(baseMidnightUtcPlus10Ms);
+
+        let dayOffset = 0;
+        let lastSec = null;
+
+        for (const row of bucket.rows) {
+            const t = tryParseExpLineTime(row);
+            if (!t) continue;
+
+            const sec = hmsToSec(t);
+            if (sec == null) continue;
+
+            if (lastSec != null && sec < lastSec) {
+                dayOffset += 1;
+            }
+            lastSec = sec;
+
+            const dt = new Date(baseDate.getTime() + dayOffset * 24 * 60 * 60 * 1000 + sec * 1000);
+
+            if (dt < start || dt > end) continue;
+
+            if (useIds) {
+                const id = tryParseLineId(row);
+                if (!id || !idSet.has(id)) continue;
+            } else if (usePos) {
+                const pos = tryParseLinePos(row);
+                if (!pos) continue;
+                const dx = pos.x - posFilter.x;
+                const dz = pos.z - posFilter.z;
+                const dist = Math.hypot(dx, dz);
+                if (dist > posFilter.radius) continue;
+            }
+
+            lines.push(row);
+        }
+    }
+
+    return lines;
+}
+
 async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
     const root = paths.logsDirPath;
     const files = await listAdmFiles(root);
@@ -1303,6 +1429,82 @@ const server = http.createServer(async (req, res) => {
             } catch (e) {
                 console.error('ADM fetch error:', e);
                 send(res, 500, JSON.stringify({error: 'Failed to fetch ADM records'}), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // POST Expansion logs within range, returns a downloadable file
+        if (pathname === '/api/logs/expansion') {
+            if (req.method !== 'POST') {
+                methodNotAllowed(res);
+                return;
+            }
+            let body = '';
+            try {
+                body = await readBody(req);
+                const data = JSON.parse(body || '{}');
+
+                const parseUtcPlus10 = (s) => {
+                    if (typeof s !== 'string') return moment.invalid();
+                    const formats = [
+                        'YYYY-MM-DDTHH:mm:ss',
+                        'YYYY-MM-DD HH:mm:ss',
+                        'YYYY-MM-DDTHH:mm',
+                        'YYYY-MM-DD HH:mm',
+                        'YYYY-MM-DD'
+                    ];
+                    const m = moment(s, formats, true);
+                    if (!m.isValid()) return moment.invalid();
+                    return m.utcOffset(600, true).utc();
+                };
+
+                const startM = parseUtcPlus10(data.start);
+                const endM = parseUtcPlus10(data.end);
+                if (!data.start || !data.end || !startM.isValid() || !endM.isValid() || startM.isAfter(endM)) {
+                    badRequest(res, 'Invalid start/end datetimes.');
+                    return;
+                }
+                const start = startM.toDate();
+                const end = endM.toDate();
+
+                const xf = Number(data.x);
+                let zf = Number(data.z);
+                const rf = Number(data.radius);
+                if (!Number.isFinite(zf) && Number.isFinite(Number(data.y))) {
+                    zf = Number(data.y);
+                }
+                const hasFilter = Number.isFinite(xf) && Number.isFinite(zf) && Number.isFinite(rf);
+                const expandByIds = !!data.expandByIds;
+
+                let lines;
+                if (hasFilter) {
+                    const spatialLines = await collectExpansionRecordsInRange(start, end, {x: xf, z: zf, radius: rf}, undefined, paths);
+                    const idSet = new Set();
+                    for (const row of spatialLines) {
+                        const id = tryParseLineId(row);
+                        if (id) idSet.add(id);
+                    }
+
+                    if (expandByIds) {
+                        lines = await collectExpansionRecordsInRange(start, end, undefined, idSet, paths);
+                    }
+                    else
+                        lines = spatialLines;
+                } else {
+                    lines = await collectExpansionRecordsInRange(start, end, undefined, undefined, paths);
+                }
+
+                const header = `ExpansionLog started on ${startM.clone().utcOffset(600).format('YYYY-MM-DD')} at ${startM.clone().utcOffset(600).format('HH:mm:ss')}`;
+                const content = [header, ...lines].join('\n');
+
+                const filename = `${startM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}_to_${endM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}.log`;
+                send(res, 200, content, {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Content-Disposition': `attachment; filename="${filename}"`
+                });
+            } catch (e) {
+                console.error('Expansion log fetch error:', e);
+                send(res, 500, JSON.stringify({error: 'Failed to fetch Expansion log records'}), {'Content-Type': 'application/json'});
             }
             return;
         }
