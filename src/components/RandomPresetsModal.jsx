@@ -13,6 +13,8 @@ function fromPercent(value) {
 export default function RandomPresetsModal({ randomPresets, setRandomPresets, spawnableTypesByGroup = {}, setSpawnableTypesByGroup = () => {}, onClose }) {
   const presets = randomPresets?.presets || [];
   const presetNames = new Set(presets.map(p => p.name).filter(Boolean));
+  const [pendingDelete, setPendingDelete] = React.useState(null);
+  const [transferOnDelete, setTransferOnDelete] = React.useState(false);
 
   const updatePreset = (index, apply) => {
     setRandomPresets(prev => {
@@ -88,15 +90,24 @@ export default function RandomPresetsModal({ randomPresets, setRandomPresets, sp
     }));
   };
 
-  const removePreset = (index) => {
+  const requestRemovePreset = (index) => {
     const preset = presets[index];
     const refs = countReferences(preset?.name);
-    const ok = window.confirm(`Delete preset "${preset?.name || ''}"?${refs ? ` It is referenced ${refs} time(s) by spawnabletypes.` : ''}`);
-    if (!ok) return;
-    if (refs && window.confirm('Transfer this preset\'s chance/items directly into referencing spawnabletypes entries before deleting?')) {
-      transferPresetToReferences(preset);
+    setPendingDelete({ index, name: preset?.name || '', refs });
+    setTransferOnDelete(false);
+  };
+
+  const confirmRemovePreset = () => {
+    if (!pendingDelete) return;
+    const preset = presets[pendingDelete.index];
+    if (!preset) {
+      setPendingDelete(null);
+      return;
     }
-    setRandomPresets(prev => ({ ...(prev || {}), presets: (prev?.presets || []).filter((_, i) => i !== index) }));
+    if (pendingDelete.refs && transferOnDelete) transferPresetToReferences(preset);
+    setRandomPresets(prev => ({ ...(prev || {}), presets: (prev?.presets || []).filter((_, i) => i !== pendingDelete.index) }));
+    setPendingDelete(null);
+    setTransferOnDelete(false);
   };
 
   return (
@@ -110,14 +121,32 @@ export default function RandomPresetsModal({ randomPresets, setRandomPresets, sp
           <button className="btn primary" onClick={addPreset}>Add preset group</button>
           <span className="muted">Chance sliders save as XML values from 0.000 to 1.000.</span>
         </div>
+        {pendingDelete && (
+          <div className="card subtle" style={{ marginBottom: 12 }}>
+            <h3>Delete preset “{pendingDelete.name}”?</h3>
+            {pendingDelete.refs ? (
+              <label className="row wrap">
+                <input type="checkbox" checked={transferOnDelete} onChange={e => setTransferOnDelete(e.target.checked)} />
+                Transfer this preset's chance and items directly into {pendingDelete.refs} referencing spawnabletypes entr{pendingDelete.refs === 1 ? 'y' : 'ies'} before deleting.
+              </label>
+            ) : <p className="muted">This preset is unused.</p>}
+            <div className="row wrap">
+              <button className="btn danger" onClick={confirmRemovePreset}>Delete preset</button>
+              <button className="btn" onClick={() => setPendingDelete(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
         <div className="stack" style={{ maxHeight: '70vh', overflow: 'auto' }}>
-          {presets.map((preset, index) => (
+          {presets.map((preset, index) => {
+            const refs = countReferences(preset.name);
+            return (
             <section key={`${preset.kind}-${preset.name}-${index}`} className="card">
               <div className="row wrap">
                 <label>Node type <input value={preset.kind || ''} onChange={e => updatePreset(index, p => ({ ...p, kind: e.target.value || 'attachments' }))}/></label>
                 <label>Name <input value={preset.name || ''} onChange={e => updatePreset(index, p => { renamePresetReferences(p.name, e.target.value); return { ...p, name: e.target.value, attrs: { ...(p.attrs || {}), name: e.target.value } }; })}/></label>
                 <button className="btn" onClick={() => duplicatePreset(preset)}>Duplicate</button>
-                <button className="btn danger" onClick={() => removePreset(index)}>Delete</button>
+                <button className="btn danger" onClick={() => requestRemovePreset(index)}>Delete</button>
+                <span className="badge">{refs ? `${refs} reference${refs === 1 ? '' : 's'}` : 'unused'}</span>
               </div>
               <label className="slider-row">
                 Group chance {chancePercent(preset.chance)}%
@@ -136,7 +165,7 @@ export default function RandomPresetsModal({ randomPresets, setRandomPresets, sp
                 <button className="btn" onClick={() => updatePreset(index, p => ({ ...p, items: [...(p.items || []), { kind: 'item', name: '', chance: 1, attrs: { chance: '1' } }] }))}>Add item</button>
               </div>
             </section>
-          ))}
+          );})}
           {!presets.length && <div className="empty">No random presets loaded. Add a preset group to create `cfgrandompresets.xml` content.</div>}
         </div>
       </div>

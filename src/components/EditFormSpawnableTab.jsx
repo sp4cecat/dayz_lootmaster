@@ -12,6 +12,8 @@ function fromPercent(value) {
 
 export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGroup, setSpawnableTypesByGroup, randomPresets, globalsDefaults }) {
   const presetNames = (randomPresets?.presets || []).map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  const [bulkChance, setBulkChance] = React.useState('');
+  const [bulkPreset, setBulkPreset] = React.useState('');
   const selectedByGroup = selectedTypes.reduce((acc, type) => {
     const group = type.group || 'vanilla';
     if (!acc[group]) acc[group] = [];
@@ -52,6 +54,39 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
     }));
   };
 
+  const updateSelectedSections = (apply) => {
+    setSpawnableTypesByGroup(prev => {
+      const next = { ...(prev || {}) };
+      for (const [group, types] of Object.entries(selectedByGroup)) {
+        const selectedNames = new Set(types.map(type => type.name));
+        const groupData = next[group];
+        if (!groupData) continue;
+        next[group] = {
+          ...groupData,
+          types: (groupData.types || []).map(entry => selectedNames.has(entry.name)
+            ? { ...entry, sections: (entry.sections || []).map(apply) }
+            : entry)
+        };
+      }
+      return next;
+    });
+  };
+
+  const updateSelectedItemChances = (chance) => {
+    updateSelectedSections(section => ({
+      ...section,
+      items: (section.items || []).map(item => item.chance == null ? item : { ...item, chance, attrs: { ...(item.attrs || {}), chance: String(chance) } })
+    }));
+  };
+
+  const updateSelectedBlockChances = (chance) => {
+    updateSelectedSections(section => section.chance == null ? section : { ...section, chance, attrs: { ...(section.attrs || {}), chance: String(chance) } });
+  };
+
+  const updateSelectedPresets = (preset) => {
+    updateSelectedSections(section => ({ ...section, preset, attrs: { ...(section.attrs || {}), preset } }));
+  };
+
   const updateSection = (group, typeName, sectionIndex, apply) => {
     updateEntry(group, typeName, entry => ({
       ...entry,
@@ -69,6 +104,23 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
   return (
     <div className="stack">
       <p className="muted">Edit existing `cfgspawnabletypes.xml` chance and preset attributes. Structural block creation is limited to creating a default damage entry for types with no spawnable entry.</p>
+      {selectedTypes.length > 1 && (
+        <section className="card subtle">
+          <h4>Bulk spawnable edits</h4>
+          <p className="muted">Applies only to existing spawnable entries for the selected types. Missing entries still use the clickable default sliders below.</p>
+          <div className="row wrap">
+            <label>Chance % <input type="number" min="0" max="100" step="0.1" value={bulkChance} onChange={e => setBulkChance(e.target.value)} placeholder="0-100" /></label>
+            <button className="btn" disabled={bulkChance === ''} onClick={() => updateSelectedBlockChances(fromPercent(bulkChance))}>Apply to block chances</button>
+            <button className="btn" disabled={bulkChance === ''} onClick={() => updateSelectedItemChances(fromPercent(bulkChance))}>Apply to item chances</button>
+            <select value={bulkPreset} onChange={e => setBulkPreset(e.target.value)}>
+              <option value="">Choose preset…</option>
+              {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <button className="btn" disabled={!bulkPreset} onClick={() => updateSelectedPresets(bulkPreset)}>Apply preset to sections</button>
+            <button className="btn" onClick={() => updateSelectedPresets('')}>Clear section presets</button>
+          </div>
+        </section>
+      )}
       {Object.entries(selectedByGroup).map(([group, types]) => {
         const groupData = spawnableTypesByGroup?.[group] || { types: [] };
         const byName = new Map((groupData.types || []).map(entry => [entry.name, entry]));
@@ -79,7 +131,7 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
               const entry = byName.get(type.name);
               if (!entry) {
                 return (
-                  <div key={type.name} className="card subtle" onClick={() => createDamageEntry(group, type.name)} role="button" tabIndex={0}>
+                  <div key={type.name} className="card subtle" onClick={() => createDamageEntry(group, type.name)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') createDamageEntry(group, type.name); }} role="button" tabIndex={0}>
                     <strong>{type.name}</strong>
                     <div className="muted">No explicit spawnable entry. Click the disabled default range to create one.</div>
                     <label className="slider-row disabled">

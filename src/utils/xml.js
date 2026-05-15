@@ -312,8 +312,6 @@ export function parseEconomyCoreXml(xml) {
   const doc = safeParseXml(xml);
   const ceNodes = Array.from(doc.getElementsByTagName('ce'));
 
-  console.log("CE Nodes", doc, ceNodes)
-
   /** @type {string[]} */
   const order = [];
   /** @type {Record<string, string[]>} */
@@ -321,18 +319,12 @@ export function parseEconomyCoreXml(xml) {
 
   for (const ce of ceNodes) {
     const folder = ce.getAttribute('folder');
-    console.log("Folder", folder)
     if (!folder) continue;
     const parts = folder.split('/').filter(Boolean);
     const group = parts[parts.length - 1] || folder;
 
-
-      console.log("Parts/group",parts, group)
-
     const typeFileNodes = Array.from(ce.getElementsByTagName('file'))
       .filter(f => ((f.getAttribute('type') || '').trim().toLowerCase() === 'types'));
-
-    console.log("NODES", typeFileNodes)
 
     const files = typeFileNodes
       .map(f => f.getAttribute('name'))
@@ -344,8 +336,6 @@ export function parseEconomyCoreXml(xml) {
       filesByGroup[group] = files;
     }
   }
-
-  console.log(order, filesByGroup)
 
   return { order, filesByGroup };
 }

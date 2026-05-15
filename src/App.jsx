@@ -20,7 +20,7 @@ import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.js
 import ProfileManager from './components/ProfileManager.jsx';
 import AddonEditorModal from './components/AddonEditorModal.jsx';
 import HeatMapModal from './components/HeatMapModal.jsx';
-import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateSpawnableTypesXml} from './utils/xml.js';
+import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateSpawnableTypesXml, validateSpawnableReferences} from './utils/xml.js';
 
 /**
  * @typedef {import('./utils/xml.js').Type} Type
@@ -476,6 +476,14 @@ export default function App() {
     // Safe alias for loadWarnings
     const lw = Array.isArray(loadWarnings) ? loadWarnings : [];
     const lwKey = lw.length ? `lw:${lw.join('|')}` : '';
+    const spawnableWarnings = useMemo(() => {
+        if (!lootTypes || !spawnableTypesByGroup) return [];
+        return Object.entries(spawnableTypesByGroup).flatMap(([group, data]) => {
+            const groupTypes = lootTypes.filter(type => (type.group || 'vanilla') === group);
+            return validateSpawnableReferences(data, groupTypes, randomPresets).map(warning => `[${group}] ${warning.message}`);
+        });
+    }, [lootTypes, randomPresets, spawnableTypesByGroup]);
+    const spawnableWarningsKey = spawnableWarnings.length ? `spawnable:${spawnableWarnings.join('|')}` : '';
 
     // Dismissible warnings: hide current warnings until new alerts are generated
     const [dismissedWarningsKey, setDismissedWarningsKey] = useState(/** @type {string|null} */(null));
@@ -483,9 +491,10 @@ export default function App() {
         const parts = [];
         if (unknowns?.hasAny) parts.push('unknowns');
         if (lwKey) parts.push(lwKey);
+        if (spawnableWarningsKey) parts.push(spawnableWarningsKey);
         if (noFlagsCount > 0) parts.push(`noflags:${noFlagsCount}`);
         return parts.join(';');
-    }, [unknowns?.hasAny, lwKey, noFlagsCount]);
+    }, [unknowns?.hasAny, lwKey, spawnableWarningsKey, noFlagsCount]);
     const dismissWarnings = () => setDismissedWarningsKey(warningsKey);
 
     const selectedTypes = useMemo(() => {
@@ -886,6 +895,21 @@ export default function App() {
                             <summary>Show details</summary>
                             <ul>
                                 {lw.map((m, i) => (<li key={i}>{m}</li>))}
+                            </ul>
+                        </details>
+                    </div>
+                    <div className="spacer"/>
+                    <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
+                </div>
+            )}
+            {warningsKey !== dismissedWarningsKey && spawnableWarnings.length > 0 && (
+                <div className="banner warn" role="status" aria-live="polite">
+                    <div>
+                        Spawnable reference warnings: {spawnableWarnings.length}
+                        <details>
+                            <summary>Show details</summary>
+                            <ul>
+                                {spawnableWarnings.map((m, i) => (<li key={i}>{m}</li>))}
                             </ul>
                         </details>
                     </div>
