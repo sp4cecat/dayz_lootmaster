@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Moon } from 'lucide-react';
-import { Button } from './ui/Button';
+import { Button } from './ui/Button.jsx';
 
 export function ThemeToggle() {
   const THEME_KEY = 'dayz-types-editor:theme';
@@ -11,7 +11,8 @@ export function ThemeToggle() {
       if (saved === 'dark' || saved === 'light') return saved;
     } catch { /* ignore */ }
     
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    // Default to dark to match index.html logic
+    return 'dark';
   });
 
   useEffect(() => {
@@ -29,14 +30,20 @@ export function ThemeToggle() {
     } catch { /* ignore */ }
   }, [theme]);
 
-  const toggle = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  const toggle = (e) => {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
 
   return (
     <Button 
       variant="secondary" 
       size="sm" 
       onClick={toggle} 
-      className="w-10 h-10 p-0 flex items-center justify-center border-gray-200 dark:border-gray-700"
+      className="w-10 h-10 p-0 flex items-center justify-center border-gray-200 dark:border-gray-700 shrink-0"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
     >
       {theme === 'dark' ? (

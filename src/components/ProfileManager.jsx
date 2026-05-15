@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { Button } from './ui/Button';
+import { cn } from '../utils/cn';
 
 export default function ProfileManager({ 
     profiles, 
@@ -121,74 +123,96 @@ export default function ProfileManager({
     };
 
     return (
-        <div className="modal-backdrop" onClick={onClose}>
-            <div className="modal profile-manager" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h3>Manage Server Installations</h3>
-                    <div className="spacer" />
-                    <button className="close-button" onClick={onClose}>&times;</button>
-                </div>
-                <div className="modal-body">
-                    {error && <div className="error-message" style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
+        <div className="profile-manager">
+            {error && <div className="p-3 mb-4 text-sm text-error-600 bg-error-50 rounded-lg dark:bg-error-900/20 dark:text-error-400">{error}</div>}
 
-                    {!isAdding ? (
-                        <>
-                            <div className="profile-list">
-                                {profiles.length === 0 ? (
-                                    <p>No server installations configured yet.</p>
-                                ) : (
-                                    profiles.map(p => (
-                                        <div key={p.id} className={`profile-item ${p.id === selectedProfileId ? 'selected' : ''}`} 
-                                             style={{ border: '1px solid #ccc', padding: '10px', marginBottom: '10px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div>
-                                                <strong>{p.name}</strong><br/>
-                                                <small style={{ color: '#666' }}>{p.serverPath}</small><br/>
-                                                <small style={{ color: '#666' }}>Mission: {p.missionName}</small>
-                                            </div>
-                                            <div className="actions">
-                                                <button onClick={() => onSelect(p.id)} disabled={p.id === selectedProfileId} className="btn-small">
-                                                    {p.id === selectedProfileId ? 'Selected' : 'Select'}
-                                                </button>
-                                                <button onClick={() => startEdit(p)} className="btn-small">Edit</button>
-                                                <button onClick={() => handleDelete(p.id)} className="btn-small btn-danger">Delete</button>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                            <button className="btn-primary" style={{ marginTop: '1rem' }} onClick={() => setIsAdding(true)}>
-                                + Add Server Installation
-                            </button>
-                        </>
-                    ) : (
-                        <div className="add-profile-form">
-                            <h4>{editingId ? 'Edit Installation' : 'Add New Installation'}</h4>
-                            <div className="form-group" style={{ marginBottom: '10px' }}>
-                                <label>Friendly Name:</label>
-                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. My Local Deerisle Server" style={{ width: '100%', padding: '8px' }} />
-                            </div>
-                            <div className="form-group" style={{ marginBottom: '10px' }}>
-                                <label>Server Root Path:</label>
-                                <div style={{ display: 'flex', gap: '5px' }}>
-                                    <input type="text" value={serverPath} onChange={e => setServerPath(e.target.value)} placeholder="C:\DayZServer" style={{ flex: 1, padding: '8px' }} />
-                                    <button onClick={() => scanMissions(serverPath)} disabled={loadingMissions}>Scan</button>
+            {!isAdding ? (
+                <>
+                    <div className="space-y-3">
+                        {profiles.length === 0 ? (
+                            <p className="text-gray-500 text-center py-8 italic dark:text-gray-400">No server installations configured yet.</p>
+                        ) : (
+                            profiles.map(p => (
+                                <div 
+                                    key={p.id} 
+                                    className={cn(
+                                        "flex items-center justify-between p-4 bg-white border rounded-xl transition-all dark:bg-gray-800",
+                                        p.id === selectedProfileId ? "border-primary-500 ring-1 ring-primary-500" : "border-gray-200 hover:border-gray-300 dark:border-gray-700"
+                                    )}
+                                >
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-gray-900 truncate dark:text-white">{p.name}</p>
+                                        <p className="text-xs text-gray-500 truncate dark:text-gray-400">{p.serverPath}</p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5 truncate uppercase tracking-wider font-semibold">Mission: {p.missionName}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-4">
+                                        <Button 
+                                            variant={p.id === selectedProfileId ? "primary" : "secondary"} 
+                                            size="sm"
+                                            onClick={() => onSelect(p.id)} 
+                                            disabled={p.id === selectedProfileId}
+                                        >
+                                            {p.id === selectedProfileId ? 'Active' : 'Select'}
+                                        </Button>
+                                        <Button variant="secondary" size="sm" onClick={() => startEdit(p)}>Edit</Button>
+                                        <Button variant="error" size="sm" onClick={() => handleDelete(p.id)}>Delete</Button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="form-group" style={{ marginBottom: '10px' }}>
-                                <label>Mission:</label>
-                                <select value={missionName} onChange={e => setMissionName(e.target.value)} style={{ width: '100%', padding: '8px' }} disabled={missions.length === 0}>
-                                    {missions.length === 0 && <option>Scan server path to see missions</option>}
-                                    {missions.map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                            </div>
-                            <div className="form-actions" style={{ display: 'flex', gap: '10px', marginTop: '1rem' }}>
-                                <button className="btn-primary" onClick={handleSave}>Save</button>
-                                <button onClick={() => { setIsAdding(false); setEditingId(null); setError(null); }}>Cancel</button>
+                            ))
+                        )}
+                    </div>
+                    <Button className="w-full mt-6" onClick={() => setIsAdding(true)}>
+                        + Add Server Installation
+                    </Button>
+                </>
+            ) : (
+                <div className="space-y-6">
+                    <h4 className="text-lg font-bold text-gray-900 dark:text-white">{editingId ? 'Edit Installation' : 'Add New Installation'}</h4>
+                    <div className="space-y-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Friendly Name</label>
+                            <input 
+                                type="text" 
+                                value={name} 
+                                onChange={e => setName(e.target.value)} 
+                                placeholder="e.g. My Local Deerisle Server" 
+                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Server Root Path</label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    value={serverPath} 
+                                    onChange={e => setServerPath(e.target.value)} 
+                                    placeholder="C:\DayZServer" 
+                                    className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
+                                />
+                                <Button variant="secondary" onClick={() => scanMissions(serverPath)} disabled={loadingMissions}>
+                                    Scan
+                                </Button>
                             </div>
                         </div>
-                    )}
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Mission</label>
+                            <select 
+                                value={missionName} 
+                                onChange={e => setMissionName(e.target.value)} 
+                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
+                                disabled={missions.length === 0}
+                            >
+                                {missions.length === 0 && <option>Scan server path to see missions</option>}
+                                {missions.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="flex gap-3 pt-4">
+                        <Button className="flex-1" onClick={handleSave}>Save Installation</Button>
+                        <Button variant="secondary" onClick={() => { setIsAdding(false); setEditingId(null); setError(null); }}>Cancel</Button>
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }

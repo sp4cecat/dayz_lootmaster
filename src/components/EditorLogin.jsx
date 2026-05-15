@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Database, UserPlus, History } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
-import { Badge } from './ui/Badge';
+import { ThemeToggle } from './ThemeToggle.jsx';
 
 /**
  * Simple login screen to choose or create an editorID.
@@ -24,6 +24,10 @@ export default function EditorLogin({ existingIDs, onSelect }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 dark:bg-gray-950">
+      <div className="absolute bottom-6 left-6">
+        <ThemeToggle />
+      </div>
+
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 p-8 dark:bg-gray-900 dark:border-gray-800">
         <div className="flex flex-col items-center text-center mb-8">
           <div className="size-12 bg-primary-600 rounded-xl flex items-center justify-center text-white mb-4">

@@ -24,7 +24,9 @@ export const Sidebar = ({
   editorID, 
   onSignOut,
   selectedProfile,
-  onProfileClick
+  onProfileClick,
+  storageDirty,
+  onStorageClick
 }) => {
   const navItems = [
     { id: 'cle', label: 'CLE Editor', icon: Database },
@@ -112,7 +114,7 @@ export const Sidebar = ({
           <span className="flex-1 text-left truncate">{selectedProfile?.name || 'Select Server'}</span>
         </button>
 
-        <div className="flex items-center gap-3 px-3 py-2">
+        <div className="flex items-center gap-2 px-3 py-2">
           <div className="size-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 dark:bg-gray-800 dark:text-gray-400">
             <User size={20} />
           </div>
@@ -120,14 +122,26 @@ export const Sidebar = ({
             <p className="text-sm font-semibold text-gray-900 truncate dark:text-gray-100">{editorID}</p>
             <p className="text-xs text-gray-500 truncate dark:text-gray-400">Editor Session</p>
           </div>
-          <ThemeToggle />
-          <button 
-            onClick={onSignOut}
-            className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
-            title="Sign out"
-          >
-            <LogOut size={20} />
-          </button>
+          
+          <div className="flex items-center gap-1.5 shrink-0">
+            {storageDirty && (
+              <button 
+                onClick={onStorageClick}
+                className="size-8 flex items-center justify-center text-warning-500 hover:bg-warning-50 rounded-lg transition-colors dark:hover:bg-warning-900/20"
+                title="Unsaved changes detected"
+              >
+                <div className="size-2 bg-warning-500 rounded-full animate-pulse" />
+              </button>
+            )}
+            <ThemeToggle />
+            <button 
+              onClick={onSignOut}
+              className="size-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-800"
+              title="Sign out"
+            >
+              <LogOut size={20} />
+            </button>
+          </div>
         </div>
       </div>
     </aside>
