@@ -125,6 +125,7 @@ export default function ProfileManager({
             <div className="modal profile-manager" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h3>Manage Server Installations</h3>
+                    <div className="spacer" />
                     <button className="close-button" onClick={onClose}>&times;</button>
                 </div>
                 <div className="modal-body">

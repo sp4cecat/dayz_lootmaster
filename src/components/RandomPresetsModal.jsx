@@ -115,7 +115,8 @@ export default function RandomPresetsModal({ randomPresets, setRandomPresets, sp
       <div className="modal wide">
         <div className="modal-header">
           <h2>Mission Files · Random Presets</h2>
-          <button className="btn" onClick={onClose}>Close</button>
+          <div className="spacer" />
+          <button className="close-button" onClick={onClose} title="Close Modal">&times;</button>
         </div>
         <div className="toolbar" style={{ marginBottom: 12 }}>
           <button className="btn primary" onClick={addPreset}>Add preset group</button>
