@@ -330,6 +330,28 @@ async function declaredGroupDir(profile, paths, group) {
     return folder ? join(paths.missionPath, folder) : null;
 }
 
+async function spawnableTypesFilePath(profile, paths, group) {
+    if (group === 'vanilla') return join(paths.dbDirPath, 'cfgspawnabletypes.xml');
+    if (group === 'vanilla_overrides') return join(paths.dbDirPath, 'vanilla_overrides', 'cfgspawnabletypes.xml');
+    const dir = await declaredGroupDir(profile, paths, group);
+    return dir ? join(dir, 'cfgspawnabletypes.xml') : null;
+}
+
+async function createBackupIfExists(target) {
+    try {
+        await stat(target);
+    } catch {
+        return null;
+    }
+    const backupDir = join(dirname(target), '.lootmaster-backups');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backup = join(backupDir, `${String(target).split(/[\\/]/).pop()}.${stamp}.bak`);
+    await mkdir(backupDir, {recursive: true});
+    const content = await readFile(target, 'utf8');
+    await writeFile(backup, content, 'utf8');
+    return backup;
+}
+
 /**
  * Try to use /src/utils/xml.js parseTypesXml to parse XML into Type[] on the server.
  * Falls back to internal regex parser if DOMParser or import is not available.
@@ -1577,6 +1599,92 @@ const server = http.createServer(async (req, res) => {
             } catch (e) {
                 console.error('Heatmap data fetch error:', e);
                 send(res, 500, JSON.stringify({error: 'Failed to fetch heatmap data'}), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // Match /api/spawnabletypes/:group
+        const matchSpawnableTypes = pathname.match(/^\/api\/spawnabletypes\/([^/]+)$/);
+        if (matchSpawnableTypes) {
+            const [, groupRaw] = matchSpawnableTypes;
+            if (!isSafeName(groupRaw)) {
+                badRequest(res, 'Invalid group');
+                return;
+            }
+            const group = groupRaw;
+            const target = await spawnableTypesFilePath(profile, paths, group);
+            if (!target) {
+                notFound(res);
+                return;
+            }
+
+            if (req.method === 'GET') {
+                try {
+                    const xml = await readFile(target, 'utf8');
+                    send(res, 200, xml, {'Content-Type': 'application/xml; charset=utf-8'});
+                } catch {
+                    const empty = '<?xml version="1.0" encoding="UTF-8"?>\n<spawnabletypes></spawnabletypes>\n';
+                    send(res, 200, empty, {'Content-Type': 'application/xml; charset=utf-8'});
+                }
+                return;
+            }
+
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                if (!body || typeof body !== 'string') {
+                    badRequest(res, 'Empty body');
+                    return;
+                }
+                const backup = await createBackupIfExists(target);
+                await ensureDirFor(target);
+                await writeFile(target, body, 'utf8');
+                send(res, 200, JSON.stringify({ok: true, path: target, backup}), {'Content-Type': 'application/json'});
+                return;
+            }
+
+            methodNotAllowed(res);
+            return;
+        }
+
+        if (pathname === '/api/mission/randompresets') {
+            const target = join(paths.missionPath, 'cfgrandompresets.xml');
+            if (req.method === 'GET') {
+                try {
+                    const xml = await readFile(target, 'utf8');
+                    send(res, 200, xml, {'Content-Type': 'application/xml; charset=utf-8'});
+                } catch {
+                    const empty = '<?xml version="1.0" encoding="UTF-8"?>\n<randompresets></randompresets>\n';
+                    send(res, 200, empty, {'Content-Type': 'application/xml; charset=utf-8'});
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                const body = await readBody(req);
+                if (!body || typeof body !== 'string') {
+                    badRequest(res, 'Empty body');
+                    return;
+                }
+                const backup = await createBackupIfExists(target);
+                await ensureDirFor(target);
+                await writeFile(target, body, 'utf8');
+                send(res, 200, JSON.stringify({ok: true, path: target, backup}), {'Content-Type': 'application/json'});
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        if (pathname === '/api/mission/globals') {
+            if (req.method !== 'GET') {
+                methodNotAllowed(res);
+                return;
+            }
+            const target = join(paths.dbDirPath, 'globals.xml');
+            try {
+                const xml = await readFile(target, 'utf8');
+                send(res, 200, xml, {'Content-Type': 'application/xml; charset=utf-8'});
+            } catch {
+                notFound(res);
             }
             return;
         }

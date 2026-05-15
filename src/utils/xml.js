@@ -141,6 +141,168 @@ export function parseTypesXml(xml) {
 }
 
 /**
+ * Parse cfgspawnabletypes.xml into a generic editable structure.
+ * @param {string} xml
+ * @returns {{types: {name: string, sections: {kind: string, chance: number|null, preset: string, attrs: Record<string,string>, items: {kind: string, name: string, chance: number|null, preset: string, attrs: Record<string,string>}[]}[]}[]}}
+ */
+export function parseSpawnableTypesXml(xml) {
+  const doc = safeParseXml(xml || '<spawnabletypes/>');
+  const root = doc.documentElement;
+  const typeNodes = Array.from(root?.children || []).filter(n => n.tagName === 'type');
+  return {
+    types: typeNodes.map(node => ({
+      name: node.getAttribute('name') || '',
+      sections: Array.from(node.children || []).map(section => parseSpawnableNode(section))
+    }))
+  };
+}
+
+/**
+ * Generate cfgspawnabletypes.xml from the generic editable structure.
+ * @param {{types?: {name: string, sections?: {kind: string, chance?: number|null, preset?: string, attrs?: Record<string,string>, items?: {kind?: string, name?: string, chance?: number|null, preset?: string, attrs?: Record<string,string>}[]}[]}[]}|{name: string, sections?: any[]}[]} data
+ * @returns {string}
+ */
+export function generateSpawnableTypesXml(data) {
+  const types = Array.isArray(data) ? data : (data?.types || []);
+  const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<spawnabletypes>'];
+  for (const type of types) {
+    lines.push(`  <type name="${escapeAttr(type.name)}">`);
+    for (const section of (type.sections || [])) {
+      lines.push(...renderSpawnableSection(section, 4));
+    }
+    lines.push('  </type>');
+  }
+  lines.push('</spawnabletypes>');
+  return lines.join('\n');
+}
+
+/**
+ * Parse mission-root cfgrandompresets.xml. Preset node type is preserved as `kind`.
+ * @param {string} xml
+ * @returns {{presets: {kind: string, name: string, chance: number|null, attrs: Record<string,string>, items: {kind: string, name: string, chance: number|null, attrs: Record<string,string>}[]}[]}}
+ */
+export function parseRandomPresetsXml(xml) {
+  const doc = safeParseXml(xml || '<randompresets/>');
+  const root = doc.documentElement;
+  return {
+    presets: Array.from(root?.children || [])
+      .filter(node => node.nodeType === 1)
+      .map(node => ({
+        kind: node.tagName,
+        name: node.getAttribute('name') || '',
+        chance: parseChance(node.getAttribute('chance')),
+        attrs: attrsObject(node),
+        items: Array.from(node.children || []).map(child => ({
+          kind: child.tagName,
+          name: child.getAttribute('name') || '',
+          chance: parseChance(child.getAttribute('chance')),
+          attrs: attrsObject(child)
+        }))
+      }))
+  };
+}
+
+/**
+ * Generate mission-root cfgrandompresets.xml from parsed presets.
+ * @param {{presets?: {kind: string, name: string, chance?: number|null, attrs?: Record<string,string>, items?: {kind?: string, name?: string, chance?: number|null, attrs?: Record<string,string>}[]}[]}|{kind: string, name: string, items?: any[]}[]} data
+ * @returns {string}
+ */
+export function generateRandomPresetsXml(data) {
+  const presets = Array.isArray(data) ? data : (data?.presets || []);
+  const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<randompresets>'];
+  for (const preset of presets) {
+    const attrs = buildAttrs({ ...(preset.attrs || {}), name: preset.name, chance: preset.chance });
+    const items = preset.items || [];
+    if (!items.length) {
+      lines.push(`  <${preset.kind}${attrs}/>`);
+      continue;
+    }
+    lines.push(`  <${preset.kind}${attrs}>`);
+    for (const item of items) {
+      const itemAttrs = buildAttrs({ ...(item.attrs || {}), name: item.name, chance: item.chance });
+      lines.push(`    <${item.kind || 'item'}${itemAttrs}/>`);
+    }
+    lines.push(`  </${preset.kind}>`);
+  }
+  lines.push('</randompresets>');
+  return lines.join('\n');
+}
+
+/**
+ * Parse db/globals.xml enough to surface damage slider defaults.
+ * @param {string} xml
+ * @returns {{LootDamageMin: number|null, LootDamageMax: number|null}}
+ */
+export function parseGlobalsXml(xml) {
+  const doc = safeParseXml(xml || '<variables/>');
+  const get = (name) => {
+    const nodes = Array.from(doc.getElementsByTagName('var'));
+    const node = nodes.find(n => (n.getAttribute('name') || '') === name);
+    const raw = node?.getAttribute('value') ?? node?.textContent;
+    const n = Number(String(raw || '').trim());
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    LootDamageMin: get('LootDamageMin'),
+    LootDamageMax: get('LootDamageMax')
+  };
+}
+
+/**
+ * Return warnings for mismatched spawnable/type/preset references.
+ * @param {{types?: {name:string, sections?: {preset?: string, items?: {name?: string}[]}[]}[]}} spawnable
+ * @param {{name:string}[]} types
+ * @param {{presets?: {name:string}[]}} randomPresets
+ * @returns {{kind: string, message: string, name?: string}[]}
+ */
+export function validateSpawnableReferences(spawnable, types, randomPresets = { presets: [] }) {
+  const typeNames = new Set((types || []).map(t => t.name));
+  const presetNames = new Set((randomPresets.presets || []).map(p => p.name).filter(Boolean));
+  const warnings = [];
+  for (const entry of (spawnable?.types || [])) {
+    if (entry.name && !typeNames.has(entry.name)) {
+      warnings.push({ kind: 'orphan-spawnable', name: entry.name, message: `Spawnable entry "${entry.name}" has no loaded type.` });
+    }
+    for (const section of (entry.sections || [])) {
+      if (section.preset && !presetNames.has(section.preset)) {
+        warnings.push({ kind: 'missing-preset', name: section.preset, message: `Preset "${section.preset}" is referenced by "${entry.name}" but does not exist.` });
+      }
+      for (const item of (section.items || [])) {
+        if (item.name && !typeNames.has(item.name)) {
+          warnings.push({ kind: 'missing-item-type', name: item.name, message: `Item "${item.name}" referenced by "${entry.name}" is not in loaded types.` });
+        }
+      }
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Rename random preset references in spawnable data.
+ * @param {{types?: {sections?: {preset?: string}[]}[]}} spawnable
+ * @param {string} oldName
+ * @param {string} newName
+ * @returns {any}
+ */
+export function renameSpawnablePresetReferences(spawnable, oldName, newName) {
+  return {
+    ...(spawnable || {}),
+    types: (spawnable?.types || []).map(type => ({
+      ...type,
+      sections: (type.sections || []).map(section => (
+        section.preset === oldName ? { ...section, preset: newName, attrs: { ...(section.attrs || {}), preset: newName } } : section
+      ))
+    }))
+  };
+}
+
+export function formatChance(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0.000';
+  return String(Math.min(1, Math.max(0, n)).toFixed(3));
+}
+
+/**
  * Parse cfgeconomycore.xml and return group order and types file paths for each group.
  * Only <file> entries with attribute type="types" are included.
  * @param {string} xml
@@ -315,6 +477,61 @@ function to01(b) {
 }
 function escapeAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function parseChance(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : null;
+}
+
+function attrsObject(node) {
+  /** @type {Record<string,string>} */
+  const attrs = {};
+  for (const attr of Array.from(node.attributes || [])) {
+    attrs[attr.name] = attr.value;
+  }
+  return attrs;
+}
+
+function buildAttrs(attrs) {
+  const parts = [];
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value == null || value === '') continue;
+    const outValue = key === 'chance' ? formatChance(value) : String(value);
+    parts.push(`${key}="${escapeAttr(outValue)}"`);
+  }
+  return parts.length ? ` ${parts.join(' ')}` : '';
+}
+
+function parseSpawnableNode(node) {
+  return {
+    kind: node.tagName,
+    chance: parseChance(node.getAttribute('chance')),
+    preset: node.getAttribute('preset') || '',
+    attrs: attrsObject(node),
+    items: Array.from(node.children || []).map(child => ({
+      kind: child.tagName,
+      name: child.getAttribute('name') || '',
+      chance: parseChance(child.getAttribute('chance')),
+      preset: child.getAttribute('preset') || '',
+      attrs: attrsObject(child)
+    }))
+  };
+}
+
+function renderSpawnableSection(section, indent) {
+  const space = ' '.repeat(indent);
+  const attrs = buildAttrs({ ...(section.attrs || {}), chance: section.chance, preset: section.preset });
+  const items = section.items || [];
+  if (!items.length) return [`${space}<${section.kind}${attrs}/>`];
+  const lines = [`${space}<${section.kind}${attrs}>`];
+  for (const item of items) {
+    const itemAttrs = buildAttrs({ ...(item.attrs || {}), name: item.name, chance: item.chance, preset: item.preset });
+    lines.push(`${space}  <${item.kind || 'item'}${itemAttrs}/>`);
+  }
+  lines.push(`${space}</${section.kind}>`);
+  return lines;
 }
 
 function uniq(arr) {

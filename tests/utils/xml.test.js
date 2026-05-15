@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { parseLimitsXml, parseTypesXml, generateTypesXml } from '../../src/utils/xml.js';
+import {
+  formatChance,
+  generateRandomPresetsXml,
+  generateSpawnableTypesXml,
+  parseGlobalsXml,
+  parseLimitsXml,
+  parseRandomPresetsXml,
+  parseSpawnableTypesXml,
+  parseTypesXml,
+  generateTypesXml,
+  renameSpawnablePresetReferences,
+  validateSpawnableReferences
+} from '../../src/utils/xml.js';
 
 describe('xml parsing', () => {
   const limitsXml = `
@@ -73,5 +85,78 @@ describe('minimal types persistence', () => {
     t._edited = { ...(t._edited || {}), nominal: true };
     const out2 = generateTypesXml([t]);
     expect(out2).toContain('<nominal>1</nominal>');
+  });
+});
+
+describe('spawnabletypes utilities', () => {
+  const xml = `
+<spawnabletypes>
+  <type name="Rifle_A">
+    <attachments chance="0.5">
+      <item name="Optic_A" chance="0.125"/>
+    </attachments>
+    <cargo preset="MedicalPreset"/>
+  </type>
+  <type name="Orphan_Item">
+    <cargo chance="1"/>
+  </type>
+</spawnabletypes>`;
+
+  it('parses and generates chance and preset settings', () => {
+    const parsed = parseSpawnableTypesXml(xml);
+    expect(parsed.types).toHaveLength(2);
+    expect(parsed.types[0].sections[0].kind).toBe('attachments');
+    expect(parsed.types[0].sections[0].chance).toBe(0.5);
+    expect(parsed.types[0].sections[0].items[0].chance).toBe(0.125);
+    expect(parsed.types[0].sections[1].preset).toBe('MedicalPreset');
+
+    parsed.types[0].sections[0].chance = 0.3333;
+    const out = generateSpawnableTypesXml(parsed);
+    expect(out).toContain('<attachments chance="0.333">');
+    expect(out).toContain('<cargo preset="MedicalPreset"/>');
+  });
+
+  it('validates orphan entries, missing presets, and missing item type references', () => {
+    const warnings = validateSpawnableReferences(
+      parseSpawnableTypesXml(xml),
+      [{ name: 'Rifle_A' }],
+      { presets: [] }
+    );
+    expect(warnings.map(w => w.kind)).toContain('orphan-spawnable');
+    expect(warnings.map(w => w.kind)).toContain('missing-preset');
+    expect(warnings.map(w => w.kind)).toContain('missing-item-type');
+  });
+
+  it('renames preset references', () => {
+    const renamed = renameSpawnablePresetReferences(parseSpawnableTypesXml(xml), 'MedicalPreset', 'MedicalPreset2');
+    expect(renamed.types[0].sections[1].preset).toBe('MedicalPreset2');
+    expect(generateSpawnableTypesXml(renamed)).toContain('preset="MedicalPreset2"');
+  });
+});
+
+describe('random presets and globals utilities', () => {
+  it('parses and generates all random preset node kinds generically', () => {
+    const parsed = parseRandomPresetsXml(`
+<randompresets>
+  <attachments name="Optics" chance="0.75">
+    <item name="Optic_A" chance="0.25"/>
+  </attachments>
+  <cargo name="Medical"/>
+</randompresets>`);
+    expect(parsed.presets[0].kind).toBe('attachments');
+    expect(parsed.presets[0].chance).toBe(0.75);
+    expect(parsed.presets[0].items[0].chance).toBe(0.25);
+    parsed.presets[0].items[0].chance = 0.12345;
+    const out = generateRandomPresetsXml(parsed);
+    expect(out).toContain('<attachments name="Optics" chance="0.750">');
+    expect(out).toContain('<item name="Optic_A" chance="0.123"/>');
+  });
+
+  it('parses damage defaults from globals and formats chance precision', () => {
+    const globals = parseGlobalsXml('<variables><var name="LootDamageMin" value="0.15"/><var name="LootDamageMax" value="0.85"/></variables>');
+    expect(globals.LootDamageMin).toBe(0.15);
+    expect(globals.LootDamageMax).toBe(0.85);
+    expect(formatChance(2)).toBe('1.000');
+    expect(formatChance(0.12345)).toBe('0.123');
   });
 });

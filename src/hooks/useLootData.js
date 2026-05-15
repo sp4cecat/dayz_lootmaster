@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { parseEconomyCoreXml, parseLimitsXml, parseTypesXml } from '../utils/xml.js';
+import {
+  parseEconomyCoreXml,
+  parseGlobalsXml,
+  parseLimitsXml,
+  parseRandomPresetsXml,
+  parseSpawnableTypesXml,
+  parseTypesXml
+} from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
 import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
@@ -71,6 +78,11 @@ export function useLootData() {
   // Baseline parsed from samples (read-only reference to compare against edits)
   const [baselineFiles, setBaselineFiles] = useState(/** @type {TypeFiles|null} */(null));
   const [baselineDefinitions, setBaselineDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
+  const [spawnableTypesByGroup, setSpawnableTypesByGroup] = useState(/** @type {Record<string, any>} */({}));
+  const [baselineSpawnableTypesByGroup, setBaselineSpawnableTypesByGroup] = useState(/** @type {Record<string, any>} */({}));
+  const [randomPresets, setRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
+  const [baselineRandomPresets, setBaselineRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
+  const [globalsDefaults, setGlobalsDefaults] = useState(/** @type {{LootDamageMin: number|null, LootDamageMax: number|null}} */({ LootDamageMin: null, LootDamageMax: null }));
 
   // Helper to get API base
   const getApiBase = useCallback(() => {
@@ -99,6 +111,43 @@ export function useLootData() {
     };
     return fetch(url, opts);
   }, [selectedProfileId]);
+
+  const loadMissionFilesFromAPI = useCallback(async (API_BASE, files, warnings = []) => {
+    const groups = Object.keys(files || {});
+    const nextSpawnable = {};
+    for (const group of groups) {
+      try {
+        const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`);
+        if (!res.ok) continue;
+        const text = await res.text();
+        nextSpawnable[group] = parseSpawnableTypesXml(text);
+      } catch (e) {
+        warnings.push(`Group "${group}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+      }
+    }
+
+    let nextRandomPresets = { presets: [] };
+    try {
+      const res = await fetchWithProfile(`${API_BASE}/api/mission/randompresets`);
+      if (res.ok) nextRandomPresets = parseRandomPresetsXml(await res.text());
+    } catch (e) {
+      warnings.push(`cfgrandompresets.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+    }
+
+    let nextGlobals = { LootDamageMin: null, LootDamageMax: null };
+    try {
+      const res = await fetchWithProfile(`${API_BASE}/api/mission/globals`);
+      if (res.ok) nextGlobals = parseGlobalsXml(await res.text());
+    } catch (e) {
+      warnings.push(`globals.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+    }
+
+    setSpawnableTypesByGroup(nextSpawnable);
+    setBaselineSpawnableTypesByGroup(cloneJson(nextSpawnable));
+    setRandomPresets(nextRandomPresets);
+    setBaselineRandomPresets(cloneJson(nextRandomPresets));
+    setGlobalsDefaults(nextGlobals);
+  }, [fetchWithProfile]);
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -204,13 +253,14 @@ export function useLootData() {
 
       if (Object.keys(baseline).length > 0) {
         setBaselineFiles(baseline);
+        await loadMissionFilesFromAPI(API_BASE, baseline, []);
         return true;
       }
       return false;
     } catch {
       return false;
     }
-  }, []);
+  }, [selectedProfileId, getApiBase, fetchWithProfile, loadMissionFilesFromAPI]);
 
   // Prefer baseline from live API to compare in storageDiff (initial load)
   useEffect(() => {
@@ -533,6 +583,7 @@ export function useLootData() {
         setDefinitions(defs);
         setBaselineDefinitions(defs);
         setLootFiles(files);
+        await loadMissionFilesFromAPI(API_BASE, files, loadWarnings);
 
         // Derive grouped and merged views
         const groups = combineFilesToGroups(files);
@@ -572,7 +623,8 @@ export function useLootData() {
       }
     })();
     return () => { mounted = false; };
-  }, [selectedProfileId, fetchWithProfile]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadWarnings is intentionally rebuilt during this one-shot load effect.
+  }, [selectedProfileId, fetchWithProfile, loadMissionFilesFromAPI]);
 
   const pushHistory = useCallback((state) => {
     historyRef.current.push(state);
@@ -938,6 +990,7 @@ export function useLootData() {
         }
       }
       await saveManyTypeFiles(records);
+      await loadMissionFilesFromAPI(API_BASE, assembledFiles, warnings);
 
       // Reset state, baselines, history, unknowns
       setDefinitions(defs);
@@ -964,7 +1017,7 @@ export function useLootData() {
       setError(e);
       setLoading(false);
     }
-  }, []);
+  }, [fetchWithProfile, loadMissionFilesFromAPI]);
 
   /**
    * Get per-file breakdown for a group.
@@ -991,7 +1044,11 @@ export function useLootData() {
     /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>> }} */
     const diff = {
       definitions: { categories: false, usageflags: false, valueflags: false, tags: false },
-      files: {}
+      files: {},
+      mission: {
+        spawnableGroups: {},
+        randomPresets: false
+      }
     };
     // Definitions compare
     if (baselineDefinitions && definitions) {
@@ -1049,8 +1106,13 @@ export function useLootData() {
         }
       }
     }
+    const allSpawnableGroups = new Set([...Object.keys(baselineSpawnableTypesByGroup), ...Object.keys(spawnableTypesByGroup)]);
+    for (const group of allSpawnableGroups) {
+      diff.mission.spawnableGroups[group] = JSON.stringify(baselineSpawnableTypesByGroup[group] || { types: [] }) !== JSON.stringify(spawnableTypesByGroup[group] || { types: [] });
+    }
+    diff.mission.randomPresets = JSON.stringify(baselineRandomPresets || { presets: [] }) !== JSON.stringify(randomPresets || { presets: [] });
     return diff;
-  }, [baselineDefinitions, definitions, baselineFiles, lootFiles]);
+  }, [baselineDefinitions, definitions, baselineFiles, lootFiles, baselineSpawnableTypesByGroup, spawnableTypesByGroup, baselineRandomPresets, randomPresets]);
 
   const storageDirty = useMemo(() => {
     const d = storageDiff;
@@ -1060,6 +1122,10 @@ export function useLootData() {
       for (const f of Object.keys(d.files[g])) {
         if (d.files[g][f].changed) return true;
       }
+    }
+    if (d.mission?.randomPresets) return true;
+    for (const changed of Object.values(d.mission?.spawnableGroups || {})) {
+      if (changed) return true;
     }
     return false;
   }, [storageDiff]);
@@ -1163,6 +1229,13 @@ export function useLootData() {
     reloadFromFiles,
     getBaselineFileTypes,
     refreshBaselineFromAPI,
+    spawnableTypesByGroup,
+    setSpawnableTypesByGroup,
+    baselineSpawnableTypesByGroup,
+    randomPresets,
+    setRandomPresets,
+    baselineRandomPresets,
+    globalsDefaults,
     // Profiles
     profiles,
     selectedProfileId,
@@ -1189,6 +1262,10 @@ function combineFilesToGroups(files) {
     }
   }
   return groups;
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 /**

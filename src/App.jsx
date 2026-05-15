@@ -9,6 +9,7 @@ import ThemeToggle from './components/ThemeToggle.jsx';
 import SummaryModal from './components/SummaryModal.jsx';
 import ManageDefinitionsModal from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
+import RandomPresetsModal from './components/RandomPresetsModal.jsx';
 import EditorLogin from './components/EditorLogin.jsx';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import ExpansionLogModal from './components/ExpansionLogModal.jsx';
@@ -19,7 +20,7 @@ import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.js
 import ProfileManager from './components/ProfileManager.jsx';
 import AddonEditorModal from './components/AddonEditorModal.jsx';
 import HeatMapModal from './components/HeatMapModal.jsx';
-import {generateTypesXml, generateLimitsXml} from './utils/xml.js';
+import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateSpawnableTypesXml} from './utils/xml.js';
 
 /**
  * @typedef {import('./utils/xml.js').Type} Type
@@ -64,6 +65,11 @@ export default function App() {
         reloadFromFiles,
         getBaselineFileTypes,
         refreshBaselineFromAPI,
+        spawnableTypesByGroup,
+        setSpawnableTypesByGroup,
+        randomPresets,
+        setRandomPresets,
+        globalsDefaults,
         loadWarnings,
         // Profiles
         profiles,
@@ -117,8 +123,10 @@ export default function App() {
     const [showExpansionLog, setShowExpansionLog] = useState(false);
     const [showStash, setShowStash] = useState(false);
     const [marketOpen, setMarketOpen] = useState(false);
+    const [missionFilesOpen, setMissionFilesOpen] = useState(false);
     const [showTraderEditor, setShowTraderEditor] = useState(false);
     const [showMarketCategories, setShowMarketCategories] = useState(false);
+    const [showRandomPresets, setShowRandomPresets] = useState(false);
     const [showLint, setShowLint] = useState(false);
     const [mapToolsOpen, setMapToolsOpen] = useState(false);
     const [showHeatMap, setShowHeatMap] = useState(false);
@@ -198,6 +206,39 @@ export default function App() {
                   throw new Error(`Failed to save ${g}/${file}.xml (${res.status})`);
                 }
               }
+            }
+
+            // Save per-group spawnabletypes files alongside type changes.
+            for (const g of groups) {
+              const spawnable = spawnableTypesByGroup?.[g];
+              if (!spawnable) continue;
+              const xml = generateSpawnableTypesXml(spawnable);
+              const res = await fetch(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(g)}`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/xml',
+                  'X-Editor-ID': editorID || 'unknown',
+                  'X-Profile-ID': selectedProfileId
+                },
+                body: xml
+              });
+              if (!res.ok) {
+                throw new Error(`Failed to save ${g}/cfgspawnabletypes.xml (${res.status})`);
+              }
+            }
+
+            const randomPresetsXml = generateRandomPresetsXml(randomPresets || { presets: [] });
+            const randomPresetsRes = await fetch(`${API_BASE}/api/mission/randompresets`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/xml',
+                'X-Editor-ID': editorID || 'unknown',
+                'X-Profile-ID': selectedProfileId
+              },
+              body: randomPresetsXml
+            });
+            if (!randomPresetsRes.ok) {
+              throw new Error(`Failed to save cfgrandompresets.xml (${randomPresetsRes.status})`);
             }
 
             // Refresh baseline from API so storageDiff reflects the persisted state
@@ -563,6 +604,10 @@ export default function App() {
                                     selectedProfileId={selectedProfileId}
                                     selectedProfile={selectedProfile}
                                     getApiBase={getApiBase}
+                                    spawnableTypesByGroup={spawnableTypesByGroup}
+                                    setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                                    randomPresets={randomPresets}
+                                    globalsDefaults={globalsDefaults}
                                 />
                             </div>
                         )}
@@ -712,6 +757,38 @@ export default function App() {
                           }}
                         >
                           <button className="link" role="menuitem" onClick={() => { setShowHeatMap(true); setMapToolsOpen(false); }}>Heat map</button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tools dropdown */}
+                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+                      <button
+                        className="btn"
+                        onClick={() => setMissionFilesOpen(v => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={missionFilesOpen}
+                        title="Mission Files"
+                      >
+                        Mission Files ▾
+                      </button>
+                      {missionFilesOpen && (
+                        <div
+                          className="dropdown-menu"
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: 8,
+                            minWidth: 200,
+                            zIndex: 10
+                          }}
+                        >
+                          <button className="link" role="menuitem" onClick={() => { setShowRandomPresets(true); setMissionFilesOpen(false); }}>Random Presets</button>
                         </div>
                       )}
                     </div>
@@ -908,6 +985,15 @@ export default function App() {
             )}
             {showMarketCategories && (
               <MarketCategoryEditorModal onClose={() => setShowMarketCategories(false)} selectedProfileId={selectedProfileId} />
+            )}
+            {showRandomPresets && (
+              <RandomPresetsModal
+                randomPresets={randomPresets}
+                setRandomPresets={setRandomPresets}
+                spawnableTypesByGroup={spawnableTypesByGroup}
+                setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                onClose={() => setShowRandomPresets(false)}
+              />
             )}
             {showProfileManager && (
                 <ProfileManager

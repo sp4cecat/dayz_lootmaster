@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import EditFormCLETab from './EditFormCLETab.jsx';
 import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
+import EditFormSpawnableTab from './EditFormSpawnableTab.jsx';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -19,10 +20,14 @@ import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
  *  typeOptionsByCategory?: Record<string, string[]>,
  *  selectedProfileId: string,
  *  selectedProfile?: {id: string, addons?: string[]},
- *  getApiBase: () => string
+ *  getApiBase: () => string,
+ *  spawnableTypesByGroup?: Record<string, any>,
+ *  setSpawnableTypesByGroup?: (next: any) => void,
+ *  randomPresets?: {presets: any[]},
+ *  globalsDefaults?: {LootDamageMin: number|null, LootDamageMax: number|null}
  * }} props
  */
-export default function EditForm({ definitions, selectedTypes, onCancel, onSave, typeOptions = [], typeOptionsByCategory = {}, selectedProfileId, selectedProfile, getApiBase }) {
+export default function EditForm({ definitions, selectedTypes, onCancel, onSave, typeOptions = [], typeOptionsByCategory = {}, selectedProfileId, selectedProfile, getApiBase, spawnableTypesByGroup = {}, setSpawnableTypesByGroup = () => {}, randomPresets = { presets: [] }, globalsDefaults = { LootDamageMin: null, LootDamageMax: null } }) {
   const [activeTab, setActiveTab] = useState('CLE');
   const [marketTabOpened, setMarketTabOpened] = useState(false);
   const [canSaveCLE, setCanSaveCLE] = useState(false);
@@ -45,6 +50,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
 
       <div className="tabbar" style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
         <button type="button" className={`btn ${activeTab === 'CLE' ? 'primary' : ''}`} onClick={() => setActiveTab('CLE')}>CLE</button>
+        <button type="button" className={`btn ${activeTab === 'Spawnable' ? 'primary' : ''}`} onClick={() => setActiveTab('Spawnable')}>Spawnable</button>
         <button type="button" className={`btn ${activeTab === 'Marketplace' ? 'primary' : ''}`} onClick={() => { setActiveTab('Marketplace'); if (!marketTabOpened) setMarketTabOpened(true); }}>marketplace</button>
       </div>
 
@@ -59,6 +65,16 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
           selectedProfileId={selectedProfileId}
           selectedProfile={selectedProfile}
           getApiBase={getApiBase}
+        />
+      </div>
+
+      <div style={{ display: activeTab === 'Spawnable' ? 'block' : 'none' }}>
+        <EditFormSpawnableTab
+          selectedTypes={selectedTypes}
+          spawnableTypesByGroup={spawnableTypesByGroup}
+          setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+          randomPresets={randomPresets}
+          globalsDefaults={globalsDefaults}
         />
       </div>
 

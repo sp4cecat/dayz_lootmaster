@@ -83,7 +83,7 @@ export function createZip(files) {
   p2 = writeU16(end, p2, files.length);
   p2 = writeU32(end, p2, centralSize);
   p2 = writeU32(end, p2, centralOffset);
-  p2 = writeU16(end, p2, 0); // comment length
+  writeU16(end, p2, 0); // comment length
   chunks.push(end);
 
   return new Blob(chunks, { type: 'application/zip' });

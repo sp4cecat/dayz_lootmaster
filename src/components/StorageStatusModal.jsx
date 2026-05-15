@@ -4,7 +4,8 @@ import React from 'react';
  * @param {{
  *  diff: {
  *    definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean },
- *    files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number }>>
+ *    files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number }>>,
+ *    mission?: { spawnableGroups?: Record<string, boolean>, randomPresets?: boolean }
  *  },
  *  onClose: () => void
  * }} props
@@ -14,6 +15,11 @@ export default function StorageStatusModal({ diff, onClose }) {
   const groups = Object.keys(diff.files)
     .filter(g => Object.values(diff.files[g]).some(info => info.changed))
     .sort((a, b) => a.localeCompare(b));
+  const spawnableGroups = Object.entries(diff.mission?.spawnableGroups || {})
+    .filter(([, changed]) => changed)
+    .map(([group]) => group)
+    .sort((a, b) => a.localeCompare(b));
+  const missionChanged = !!diff.mission?.randomPresets || spawnableGroups.length > 0;
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Storage status">
@@ -76,6 +82,20 @@ export default function StorageStatusModal({ diff, onClose }) {
                   );
                 })}
               </div>
+            )}
+          </section>
+
+          <section>
+            <h4>Mission files</h4>
+            {!missionChanged ? (
+              <p className="muted">No mission file changes.</p>
+            ) : (
+              <ul className="bulleted">
+                {diff.mission?.randomPresets && <li><code>cfgrandompresets.xml</code> changed</li>}
+                {spawnableGroups.map(group => (
+                  <li key={group}><code>{group}/cfgspawnabletypes.xml</code> changed</li>
+                ))}
+              </ul>
             )}
           </section>
         </div>
