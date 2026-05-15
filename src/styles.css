@@ -1,5 +1,6 @@
 :root {
     --bg: #ffffff;
+    --bg-input: #ffffff;
     --bg-soft: #f9f9f9;
     --bg-softer: #d3d3d3;
     --text: #213547;
@@ -15,9 +16,9 @@
 
 :root.dark {
     --bg: #101828; /* gray-900 */
+    --bg-input: #0c111d; /* gray-950 */
     --bg-soft: #1d2939; /* gray-800 */
     --bg-softer: #344054; /* gray-700 */
-    --bg-input: #0c111d; /* gray-950 */
     --text: #f9fafb; /* gray-50 */
     --text-hover: #ffffff;
     --muted: #98a2b3; /* gray-400 */
@@ -473,20 +474,15 @@ h1 {
     gap: 6px;
 }
 
-.control input[type="text"], .control input[type="number"], .control select, textarea.code-view {
+.control input[type="text"], .control input[type="number"], .control select, 
+.edit-form-content input[type="text"], .edit-form-content input[type="number"], .edit-form-content select,
+textarea.code-view {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--bg);
-    color: var(--text);
-}
-
-.dark .control input[type="text"], 
-.dark .control input[type="number"], 
-.dark .control select, 
-.dark textarea.code-view {
     background: var(--bg-input);
+    color: var(--text);
 }
 
 /* Clear button inside text input */

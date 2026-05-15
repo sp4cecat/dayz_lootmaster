@@ -132,7 +132,7 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
   };
 
   return (
-    <div className="stack">
+    <div className="spawnable-tab">
       <p className="muted">Edit `cfgspawnabletypes.xml` entries. You can adjust chances, presets, and damage ranges, or add/remove sections and items.</p>
       {selectedTypes.length > 1 && (
         <section className="card subtle">

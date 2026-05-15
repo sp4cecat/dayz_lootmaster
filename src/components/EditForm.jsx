@@ -95,7 +95,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto p-6 scrollbar-thin edit-form-content">
         {/* Keep tabs mounted; only show active via CSS */}
         <div className={cn(activeTab !== 'CLE' && "hidden")}>
           <EditFormCLETab

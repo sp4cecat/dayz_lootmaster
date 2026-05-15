@@ -175,7 +175,7 @@ export default function ProfileManager({
                                 value={name} 
                                 onChange={e => setName(e.target.value)} 
                                 placeholder="e.g. My Local Deerisle Server" 
-                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
+                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
                             />
                         </div>
                         <div className="space-y-1.5">
@@ -186,7 +186,7 @@ export default function ProfileManager({
                                     value={serverPath} 
                                     onChange={e => setServerPath(e.target.value)} 
                                     placeholder="C:\DayZServer" 
-                                    className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
+                                    className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
                                 />
                                 <Button variant="secondary" onClick={() => scanMissions(serverPath)} disabled={loadingMissions}>
                                     Scan
@@ -198,7 +198,7 @@ export default function ProfileManager({
                             <select 
                                 value={missionName} 
                                 onChange={e => setMissionName(e.target.value)} 
-                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
+                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-4 focus:ring-primary-100 outline-none transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30" 
                                 disabled={missions.length === 0}
                             >
                                 {missions.length === 0 && <option>Scan server path to see missions</option>}

@@ -51,7 +51,7 @@ export default function EditorLogin({ existingIDs, onSelect }) {
                   type="button"
                   key={id}
                   onClick={() => onSelect(id)}
-                  className="px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition-all dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700"
+                  className="px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition-all dark:bg-gray-950 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
                   title={`Use "${id}"`}
                 >
                   {id}
