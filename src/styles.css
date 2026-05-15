@@ -13,19 +13,19 @@
     --chip: #eef2ff;
 }
 
-:root[data-theme="dark"] {
-    --bg: rgb(49, 62, 85); /* Vite dark background */
-    --bg-soft: rgb(59, 74, 101); /* Vite dark button bg */
-    --bg-softer: rgb(70, 88, 120); /* Vite dark button bg */
-    --text: rgba(255, 255, 255, 0.73); /* Vite dark text */
-    --text-hover: rgba(255, 255, 255, 0.9); /* higher contrast for hover */
-    --muted: #a1a1a1;
-    --primary: #646cff;
-    --primary-hover: #535bf2; /* Vite hover (dark) */
-    --border: #292929;
-    --warn: #fbbf24;
-    --error: #f87171;
-    --chip: #293449;
+:root.dark {
+    --bg: #101828; /* gray-900 */
+    --bg-soft: #1d2939; /* gray-800 */
+    --bg-softer: #344054; /* gray-700 */
+    --text: #f9fafb; /* gray-50 */
+    --text-hover: #ffffff;
+    --muted: #98a2b3; /* gray-400 */
+    --primary: #7f56d9; /* primary-600 */
+    --primary-hover: #9e77ed; /* primary-500 */
+    --border: #1d2939; /* gray-800 */
+    --warn: #f79009;
+    --error: #f04438;
+    --chip: #1d2939;
 }
 
 * {

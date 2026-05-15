@@ -80,9 +80,9 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
     >
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-gray-700">
-            Current entries: <span className="font-bold">{count}</span>
-            {isCapped && <span className="text-gray-400 font-normal"> / {cap} limit</span>}
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Current entries: <span className="font-bold dark:text-white">{count}</span>
+            {isCapped && <span className="text-gray-400 font-normal dark:text-gray-500"> / {cap} limit</span>}
           </div>
           {isCapped && (
             <Badge variant={count >= cap ? "error" : "primary"}>
@@ -105,7 +105,7 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
         </div>
 
         {isCapped && count >= cap && (
-          <div className="p-3 bg-error-50 rounded-lg border border-error-100 flex items-center gap-2 text-sm text-error-700">
+          <div className="p-3 bg-error-50 rounded-lg border border-error-100 flex items-center gap-2 text-sm text-error-700 dark:bg-error-900/10 dark:border-error-800 dark:text-error-400">
             <AlertTriangle size={16} />
             <span>Maximum of {cap} entries reached. Remove an entry to add a new one.</span>
           </div>
@@ -115,15 +115,15 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
           {entries.map(e => (
             <div 
               key={e} 
-              className="group flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-primary-300 transition-colors shadow-sm"
+              className="group flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-primary-300 transition-colors shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:hover:border-primary-600"
             >
               <div className="flex flex-col min-w-0">
-                <span className="font-semibold text-gray-900 truncate" title={e}>{e}</span>
-                <span className="text-xs text-gray-500">{entryCounts[e] || 0} references</span>
+                <span className="font-semibold text-gray-900 truncate dark:text-white" title={e}>{e}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{entryCounts[e] || 0} references</span>
               </div>
               <button
                 onClick={() => onRemoveClick(e)}
-                className="p-1.5 text-gray-400 hover:text-error-600 hover:bg-error-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                className="p-1.5 text-gray-400 hover:text-error-600 hover:bg-error-50 rounded-md transition-all opacity-0 group-hover:opacity-100 dark:hover:text-error-400 dark:hover:bg-error-900/30"
                 title={`Remove ${e}`}
               >
                 <X size={16} />
@@ -131,7 +131,7 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
             </div>
           ))}
           {entries.length === 0 && (
-            <div className="col-span-full py-8 text-center text-gray-400 italic bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <div className="col-span-full py-8 text-center text-gray-400 italic bg-gray-50 rounded-xl border border-dashed border-gray-200 dark:bg-gray-800/50 dark:border-gray-700 dark:text-gray-500">
               No entries defined.
             </div>
           )}

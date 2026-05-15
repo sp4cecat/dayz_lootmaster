@@ -90,11 +90,11 @@ export default function Filters({definitions, groups, filters, onChange, onManag
     };
 
     const AccordionItem = ({ title, isOpen, onToggle, onManage, children }) => (
-        <div className="border-b border-gray-100 last:border-0">
+        <div className="border-b border-gray-100 last:border-0 dark:border-gray-800">
             <div className="flex items-center justify-between py-3 px-4">
                 <button
                     onClick={onToggle}
-                    className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+                    className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors dark:text-gray-300 dark:hover:text-white"
                 >
                     {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     {title}
@@ -102,7 +102,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                 {onManage && (
                     <button
                         onClick={onManage}
-                        className="text-gray-400 hover:text-primary-600 transition-colors"
+                        className="text-gray-400 hover:text-primary-600 transition-colors dark:hover:text-primary-400"
                         title="Manage"
                     >
                         <Settings size={14} />
@@ -115,9 +115,9 @@ export default function Filters({definitions, groups, filters, onChange, onManag
 
     return (
         <div className="flex flex-col">
-            <div className="p-4 border-b border-gray-100">
+            <div className="p-4 border-b border-gray-100 dark:border-gray-800">
                 <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2 text-gray-900">
+                    <div className="flex items-center gap-2 text-gray-900 dark:text-white">
                         <Filter size={18} />
                         <h2 className="text-lg font-bold">Filters</h2>
                     </div>
@@ -126,7 +126,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                 
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Search Types</label>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Search Types</label>
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                             <Input 
@@ -147,11 +147,11 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                     </div>
 
                     <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Category</label>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Category</label>
                         <select
                             value={filters.category}
                             onChange={e => setField('category', e.target.value)}
-                            className="w-full h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px_20px] bg-right-3 bg-no-repeat"
+                            className="w-full h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px_20px] bg-right-3 bg-no-repeat dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30 dark:focus:border-primary-500"
                         >
                             {allCategoryOptions.map(opt => (
                                 <option key={opt} value={opt}>{opt}</option>
@@ -270,7 +270,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                                 <label key={opt} className="flex items-center gap-2 cursor-pointer group">
                                     <div className={cn(
                                         "size-4 rounded border flex items-center justify-center transition-all",
-                                        selected ? "bg-primary-600 border-primary-600" : "bg-white border-gray-300 group-hover:border-primary-300"
+                                        selected ? "bg-primary-600 border-primary-600 dark:bg-primary-500 dark:border-primary-500" : "bg-white border-gray-300 group-hover:border-primary-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-primary-500"
                                     )}>
                                         {selected && <div className="size-1.5 bg-white rounded-full" />}
                                     </div>
@@ -284,7 +284,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                                             setField('tag', next);
                                         }}
                                     />
-                                    <span className={cn("text-sm", selected ? "text-gray-900 font-medium" : "text-gray-600")}>{opt}</span>
+                                    <span className={cn("text-sm", selected ? "text-gray-900 font-medium dark:text-white" : "text-gray-600 dark:text-gray-400")}>{opt}</span>
                                 </label>
                             );
                         })}

@@ -19,19 +19,19 @@ export const Modal = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
         className={cn(
-          "bg-white rounded-xl shadow-xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200",
+          "bg-white rounded-xl shadow-xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 dark:bg-gray-900 dark:border dark:border-gray-800",
           maxWidth,
           className
         )}
       >
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0 dark:border-gray-800">
           <div>
-            <h3 className="text-xl font-bold text-gray-900 tracking-tight">{title}</h3>
-            {description && <p className="text-sm text-gray-500 mt-1">{description}</p>}
+            <h3 className="text-xl font-bold text-gray-900 tracking-tight dark:text-white">{title}</h3>
+            {description && <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{description}</p>}
           </div>
           <button 
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-2"
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2 dark:hover:text-gray-300"
           >
             <X size={24} />
           </button>
@@ -42,7 +42,7 @@ export const Modal = ({
         </div>
 
         {footer && (
-          <div className="p-6 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 shrink-0">
+          <div className="p-6 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 shrink-0 dark:border-gray-800 dark:bg-gray-900">
             {footer}
           </div>
         )}

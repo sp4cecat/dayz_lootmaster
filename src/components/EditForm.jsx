@@ -45,17 +45,17 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white animate-in slide-in-from-right duration-300">
-      <div className="p-6 border-b border-gray-100 shrink-0">
+    <div className="flex flex-col h-full bg-white animate-in slide-in-from-right duration-300 dark:bg-gray-900 dark:border-l dark:border-gray-800">
+      <div className="p-6 border-b border-gray-100 shrink-0 dark:border-gray-800">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-xl font-bold text-gray-900 tracking-tight">
+          <h3 className="text-xl font-bold text-gray-900 tracking-tight dark:text-white">
             Edit {selectedTypes.length} item{selectedTypes.length > 1 ? 's' : ''}
           </h3>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">
             <X size={24} />
           </button>
         </div>
-        <p className="text-sm text-gray-500 mb-6">Modify common properties for selected items.</p>
+        <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">Modify common properties for selected items.</p>
         
         <div className="flex items-center gap-2">
           {activeTab === 'CLE' && (
@@ -73,7 +73,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
         </div>
       </div>
 
-      <div className="px-6 border-b border-gray-100 shrink-0">
+      <div className="px-6 border-b border-gray-100 shrink-0 dark:border-gray-800">
         <div className="flex gap-8">
           {tabs.map(tab => (
             <button
@@ -85,8 +85,8 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
               className={cn(
                 "py-4 text-sm font-semibold border-b-2 transition-all",
                 activeTab === tab.id 
-                  ? "border-primary-600 text-primary-700" 
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200"
+                  ? "border-primary-600 text-primary-700 dark:border-primary-500 dark:text-primary-300" 
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-700"
               )}
             >
               {tab.label}

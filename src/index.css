@@ -17,6 +17,10 @@
   }
 
   body {
-    @apply antialiased text-gray-900 bg-white font-sans;
+    @apply antialiased text-gray-900 bg-white font-sans transition-colors duration-200;
+  }
+
+  .dark body {
+    @apply text-gray-50 bg-gray-950;
   }
 }

@@ -588,7 +588,7 @@ export default function App() {
     })();
 
     return (
-        <div className={cn("flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900")}>
+        <div className={cn("flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100")}>
             <Sidebar 
                 activeTab={activeTab} 
                 onTabChange={handleTabChange} 
@@ -600,17 +600,17 @@ export default function App() {
             
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 {/* Warnings Area */}
-                <div className="flex flex-col shrink-0 gap-px bg-gray-200">
+                <div className="flex flex-col shrink-0 gap-px bg-gray-200 dark:bg-gray-800">
                     {unknowns.hasAny && (
-                        <div className="bg-warning-50 px-6 py-3 flex items-center gap-4 transition-all hover:bg-warning-100/50">
-                            <div className="size-10 rounded-full bg-warning-100 flex items-center justify-center text-warning-600 shrink-0">
+                        <div className="bg-warning-50 px-6 py-3 flex items-center gap-4 transition-all hover:bg-warning-100/50 dark:bg-warning-900/10 dark:hover:bg-warning-900/20">
+                            <div className="size-10 rounded-full bg-warning-100 flex items-center justify-center text-warning-600 shrink-0 dark:bg-warning-900/30 dark:text-warning-500">
                                 <AlertTriangle size={20} />
                             </div>
                             <div className="flex-1">
-                                <p className="text-sm font-bold text-warning-900">Unknown Entries Detected</p>
-                                <p className="text-sm text-warning-700">Usage, value, tag or category entries found that are not in your definitions.</p>
+                                <p className="text-sm font-bold text-warning-900 dark:text-warning-300">Unknown Entries Detected</p>
+                                <p className="text-sm text-warning-700 dark:text-warning-400">Usage, value, tag or category entries found that are not in your definitions.</p>
                             </div>
-                            <Button variant="secondary" size="sm" onClick={() => resolveUnknowns.open()} className="bg-white border-warning-200 text-warning-700 hover:bg-warning-50">
+                            <Button variant="secondary" size="sm" onClick={() => resolveUnknowns.open()} className="bg-white border-warning-200 text-warning-700 hover:bg-warning-50 dark:bg-gray-800 dark:border-warning-800 dark:text-warning-400">
                                 Review & Resolve
                             </Button>
                         </div>
@@ -668,11 +668,11 @@ export default function App() {
                         <div className="max-w-[1600px] mx-auto">
                             <div className="flex items-center justify-between mb-8">
                                 <div>
-                                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">CLE Editor</h1>
-                                    <p className="text-gray-500 mt-1">Manage loot types and economic settings for {selectedProfile?.name}.</p>
+                                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight dark:text-white">CLE Editor</h1>
+                                    <p className="text-gray-500 mt-1 dark:text-gray-400">Manage loot types and economic settings for {selectedProfile?.name}.</p>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm p-1">
+                                    <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm p-1 dark:bg-gray-800 dark:border-gray-700">
                                         <Button 
                                             variant="tertiary" 
                                             size="sm" 
@@ -682,7 +682,7 @@ export default function App() {
                                         >
                                             <Undo size={18} />
                                         </Button>
-                                        <div className="w-px h-4 bg-gray-200 mx-1" />
+                                        <div className="w-px h-4 bg-gray-200 mx-1 dark:bg-gray-700" />
                                         <Button 
                                             variant="tertiary" 
                                             size="sm" 

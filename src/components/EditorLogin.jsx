@@ -1,4 +1,8 @@
 import React, { useMemo, useState } from 'react';
+import { Database, UserPlus, History } from 'lucide-react';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+import { Badge } from './ui/Badge';
 
 /**
  * Simple login screen to choose or create an editorID.
@@ -19,37 +23,31 @@ export default function EditorLogin({ existingIDs, onSelect }) {
   };
 
   return (
-    <div className="app app-center" style={{ padding: 24 }}>
-      <div
-        className="editor-login-card"
-        style={{
-          width: 420,
-          maxWidth: '90%',
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          padding: 20,
-          background: 'var(--bg)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 18
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Choose editor ID</h2>
-        <p className="muted" style={{ marginTop: -6 }}>
-          Select a previous ID or create a new one to continue.
-        </p>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 dark:bg-gray-950">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 p-8 dark:bg-gray-900 dark:border-gray-800">
+        <div className="flex flex-col items-center text-center mb-8">
+          <div className="size-12 bg-primary-600 rounded-xl flex items-center justify-center text-white mb-4">
+            <Database size={28} />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight dark:text-white">Choose Editor ID</h2>
+          <p className="text-gray-500 mt-2 dark:text-gray-400">
+            Select a previous ID or create a new one to continue.
+          </p>
+        </div>
 
         {sorted.length > 0 && (
-          <div className="control">
-            <span>Previous IDs</span>
-            <div className="chips" role="list">
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              <History size={16} className="text-gray-400" />
+              <span>Previous IDs</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
               {sorted.map(id => (
                 <button
                   type="button"
                   key={id}
-                  role="listitem"
-                  className="chip"
                   onClick={() => onSelect(id)}
+                  className="px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition-all dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700"
                   title={`Use "${id}"`}
                 >
                   {id}
@@ -59,23 +57,29 @@ export default function EditorLogin({ existingIDs, onSelect }) {
           </div>
         )}
 
-        <div className="control">
-          <span>New ID</span>
-          <div className="filters-row" style={{ alignItems: 'center' }}>
-            <input
-              type="text"
-              placeholder="Enter a new editor ID"
+        <div>
+          <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <UserPlus size={16} className="text-gray-400" />
+            <span>New ID</span>
+          </div>
+          <div className="flex gap-3">
+            <Input
               value={value}
               onChange={e => setValue(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') create(); }}
-              style={{ flex: 1 }}
+              placeholder="Enter a new editor ID"
+              className="flex-1"
             />
-            <button className="btn primary" type="button" onClick={create} style={{ whiteSpace: 'nowrap' }}>
+            <Button onClick={create}>
               Create
-            </button>
+            </Button>
           </div>
         </div>
       </div>
+      
+      <p className="mt-8 text-sm text-gray-400 dark:text-gray-600">
+        Lootmaster &copy; {new Date().getFullYear()}
+      </p>
     </div>
   );
 }
