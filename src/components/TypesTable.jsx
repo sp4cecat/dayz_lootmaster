@@ -67,14 +67,14 @@ export default function TypesTable({ definitions, types, selection, setSelection
   }, [types, unknowns, sort]);
 
   const maxNameWidth = useMemo(() => {
-    if (!condensedProp || types.length === 0) return null;
+    if (types.length === 0) return 20;
     let max = 0;
     for (const t of types) {
-      if (t.name.length > max) max = t.name.length;
+      if (t.name && t.name.length > max) max = t.name.length;
     }
     // Add some padding for the icon (approx 4-5ch) and badges
-    return Math.min(max + 10, 80); 
-  }, [types, condensedProp]);
+    return Math.min(max-10, 80);
+  }, [types]);
 
   // Measure viewport height
   useEffect(() => {
@@ -164,9 +164,9 @@ export default function TypesTable({ definitions, types, selection, setSelection
         <div 
           className={cn(
             "px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-gray-800",
-            condensed ? "shrink-0" : "flex-1 min-w-[200px]"
+            "shrink-0"
           )}
-          style={condensed ? { width: `${maxNameWidth}ch` } : undefined}
+          style={{ width: `${maxNameWidth}ch` }}
           onClick={() => handleSort('name')}
         >
           <span>Name</span>
@@ -243,9 +243,9 @@ export default function TypesTable({ definitions, types, selection, setSelection
               <div 
                 className={cn(
                   "px-4 flex items-center gap-2 overflow-hidden",
-                  condensed ? "shrink-0" : "flex-1 min-w-[200px]"
+                  "shrink-0"
                 )}
-                style={condensed ? { width: `${maxNameWidth}ch` } : undefined}
+                style={{ width: `${maxNameWidth}ch` }}
               >
                 <div className={cn(
                   "size-4 rounded border flex items-center justify-center shrink-0 transition-all",
