@@ -1,8 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { Plus, Trash2 } from 'lucide-react';
 
 /**
  * @param {{
@@ -54,80 +50,82 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
     });
   };
 
-  const footer = (
-    <>
-      <Button variant="secondary" onClick={onClose}>Cancel</Button>
-      <Button 
-        variant="secondary" 
-        onClick={onRemoveSelected} 
-        disabled={selectionCount === 0}
-        title="Remove selected entries from affected types"
-      >
-        <Trash2 size={18} className="mr-2" /> Remove from Types
-      </Button>
-      <Button 
-        onClick={onAddSelected} 
-        disabled={selectionCount === 0}
-        title="Add selected entries to definitions"
-      >
-        <Plus size={18} className="mr-2" /> Add to Definitions
-      </Button>
-    </>
-  );
-
   return (
-    <Modal
-      isOpen={true}
-      onClose={onClose}
-      title="Resolve Unknown Entries"
-      description="Select unknown entries and choose how to resolve them."
-      footer={footer}
-    >
-      <div className="space-y-6">
-        <ResolveSection
-          title="Categories"
-          items={Array.from(unknowns.sets.category)}
-          selected={state.addCategory}
-          onToggle={(v) => toggleSet('addCategory', v)}
-        />
-        <ResolveSection
-          title="Usage flags"
-          items={Array.from(unknowns.sets.usage)}
-          selected={state.addUsage}
-          onToggle={(v) => toggleSet('addUsage', v)}
-        />
-        <ResolveSection
-          title="Value flags"
-          items={Array.from(unknowns.sets.value)}
-          selected={state.addValue}
-          onToggle={(v) => toggleSet('addValue', v)}
-        />
-        <ResolveSection
-          title="Tags"
-          items={Array.from(unknowns.sets.tag)}
-          selected={state.addTag}
-          onToggle={(v) => toggleSet('addTag', v)}
-        />
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="modal-header">
+          <h3>Resolve Unknown Entries</h3>
+          <div className="spacer" />
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+        <div className="modal-body">
+          <p>Select one or more unknown entries below, then choose an action.</p>
+          <div className="resolve-grid">
+            <ResolveSection
+              title="Categories"
+              items={Array.from(unknowns.sets.category)}
+              selected={state.addCategory}
+              onToggle={(v) => toggleSet('addCategory', v)}
+            />
+            <ResolveSection
+              title="Usage flags"
+              items={Array.from(unknowns.sets.usage)}
+              selected={state.addUsage}
+              onToggle={(v) => toggleSet('addUsage', v)}
+            />
+            <ResolveSection
+              title="Value flags"
+              items={Array.from(unknowns.sets.value)}
+              selected={state.addValue}
+              onToggle={(v) => toggleSet('addValue', v)}
+            />
+            <ResolveSection
+              title="Tags"
+              items={Array.from(unknowns.sets.tag)}
+              selected={state.addTag}
+              onToggle={(v) => toggleSet('addTag', v)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              className="btn"
+              onClick={onAddSelected}
+              disabled={selectionCount === 0}
+              title="Add selected entries to definitions"
+            >
+              Add selected entries to definitions
+            </button>
+            <button
+              className="btn"
+              onClick={onRemoveSelected}
+              disabled={selectionCount === 0}
+              title="Remove selected entries from affected types"
+            >
+              Remove selected entries from affected types
+            </button>
+          </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
 function ResolveSection({ title, items, selected, onToggle }) {
   if (items.length === 0) return null;
   return (
-    <div className="space-y-3">
-      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h4>
-      <div className="flex flex-wrap gap-2">
+    <div className="resolve-section">
+      <h4>{title}</h4>
+      <div className="chips selectable">
         {items.map(it => (
-          <Badge
+          <button
+            type="button"
             key={it}
-            variant={selected.has(it) ? "primary" : "gray"}
-            className="cursor-pointer py-1.5 px-3"
+            className={`chip ${selected.has(it) ? 'selected' : ''}`}
             onClick={() => onToggle(it)}
           >
             {it}
-          </Badge>
+          </button>
         ))}
       </div>
     </div>

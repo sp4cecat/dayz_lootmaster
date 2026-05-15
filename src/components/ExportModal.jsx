@@ -2,11 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { generateLimitsXml, generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
 import { createZip } from '../utils/zip.js';
 import { getChangeLogsForGroup } from '../utils/idb.js';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { cn } from '../utils/cn';
-import { Download, Copy, FileText, Check } from 'lucide-react';
 
 /**
  * Export modal allowing the user to export:
@@ -31,7 +26,6 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
   const hasMultipleFiles = filesForGroup.length > 1;
   const [typesFormat, setTypesFormat] = useState(/** @type {'single'|'zip'} */('single'));
   const [downloadAll, setDownloadAll] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Which groups have at least one changed file (exclude 'vanilla')
   const changedGroups = useMemo(() => {
@@ -97,6 +91,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
       return generateLimitsXml(definitions);
     }
     if (hasMultipleFiles && typesFormat === 'single' && mode === 'types') {
+      // If exporting vanilla_overrides, rehydrate each file's types where applicable
       const prepared = group === 'vanilla_overrides'
         ? filesForGroup.map(({ file, types }) => ({ file, types: file === 'types' ? rehydrateOverrides(types) : types }))
         : filesForGroup;
@@ -107,7 +102,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
       if (group === 'vanilla_overrides') arr = rehydrateOverrides(arr);
       return generateTypesXml(arr);
     }
-    return '';
+    return ''; // no single-XML preview for "all" zip mode
   }, [mode, group, getGroupTypes, definitions, hasMultipleFiles, typesFormat, filesForGroup]);
 
   const exportPath = useMemo(() => {
@@ -122,8 +117,6 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
 
   const onCopy = async () => {
     await navigator.clipboard.writeText(xml);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const formatChangeValue = (v) => {
@@ -132,6 +125,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     return String(v);
   };
 
+  // Normalization compatible with diff logic in the hook
   const normalizeType = (t) => ({
     name: t?.name,
     category: t?.category || null,
@@ -147,6 +141,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     tag: [...(t?.tag || [])].sort(),
   });
 
+  // Build inlined fields spec; if old/new not present on entry, derive from baseline vs current
   const buildFieldsSpec = (entry, group) => {
     let specs = [];
     const flagDiffList = (ov = {}, nv = {}) => {
@@ -173,6 +168,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
           return [`${fkey}(${formatChangeValue(ov)} > ${formatChangeValue(nv)})`];
         });
       } else if (entry.file && entry.typeName) {
+        // Fallback: compute old/new from baseline and current types
         try {
           const baseArr = getBaselineFileTypes(group, entry.file) || [];
           const currArr = (getGroupFiles(group) || []).find(f => f.file === entry.file)?.types || [];
@@ -198,6 +194,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
 
           specs = localSpecs;
         } catch {
+          // ignore; fallback to field names only
           specs = Array.isArray(entry.fields) ? entry.fields : [];
         }
       }
@@ -209,9 +206,12 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
 
   const onDownloadZip = async () => {
     if (mode === 'all') {
+      // Build a zip with files across non-vanilla groups
       if (!anyAllChanged && !downloadAll) return;
       const encoder = new TextEncoder();
       const files = [];
+
+      // Shared timestamp used for all changelog filenames to keep them consistent in the zip
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, '0');
       const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -227,6 +227,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
         const perFiles = getGroupFiles(g);
         const changedSet = downloadAll ? null : new Set(allChangedMap[g]);
 
+        // Add XML files for this group
         for (const { file, types } of perFiles) {
           if (changedSet && !changedSet.has(file)) continue;
           const name = `${g}/${file}.xml`;
@@ -236,6 +237,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
           files.push({ name, data: encoder.encode(content) });
         }
 
+        // Build and add per-group changelog
         try {
           const logs = await getChangeLogsForGroup(g, changedSet || undefined);
           const lines = [];
@@ -245,6 +247,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
           if (logs.length === 0) {
             lines.push(downloadAll ? 'No changes recorded; full group exported.' : 'No changes recorded for the selected files.');
           } else {
+            // Group by file
             const byFile = new Map();
             for (const e of logs) {
               if (!byFile.has(e.file)) byFile.set(e.file, []);
@@ -266,7 +269,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
                 const fieldsSpec = buildFieldsSpec(e, g);
                 lines.push(`${tdd}-${tmm}-${tyy} ${th}:${tm}:${ts2} - [${e.editorID || 'unknown'}] ${e.typeName} ${e.action}${fieldsSpec}`);
               }
-              lines.push('');
+              lines.push(''); // spacer
             }
           }
           files.push({ name: `${g}/${changesFileName}`, data: encoder.encode(lines.join('\n')) });
@@ -291,6 +294,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     }
 
     if (typesFormat !== 'zip') return;
+    // Build per-file XMLs with original filenames for single group
     const encoder = new TextEncoder();
     const files = (downloadAll ? filesForGroup : filesForGroup.filter(({ file }) => changedFilesSet.has(file)))
       .map(({ file, types }) => {
@@ -301,6 +305,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
         return { name, data: encoder.encode(content) };
       });
 
+    // Build changes text file for only the changed files
     try {
       const logs = await getChangeLogsForGroup(group, changedFilesSet);
       const lines = [];
@@ -319,6 +324,7 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
       if (logs.length === 0) {
         lines.push('No changes recorded for the selected files.');
       } else {
+        // Group by file
         const byFile = new Map();
         for (const e of logs) {
           if (!byFile.has(e.file)) byFile.set(e.file, []);
@@ -340,12 +346,13 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
             const fieldsSpec = buildFieldsSpec(e, group);
             lines.push(`${tdd}-${tmm}-${tyy} ${th}:${tm}:${ts2} - [${e.editorID || 'unknown'}] ${e.typeName} ${e.action}${fieldsSpec}`);
           }
-          lines.push('');
+          lines.push(''); // spacer between files
         }
       }
 
       files.push({ name: changesFileName, data: encoder.encode(lines.join('\n')) });
     } catch {
+      // If logs fail, include a minimal note
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, '0');
       const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -371,154 +378,152 @@ export default function ExportModal({ groups, defaultGroup, getGroupTypes, getGr
     }, 0);
   };
 
-  const footer = (
-    <>
-      <Button variant="secondary" onClick={onClose}>Cancel</Button>
-      {(mode === 'types' && typesFormat === 'zip') || (mode === 'all' && (anyAllChanged || downloadAll)) ? (
-        <Button onClick={onDownloadZip} disabled={mode === 'all' && !anyAllChanged && !downloadAll}>
-          <Download size={18} className="mr-2" /> Download ZIP
-        </Button>
-      ) : (
-        <Button onClick={onCopy}>
-          {copied ? <Check size={18} className="mr-2" /> : <Copy size={18} className="mr-2" />}
-          {copied ? 'Copied!' : 'Copy to Clipboard'}
-        </Button>
-      )}
-    </>
-  );
-
   return (
-    <Modal
-      isOpen={true}
-      onClose={onClose}
-      title="Export XML"
-      description="Select the group and format you'd like to export."
-      maxWidth="max-w-5xl"
-      footer={footer}
-    >
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center gap-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <input
-              type="radio"
-              name="export-mode"
-              checked={mode === 'types'}
-              onChange={() => setMode('types')}
-              className="accent-primary-600 size-4"
-            />
-            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">Types for group</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <input
-              type="radio"
-              name="export-mode"
-              checked={mode === 'limits'}
-              onChange={() => setMode('limits')}
-              className="accent-primary-600 size-4"
-            />
-            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">Limits definitions</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <input
-              type="radio"
-              name="export-mode"
-              checked={mode === 'all'}
-              onChange={() => setMode('all')}
-              className="accent-primary-600 size-4"
-            />
-            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">All changed groups (ZIP)</span>
-          </label>
-          
-          <div className="flex-1" />
-          
-          {mode === 'types' && (
-            <div className="flex items-center gap-4">
-              <select 
-                value={group} 
-                onChange={e => setGroup(e.target.value)}
-                className="h-9 px-3 py-1 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all"
+    <div className="modal-backdrop">
+      <div className="modal full">
+        <div className="modal-header">
+          <h3>Export Changed Types</h3>
+          <div className="spacer" />
+          <button className="btn" onClick={onClose}>Close</button>
+          {(mode === 'types' && typesFormat === 'zip') || (mode === 'all' && (anyAllChanged || downloadAll)) ? (
+            <button
+              className="btn primary"
+              onClick={onDownloadZip}
+              title="Download ZIP"
+              aria-label="Download ZIP"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+                style={{ marginRight: 6 }}
               >
-                {changedGroups.map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-              
-              {hasMultipleFiles && (
-                <div className="flex bg-white border border-gray-200 rounded-lg p-1 shadow-sm">
-                  <button
-                    onClick={() => setTypesFormat('single')}
-                    className={cn(
-                      "px-3 py-1 text-xs font-semibold rounded-md transition-all",
-                      typesFormat === 'single' ? "bg-primary-50 text-primary-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                    )}
-                  >
-                    Single XML
-                  </button>
-                  <button
-                    onClick={() => setTypesFormat('zip')}
-                    className={cn(
-                      "px-3 py-1 text-xs font-semibold rounded-md transition-all",
-                      typesFormat === 'zip' ? "bg-primary-50 text-primary-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                    )}
-                  >
-                    ZIP of files
-                  </button>
-                </div>
+                <path d="M12 3v10m0 0l-3-3m3 3l3-3M5 17h14v3H5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>Download ZIP</span>
+            </button>
+          ) : (
+            <button
+              className="btn primary"
+              onClick={onCopy}
+              title="Copy to clipboard"
+              aria-label="Copy to clipboard"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+                style={{ marginRight: 6 }}
+              >
+                <path d="M9 3h6a2 2 0 0 1 2 2v1h-2.5a1.5 1.5 0 0 0-3 0H9V5a2 2 0 0 1 2-2Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <rect x="6" y="6" width="12" height="14" rx="2" ry="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+              </svg>
+              <span>Copy to Clipboard</span>
+            </button>
+          )}
+        </div>
+        <div className="modal-body">
+          <div className="filters-row" style={{ alignItems: 'center', gap: 16 }}>
+            <label className="checkbox">
+              <input
+                type="radio"
+                name="export-mode"
+                checked={mode === 'types'}
+                onChange={() => setMode('types')}
+              />
+              <span>Types for group</span>
+            </label>
+            <label className="checkbox">
+              <input
+                type="radio"
+                name="export-mode"
+                checked={mode === 'limits'}
+                onChange={() => setMode('limits')}
+              />
+              <span>Limits definitions</span>
+            </label>
+            <label className="checkbox" title={anyAllChanged ? 'Export changed files across all non-vanilla groups' : 'No changed files across non-vanilla groups'}>
+              <input
+                type="radio"
+                name="export-mode"
+                checked={mode === 'all'}
+                onChange={() => setMode('all')}
+              />
+              <span>All changed groups (zip)</span>
+            </label>
+            {mode === 'types' && (
+              <>
+                <label className="control" style={{ marginLeft: 'auto', minWidth: 180 }}>
+                  <span>Group</span>
+                  <select value={group} onChange={e => setGroup(e.target.value)}>
+                    {changedGroups.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </label>
+                {hasMultipleFiles && (
+                  <div className="checkbox" style={{ marginLeft: 8, display: 'flex', gap: 12 }}>
+                    <label className="checkbox" style={{ gap: 6 }}>
+                      <input
+                        type="radio"
+                        name="types-format"
+                        checked={typesFormat === 'single'}
+                        onChange={() => setTypesFormat('single')}
+                      />
+                      <span>Single types.xml</span>
+                    </label>
+                    <label className="checkbox" style={{ gap: 6 }}>
+                      <input
+                        type="radio"
+                        name="types-format"
+                        checked={typesFormat === 'zip'}
+                        onChange={() => setTypesFormat('zip')}
+                      />
+                      <span>Zip of files</span>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+            {((mode === 'types' && typesFormat === 'zip') || mode === 'all') && (
+              <label className="checkbox" style={{ marginLeft: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={downloadAll}
+                  onChange={e => setDownloadAll(e.target.checked)}
+                />
+                <span>Download all</span>
+              </label>
+            )}
+          </div>
+          <div className="filters-row" aria-live="polite">
+            <span className="muted">File: <code>{exportPath}</code></span>
+          </div>
+          {!(mode === 'types' && hasMultipleFiles && typesFormat === 'zip') && (
+            <div className="code-block" aria-label="Export XML" role="region">
+              {xml}
+            </div>
+          )}
+          {mode === 'types' && typesFormat === 'zip' && (
+            <div className="muted" style={{ marginTop: 8 }}>
+              {(downloadAll || zipAvailable) ? (
+                <>
+                  This ZIP will include:
+                  <ul>
+                    {(downloadAll ? filesForGroup : filesForGroup.filter(({ file }) => changedFilesSet.has(file))).map(({ file }) => (
+                      <li key={file}><code>{file}.xml</code></li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <span>No changed files to export for this group.</span>
               )}
             </div>
           )}
-          
-          {((mode === 'types' && typesFormat === 'zip') || mode === 'all') && (
-            <label className="flex items-center gap-2 cursor-pointer group ml-4">
-              <input
-                type="checkbox"
-                checked={downloadAll}
-                onChange={e => setDownloadAll(e.target.checked)}
-                className="accent-primary-600 size-4 rounded"
-              />
-              <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">Download all</span>
-            </label>
-          )}
         </div>
-
-        <div className="flex items-center gap-2 text-sm text-gray-500 font-mono bg-gray-50 px-3 py-2 rounded border border-gray-100">
-          <FileText size={16} />
-          <span>{exportPath}</span>
-        </div>
-
-        {!(mode === 'types' && hasMultipleFiles && typesFormat === 'zip') && (
-          <div className="relative group">
-            <pre className="p-4 bg-gray-900 text-gray-100 rounded-xl overflow-auto max-h-[400px] text-xs font-mono scrollbar-thin scrollbar-thumb-gray-700">
-              {xml}
-            </pre>
-            <Button 
-                variant="secondary" 
-                size="sm" 
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={onCopy}
-            >
-                {copied ? <Check size={14} className="mr-1" /> : <Copy size={14} className="mr-1" />}
-                {copied ? 'Copied' : 'Copy'}
-            </Button>
-          </div>
-        )}
-
-        {mode === 'types' && typesFormat === 'zip' && (
-          <div className="p-4 bg-primary-50 rounded-xl border border-primary-100">
-            <p className="text-sm font-semibold text-primary-900 mb-2">ZIP Package Contents:</p>
-            {(downloadAll || zipAvailable) ? (
-              <ul className="grid grid-cols-2 gap-2">
-                {(downloadAll ? filesForGroup : filesForGroup.filter(({ file }) => changedFilesSet.has(file))).map(({ file }) => (
-                  <li key={file} className="flex items-center gap-2 text-xs text-primary-700">
-                    <div className="size-1 bg-primary-400 rounded-full" />
-                    <code className="font-semibold">{file}.xml</code>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-primary-600 italic">No changed files to export for this group.</p>
-            )}
-          </div>
-        )}
       </div>
-    </Modal>
+    </div>
   );
 }

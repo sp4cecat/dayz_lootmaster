@@ -1,9 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { Input } from './ui/Input';
-import { Plus, X, AlertTriangle } from 'lucide-react';
 
 /**
  * Modal to manage entries in usage/value/tags definitions.
@@ -26,6 +21,7 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
   const cap = 32;
   const count = entries.length;
 
+  // Per-entry reference counts for information display
   const entryCounts = useMemo(() => {
     /** @type {Record<string, number>} */
     const m = {};
@@ -66,77 +62,80 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
     }
   };
 
-  const footer = (
-    <Button variant="secondary" onClick={onClose}>Close</Button>
-  );
-
   return (
-    <Modal
-      isOpen={true}
-      onClose={onClose}
-      title={`Manage ${label} Flags`}
-      description={`Add or remove ${label.toLowerCase()} definitions used across types.`}
-      footer={footer}
-    >
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-gray-700">
-            Current entries: <span className="font-bold">{count}</span>
-            {isCapped && <span className="text-gray-400 font-normal"> / {cap} limit</span>}
-          </div>
-          {isCapped && (
-            <Badge variant={count >= cap ? "error" : "primary"}>
-              {Math.max(0, cap - count)} remaining
-            </Badge>
-          )}
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Manage ${label}`}>
+      <div className="modal">
+        <div className="modal-header">
+          <h2>Manage {label}</h2>
         </div>
-
-        <div className="flex gap-3">
-          <Input
-            value={newEntry}
-            onChange={e => setNewEntry(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={`Add new ${label.toLowerCase()}...`}
-            className="flex-1"
-          />
-          <Button onClick={onAdd} disabled={!newEntry.trim() || (isCapped && count >= cap)}>
-            <Plus size={18} className="mr-2" /> Add
-          </Button>
-        </div>
-
-        {isCapped && count >= cap && (
-          <div className="p-3 bg-error-50 rounded-lg border border-error-100 flex items-center gap-2 text-sm text-error-700">
-            <AlertTriangle size={16} />
-            <span>Maximum of {cap} entries reached. Remove an entry to add a new one.</span>
+        <div className="modal-body">
+          {/* Summary info */}
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Total entries: <strong>{count}</strong>
+            {isCapped && (
+              <>
+                {' '}({count}/{cap} used, {Math.max(0, cap - count)} remaining)
+              </>
+            )}
           </div>
-        )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
-          {entries.map(e => (
-            <div 
-              key={e} 
-              className="group flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-primary-300 transition-colors shadow-sm"
-            >
-              <div className="flex flex-col min-w-0">
-                <span className="font-semibold text-gray-900 truncate" title={e}>{e}</span>
-                <span className="text-xs text-gray-500">{entryCounts[e] || 0} references</span>
-              </div>
-              <button
-                onClick={() => onRemoveClick(e)}
-                className="p-1.5 text-gray-400 hover:text-error-600 hover:bg-error-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                title={`Remove ${e}`}
-              >
-                <X size={16} />
-              </button>
+          <div className="control" style={{ maxWidth: 320 }}>
+            <span>Add new {label.toLowerCase()}</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                value={newEntry}
+                onChange={e => setNewEntry(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder={`Enter ${label.toLowerCase()} name`}
+              />
+              <button className="btn primary" type="button" onClick={onAdd}>Add</button>
             </div>
-          ))}
-          {entries.length === 0 && (
-            <div className="col-span-full py-8 text-center text-gray-400 italic bg-gray-50 rounded-xl border border-dashed border-gray-200">
-              No entries defined.
+          </div>
+
+          {isCapped && count === cap && (
+            <div className="banner warn" role="status" aria-live="polite">
+              {label} is at the maximum of {cap} entries. Adding another will exceed the limit.
             </div>
           )}
+          {isCapped && count > cap && (
+            <div className="banner warn" role="status" aria-live="polite">
+              {label} exceeds the maximum of {cap} entries (currently {count}). Please remove entries.
+            </div>
+          )}
+
+          {entries.length === 0 ? (
+            <p className="muted">No entries.</p>
+          ) : (
+            <div className="chips" style={{ marginTop: 12 }}>
+              {entries.map(e => (
+                <span key={e} className="chip" title={`${entryCounts[e] || 0} type(s) reference this`}>
+                  {e} <span className="muted" style={{ fontSize: 11 }}>({entryCounts[e] || 0})</span>
+                  <button
+                    type="button"
+                    className="chip-close"
+                    aria-label={`Remove ${e}`}
+                    title={`Remove ${e}`}
+                    onClick={() => onRemoveClick(e)}
+                    style={{
+                      marginLeft: '6px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }

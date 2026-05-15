@@ -1,8 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import { formatLifetime } from '../utils/time.js';
-import { Badge } from './ui/Badge';
-import { cn } from '../utils/cn';
-import { ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -25,10 +22,10 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
   // Virtualization state
   const containerRef = useRef(/** @type {HTMLDivElement|null} */(null));
-  const rowHeight = 48; // Taller rows for Untitled UI
-  const [viewportHeight, setViewportHeight] = useState(600);
+  const [rowHeight, setRowHeight] = useState(36);
+  const [viewportHeight, setViewportHeight] = useState(400);
   const [scrollTop, setScrollTop] = useState(0);
-  const overscan = 10;
+  const overscan = 8;
 
   const rows = useMemo(() => {
     const arr = types.map(t => {
@@ -66,7 +63,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
     return arr;
   }, [types, unknowns, sort]);
 
-  // Measure viewport height
+  // Measure viewport height and (approximate) row height
   useEffect(() => {
     const updateViewport = () => {
       if (containerRef.current) {
@@ -77,6 +74,15 @@ export default function TypesTable({ definitions, types, selection, setSelection
     window.addEventListener('resize', updateViewport);
     return () => window.removeEventListener('resize', updateViewport);
   }, []);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const firstRow = containerRef.current.querySelector('.tr');
+    if (firstRow instanceof HTMLElement) {
+      const h = firstRow.getBoundingClientRect().height;
+      if (h && Math.abs(h - rowHeight) > 1) setRowHeight(h);
+    }
+  }, [rows.length, condensedProp, rowHeight]);
 
   const handleScroll = (e) => {
     setScrollTop(e.currentTarget.scrollTop);
@@ -95,6 +101,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
     setSort(prev => {
       if (prev.key !== key) return { key, dir: 'asc' };
       if (prev.dir === 'asc') return { key, dir: 'desc' };
+      // cycle to unsorted
       return { key: null, dir: 'asc' };
     });
   };
@@ -113,8 +120,10 @@ export default function TypesTable({ definitions, types, selection, setSelection
       const rangeNames = rows.slice(start, end + 1).map(r => r.name);
 
       if (isToggle) {
+        // Toggle each in the range
         rangeNames.forEach(n => next.has(n) ? next.delete(n) : next.add(n));
       } else {
+        // Replace with the range
         next.clear();
         rangeNames.forEach(n => next.add(n));
       }
@@ -138,159 +147,190 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
   const condensed = typeof condensedProp === 'boolean' ? condensedProp : (selection.size > 0);
 
-  const SortIcon = ({ column }) => {
-    if (sort.key !== column) return null;
-    return sort.dir === 'asc' ? <ArrowUp size={14} className="ml-1" /> : <ArrowDown size={14} className="ml-1" />;
-  };
-
   return (
     <div
-      className={cn(
-        "flex flex-col h-full bg-white text-sm relative",
-        condensed && "condensed"
-      )}
+      className={`types-table ${condensed ? 'condensed' : ''} ${showGroupColumn ? '' : 'no-group'}`}
+      ref={containerRef}
+      onScroll={handleScroll}
     >
-      <div className="flex border-b border-gray-200 bg-gray-50 sticky top-0 z-20 shrink-0 select-none">
-        <div 
-          className="flex-1 min-w-[200px] px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors"
+      <div className="table-header">
+        <div
+          className="th name sortable"
           onClick={() => handleSort('name')}
+          title="Sort by name"
         >
           <span>Name</span>
-          <SortIcon column="name" />
+          {sort.key === 'name' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
           <button
+            type="button"
+            className="link select-all-link"
             onClick={(e) => { e.stopPropagation(); selectAll(); }}
-            className="ml-auto text-xs font-medium text-primary-600 hover:text-primary-700"
+            disabled={rows.length === 0}
+            title="Select all filtered types"
           >
             Select all
           </button>
         </div>
         {showGroupColumn && !condensed && (
-          <div 
-            className="w-32 px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors"
+          <div
+            className="th group sortable"
             onClick={() => handleSort('group')}
+            title="Sort by group"
           >
             <span>Group</span>
-            <SortIcon column="group" />
+            {sort.key === 'group' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
           </div>
         )}
-        <div 
-          className="w-20 px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end"
+        <div
+          className="th nums sortable"
           onClick={() => handleSort('nominal')}
+          title="Sort by nominal"
         >
           <span>Nom</span>
-          <SortIcon column="nominal" />
+          {sort.key === 'nominal' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
         </div>
-        <div className="w-20 px-4 py-3 font-semibold text-gray-700 text-right">Min</div>
-        
+        <div className="th nums">Min</div>
         {!condensed && (
           <>
-            <div 
-              className="w-24 px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end"
+            <div
+              className="th nums sortable"
               onClick={() => handleSort('lifetime')}
+              title="Sort by lifetime"
             >
               <span>Lifetime</span>
-              <SortIcon column="lifetime" />
+              {sort.key === 'lifetime' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
             </div>
-            <div className="w-32 px-4 py-3 font-semibold text-gray-700">Category</div>
-            <div className="flex-1 min-w-[150px] px-4 py-3 font-semibold text-gray-700">Usage</div>
-            <div className="flex-1 min-w-[150px] px-4 py-3 font-semibold text-gray-700">Value</div>
+            <div
+              className="th nums sortable"
+              onClick={() => handleSort('restock')}
+              title="Sort by restock"
+            >
+              <span>Restock</span>
+              {sort.key === 'restock' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
+            <div className="th nums" title="Quantmin/Quantmax" >Quantmin/max</div>
+            <div className="th category">Category</div>
+            <div
+              className="th usage sortable"
+              onClick={() => handleSort('usage')}
+              title="Sort by usage"
+            >
+              <span>Usage</span>
+              {sort.key === 'usage' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
+            <div
+              className="th value sortable"
+              onClick={() => handleSort('value')}
+              title="Sort by value"
+            >
+              <span>Value</span>
+              {sort.key === 'value' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+            </div>
+            <div className="th flags">Flags</div>
           </>
         )}
       </div>
 
-      <div 
-        className="flex-1 overflow-auto scrollbar-thin" 
-        ref={containerRef}
-        onScroll={handleScroll}
-      >
-        <div style={{ height: `${topPad}px` }} />
-        
+      {/* top spacer to preserve scroll height above visible window */}
+      <div className="spacer-row" style={{ height: `${topPad}px` }} />
+
+      <div className="table-body" role="list">
         {visibleRows.map((t, i) => {
           const globalIndex = startIndex + i;
           const selected = selection.has(t.name);
-          const isModified = (() => {
-            const g = t.group || '';
-            const f = t.file || 'types';
-            const changedSet = storageDiff?.files?.[g]?.[f]?.changedNames || [];
-            return changedSet.includes(t.name);
-          })();
-
           return (
             <div
               key={`${t.name}-${globalIndex}`}
-              className={cn(
-                "flex border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group",
-                selected && "bg-primary-50 hover:bg-primary-50/80 border-primary-200 z-10 sticky",
-                t.hasUnknown && "bg-warning-50/30"
-              )}
-              style={{ height: `${rowHeight}px` }}
+              role="listitem"
+              className={`tr ${selected ? 'selected' : ''}`}
               onClick={e => onRowClick(e, globalIndex, t.name)}
+              title={t.hasUnknown ? 'Contains unknown entries' : undefined}
             >
-              <div className="flex-1 min-w-[200px] px-4 flex items-center gap-2 overflow-hidden">
-                <div className={cn(
-                  "size-4 rounded border flex items-center justify-center shrink-0 transition-all",
-                  selected ? "bg-primary-600 border-primary-600" : "bg-white border-gray-300 group-hover:border-primary-300"
-                )}>
-                  {selected && <Check size={12} className="text-white" />}
-                </div>
-                <span className={cn(
-                  "truncate font-medium",
-                  selected ? "text-primary-700" : "text-gray-900",
-                  isModified && "text-primary-600"
-                )}>
-                  {t.name}
-                </span>
+              <div className={`td name ${(() => {
+                const g = t.group || '';
+                const f = t.file || 'types';
+                const changedSet = storageDiff?.files?.[g]?.[f]?.changedNames || [];
+                return changedSet.includes(t.name) ? 'modified' : '';
+              })()}`}>
+                {t.name}
                 {(() => {
                   const groups = duplicatesByName[t.name] || [];
-                  const count = groups.filter(g => g !== t.group).length;
-                  return count > 0 && <Badge variant="warning">+{count}</Badge>;
+                  const others = groups.filter(g => g !== t.group);
+                  const count = others.length;
+                  return count > 0 ? (
+                    <span
+                      className="chip"
+                      title={`Overrides: ${others.join(', ')}`}
+                      aria-label={`Overrides ${others.join(', ')}`}
+                      style={{ marginLeft: '6px' }}
+                    >
+                      +{count}
+                    </span>
+                  ) : null;
                 })()}
-                {t.hasUnknown && <AlertCircle size={14} className="text-warning-500 shrink-0" />}
+                {t.hasUnknown && <span className="chip warn">Unknown</span>}
               </div>
 
-              {showGroupColumn && !condensed && (
-                <div className="w-32 px-4 flex items-center overflow-hidden">
-                  <Badge variant="gray" className="truncate">{t.group || 'vanilla'}</Badge>
-                </div>
-              )}
-
-              <div className="w-20 px-4 flex items-center justify-end font-mono text-gray-600">{t.nominal}</div>
-              <div className="w-20 px-4 flex items-center justify-end font-mono text-gray-400">{t.min}</div>
+              {showGroupColumn && !condensed && <div className="td group">{t.group || '—'}</div>}
+              <div className="td nums">{t.nominal}</div>
+              <div className="td nums">{t.min}</div>
 
               {!condensed && (
                 <>
-                  <div className="w-24 px-4 flex items-center justify-end font-mono text-gray-500">
-                    {formatLifetime(Number(t.lifetime))}
+                  <div className="td nums" title={`${t.lifetime} seconds`}>{formatLifetime(Number(t.lifetime))}</div>
+                  <div className="td nums" title={`${t.restock} seconds`}>
+                    {Number(t.restock) === 0 ? '0' : formatLifetime(Number(t.restock))}
                   </div>
-                  <div className="w-32 px-4 flex items-center overflow-hidden">
-                    {t.category ? (
-                      <Badge variant={definitions.categories.includes(t.category) ? "primary" : "error"} className="truncate">
-                        {t.category}
-                      </Badge>
-                    ) : <span className="text-gray-300">—</span>}
+                  <div className="td nums" title="Quantmin/Quantmax">
+                    {`${t.quantmin}/${t.quantmax}`}
                   </div>
-                  <div className="flex-1 min-w-[150px] px-4 flex items-center gap-1 overflow-hidden">
-                    {t.usage?.slice(0, 2).map(u => (
-                      <Badge key={u} variant="gray" className="truncate">{u}</Badge>
-                    ))}
-                    {(t.usage?.length || 0) > 2 && <Badge variant="gray">+{t.usage.length - 2}</Badge>}
-                    {(t.usage?.length || 0) === 0 && <span className="text-gray-300">—</span>}
+                  <div className="td category">
+                    <span className={!definitions.categories.includes(t.category || '') ? 'warn-text' : ''}>
+                      {t.category || '—'}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-[150px] px-4 flex items-center gap-1 overflow-hidden">
-                    {t.value?.slice(0, 2).map(v => (
-                      <Badge key={v} variant="gray" className="truncate">{v}</Badge>
-                    ))}
-                    {(t.value?.length || 0) > 2 && <Badge variant="gray">+{t.value.length - 2}</Badge>}
-                    {(t.value?.length || 0) === 0 && <span className="text-gray-300">—</span>}
+                  <div className="td usage">
+                    <GroupChips values={t.usage} unknown={(unknowns.byType[t.name]?.usage) || []} />
+                  </div>
+                  <div className="td value">
+                    <GroupChips values={t.value} unknown={(unknowns.byType[t.name]?.value) || []} />
+                  </div>
+                  <div className="td flags">
+                    <GroupChips values={getFlagChipLabels(t.flags)} unknown={[]} />
                   </div>
                 </>
               )}
             </div>
           );
         })}
-        
-        <div style={{ height: `${bottomPad}px` }} />
       </div>
+
+      {/* bottom spacer to preserve scroll height below visible window */}
+      <div className="spacer-row" style={{ height: `${bottomPad}px` }} />
     </div>
   );
+}
+
+function GroupChips({ label, values, unknown }) {
+  return (
+    <div className="chips">
+      {label ? <span className="chip muted">{label}</span> : null}
+      {values.map(v => (
+        <span key={v} className={`chip ${unknown.includes(v) ? 'warn' : ''}`}>{v}</span>
+      ))}
+      {values.length === 0 && <span className="muted">—</span>}
+    </div>
+  );
+}
+
+/**
+ * Compute flag labels for chips: include only truthy flags,
+ * and for keys starting with 'count_in_' remove the 'count_' prefix for display.
+ * @param {{[k:string]: boolean}} flags
+ * @returns {string[]}
+ */
+function getFlagChipLabels(flags) {
+  if (!flags) return [];
+  const entries = Object.entries(flags).filter(([, v]) => !!v).map(([k]) => k);
+  return entries.map(k => (k.startsWith('count_in_') ? k.replace(/^count_/, '') : k));
 }
