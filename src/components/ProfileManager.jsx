@@ -6,7 +6,6 @@ export default function ProfileManager({
     profiles, 
     selectedProfileId, 
     onSelect, 
-    onClose,
     getApiBase 
 }) {
     const [isAdding, setIsAdding] = useState(false);

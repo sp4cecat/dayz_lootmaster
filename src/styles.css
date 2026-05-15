@@ -17,6 +17,7 @@
     --bg: #101828; /* gray-900 */
     --bg-soft: #1d2939; /* gray-800 */
     --bg-softer: #344054; /* gray-700 */
+    --bg-input: #0c111d; /* gray-950 */
     --text: #f9fafb; /* gray-50 */
     --text-hover: #ffffff;
     --muted: #98a2b3; /* gray-400 */
@@ -479,6 +480,13 @@ h1 {
     border-radius: 8px;
     background: var(--bg);
     color: var(--text);
+}
+
+.dark .control input[type="text"], 
+.dark .control input[type="number"], 
+.dark .control select, 
+.dark textarea.code-view {
+    background: var(--bg-input);
 }
 
 /* Clear button inside text input */
