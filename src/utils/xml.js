@@ -501,7 +501,7 @@ function buildAttrs(attrs) {
   const parts = [];
   for (const [key, value] of Object.entries(attrs || {})) {
     if (value == null || value === '') continue;
-    const outValue = key === 'chance' ? formatChance(value) : String(value);
+    const outValue = (key === 'chance' || key === 'min' || key === 'max') ? formatChance(value) : String(value);
     parts.push(`${key}="${escapeAttr(outValue)}"`);
   }
   return parts.length ? ` ${parts.join(' ')}` : '';

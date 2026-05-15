@@ -118,6 +118,23 @@ describe('spawnabletypes utilities', () => {
     expect(out).toContain('<cargo preset="MedicalPreset"/>');
   });
 
+  it('parses and generates damage min/max attributes', () => {
+    const damageXml = `
+<spawnabletypes>
+  <type name="jmc_mjolnir_head">
+    <damage min="0.3" max="0.7"/>
+  </type>
+</spawnabletypes>`;
+    const parsed = parseSpawnableTypesXml(damageXml);
+    expect(parsed.types[0].sections[0].kind).toBe('damage');
+    expect(parsed.types[0].sections[0].attrs.min).toBe('0.3');
+    expect(parsed.types[0].sections[0].attrs.max).toBe('0.7');
+
+    parsed.types[0].sections[0].attrs.min = '0.4567';
+    const out = generateSpawnableTypesXml(parsed);
+    expect(out).toContain('<damage min="0.457" max="0.700"/>');
+  });
+
   it('validates orphan entries, missing presets, and missing item type references', () => {
     const warnings = validateSpawnableReferences(
       parseSpawnableTypesXml(xml),

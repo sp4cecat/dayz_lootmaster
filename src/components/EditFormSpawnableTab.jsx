@@ -38,24 +38,6 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
     });
   };
 
-  const createDamageEntry = (group, typeName) => {
-    updateEntry(group, typeName, entry => ({
-      ...entry,
-      sections: [
-        ...(entry.sections || []),
-        {
-          kind: 'damage',
-          chance: null,
-          preset: '',
-          attrs: {
-            min: String(globalsDefaults?.LootDamageMin ?? 0),
-            max: String(globalsDefaults?.LootDamageMax ?? 1)
-          },
-          items: []
-        }
-      ]
-    }));
-  };
 
   const updateSelectedSections = (apply) => {
     setSpawnableTypesByGroup(prev => {
@@ -106,9 +88,52 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
     }));
   };
 
+  const addSection = (group, typeName, kind) => {
+    updateEntry(group, typeName, entry => ({
+      ...entry,
+      sections: [
+        ...(entry.sections || []),
+        {
+          kind,
+          chance: kind === 'damage' ? null : 1.0,
+          preset: '',
+          attrs: kind === 'damage' ? {
+            min: String(globalsDefaults?.LootDamageMin ?? 0),
+            max: String(globalsDefaults?.LootDamageMax ?? 1)
+          } : { chance: '1.000' },
+          items: []
+        }
+      ]
+    }));
+  };
+
+  const removeSection = (group, typeName, sectionIndex) => {
+    updateEntry(group, typeName, entry => ({
+      ...entry,
+      sections: (entry.sections || []).filter((_, i) => i !== sectionIndex)
+    }));
+  };
+
+  const addItem = (group, typeName, sectionIndex) => {
+    updateSection(group, typeName, sectionIndex, section => ({
+      ...section,
+      items: [
+        ...(section.items || []),
+        { kind: 'item', name: 'NewItem', chance: 1.0, preset: '', attrs: { name: 'NewItem', chance: '1.000' } }
+      ]
+    }));
+  };
+
+  const removeItem = (group, typeName, sectionIndex, itemIndex) => {
+    updateSection(group, typeName, sectionIndex, section => ({
+      ...section,
+      items: (section.items || []).filter((_, i) => i !== itemIndex)
+    }));
+  };
+
   return (
     <div className="stack">
-      <p className="muted">Edit existing `cfgspawnabletypes.xml` chance and preset attributes. Structural block creation is limited to creating a default damage entry for types with no spawnable entry.</p>
+      <p className="muted">Edit `cfgspawnabletypes.xml` entries. You can adjust chances, presets, and damage ranges, or add/remove sections and items.</p>
       {selectedTypes.length > 1 && (
         <section className="card subtle">
           <h4>Bulk spawnable edits</h4>
@@ -136,9 +161,9 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
               const sourceGroup = found?.group;
               if (!entry) {
                 return (
-                  <div key={type.name} className="card subtle" onClick={() => createDamageEntry(group, type.name)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') createDamageEntry(group, type.name); }} role="button" tabIndex={0}>
+                  <div key={type.name} className="card subtle" onClick={() => addSection(group, type.name, 'damage')} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') addSection(group, type.name, 'damage'); }} role="button" tabIndex={0}>
                     <strong>{type.name}</strong>
-                    <div className="muted">No explicit spawnable entry. Click the disabled default range to create one.</div>
+                    <div className="muted">No explicit spawnable entry. Default loot damage range from globals.xml is shown. Click to create an explicit entry.</div>
                     <label className="slider-row disabled">
                       Loot damage min {chancePercent(globalsDefaults?.LootDamageMin)}%
                       <input type="range" min="0" max="100" step="0.1" value={chancePercent(globalsDefaults?.LootDamageMin)} readOnly />
@@ -155,30 +180,64 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
                   <strong>{type.name}</strong>
                   {sourceGroup === ROOT_SPAWNABLE_GROUP && <div className="muted">Using mission-root cfgspawnabletypes.xml entry.</div>}
                   {(entry.sections || []).map((section, sectionIndex) => (
-                    <div key={`${section.kind}-${sectionIndex}`} className="stack small">
-                      <div className="row wrap">
-                        <span className="badge">{section.kind}</span>
-                        <select value={section.preset || ''} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, preset: e.target.value, attrs: { ...(s.attrs || {}), preset: e.target.value } }))}>
-                          <option value="">No preset</option>
-                          {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                        </select>
+                    <div key={`${section.kind}-${sectionIndex}`} className="stack small card subtle" style={{ border: '1px dashed var(--border)' }}>
+                      <div className="row wrap space-between">
+                        <div className="row wrap">
+                          <span className="badge">{section.kind}</span>
+                          {section.kind !== 'damage' && (
+                            <select value={section.preset || ''} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, preset: e.target.value, attrs: { ...(s.attrs || {}), preset: e.target.value } }))}>
+                              <option value="">No preset</option>
+                              {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                          )}
+                        </div>
+                        <button className="btn btn-danger btn-small" title="Remove section" onClick={() => removeSection(group, type.name, sectionIndex)}>×</button>
                       </div>
-                      {section.chance != null && (
+
+                      {section.kind === 'damage' && (
+                        <>
+                          <label className="slider-row">
+                            Min damage {chancePercent(section.attrs?.min)}%
+                            <input type="range" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.min)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), min: String(fromPercent(e.target.value)) } }))}/>
+                            <input type="number" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.min)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), min: String(fromPercent(e.target.value)) } }))}/>
+                          </label>
+                          <label className="slider-row">
+                            Max damage {chancePercent(section.attrs?.max)}%
+                            <input type="range" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.max)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), max: String(fromPercent(e.target.value)) } }))}/>
+                            <input type="number" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.max)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), max: String(fromPercent(e.target.value)) } }))}/>
+                          </label>
+                        </>
+                      )}
+
+                      {section.chance != null && section.kind !== 'damage' && (
                         <label className="slider-row">
                           Block chance {chancePercent(section.chance)}%
                           <input type="range" min="0" max="100" step="0.1" value={chancePercent(section.chance)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, chance: fromPercent(e.target.value), attrs: { ...(s.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
                           <input type="number" min="0" max="100" step="0.1" value={chancePercent(section.chance)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, chance: fromPercent(e.target.value), attrs: { ...(s.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
                         </label>
                       )}
+
                       {(section.items || []).map((item, itemIndex) => (
-                        <label key={`${item.name}-${itemIndex}`} className="slider-row">
-                          {item.name || item.kind} {chancePercent(item.chance)}%
-                          <input type="range" min="0" max="100" step="0.1" value={chancePercent(item.chance)} onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, chance: fromPercent(e.target.value), attrs: { ...(it.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
-                          <input type="number" min="0" max="100" step="0.1" value={chancePercent(item.chance)} onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, chance: fromPercent(e.target.value), attrs: { ...(it.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
-                        </label>
+                        <div key={`${item.name}-${itemIndex}`} className="row wrap">
+                          <label className="slider-row grow">
+                            <input className="grow" type="text" value={item.name} onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, name: e.target.value, attrs: { ...(it.attrs || {}), name: e.target.value } }))} placeholder="Item name" />
+                            {chancePercent(item.chance)}%
+                            <input type="range" min="0" max="100" step="0.1" value={chancePercent(item.chance)} onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, chance: fromPercent(e.target.value), attrs: { ...(it.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
+                          </label>
+                          <button className="btn btn-danger btn-small" title="Remove item" onClick={() => removeItem(group, type.name, sectionIndex, itemIndex)}>×</button>
+                        </div>
                       ))}
+
+                      {section.kind !== 'damage' && !section.preset && (
+                        <button className="btn btn-small" onClick={() => addItem(group, type.name, sectionIndex)}>+ Add item</button>
+                      )}
                     </div>
                   ))}
+                  <div className="row wrap">
+                    <button className="btn btn-small" onClick={() => addSection(group, type.name, 'damage')}>+ Add damage</button>
+                    <button className="btn btn-small" onClick={() => addSection(group, type.name, 'attachments')}>+ Add attachments</button>
+                    <button className="btn btn-small" onClick={() => addSection(group, type.name, 'cargo')}>+ Add cargo</button>
+                  </div>
                 </div>
               );
             })}
