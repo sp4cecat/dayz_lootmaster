@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { Input } from './ui/Input';
+import { Modal } from './ui/Modal.jsx';
+import { Button } from './ui/Button.jsx';
+import { Badge } from './ui/Badge.jsx';
+import { Input } from './ui/Input.jsx';
 import { Plus, X, AlertTriangle } from 'lucide-react';
 
 /**
@@ -18,7 +18,7 @@ import { Plus, X, AlertTriangle } from 'lucide-react';
  *  onClose: () => void
  * }} props
  */
-export default function ManageDefinitionsModal({ kind, entries, countRefs, removeEntry, addEntry, onClose }) {
+export const ManageDefinitionsModal = ({ kind, entries, countRefs, removeEntry, addEntry, onClose }) => {
   const label = kind === 'usage' ? 'Usage' : kind === 'value' ? 'Value' : 'Tag';
   const [newEntry, setNewEntry] = useState('');
 
@@ -139,4 +139,4 @@ export default function ManageDefinitionsModal({ kind, entries, countRefs, remov
       </div>
     </Modal>
   );
-}
+};
