@@ -5,7 +5,6 @@ import TypesTable from './components/TypesTable.jsx';
 import EditForm from './components/EditForm.jsx';
 import ExportModal from './components/ExportModal.jsx';
 import UnknownEntriesModal from './components/UnknownEntriesModal.jsx';
-import ThemeToggle from './components/ThemeToggle.jsx';
 import SummaryModal from './components/SummaryModal.jsx';
 import { ManageDefinitionsModal } from './components/ManageDefinitionsModal.jsx';
 import StorageStatusModal from './components/StorageStatusModal.jsx';
