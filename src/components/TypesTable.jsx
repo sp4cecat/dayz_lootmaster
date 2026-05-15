@@ -171,27 +171,27 @@ export default function TypesTable({ definitions, types, selection, setSelection
             Select all
           </button>
         </div>
+        {showGroupColumn && !condensed && (
+          <div
+            className="th group sortable"
+            onClick={() => handleSort('group')}
+            title="Sort by group"
+          >
+            <span>Group</span>
+            {sort.key === 'group' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+          </div>
+        )}
+        <div
+          className="th nums sortable"
+          onClick={() => handleSort('nominal')}
+          title="Sort by nominal"
+        >
+          <span>Nom</span>
+          {sort.key === 'nominal' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+        </div>
+        <div className="th nums">Min</div>
         {!condensed && (
           <>
-            {showGroupColumn && (
-              <div
-                className="th group sortable"
-                onClick={() => handleSort('group')}
-                title="Sort by group"
-              >
-                <span>Group</span>
-                {sort.key === 'group' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
-              </div>
-            )}
-            <div
-              className="th nums sortable"
-              onClick={() => handleSort('nominal')}
-              title="Sort by nominal"
-            >
-              <span>Nom</span>
-              {sort.key === 'nominal' && <span className="sort-ind">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
-            </div>
-            <div className="th nums">Min</div>
             <div
               className="th nums sortable"
               onClick={() => handleSort('lifetime')}
@@ -271,11 +271,12 @@ export default function TypesTable({ definitions, types, selection, setSelection
                 {t.hasUnknown && <span className="chip warn">Unknown</span>}
               </div>
 
+              {showGroupColumn && !condensed && <div className="td group">{t.group || '—'}</div>}
+              <div className="td nums">{t.nominal}</div>
+              <div className="td nums">{t.min}</div>
+
               {!condensed && (
                 <>
-                  {showGroupColumn && <div className="td group">{t.group || '—'}</div>}
-                  <div className="td nums">{t.nominal}</div>
-                  <div className="td nums">{t.min}</div>
                   <div className="td nums" title={`${t.lifetime} seconds`}>{formatLifetime(Number(t.lifetime))}</div>
                   <div className="td nums" title={`${t.restock} seconds`}>
                     {Number(t.restock) === 0 ? '0' : formatLifetime(Number(t.restock))}

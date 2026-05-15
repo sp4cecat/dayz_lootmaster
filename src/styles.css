@@ -670,10 +670,10 @@ legend {
     grid-template-columns: max-content min-content min-content max-content max-content min-content min-content 1.5fr 1.5fr min-content;
 }
 
-/* Ensure condensed view is always a single column, even when no-group is present */
+/* Condensed view: Name, Nom, and Min columns */
 .types-table.condensed,
 .types-table.condensed.no-group {
-    grid-template-columns: max-content !important;
+    grid-template-columns: max-content min-content min-content !important;
     width: 100%;
     flex: 1 1 auto;
     align-self: flex-start;
@@ -681,9 +681,9 @@ legend {
     max-height: calc(100vh - 100px);
 }
 
-/* Condensed mode: only Name column rendered */
+/* Condensed mode: Name, Nom, and Min columns rendered */
 .types-table.condensed {
-    grid-template-columns: max-content;
+    grid-template-columns: max-content min-content min-content;
     width: min-content;
     flex: 0 0 auto;
 }
