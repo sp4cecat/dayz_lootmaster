@@ -1,4 +1,8 @@
 import React from 'react';
+import { Modal } from './ui/Modal';
+import { Button } from './ui/Button';
+import { Badge } from './ui/Badge';
+import { Database, FileCode, Tags, Layers } from 'lucide-react';
 
 /**
  * Summary modal to display information about consumed configuration after initial load.
@@ -9,56 +13,84 @@ import React from 'react';
  * }} props
  */
 export default function SummaryModal({ summary, onClose }) {
+  const footer = (
+    <Button onClick={onClose} className="w-full sm:w-auto">Got it</Button>
+  );
+
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Configuration summary">
-      <div className="modal">
-        <div className="modal-header">
-          <h2>Configuration loaded</h2>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title="Configuration Loaded"
+      description="Parsed XML data has been loaded successfully."
+      footer={footer}
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex items-center gap-3 mb-4 text-primary-600">
+            <Database size={20} />
+            <h3 className="font-bold text-gray-900 text-lg">Types</h3>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold text-gray-900">{summary.typesTotal}</span>
+            <span className="text-gray-500 font-medium">total types</span>
+          </div>
         </div>
-        <div className="modal-body">
-          <p>
-            Parsed XML data has been loaded successfully.
-          </p>
 
-          <div className="summary-section">
-            <h3>Types</h3>
-            <p>
-              Total types loaded: <strong>{summary.typesTotal}</strong>
-            </p>
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex items-center gap-3 mb-4 text-primary-600">
+            <Tags size={20} />
+            <h3 className="font-bold text-gray-900 text-lg">Definitions</h3>
           </div>
-
-          <div className="summary-section">
-            <h3>Definitions</h3>
-            <ul className="bulleted">
-              <li>Categories: <strong>{summary.definitions.categories}</strong></li>
-              <li>Usage flags: <strong>{summary.definitions.usageflags}</strong></li>
-              <li>Value flags: <strong>{summary.definitions.valueflags}</strong></li>
-              <li>Tags: <strong>{summary.definitions.tags}</strong></li>
-            </ul>
-          </div>
-
-          {Array.isArray(summary.groups) && summary.groups.length > 0 && (
-            <div className="summary-section">
-              <h3>Groups</h3>
-              <ul className="bulleted">
-                {summary.groups.map(g => (
-                  <li key={g.name}>
-                    <strong>{g.name}</strong>: {g.count} types
-                    {Array.isArray(g.files) && g.files.length > 0 && (
-                      <ul className="muted">
-                        {g.files.map(f => <li key={f}>{f}</li>)}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Categories</p>
+              <p className="text-xl font-bold text-gray-900">{summary.definitions.categories}</p>
             </div>
-          )}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Usage Flags</p>
+              <p className="text-xl font-bold text-gray-900">{summary.definitions.usageflags}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Value Flags</p>
+              <p className="text-xl font-bold text-gray-900">{summary.definitions.valueflags}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase">Tags</p>
+              <p className="text-xl font-bold text-gray-900">{summary.definitions.tags}</p>
+            </div>
+          </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn primary" onClick={onClose}>Got it</button>
-        </div>
+
+        {Array.isArray(summary.groups) && summary.groups.length > 0 && (
+          <div className="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div className="flex items-center gap-3 mb-4 text-primary-600">
+              <Layers size={20} />
+              <h3 className="font-bold text-gray-900 text-lg">Groups</h3>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {summary.groups.map(g => (
+                <div key={g.name} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-bold text-gray-900">{g.name}</span>
+                    <Badge variant="primary">{g.count}</Badge>
+                  </div>
+                  {Array.isArray(g.files) && g.files.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {g.files.map(f => (
+                        <div key={f} className="flex items-center gap-1 text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 font-mono">
+                          <FileCode size={10} />
+                          {f}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

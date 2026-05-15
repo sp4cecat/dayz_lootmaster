@@ -22,6 +22,24 @@ import AddonEditorModal from './components/AddonEditorModal.jsx';
 import HeatMapModal from './components/HeatMapModal.jsx';
 import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateSpawnableTypesXml, ROOT_SPAWNABLE_GROUP, validateSpawnableReferences} from './utils/xml.js';
 
+import { Sidebar } from './components/layout/Sidebar.jsx';
+import { Button } from './components/ui/Button.jsx';
+import { Badge } from './components/ui/Badge.jsx';
+import { Input } from './components/ui/Input.jsx';
+import { cn } from './utils/cn.js';
+import { 
+    Undo, 
+    Redo, 
+    Save, 
+    Download, 
+    RefreshCw, 
+    AlertTriangle, 
+    ExternalLink,
+    Search as SearchIcon,
+    Filter,
+    X
+} from 'lucide-react';
+
 /**
  * @typedef {import('./utils/xml.js').Type} Type
  */
@@ -118,20 +136,32 @@ export default function App() {
     const [manageOpen, setManageOpen] = useState(false);
     const [manageKind, setManageKind] = useState(/** @type {'usage'|'value'|'tag'|null} */(null));
     const [showStorage, setShowStorage] = useState(false);
-    const [toolsOpen, setToolsOpen] = useState(false);
     const [showAdm, setShowAdm] = useState(false);
     const [showExpansionLog, setShowExpansionLog] = useState(false);
     const [showStash, setShowStash] = useState(false);
-    const [marketOpen, setMarketOpen] = useState(false);
-    const [missionFilesOpen, setMissionFilesOpen] = useState(false);
     const [showTraderEditor, setShowTraderEditor] = useState(false);
     const [showMarketCategories, setShowMarketCategories] = useState(false);
     const [showRandomPresets, setShowRandomPresets] = useState(false);
     const [showLint, setShowLint] = useState(false);
-    const [mapToolsOpen, setMapToolsOpen] = useState(false);
     const [showHeatMap, setShowHeatMap] = useState(false);
     const [activeAddon, setActiveAddon] = useState(null); // { id, name }
     const [showProfileManager, setShowProfileManager] = useState(false);
+    const [activeTab, setActiveTab] = useState('cle');
+
+    const handleTabChange = (tab) => {
+      setActiveTab(tab);
+      // Handle sub-tab modal triggers
+      if (tab === 'marketplace:traders') setShowTraderEditor(true);
+      if (tab === 'marketplace:market-categories') setShowMarketCategories(true);
+      if (tab === 'map-tools:heatmap') setShowHeatMap(true);
+      if (tab === 'mission-files:random-presets') setShowRandomPresets(true);
+      if (tab === 'tools:adm') setShowAdm(true);
+      if (tab === 'tools:expansion-log') setShowExpansionLog(true);
+      if (tab === 'tools:stash-report') setShowStash(true);
+      if (tab === 'tools:lint') setShowLint(true);
+      
+      if (tab === 'cle' || tab.startsWith('cle')) setActiveTab('cle');
+    };
 
     useEffect(() => {
         if (!loading && !selectedProfileId) {
@@ -314,67 +344,6 @@ export default function App() {
     React.useEffect(() => {
         if (editorID) setChangeEditorID(editorID);
     }, [editorID, setChangeEditorID]);
-
-    // Inactivity timeout: sign out after 10 minutes of no user activity
-    React.useEffect(() => {
-      if (!editorID) return;
-      const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-      let timerId;
-
-      const resetTimer = () => {
-        if (timerId) clearTimeout(timerId);
-        timerId = setTimeout(() => {
-          // Auto sign out on inactivity
-          signOut();
-          // Reset filters when session ends
-          setFilters({
-            category: 'all',
-            name: '',
-            usage: [],
-            value: [],
-            tag: [],
-            flags: [],
-            changedOnly: false,
-            groups: []
-          });
-        }, TIMEOUT_MS);
-      };
-
-      const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
-      events.forEach(evt => window.addEventListener(evt, resetTimer, { passive: true }));
-      // Start timer immediately
-      resetTimer();
-
-      return () => {
-        if (timerId) clearTimeout(timerId);
-        events.forEach(evt => window.removeEventListener(evt, resetTimer));
-      };
-    }, [editorID, signOut, setFilters]);
-
-    // Resizable left pane (filters)
-    const [leftWidth, setLeftWidth] = useState(300); // default 300px
-    const dragStartXRef = useRef(0);
-    const startWidthRef = useRef(300);
-    const draggingRef = useRef(false);
-
-    const onResizeStart = (e) => {
-        draggingRef.current = true;
-        dragStartXRef.current = e.clientX;
-        startWidthRef.current = leftWidth;
-        window.addEventListener('mousemove', onResizing);
-        window.addEventListener('mouseup', onResizeEnd);
-    };
-    const onResizing = (e) => {
-        if (!draggingRef.current) return;
-        const delta = e.clientX - dragStartXRef.current;
-        const next = Math.max(300, Math.min(600, startWidthRef.current + delta));
-        setLeftWidth(next);
-    };
-    const onResizeEnd = () => {
-        draggingRef.current = false;
-        window.removeEventListener('mousemove', onResizing);
-        window.removeEventListener('mouseup', onResizeEnd);
-    };
 
     // Available flag options derived from current types
     const flagOptions = useMemo(() => {
@@ -563,33 +532,25 @@ export default function App() {
         }
 
         return (
-            <main className="content two-pane">
-                <aside className="left-pane" style={{width: `${leftWidth}px`}}>
-                    <Filters
-                        definitions={definitions}
-                        groups={groups}
-                        filters={filters}
-                        onChange={setFilters}
-                        onManage={(kind) => {
-                            setManageKind(kind);
-                            setManageOpen(true);
-                        }}
-                        matchingCount={filteredTypes.length}
-                        flagOptions={flagOptions}
-                    />
+            <div className="flex gap-8 items-start">
+                <aside className="w-80 shrink-0 sticky top-0">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <Filters
+                            definitions={definitions}
+                            groups={groups}
+                            filters={filters}
+                            onChange={setFilters}
+                            onManage={(kind) => {
+                                setManageKind(kind);
+                                setManageOpen(true);
+                            }}
+                            matchingCount={filteredTypes.length}
+                            flagOptions={flagOptions}
+                        />
+                    </div>
                 </aside>
-                <div
-                    className="pane-resizer"
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-valuemin={300}
-                    aria-valuemax={600}
-                    aria-valuenow={leftWidth}
-                    onMouseDown={onResizeStart}
-                    title="Drag to resize filters panel"
-                />
-                <section className="right-pane">
-                    <div className={`table-and-form ${selectedTypes.length > 0 ? 'has-form' : ''}`}>
+                <div className="flex-1 min-w-0">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                         <TypesTable
                             definitions={definitions}
                             types={filteredTypes}
@@ -601,338 +562,156 @@ export default function App() {
                             storageDiff={storageDiff}
                             showGroupColumn={showGroupColumn}
                         />
-                        {selectedTypes.length > 0 && (
-                            <div className="edit-form-container" key={editKey}>
-                                <EditForm
-                                    definitions={definitions}
-                                    selectedTypes={selectedTypes}
-                                    onCancel={onCancelEdit}
-                                    onSave={onSaveEdit}
-                                    typeOptions={allTypeNames}
-                                    typeOptionsByCategory={typeNamesByCategory}
-                                    selectedProfileId={selectedProfileId}
-                                    selectedProfile={selectedProfile}
-                                    getApiBase={getApiBase}
-                                    spawnableTypesByGroup={spawnableTypesByGroup}
-                                    setSpawnableTypesByGroup={setSpawnableTypesByGroup}
-                                    randomPresets={randomPresets}
-                                    globalsDefaults={globalsDefaults}
-                                />
-                            </div>
-                        )}
                     </div>
-                </section>
-            </main>
+                </div>
+                {selectedTypes.length > 0 && (
+                    <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 overflow-y-auto" key={editKey}>
+                        <EditForm
+                            definitions={definitions}
+                            selectedTypes={selectedTypes}
+                            onCancel={onCancelEdit}
+                            onSave={onSaveEdit}
+                            typeOptions={allTypeNames}
+                            typeOptionsByCategory={typeNamesByCategory}
+                            selectedProfileId={selectedProfileId}
+                            selectedProfile={selectedProfile}
+                            getApiBase={getApiBase}
+                            spawnableTypesByGroup={spawnableTypesByGroup}
+                            setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                            randomPresets={randomPresets}
+                            globalsDefaults={globalsDefaults}
+                        />
+                    </div>
+                )}
+            </div>
         );
     })();
 
     return (
-        <div className="app">
-            <header className="app-header">
-                <div className="brand">
-                    <h1>DayZ Lootmaster</h1>
-                </div>
-                <div className="header-actions">
-                    <button
-                        className={`btn icon-only ${storageDirty ? 'status-warn' : 'icon-muted'}`}
-                        onClick={() => setShowStorage(true)}
-                        title={storageDirty ? 'Changes detected — click to view' : 'Storage status (click to view differences)'}
-                        aria-label={storageDirty ? 'Changes detected — storage status' : 'Storage status'}
-                    >
-                        {storageDirty ? (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M12 3.5l9.5 17a1 1 0 0 1-.87 1.5H3.37a1 1 0 0 1-.87-1.5L12 3.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
-                                <path d="M12 9v5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                                <circle cx="12" cy="16.5" r="1" fill="currentColor"/>
-                            </svg>
-                        ) : (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M4 7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                <path d="M14 5v6H6V5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                        )}
-                    </button>
-                    <button
-                        className="btn"
-                        onClick={undo}
-                        disabled={!canUndo}
-                        title="Undo (Ctrl/Cmd+Z)"
-                        aria-label="Undo"
-                    >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M8 7H5V4M5 7l4.5-4.5M5 7h8a6 6 0 1 1 0 12h-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                    </button>
-                    <button
-                        className="btn"
-                        onClick={redo}
-                        disabled={!canRedo}
-                        title="Redo (Ctrl/Cmd+Shift+Z)"
-                        aria-label="Redo"
-                    >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M16 7h3V4M19 7l-4.5-4.5M19 7h-8a6 6 0 1 0 0 12h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                    </button>
-                    <button
-                        className={saving || !storageDirty ? "btn muted" : "btn primary"}
-                        disabled={saving || !storageDirty}
-                        onClick={() => setShowExport(true)}>Export XML
-                    </button>
-                    <button
-                        className={saving || !storageDirty ? "btn muted" : "btn primary"}
-                        onClick={persistAllToFiles}
-                        disabled={saving || !storageDirty}
-                        title={storageDirty ? 'Persist current state to XML files on disk' : 'No changes to save'}
-                        aria-label="Save changes permanently"
-                    >
-                        {saving ? 'Saving…' : 'Set Changes Live'}
-                    </button>
-                    <button
-                        className="btn"
-                        onClick={() => {
-                            const ok = window.confirm('Warning: All data will be reloaded from files and any existing changes will be lost. This will reset in-memory state, IndexedDB (including edit logs), and re-parse from /samples.\n\nDo you want to continue?');
-                            if (ok) reloadFromFiles();
-                        }}
-                        title="Reload from Files"
-                        aria-label="Reload from Files"
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{marginRight: 6}}>
-                            <path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M20 10a8 8 0 0 0-13.66-5.66L4 6M4 14a8 8 0 0 0 13.66 5.66L20 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        Reload from Files
-                    </button>
-
-                    {/* Marketplace dropdown */}
-                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block', marginRight: 8 }}>
-                      <button
-                        className="btn"
-                        onClick={() => setMarketOpen(v => !v)}
-                        aria-haspopup="menu"
-                        aria-expanded={marketOpen}
-                        title="Marketplace"
-                      >
-                        Marketplace ▾
-                      </button>
-                      {marketOpen && (
-                        <div
-                          className="dropdown-menu"
-                          role="menu"
-                          style={{
-                            position: 'absolute',
-                            right: 0,
-                            top: '100%',
-                            background: 'var(--bg)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            padding: 8,
-                            minWidth: 200,
-                            zIndex: 10
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, padding: '4px 6px', opacity: 0.7 }}>Marketplace</div>
-                          <button className="link" role="menuitem" onClick={() => { setShowTraderEditor(true); setMarketOpen(false); }}>Traders</button>
-                          <button className="link" role="menuitem" onClick={() => { setShowMarketCategories(true); setMarketOpen(false); }}>Categories</button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Map tools dropdown */}
-                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
-                      <button
-                        className="btn"
-                        onClick={() => setMapToolsOpen(v => !v)}
-                        aria-haspopup="menu"
-                        aria-expanded={mapToolsOpen}
-                        title="Map tools"
-                      >
-                        Map tools ▾
-                      </button>
-                      {mapToolsOpen && (
-                        <div
-                          className="dropdown-menu"
-                          role="menu"
-                          style={{
-                            position: 'absolute',
-                            right: 0,
-                            top: '100%',
-                            background: 'var(--bg)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            padding: 8,
-                            minWidth: 180,
-                            zIndex: 10
-                          }}
-                        >
-                          <button className="link" role="menuitem" onClick={() => { setShowHeatMap(true); setMapToolsOpen(false); }}>Heat map</button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tools dropdown */}
-                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
-                      <button
-                        className="btn"
-                        onClick={() => setMissionFilesOpen(v => !v)}
-                        aria-haspopup="menu"
-                        aria-expanded={missionFilesOpen}
-                        title="Mission Files"
-                      >
-                        Mission Files ▾
-                      </button>
-                      {missionFilesOpen && (
-                        <div
-                          className="dropdown-menu"
-                          role="menu"
-                          style={{
-                            position: 'absolute',
-                            right: 0,
-                            top: '100%',
-                            background: 'var(--bg)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            padding: 8,
-                            minWidth: 200,
-                            zIndex: 10
-                          }}
-                        >
-                          <button className="link" role="menuitem" onClick={() => { setShowRandomPresets(true); setMissionFilesOpen(false); }}>Random Presets</button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tools dropdown */}
-                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block' }}>
-                      <button
-                        className="btn"
-                        onClick={() => setToolsOpen(v => !v)}
-                        aria-haspopup="menu"
-                        aria-expanded={toolsOpen}
-                        title="Tools"
-                      >
-                        Tools ▾
-                      </button>
-                      {toolsOpen && (
-                        <div
-                          className="dropdown-menu"
-                          role="menu"
-                          style={{
-                            position: 'absolute',
-                            right: 0,
-                            top: '100%',
-                            background: 'var(--bg)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            padding: 8,
-                            minWidth: 180,
-                            zIndex: 10
-                          }}
-                        >
-                          <button className="link" role="menuitem" onClick={() => { setShowAdm(true); setToolsOpen(false); }}>ADM records</button>
-                          <button className="link" role="menuitem" onClick={() => { setShowExpansionLog(true); setToolsOpen(false); }}>Expansion Log</button>
-                          <button className="link" role="menuitem" onClick={() => { setShowStash(true); setToolsOpen(false); }}>Stash report</button>
-                          <button className="link" role="menuitem" onClick={() => { setShowLint(true); setToolsOpen(false); }}>Lint files</button>
-                          {selectedProfile?.addons?.map(addonId => {
-                              const addon = KNOWN_ADDONS.find(a => a.id === addonId);
-                              if (!addon) return null;
-                              return (
-                                  <button key={addonId} className="link" role="menuitem" onClick={() => { setActiveAddon(addon); setToolsOpen(false); }}>{addon.name} Config</button>
-                              );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <ThemeToggle/>
-                    <div className="dropdown" style={{ position: 'relative', display: 'inline-block', marginRight: 8 }}>
-                        <button
-                            className="btn"
-                            onClick={() => setShowProfileManager(true)}
-                            title="Switch DayZ Server Installation"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 6}}>
-                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                            </svg>
-                            {selectedProfile ? selectedProfile.name : 'Select Server'}
-                        </button>
-                    </div>
-                    <div className="profile" ref={profileRef}>
-                        <button
-                            className="btn profile-btn"
-                            onClick={() => setProfileOpen(v => !v)}
-                            title="Profile"
-                            aria-haspopup="menu"
-                            aria-expanded={profileOpen}
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.6"/>
-                                <path d="M4 19c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                            </svg>
-                            <span className="profile-id">{editorID}</span>
-                        </button>
-                        {profileOpen && (
-                            <div className="dropdown-menu" role="menu">
-                                <button className="link" role="menuitem" onClick={signOut}>Sign out</button>
+        <div className={cn("flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900")}>
+            <Sidebar 
+                activeTab={activeTab} 
+                onTabChange={handleTabChange} 
+                editorID={editorID} 
+                onSignOut={signOut}
+                selectedProfile={selectedProfile}
+                onProfileClick={() => setShowProfileManager(true)}
+            />
+            
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                {/* Warnings Area */}
+                <div className="flex flex-col shrink-0 gap-px bg-gray-200">
+                    {unknowns.hasAny && (
+                        <div className="bg-warning-50 px-6 py-3 flex items-center gap-4 transition-all hover:bg-warning-100/50">
+                            <div className="size-10 rounded-full bg-warning-100 flex items-center justify-center text-warning-600 shrink-0">
+                                <AlertTriangle size={20} />
                             </div>
-                        )}
-                    </div>
+                            <div className="flex-1">
+                                <p className="text-sm font-bold text-warning-900">Unknown Entries Detected</p>
+                                <p className="text-sm text-warning-700">Usage, value, tag or category entries found that are not in your definitions.</p>
+                            </div>
+                            <Button variant="secondary" size="sm" onClick={() => resolveUnknowns.open()} className="bg-white border-warning-200 text-warning-700 hover:bg-warning-50">
+                                Review & Resolve
+                            </Button>
+                        </div>
+                    )}
+                    {warningsKey !== dismissedWarningsKey && (lw.length > 0 || spawnableWarnings.length > 0 || noFlagsCount > 0) && (
+                        <div className="bg-error-50 px-6 py-3 flex items-center gap-4 transition-all hover:bg-error-100/50">
+                            <div className="size-10 rounded-full bg-error-100 flex items-center justify-center text-error-600 shrink-0">
+                                <AlertTriangle size={20} />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-sm font-bold text-error-900">Configuration Issues</p>
+                                <p className="text-sm text-error-700">
+                                    {lw.length > 0 && `Types file errors (${lw.length}). `}
+                                    {spawnableWarnings.length > 0 && `Spawnable reference warnings (${spawnableWarnings.length}). `}
+                                    {noFlagsCount > 0 && `${noFlagsCount} types missing flags.`}
+                                </p>
+                            </div>
+                            <Button variant="link" size="sm" onClick={dismissWarnings} className="text-error-600 hover:text-error-800">
+                                <X size={20} />
+                            </Button>
+                        </div>
+                    )}
+                    {saveNotice && (
+                        <div className={cn(
+                            "px-6 py-3 flex items-center gap-4 transition-all",
+                            saveNotice.startsWith('Save failed') ? "bg-error-50" : "bg-success-50"
+                        )}>
+                            <div className={cn(
+                                "size-10 rounded-full flex items-center justify-center shrink-0",
+                                saveNotice.startsWith('Save failed') ? "bg-error-100 text-error-600" : "bg-success-100 text-success-600"
+                            )}>
+                                {saveNotice.startsWith('Save failed') ? <AlertTriangle size={20} /> : <Check size={20} />}
+                            </div>
+                            <div className="flex-1">
+                                <p className={cn(
+                                    "text-sm font-bold",
+                                    saveNotice.startsWith('Save failed') ? "text-error-900" : "text-success-900"
+                                )}>
+                                    {saveNotice.startsWith('Save failed') ? 'Persist Failed' : 'Success'}
+                                </p>
+                                <p className={cn(
+                                    "text-sm",
+                                    saveNotice.startsWith('Save failed') ? "text-error-700" : "text-success-700"
+                                )}>{saveNotice}</p>
+                            </div>
+                            <Button variant="link" size="sm" onClick={() => setSaveNotice(null)} className="text-gray-400 hover:text-gray-600">
+                                <X size={20} />
+                            </Button>
+                        </div>
+                    )}
                 </div>
-            </header>
 
-            {unknowns.hasAny && (
-                <div className="banner warn">
-                    Unknown entries detected in usage/value/tag or category not in definitions.
-                    <button className="link" onClick={() => resolveUnknowns.open()}>Review</button>
-                </div>
-            )}
-            {warningsKey !== dismissedWarningsKey && lw.length > 0 && (
-                <div className="banner warn" role="status" aria-live="polite">
-                    <div>
-                        Issues while reading types files: {lw.length}
-                        <details>
-                            <summary>Show details</summary>
-                            <ul>
-                                {lw.map((m, i) => (<li key={i}>{m}</li>))}
-                            </ul>
-                        </details>
-                    </div>
-                    <div className="spacer"/>
-                    <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
-                </div>
-            )}
-            {warningsKey !== dismissedWarningsKey && spawnableWarnings.length > 0 && (
-                <div className="banner warn" role="status" aria-live="polite">
-                    <div>
-                        Spawnable reference warnings: {spawnableWarnings.length}
-                        <details>
-                            <summary>Show details</summary>
-                            <ul>
-                                {spawnableWarnings.map((m, i) => (<li key={i}>{m}</li>))}
-                            </ul>
-                        </details>
-                    </div>
-                    <div className="spacer"/>
-                    <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
-                </div>
-            )}
-            {warningsKey !== dismissedWarningsKey && noFlagsCount > 0 && (
-                <div className="banner warn" role="status" aria-live="polite">
-                    {noFlagsCount} type{noFlagsCount === 1 ? '' : 's'} have no flags set.
-                    <div className="spacer"/>
-                    <button className="link" onClick={dismissWarnings} title="Dismiss warnings">Dismiss</button>
-                </div>
-            )}
-            {saveNotice && (
-                <div className="banner" role="status" aria-live="polite">
-                    <span>{saveNotice}</span>
-                    <div className="spacer"/>
-                    <button className="link" onClick={() => setSaveNotice(null)} title="Dismiss">Dismiss</button>
-                </div>
-            )}
-
-            {mainContent}
+                <main className="flex-1 overflow-auto p-8">
+                    {activeTab === 'cle' && (
+                        <div className="max-w-[1600px] mx-auto">
+                            <div className="flex items-center justify-between mb-8">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">CLE Editor</h1>
+                                    <p className="text-gray-500 mt-1">Manage loot types and economic settings for {selectedProfile?.name}.</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm p-1">
+                                        <Button 
+                                            variant="tertiary" 
+                                            size="sm" 
+                                            onClick={undo} 
+                                            disabled={!canUndo} 
+                                            title="Undo"
+                                        >
+                                            <Undo size={18} />
+                                        </Button>
+                                        <div className="w-px h-4 bg-gray-200 mx-1" />
+                                        <Button 
+                                            variant="tertiary" 
+                                            size="sm" 
+                                            onClick={redo} 
+                                            disabled={!canRedo} 
+                                            title="Redo"
+                                        >
+                                            <Redo size={18} />
+                                        </Button>
+                                    </div>
+                                    <Button variant="secondary" onClick={() => setShowExport(true)} disabled={saving || !storageDirty}>
+                                        <Download size={18} className="mr-2" /> Export
+                                    </Button>
+                                    <Button variant="primary" onClick={persistAllToFiles} disabled={saving || !storageDirty}>
+                                        <Save size={18} className="mr-2" /> {saving ? 'Saving...' : 'Set Changes Live'}
+                                    </Button>
+                                    <Button variant="secondary" onClick={() => {
+                                        if (window.confirm('Reload all data from files? Any unsaved changes will be lost.')) reloadFromFiles();
+                                    }}>
+                                        <RefreshCw size={18} className="mr-2" /> Reload
+                                    </Button>
+                                </div>
+                            </div>
+                            
+                            {mainContent}
+                        </div>
+                    )}
+                </main>
+            </div>
 
             {showExport && (
                 <ExportModal

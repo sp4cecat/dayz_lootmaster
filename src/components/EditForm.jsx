@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import EditFormCLETab from './EditFormCLETab.jsx';
 import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
 import EditFormSpawnableTab from './EditFormSpawnableTab.jsx';
+import { cn } from '../utils/cn';
+import { Button } from './ui/Button';
+import { X } from 'lucide-react';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -9,8 +12,6 @@ import EditFormSpawnableTab from './EditFormSpawnableTab.jsx';
 
 /**
  * Container EditForm that separates CLE and Marketplace states completely.
- * Only `selectedTypes` is shared between tabs. Marketplace loads lazily on first open,
- * and both tabs remain mounted to preserve their local state when inactive.
  * @param {{
  *  definitions: {categories: string[], usageflags: string[], valueflags: string[], tags: string[]},
  *  selectedTypes: Type[],
@@ -32,63 +33,105 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
   const [marketTabOpened, setMarketTabOpened] = useState(false);
   const [canSaveCLE, setCanSaveCLE] = useState(false);
   const [saveCLE, setSaveCLE] = useState(/** @type {null | (() => void)} */(null));
-  // Wrap setter so function values are stored, not invoked as updaters
-  const registerSaveHandler = React.useCallback((fn /** @type {null | (() => void)} */) => {
+  
+  const registerSaveHandler = useCallback((fn /** @type {null | (() => void)} */) => {
     setSaveCLE(() => fn);
   }, []);
 
+  const tabs = [
+    { id: 'CLE', label: 'CLE' },
+    { id: 'Spawnable', label: 'Spawnable' },
+    { id: 'Marketplace', label: 'Marketplace' },
+  ];
+
   return (
-    <div className="edit-form">
-      <div className="edit-form-header">
-        <h3>Edit {selectedTypes.length} item{selectedTypes.length > 1 ? 's' : ''}</h3>
-        <div className="spacer" />
-        {activeTab === 'CLE' && (
-          <button type="button" className="btn primary" onClick={() => saveCLE && saveCLE()} disabled={!canSaveCLE || !saveCLE}>Save</button>
-        )}
-        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+    <div className="flex flex-col h-full bg-white animate-in slide-in-from-right duration-300">
+      <div className="p-6 border-b border-gray-100 shrink-0">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-xl font-bold text-gray-900 tracking-tight">
+            Edit {selectedTypes.length} item{selectedTypes.length > 1 ? 's' : ''}
+          </h3>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+        <p className="text-sm text-gray-500 mb-6">Modify common properties for selected items.</p>
+        
+        <div className="flex items-center gap-2">
+          {activeTab === 'CLE' && (
+            <Button 
+                className="flex-1"
+                onClick={() => saveCLE && saveCLE()} 
+                disabled={!canSaveCLE || !saveCLE}
+            >
+                Save Changes
+            </Button>
+          )}
+          <Button variant="secondary" className={activeTab === 'CLE' ? '' : 'flex-1'} onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </div>
 
-      <div className="tabbar" style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-        <button type="button" className={`btn ${activeTab === 'CLE' ? 'primary' : ''}`} onClick={() => setActiveTab('CLE')}>CLE</button>
-        <button type="button" className={`btn ${activeTab === 'Spawnable' ? 'primary' : ''}`} onClick={() => setActiveTab('Spawnable')}>Spawnable</button>
-        <button type="button" className={`btn ${activeTab === 'Marketplace' ? 'primary' : ''}`} onClick={() => { setActiveTab('Marketplace'); if (!marketTabOpened) setMarketTabOpened(true); }}>marketplace</button>
+      <div className="px-6 border-b border-gray-100 shrink-0">
+        <div className="flex gap-8">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === 'Marketplace' && !marketTabOpened) setMarketTabOpened(true);
+              }}
+              className={cn(
+                "py-4 text-sm font-semibold border-b-2 transition-all",
+                activeTab === tab.id 
+                  ? "border-primary-600 text-primary-700" 
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Keep tabs mounted; only show active via CSS */}
-      <div style={{ display: activeTab === 'CLE' ? 'block' : 'none' }}>
-        <EditFormCLETab
-          definitions={definitions}
-          selectedTypes={selectedTypes}
-          onSave={onSave}
-          onCanSaveChange={setCanSaveCLE}
-          registerSaveHandler={registerSaveHandler}
-          selectedProfileId={selectedProfileId}
-          selectedProfile={selectedProfile}
-          getApiBase={getApiBase}
-        />
-      </div>
-
-      <div style={{ display: activeTab === 'Spawnable' ? 'block' : 'none' }}>
-        <EditFormSpawnableTab
-          selectedTypes={selectedTypes}
-          spawnableTypesByGroup={spawnableTypesByGroup}
-          setSpawnableTypesByGroup={setSpawnableTypesByGroup}
-          randomPresets={randomPresets}
-          globalsDefaults={globalsDefaults}
-        />
-      </div>
-
-      {marketTabOpened && (
-        <div style={{ display: activeTab === 'Marketplace' ? 'block' : 'none' }}>
-          <EditFormMarketplaceTab
+      <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+        {/* Keep tabs mounted; only show active via CSS */}
+        <div className={cn(activeTab !== 'CLE' && "hidden")}>
+          <EditFormCLETab
+            definitions={definitions}
             selectedTypes={selectedTypes}
-            typeOptions={typeOptions}
-            typeOptionsByCategory={typeOptionsByCategory}
-            activated={marketTabOpened}
+            onSave={onSave}
+            onCanSaveChange={setCanSaveCLE}
+            registerSaveHandler={registerSaveHandler}
             selectedProfileId={selectedProfileId}
+            selectedProfile={selectedProfile}
+            getApiBase={getApiBase}
           />
         </div>
-      )}
+
+        <div className={cn(activeTab !== 'Spawnable' && "hidden")}>
+          <EditFormSpawnableTab
+            selectedTypes={selectedTypes}
+            spawnableTypesByGroup={spawnableTypesByGroup}
+            setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+            randomPresets={randomPresets}
+            globalsDefaults={globalsDefaults}
+          />
+        </div>
+
+        {marketTabOpened && (
+          <div className={cn(activeTab !== 'Marketplace' && "hidden")}>
+            <EditFormMarketplaceTab
+              selectedTypes={selectedTypes}
+              typeOptions={typeOptions}
+              typeOptionsByCategory={typeOptionsByCategory}
+              activated={marketTabOpened}
+              selectedProfileId={selectedProfileId}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

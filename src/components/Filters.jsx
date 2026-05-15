@@ -1,4 +1,9 @@
 import React, {useMemo, useState} from 'react';
+import { cn } from '../utils/cn';
+import { Badge } from './ui/Badge';
+import { Input } from './ui/Input';
+import { Button } from './ui/Button';
+import { ChevronDown, ChevronRight, X, Search, Settings, Filter } from 'lucide-react';
 
 /**
  * @typedef {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}} Definitions
@@ -22,19 +27,15 @@ export default function Filters({definitions, groups, filters, onChange, onManag
         [definitions.categories]
     );
 
-    // Whether any non-vanilla group exists (used to show/hide Types Groups panel)
     const hasNonVanillaGroups = useMemo(() => groups.some(g => g !== 'vanilla'), [groups]);
 
-    // Accordion state (usage/value/flags default closed, tag default open)
     const [usageOpen, setUsageOpen] = useState(false);
     const [valueOpen, setValueOpen] = useState(false);
     const [flagsOpen, setFlagsOpen] = useState(false);
     const [tagOpen, setTagOpen] = useState(false);
 
-    // Ensure flags list is available even if not provided from parent
     const flagsList = useMemo(() => {
         if (Array.isArray(flagOptions) && flagOptions.length > 0) return flagOptions;
-        // Fallback to known flags
         return ['count_in_cargo', 'count_in_hoarder', 'count_in_map', 'count_in_player', 'crafted', 'deloot'];
     }, [flagOptions]);
 
@@ -77,7 +78,6 @@ export default function Filters({definitions, groups, filters, onChange, onManag
     const selectedGroupsSet = new Set(filters.groups);
     const allGroupsSelected = filters.groups.length === 0;
 
-    // Toggle a flag key on/off in filters.flags; 'None' is exclusive
     const toggleFlag = (key) => {
         const curr = Array.isArray(filters.flags) ? filters.flags : [];
         if (key === 'None') {
@@ -89,234 +89,194 @@ export default function Filters({definitions, groups, filters, onChange, onManag
         setField('flags', next);
     };
 
-    return (
-        <div className="filters">
-            <div className="filters-row">
-                <h2 className="panel-title">Filters<br/>
-                    <span>Matching {matchingCount} types</span></h2>
-                <div className="spacer"/>
-                <div style={{display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end"}}>
-                    <button type="button" className="link" onClick={clearFilters} title="Clear all filters">Clear filters</button>
+    const AccordionItem = ({ title, isOpen, onToggle, onManage, children }) => (
+        <div className="border-b border-gray-100 last:border-0">
+            <div className="flex items-center justify-between py-3 px-4">
+                <button
+                    onClick={onToggle}
+                    className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+                >
+                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    {title}
+                </button>
+                {onManage && (
                     <button
-                        type="button"
-                        className="link"
-                        onClick={() => setField('changedOnly', true)}
-                        title="Show only changed types"
+                        onClick={onManage}
+                        className="text-gray-400 hover:text-primary-600 transition-colors"
+                        title="Manage"
                     >
-                        Show changed
+                        <Settings size={14} />
                     </button>
+                )}
+            </div>
+            {isOpen && <div className="px-4 pb-4">{children}</div>}
+        </div>
+    );
+
+    return (
+        <div className="flex flex-col">
+            <div className="p-4 border-b border-gray-100">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2 text-gray-900">
+                        <Filter size={18} />
+                        <h2 className="text-lg font-bold">Filters</h2>
+                    </div>
+                    <Button variant="link" size="sm" onClick={clearFilters}>Clear all</Button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Search Types</label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                            <Input 
+                                value={filters.name}
+                                onChange={e => setField('name', e.target.value)}
+                                placeholder="e.g. Ammo* or *Dressing"
+                                className="pl-9 pr-9"
+                            />
+                            {filters.name?.length > 0 && (
+                                <button
+                                    onClick={() => setField('name', '')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                    <X size={16} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Category</label>
+                        <select
+                            value={filters.category}
+                            onChange={e => setField('category', e.target.value)}
+                            className="w-full h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px_20px] bg-right-3 bg-no-repeat"
+                        >
+                            {allCategoryOptions.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                        <Button 
+                            variant={filters.changedOnly ? "primary" : "secondary"} 
+                            size="sm" 
+                            className="w-full"
+                            onClick={() => setField('changedOnly', !filters.changedOnly)}
+                        >
+                            Show changed only
+                        </Button>
+                        <Badge variant="primary" className="py-1">{matchingCount}</Badge>
+                    </div>
                 </div>
             </div>
 
-            {/* Show Types Groups only if any non-vanilla group exists */}
-            {hasNonVanillaGroups && (
-                <fieldset className="filters-group">
-                    <legend>Types Groups</legend>
-                    <div className="chips selectable">
-                        <button
-                            type="button"
-                            className={`chip ${allGroupsSelected ? 'selected' : ''}`}
-                            onClick={() => setField('groups', [])}
-                            aria-pressed={allGroupsSelected}
-                            title="Show all groups"
-                        >
-                            All
-                        </button>
-                        {groups.map(g => {
-                            const selected = selectedGroupsSet.has(g);
-                            return (
-                                <button
-                                    type="button"
+            <div className="overflow-y-auto max-h-[calc(100vh-400px)]">
+                {hasNonVanillaGroups && (
+                    <AccordionItem title="Types Groups" isOpen={true} onToggle={() => {}}>
+                        <div className="flex flex-wrap gap-2">
+                            <Badge 
+                                className="cursor-pointer" 
+                                variant={allGroupsSelected ? "primary" : "gray"}
+                                onClick={() => setField('groups', [])}
+                            >
+                                All
+                            </Badge>
+                            {groups.map(g => (
+                                <Badge 
                                     key={g}
-                                    className={`chip ${selected ? 'selected' : ''}`}
+                                    className="cursor-pointer" 
+                                    variant={selectedGroupsSet.has(g) ? "primary" : "gray"}
                                     onClick={() => toggleGroup(g)}
-                                    aria-pressed={selected}
-                                    title={`Toggle group ${g}`}
                                 >
                                     {g}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </fieldset>
-            )}
-
-            <div className="filters-row">
-                <label className="control grow">
-                    <legend>Filter by text (supports * and ?)</legend>
-                    <div className="input-with-clear">
-                        <input
-                            type="text"
-                            value={filters.name}
-                            placeholder="e.g. Ammo* or *Dressing"
-                            onChange={e => setField('name', e.target.value)}
-                        />
-                        {filters.name?.length > 0 && (
-                            <button
-                                type="button"
-                                className="clear-input-btn"
-                                aria-label="Clear text filter"
-                                title="Clear"
-                                onClick={() => setField('name', '')}
-                            >
-                                ×
-                            </button>
-                        )}
-                    </div>
-                </label>
-            </div>
-            <div className="filters-row">
-                <label className="control">
-                    <legend>Category</legend>
-                    <select
-                        value={filters.category}
-                        onChange={e => setField('category', e.target.value)}
-                    >
-                        {allCategoryOptions.map(opt => (
-                            <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                    </select>
-                </label>
-            </div>
-
-            <fieldset className="filters-group">
-                <legend style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                    <button
-                        type="button"
-                        className="link"
-                        onClick={() => setUsageOpen(o => !o)}
-                        aria-expanded={usageOpen}
-                        title={usageOpen ? 'Collapse Usage' : 'Expand Usage'}
-                    >
-                        <span className="chevron" aria-hidden="true">{usageOpen ? '▾' : '▸'}</span>
-                        <span>Usage</span>
-                    </button>
-                    <button
-                        type="button"
-                        className="link manage-link"
-                        onClick={() => onManage('usage')}
-                        style={{marginLeft: 'auto'}}
-                    >
-                        manage
-                    </button>
-                </legend>
-                {usageOpen && (
-                    <div className="chips selectable">
-                        <button
-                            type="button"
-                            className={`chip none-chip ${filters.usage.includes('None') ? 'selected' : ''}`}
-                            onClick={() => toggleUsage('None')}
-                            aria-pressed={filters.usage.includes('None')}
-                            title="Types with no usage"
-                        >
-                            None
-                        </button>
-                        {[...definitions.usageflags].sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})).map(opt => {
-                            const selected = filters.usage.includes(opt);
-                            return (
-                                <button
-                                    type="button"
-                                    key={opt}
-                                    className={`chip ${selected ? 'selected' : ''}`}
-                                    onClick={() => toggleUsage(opt)}
-                                    aria-pressed={selected}
-                                >
-                                    {opt}
-                                </button>
-                            );
-                        })}
-                    </div>
+                                </Badge>
+                            ))}
+                        </div>
+                    </AccordionItem>
                 )}
-            </fieldset>
 
-            <fieldset className="filters-group">
-                <legend style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                    <button
-                        type="button"
-                        className="link"
-                        onClick={() => setValueOpen(o => !o)}
-                        aria-expanded={valueOpen}
-                        title={valueOpen ? 'Collapse Value' : 'Expand Value'}
-                    >
-                        <span className="chevron" aria-hidden="true">{valueOpen ? '▾' : '▸'}</span>
-                        <span>Value</span>
-                    </button>
-                    <button
-                        type="button"
-                        className="link manage-link"
-                        onClick={() => onManage('value')}
-                        style={{marginLeft: 'auto'}}
-                    >
-                        manage
-                    </button>
-                </legend>
-                {valueOpen && (
-                    <div className="chips selectable">
-                        <button
-                            type="button"
-                            className={`chip none-chip ${filters.value.includes('None') ? 'selected' : ''}`}
-                            onClick={() => toggleValue('None')}
-                            aria-pressed={filters.value.includes('None')}
-                            title="Types with no value flags"
+                <AccordionItem 
+                    title="Usage" 
+                    isOpen={usageOpen} 
+                    onToggle={() => setUsageOpen(!usageOpen)}
+                    onManage={() => onManage('usage')}
+                >
+                    <div className="flex flex-wrap gap-2">
+                        <Badge 
+                            variant={filters.usage.includes('None') ? "primary" : "gray"}
+                            className="cursor-pointer"
+                            onClick={() => toggleUsage('None')}
                         >
                             None
-                        </button>
+                        </Badge>
+                        {[...definitions.usageflags].sort((a, b) => a.localeCompare(b)).map(opt => (
+                            <Badge 
+                                key={opt}
+                                variant={filters.usage.includes(opt) ? "primary" : "gray"}
+                                className="cursor-pointer"
+                                onClick={() => toggleUsage(opt)}
+                            >
+                                {opt}
+                            </Badge>
+                        ))}
+                    </div>
+                </AccordionItem>
+
+                <AccordionItem 
+                    title="Value" 
+                    isOpen={valueOpen} 
+                    onToggle={() => setValueOpen(!valueOpen)}
+                    onManage={() => onManage('value')}
+                >
+                    <div className="flex flex-wrap gap-2">
+                        <Badge 
+                            variant={filters.value.includes('None') ? "primary" : "gray"}
+                            className="cursor-pointer"
+                            onClick={() => toggleValue('None')}
+                        >
+                            None
+                        </Badge>
                         {[...definitions.valueflags].sort((a, b) => {
                             const ma = /^tier\s*(\d+)$/i.exec(String(a).trim());
                             const mb = /^tier\s*(\d+)$/i.exec(String(b).trim());
-                            if (ma && mb) {
-                                const na = Number(ma[1]);
-                                const nb = Number(mb[1]);
-                                return na - nb;
-                            }
-                            return String(a).localeCompare(String(b), undefined, {sensitivity: 'base'});
-                        }).map(opt => {
-                            const selected = filters.value.includes(opt);
-                            return (
-                                <button
-                                    type="button"
-                                    key={opt}
-                                    className={`chip ${selected ? 'selected' : ''}`}
-                                    onClick={() => toggleValue(opt)}
-                                    aria-pressed={selected}
-                                >
-                                    {opt}
-                                </button>
-                            );
-                        })}
+                            if (ma && mb) return Number(ma[1]) - Number(mb[1]);
+                            return String(a).localeCompare(String(b));
+                        }).map(opt => (
+                            <Badge 
+                                key={opt}
+                                variant={filters.value.includes(opt) ? "primary" : "gray"}
+                                className="cursor-pointer"
+                                onClick={() => toggleValue(opt)}
+                            >
+                                {opt}
+                            </Badge>
+                        ))}
                     </div>
-                )}
-            </fieldset>
+                </AccordionItem>
 
-            <fieldset className="filters-group">
-                <legend style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                    <button
-                        type="button"
-                        className="link"
-                        onClick={() => setTagOpen(o => !o)}
-                        aria-expanded={tagOpen}
-                        title={tagOpen ? 'Collapse Tag' : 'Expand Tag'}
-                    >
-                        <span className="chevron" aria-hidden="true">{tagOpen ? '▾' : '▸'}</span>
-                        <span>Tags</span>
-                    </button>
-                    <button
-                        type="button"
-                        className="link manage-link"
-                        onClick={() => onManage('tag')}
-                        style={{marginLeft: 'auto'}}
-                    >
-                        manage
-                    </button>
-                </legend>
-                {tagOpen && (
-                    <div className="checkbox-grid">
+                <AccordionItem 
+                    title="Tags" 
+                    isOpen={tagOpen} 
+                    onToggle={() => setTagOpen(!tagOpen)}
+                    onManage={() => onManage('tag')}
+                >
+                    <div className="grid grid-cols-2 gap-2">
                         {definitions.tags.map(opt => {
                             const selected = filters.tag.includes(opt);
                             return (
-                                <label key={opt} className={`checkbox ${selected ? 'checked' : ''}`}>
+                                <label key={opt} className="flex items-center gap-2 cursor-pointer group">
+                                    <div className={cn(
+                                        "size-4 rounded border flex items-center justify-center transition-all",
+                                        selected ? "bg-primary-600 border-primary-600" : "bg-white border-gray-300 group-hover:border-primary-300"
+                                    )}>
+                                        {selected && <div className="size-1.5 bg-white rounded-full" />}
+                                    </div>
                                     <input
                                         type="checkbox"
+                                        className="hidden"
                                         checked={selected}
                                         onChange={e => {
                                             const curr = filters.tag;
@@ -324,56 +284,39 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                                             setField('tag', next);
                                         }}
                                     />
-                                    <span>{opt}</span>
+                                    <span className={cn("text-sm", selected ? "text-gray-900 font-medium" : "text-gray-600")}>{opt}</span>
                                 </label>
                             );
                         })}
                     </div>
-                )}
-            </fieldset>
+                </AccordionItem>
 
-            <fieldset className="filters-group">
-                <legend style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                    <button
-                        type="button"
-                        className="link"
-                        onClick={() => setFlagsOpen(o => !o)}
-                        aria-expanded={flagsOpen}
-                        title={flagsOpen ? 'Collapse Flags' : 'Expand Flags'}
-                    >
-                        <span className="chevron" aria-hidden="true">{flagsOpen ? '▾' : '▸'}</span>
-                        <span>Flags</span>
-                    </button>
-                </legend>
-                {flagsOpen && (
-                    <div className="chips selectable">
-                        <button
-                            type="button"
-                            className={`chip none-chip ${(filters.flags || []).includes('None') ? 'selected' : ''}`}
+                <AccordionItem 
+                    title="Flags" 
+                    isOpen={flagsOpen} 
+                    onToggle={() => setFlagsOpen(!flagsOpen)}
+                >
+                    <div className="flex flex-wrap gap-2">
+                        <Badge 
+                            variant={(filters.flags || []).includes('None') ? "primary" : "gray"}
+                            className="cursor-pointer"
                             onClick={() => toggleFlag('None')}
-                            aria-pressed={(filters.flags || []).includes('None')}
-                            title="Types with no flags set"
                         >
                             None
-                        </button>
-                        {flagsList.map(key => {
-                            const selected = (filters.flags || []).includes(key);
-                            return (
-                                <button
-                                    type="button"
-                                    key={key}
-                                    className={`chip ${selected ? 'selected' : ''}`}
-                                    onClick={() => toggleFlag(key)}
-                                    aria-pressed={selected}
-                                    title={key}
-                                >
-                                    {key}
-                                </button>
-                            );
-                        })}
+                        </Badge>
+                        {flagsList.map(key => (
+                            <Badge 
+                                key={key}
+                                variant={(filters.flags || []).includes(key) ? "primary" : "gray"}
+                                className="cursor-pointer"
+                                onClick={() => toggleFlag(key)}
+                            >
+                                {key}
+                            </Badge>
+                        ))}
                     </div>
-                )}
-            </fieldset>
+                </AccordionItem>
+            </div>
         </div>
     );
 }
