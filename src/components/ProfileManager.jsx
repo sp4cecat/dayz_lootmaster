@@ -28,18 +28,22 @@ export default function ProfileManager({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ serverPath: path })
             });
+            const data = await res.json();
             if (res.ok) {
-                const data = await res.json();
-                setMissions(data);
-                if (data.length > 0 && !missionName) {
-                    setMissionName(data[0]);
+                const missionList = Array.isArray(data) ? data : (data.missions || []);
+                setMissions(missionList);
+                if (data.warning) {
+                    setError(data.warning);
+                }
+                if (missionList.length > 0 && !missionName) {
+                    setMissionName(missionList[0]);
                 }
             } else {
-                setError('Failed to scan missions at the given path.');
+                setError(data.error || 'Failed to scan missions at the given path.');
                 setMissions([]);
             }
-        } catch {
-            setError('Error connecting to server.');
+        } catch (e) {
+            setError('Error connecting to server: ' + e.message);
             setMissions([]);
         } finally {
             setLoadingMissions(false);

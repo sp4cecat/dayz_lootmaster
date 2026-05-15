@@ -1295,7 +1295,8 @@ const server = http.createServer(async (req, res) => {
                 const entries = await readdir(mpmissionsPath, { withFileTypes: true });
                 const missions = entries.filter(e => e.isDirectory()).map(e => e.name);
                 send(res, 200, JSON.stringify(missions), {'Content-Type': 'application/json'});
-            } catch {
+            } catch (err) {
+                console.error(`[API] Error scanning missions for profile ${id}:`, err.message);
                 send(res, 200, JSON.stringify([]), {'Content-Type': 'application/json'});
             }
             return;
@@ -1310,12 +1311,40 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             try {
-                const mpmissionsPath = join(resolve(data.serverPath), 'mpmissions');
+                const resolvedServerPath = resolve(data.serverPath);
+                const mpmissionsPath = join(resolvedServerPath, 'mpmissions');
+                console.log(`[API] Scanning missions in: ${mpmissionsPath}`);
+                
+                // Check if directory exists first
+                const s = await stat(mpmissionsPath);
+                if (!s.isDirectory()) {
+                    throw new Error('mpmissions is not a directory');
+                }
+
                 const entries = await readdir(mpmissionsPath, { withFileTypes: true });
                 const missions = entries.filter(e => e.isDirectory()).map(e => e.name);
-                send(res, 200, JSON.stringify(missions), {'Content-Type': 'application/json'});
-            } catch {
-                send(res, 200, JSON.stringify([]), {'Content-Type': 'application/json'});
+                console.log(`[API] Found ${missions.length} missions: ${missions.join(', ')}`);
+                
+                if (missions.length === 0) {
+                    send(res, 200, JSON.stringify({
+                        missions: [],
+                        warning: 'mpmissions folder exists but contains no mission subfolders.'
+                    }), {'Content-Type': 'application/json'});
+                } else {
+                    send(res, 200, JSON.stringify({
+                        missions,
+                        ok: true
+                    }), {'Content-Type': 'application/json'});
+                }
+            } catch (err) {
+                console.error(`[API] Error scanning missions in ${data.serverPath}:`, err.message);
+                const message = err.code === 'ENOENT' 
+                    ? `Could not find 'mpmissions' folder in: ${data.serverPath}`
+                    : err.message;
+                send(res, 404, JSON.stringify({
+                    error: message,
+                    missions: []
+                }), {'Content-Type': 'application/json'});
             }
             return;
         }
