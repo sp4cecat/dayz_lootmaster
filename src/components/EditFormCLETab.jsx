@@ -322,7 +322,7 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
         ))}
       </div>
 
-      <div className="panels-wrap" style={{display: "flex", flexDirection: "column", flexWrap: "wrap", gap: 10, marginTop: 10, flexGrow: 0}}>
+      <div className="panels-wrap" style={{display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 20, marginTop: 10, flexGrow: 1, alignItems: "flex-start"}}>
         {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
         {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
 

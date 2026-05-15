@@ -45,7 +45,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white animate-in slide-in-from-right duration-300 dark:bg-gray-900 dark:border-l dark:border-gray-800">
+    <div className="flex flex-col h-full bg-white animate-in slide-in-from-right duration-300 dark:bg-gray-900">
       <div className="p-6 border-b border-gray-100 shrink-0 dark:border-gray-800">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-xl font-bold text-gray-900 tracking-tight dark:text-white">

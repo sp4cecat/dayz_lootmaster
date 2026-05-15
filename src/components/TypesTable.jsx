@@ -66,6 +66,16 @@ export default function TypesTable({ definitions, types, selection, setSelection
     return arr;
   }, [types, unknowns, sort]);
 
+  const maxNameWidth = useMemo(() => {
+    if (!condensedProp || types.length === 0) return null;
+    let max = 0;
+    for (const t of types) {
+      if (t.name.length > max) max = t.name.length;
+    }
+    // Add some padding for the icon (approx 4-5ch) and badges
+    return Math.min(max + 10, 80); 
+  }, [types, condensedProp]);
+
   // Measure viewport height
   useEffect(() => {
     const updateViewport = () => {
@@ -147,12 +157,16 @@ export default function TypesTable({ definitions, types, selection, setSelection
     <div
       className={cn(
         "flex flex-col h-full bg-white text-sm relative dark:bg-gray-950 dark:text-gray-300",
-        condensed && "condensed"
+        condensed && "condensed w-fit"
       )}
     >
       <div className="flex border-b border-gray-200 bg-gray-50 sticky top-0 z-20 shrink-0 select-none dark:border-gray-800 dark:bg-gray-900/50 dark:backdrop-blur-md">
         <div 
-          className="flex-1 min-w-[200px] px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-gray-800"
+          className={cn(
+            "px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-gray-800",
+            condensed ? "shrink-0" : "flex-1 min-w-[200px]"
+          )}
+          style={condensed ? { width: `${maxNameWidth}ch` } : undefined}
           onClick={() => handleSort('name')}
         >
           <span>Name</span>
@@ -226,7 +240,13 @@ export default function TypesTable({ definitions, types, selection, setSelection
               style={{ height: `${rowHeight}px` }}
               onClick={e => onRowClick(e, globalIndex, t.name)}
             >
-              <div className="flex-1 min-w-[200px] px-4 flex items-center gap-2 overflow-hidden">
+              <div 
+                className={cn(
+                  "px-4 flex items-center gap-2 overflow-hidden",
+                  condensed ? "shrink-0" : "flex-1 min-w-[200px]"
+                )}
+                style={condensed ? { width: `${maxNameWidth}ch` } : undefined}
+              >
                 <div className={cn(
                   "size-4 rounded border flex items-center justify-center shrink-0 transition-all",
                   selected ? "bg-primary-600 border-primary-600 dark:bg-primary-500 dark:border-primary-500" : "bg-white border-gray-300 group-hover:border-primary-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-primary-500"

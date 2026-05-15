@@ -533,7 +533,7 @@ export default function App() {
         return (
             <div className="flex gap-8 items-start">
                 <aside className="w-80 shrink-0 sticky top-0">
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
                         <Filters
                             definitions={definitions}
                             groups={groups}
@@ -549,39 +549,41 @@ export default function App() {
                     </div>
                 </aside>
                 <div className="flex-1 min-w-0">
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                        <TypesTable
-                            definitions={definitions}
-                            types={filteredTypes}
-                            selection={selection}
-                            setSelection={setSelection}
-                            unknowns={unknowns}
-                            condensed={selectedTypes.length > 0}
-                            duplicatesByName={duplicatesByName}
-                            storageDiff={storageDiff}
-                            showGroupColumn={showGroupColumn}
-                        />
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex dark:bg-gray-900 dark:border-gray-800">
+                        <div className={cn("min-w-0", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
+                            <TypesTable
+                                definitions={definitions}
+                                types={filteredTypes}
+                                selection={selection}
+                                setSelection={setSelection}
+                                unknowns={unknowns}
+                                condensed={selectedTypes.length > 0}
+                                duplicatesByName={duplicatesByName}
+                                storageDiff={storageDiff}
+                                showGroupColumn={showGroupColumn}
+                            />
+                        </div>
+                        {selectedTypes.length > 0 && (
+                            <div className="flex-1 min-w-0" key={editKey}>
+                                <EditForm
+                                    definitions={definitions}
+                                    selectedTypes={selectedTypes}
+                                    onCancel={onCancelEdit}
+                                    onSave={onSaveEdit}
+                                    typeOptions={allTypeNames}
+                                    typeOptionsByCategory={typeNamesByCategory}
+                                    selectedProfileId={selectedProfileId}
+                                    selectedProfile={selectedProfile}
+                                    getApiBase={getApiBase}
+                                    spawnableTypesByGroup={spawnableTypesByGroup}
+                                    setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                                    randomPresets={randomPresets}
+                                    globalsDefaults={globalsDefaults}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
-                {selectedTypes.length > 0 && (
-                    <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-gray-200 z-50 overflow-y-auto" key={editKey}>
-                        <EditForm
-                            definitions={definitions}
-                            selectedTypes={selectedTypes}
-                            onCancel={onCancelEdit}
-                            onSave={onSaveEdit}
-                            typeOptions={allTypeNames}
-                            typeOptionsByCategory={typeNamesByCategory}
-                            selectedProfileId={selectedProfileId}
-                            selectedProfile={selectedProfile}
-                            getApiBase={getApiBase}
-                            spawnableTypesByGroup={spawnableTypesByGroup}
-                            setSpawnableTypesByGroup={setSpawnableTypesByGroup}
-                            randomPresets={randomPresets}
-                            globalsDefaults={globalsDefaults}
-                        />
-                    </div>
-                )}
             </div>
         );
     })();
@@ -617,19 +619,19 @@ export default function App() {
                         </div>
                     )}
                     {warningsKey !== dismissedWarningsKey && (lw.length > 0 || spawnableWarnings.length > 0 || noFlagsCount > 0) && (
-                        <div className="bg-error-50 px-6 py-3 flex items-center gap-4 transition-all hover:bg-error-100/50">
-                            <div className="size-10 rounded-full bg-error-100 flex items-center justify-center text-error-600 shrink-0">
+                        <div className="bg-error-50 px-6 py-3 flex items-center gap-4 transition-all hover:bg-error-100/50 dark:bg-error-900/10 dark:hover:bg-error-900/20">
+                            <div className="size-10 rounded-full bg-error-100 flex items-center justify-center text-error-600 shrink-0 dark:bg-error-900/30 dark:text-error-500">
                                 <AlertTriangle size={20} />
                             </div>
                             <div className="flex-1">
-                                <p className="text-sm font-bold text-error-900">Configuration Issues</p>
-                                <p className="text-sm text-error-700">
+                                <p className="text-sm font-bold text-error-900 dark:text-error-300">Configuration Issues</p>
+                                <p className="text-sm text-error-700 dark:text-error-400">
                                     {lw.length > 0 && `Types file errors (${lw.length}). `}
                                     {spawnableWarnings.length > 0 && `Spawnable reference warnings (${spawnableWarnings.length}). `}
                                     {noFlagsCount > 0 && `${noFlagsCount} types missing flags.`}
                                 </p>
                             </div>
-                            <Button variant="link" size="sm" onClick={dismissWarnings} className="text-error-600 hover:text-error-800">
+                            <Button variant="link" size="sm" onClick={dismissWarnings} className="text-error-600 hover:text-error-800 dark:text-error-400 dark:hover:text-error-300">
                                 <X size={20} />
                             </Button>
                         </div>
@@ -637,27 +639,35 @@ export default function App() {
                     {saveNotice && (
                         <div className={cn(
                             "px-6 py-3 flex items-center gap-4 transition-all",
-                            saveNotice.startsWith('Save failed') ? "bg-error-50" : "bg-success-50"
+                            saveNotice.startsWith('Save failed') 
+                                ? "bg-error-50 dark:bg-error-900/10" 
+                                : "bg-success-50 dark:bg-success-900/10"
                         )}>
                             <div className={cn(
                                 "size-10 rounded-full flex items-center justify-center shrink-0",
-                                saveNotice.startsWith('Save failed') ? "bg-error-100 text-error-600" : "bg-success-100 text-success-600"
+                                saveNotice.startsWith('Save failed') 
+                                    ? "bg-error-100 text-error-600 dark:bg-error-900/30 dark:text-error-500" 
+                                    : "bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-500"
                             )}>
                                 {saveNotice.startsWith('Save failed') ? <AlertTriangle size={20} /> : <Check size={20} />}
                             </div>
                             <div className="flex-1">
                                 <p className={cn(
                                     "text-sm font-bold",
-                                    saveNotice.startsWith('Save failed') ? "text-error-900" : "text-success-900"
+                                    saveNotice.startsWith('Save failed') 
+                                        ? "text-error-900 dark:text-error-300" 
+                                        : "text-success-900 dark:text-success-300"
                                 )}>
                                     {saveNotice.startsWith('Save failed') ? 'Persist Failed' : 'Success'}
                                 </p>
                                 <p className={cn(
                                     "text-sm",
-                                    saveNotice.startsWith('Save failed') ? "text-error-700" : "text-success-700"
+                                    saveNotice.startsWith('Save failed') 
+                                        ? "text-error-700 dark:text-error-400" 
+                                        : "text-success-700 dark:text-success-400"
                                 )}>{saveNotice}</p>
                             </div>
-                            <Button variant="link" size="sm" onClick={() => setSaveNotice(null)} className="text-gray-400 hover:text-gray-600">
+                            <Button variant="link" size="sm" onClick={() => setSaveNotice(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                                 <X size={20} />
                             </Button>
                         </div>
