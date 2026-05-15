@@ -20,7 +20,7 @@ import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.js
 import ProfileManager from './components/ProfileManager.jsx';
 import AddonEditorModal from './components/AddonEditorModal.jsx';
 import HeatMapModal from './components/HeatMapModal.jsx';
-import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateSpawnableTypesXml, validateSpawnableReferences} from './utils/xml.js';
+import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateSpawnableTypesXml, ROOT_SPAWNABLE_GROUP, validateSpawnableReferences} from './utils/xml.js';
 
 /**
  * @typedef {import('./utils/xml.js').Type} Type
@@ -209,7 +209,7 @@ export default function App() {
             }
 
             // Save per-group spawnabletypes files alongside type changes.
-            for (const g of groups) {
+            for (const g of [ROOT_SPAWNABLE_GROUP, ...groups]) {
               const spawnable = spawnableTypesByGroup?.[g];
               if (!spawnable) continue;
               const xml = generateSpawnableTypesXml(spawnable);
@@ -479,7 +479,7 @@ export default function App() {
     const spawnableWarnings = useMemo(() => {
         if (!lootTypes || !spawnableTypesByGroup) return [];
         return Object.entries(spawnableTypesByGroup).flatMap(([group, data]) => {
-            const groupTypes = lootTypes.filter(type => (type.group || 'vanilla') === group);
+            const groupTypes = group === ROOT_SPAWNABLE_GROUP ? lootTypes : lootTypes.filter(type => (type.group || 'vanilla') === group);
             return validateSpawnableReferences(data, groupTypes, randomPresets).map(warning => `[${group}] ${warning.message}`);
         });
     }, [lootTypes, randomPresets, spawnableTypesByGroup]);

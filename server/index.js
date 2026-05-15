@@ -330,11 +330,38 @@ async function declaredGroupDir(profile, paths, group) {
     return folder ? join(paths.missionPath, folder) : null;
 }
 
+async function firstExistingPath(paths) {
+    for (const target of paths) {
+        try {
+            await stat(target);
+            return target;
+        } catch {
+            // try next candidate
+        }
+    }
+    return paths[0] || null;
+}
+
 async function spawnableTypesFilePath(profile, paths, group) {
-    if (group === 'vanilla') return join(paths.dbDirPath, 'cfgspawnabletypes.xml');
-    if (group === 'vanilla_overrides') return join(paths.dbDirPath, 'vanilla_overrides', 'cfgspawnabletypes.xml');
+    if (group === '__root') {
+        return firstExistingPath([
+            join(paths.missionPath, 'cfgspawnabletypes.xml'),
+            join(paths.missionPath, 'cfgspawnabletype.xml')
+        ]);
+    }
+    if (group === 'vanilla') return firstExistingPath([
+        join(paths.dbDirPath, 'cfgspawnabletypes.xml'),
+        join(paths.dbDirPath, 'cfgspawnabletype.xml')
+    ]);
+    if (group === 'vanilla_overrides') return firstExistingPath([
+        join(paths.dbDirPath, 'vanilla_overrides', 'cfgspawnabletypes.xml'),
+        join(paths.dbDirPath, 'vanilla_overrides', 'cfgspawnabletype.xml')
+    ]);
     const dir = await declaredGroupDir(profile, paths, group);
-    return dir ? join(dir, 'cfgspawnabletypes.xml') : null;
+    return dir ? firstExistingPath([
+        join(dir, 'cfgspawnabletypes.xml'),
+        join(dir, 'cfgspawnabletype.xml')
+    ]) : null;
 }
 
 async function createBackupIfExists(target) {

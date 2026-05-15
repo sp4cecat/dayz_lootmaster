@@ -9,6 +9,8 @@ import {
   parseSpawnableTypesXml,
   parseTypesXml,
   generateTypesXml,
+  ROOT_SPAWNABLE_GROUP,
+  findSpawnableEntryForType,
   renameSpawnablePresetReferences,
   validateSpawnableReferences
 } from '../../src/utils/xml.js';
@@ -131,6 +133,21 @@ describe('spawnabletypes utilities', () => {
     const renamed = renameSpawnablePresetReferences(parseSpawnableTypesXml(xml), 'MedicalPreset', 'MedicalPreset2');
     expect(renamed.types[0].sections[1].preset).toBe('MedicalPreset2');
     expect(generateSpawnableTypesXml(renamed)).toContain('preset="MedicalPreset2"');
+  });
+
+  it('finds selected type entries from the mission-root spawnable file fallback', () => {
+    const rootSpawnable = parseSpawnableTypesXml(`
+<spawnabletypes>
+  <type name="jmc_mjolnir_head"><attachments chance="0.75"/></type>
+</spawnabletypes>`);
+    const found = findSpawnableEntryForType({
+      weapons: { types: [] },
+      [ROOT_SPAWNABLE_GROUP]: rootSpawnable
+    }, 'weapons', 'JMC_MJOLNIR_HEAD');
+
+    expect(found?.group).toBe(ROOT_SPAWNABLE_GROUP);
+    expect(found?.entry.name).toBe('jmc_mjolnir_head');
+    expect(found?.entry.sections[0].chance).toBe(0.75);
   });
 });
 

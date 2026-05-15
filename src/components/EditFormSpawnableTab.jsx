@@ -1,4 +1,5 @@
 import React from 'react';
+import { ROOT_SPAWNABLE_GROUP, findSpawnableEntryForType } from '../utils/xml.js';
 
 function chancePercent(value) {
   const n = Number(value);
@@ -23,15 +24,17 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
 
   const updateEntry = (group, typeName, apply) => {
     setSpawnableTypesByGroup(prev => {
-      const groupData = prev?.[group] || { types: [] };
+      const source = findSpawnableEntryForType(prev, group, typeName);
+      const targetGroup = source?.group || group;
+      const groupData = prev?.[targetGroup] || { types: [] };
       const types = [...(groupData.types || [])];
-      const idx = types.findIndex(t => t.name === typeName);
+      const idx = types.findIndex(t => String(t.name || '').toLowerCase() === String(typeName || '').toLowerCase());
       if (idx < 0) {
         types.push(apply({ name: typeName, sections: [] }));
       } else {
         types[idx] = apply(types[idx]);
       }
-      return { ...(prev || {}), [group]: { ...groupData, types } };
+      return { ...(prev || {}), [targetGroup]: { ...groupData, types } };
     });
   };
 
@@ -58,15 +61,17 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
     setSpawnableTypesByGroup(prev => {
       const next = { ...(prev || {}) };
       for (const [group, types] of Object.entries(selectedByGroup)) {
-        const selectedNames = new Set(types.map(type => type.name));
-        const groupData = next[group];
-        if (!groupData) continue;
-        next[group] = {
-          ...groupData,
-          types: (groupData.types || []).map(entry => selectedNames.has(entry.name)
-            ? { ...entry, sections: (entry.sections || []).map(apply) }
-            : entry)
-        };
+        for (const type of types) {
+          const source = findSpawnableEntryForType(next, group, type.name);
+          if (!source?.entry) continue;
+          const groupData = next[source.group];
+          next[source.group] = {
+            ...groupData,
+            types: (groupData?.types || []).map(entry => String(entry.name || '').toLowerCase() === String(type.name || '').toLowerCase()
+              ? { ...entry, sections: (entry.sections || []).map(apply) }
+              : entry)
+          };
+        }
       }
       return next;
     });
@@ -122,13 +127,13 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
         </section>
       )}
       {Object.entries(selectedByGroup).map(([group, types]) => {
-        const groupData = spawnableTypesByGroup?.[group] || { types: [] };
-        const byName = new Map((groupData.types || []).map(entry => [entry.name, entry]));
         return (
           <section key={group} className="card">
             <h4>{group}</h4>
             {types.map(type => {
-              const entry = byName.get(type.name);
+              const found = findSpawnableEntryForType(spawnableTypesByGroup, group, type.name);
+              const entry = found?.entry;
+              const sourceGroup = found?.group;
               if (!entry) {
                 return (
                   <div key={type.name} className="card subtle" onClick={() => createDamageEntry(group, type.name)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') createDamageEntry(group, type.name); }} role="button" tabIndex={0}>
@@ -148,6 +153,7 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
               return (
                 <div key={type.name} className="card subtle">
                   <strong>{type.name}</strong>
+                  {sourceGroup === ROOT_SPAWNABLE_GROUP && <div className="muted">Using mission-root cfgspawnabletypes.xml entry.</div>}
                   {(entry.sections || []).map((section, sectionIndex) => (
                     <div key={`${section.kind}-${sectionIndex}`} className="stack small">
                       <div className="row wrap">

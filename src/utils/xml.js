@@ -26,6 +26,8 @@
  * @property {{[k:string]: boolean}=} _edited
  */
 
+export const ROOT_SPAWNABLE_GROUP = '__root';
+
 /**
  * Parse cfglimitsdefinition.xml into definitions object.
  * Supports flexibly reading <categories><category name="..."/></categories>, <usageflags><flag name="..."/></usageflags>, <valueflags><flag name="..."/></valueflags>, <tags><tag name="..."/></tags>
@@ -256,19 +258,19 @@ export function parseGlobalsXml(xml) {
  * @returns {{kind: string, message: string, name?: string}[]}
  */
 export function validateSpawnableReferences(spawnable, types, randomPresets = { presets: [] }) {
-  const typeNames = new Set((types || []).map(t => t.name));
-  const presetNames = new Set((randomPresets.presets || []).map(p => p.name).filter(Boolean));
+  const typeNames = new Set((types || []).map(t => String(t.name || '').toLowerCase()));
+  const presetNames = new Set((randomPresets.presets || []).map(p => String(p.name || '').toLowerCase()).filter(Boolean));
   const warnings = [];
   for (const entry of (spawnable?.types || [])) {
-    if (entry.name && !typeNames.has(entry.name)) {
+    if (entry.name && !typeNames.has(String(entry.name).toLowerCase())) {
       warnings.push({ kind: 'orphan-spawnable', name: entry.name, message: `Spawnable entry "${entry.name}" has no loaded type.` });
     }
     for (const section of (entry.sections || [])) {
-      if (section.preset && !presetNames.has(section.preset)) {
+      if (section.preset && !presetNames.has(String(section.preset).toLowerCase())) {
         warnings.push({ kind: 'missing-preset', name: section.preset, message: `Preset "${section.preset}" is referenced by "${entry.name}" but does not exist.` });
       }
       for (const item of (section.items || [])) {
-        if (item.name && !typeNames.has(item.name)) {
+        if (item.name && !typeNames.has(String(item.name).toLowerCase())) {
           warnings.push({ kind: 'missing-item-type', name: item.name, message: `Item "${item.name}" referenced by "${entry.name}" is not in loaded types.` });
         }
       }
@@ -294,6 +296,17 @@ export function renameSpawnablePresetReferences(spawnable, oldName, newName) {
       ))
     }))
   };
+}
+
+export function findSpawnableEntryForType(spawnableTypesByGroup, group, typeName) {
+  const target = String(typeName || '').toLowerCase();
+  if (!target) return null;
+  const findInGroup = (groupKey) => {
+    const groupData = spawnableTypesByGroup?.[groupKey];
+    const entry = (groupData?.types || []).find(t => String(t.name || '').toLowerCase() === target);
+    return entry ? { entry, group: groupKey } : null;
+  };
+  return findInGroup(group) || findInGroup(ROOT_SPAWNABLE_GROUP);
 }
 
 export function formatChance(value) {

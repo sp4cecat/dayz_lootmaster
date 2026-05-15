@@ -5,6 +5,7 @@ import {
   parseLimitsXml,
   parseRandomPresetsXml,
   parseSpawnableTypesXml,
+  ROOT_SPAWNABLE_GROUP,
   parseTypesXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
@@ -115,6 +116,15 @@ export function useLootData() {
   const loadMissionFilesFromAPI = useCallback(async (API_BASE, files, warnings = []) => {
     const groups = Object.keys(files || {});
     const nextSpawnable = {};
+    try {
+      const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}`);
+      if (res.ok) {
+        const text = await res.text();
+        nextSpawnable[ROOT_SPAWNABLE_GROUP] = parseSpawnableTypesXml(text);
+      }
+    } catch (e) {
+      warnings.push(`Mission root cfgspawnabletypes.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+    }
     for (const group of groups) {
       try {
         const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`);
