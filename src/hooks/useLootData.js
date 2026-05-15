@@ -166,8 +166,14 @@ export function useLootData() {
       if (res.ok) {
         const data = await res.json();
         setProfiles(data);
-        // If no profile selected but we have some, select first one if nothing was stored
-        if (!selectedProfileId && data.length > 0 && !localStorage.getItem('dayz-editor:selectedProfileId')) {
+        
+        // If we have a selected ID but it's not in the returned data, reset it
+        if (data.length === 0) {
+          setSelectedProfileId('');
+        } else if (selectedProfileId && !data.find(p => p.id === selectedProfileId)) {
+          setSelectedProfileId(data[0].id);
+        } else if (!selectedProfileId && data.length > 0 && !localStorage.getItem('dayz-editor:selectedProfileId')) {
+          // If no profile selected but we have some, select first one if nothing was stored
           setSelectedProfileId(data[0].id);
         }
       }

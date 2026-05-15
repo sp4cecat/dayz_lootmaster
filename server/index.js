@@ -1325,6 +1325,7 @@ const server = http.createServer(async (req, res) => {
         const profile = profiles.find(p => p.id === profileId);
 
         if (!profile && pathname.startsWith('/api/') && pathname !== '/api/health') {
+            console.warn(`[400] Profile not found for path: ${pathname}, Profile ID: ${profileId}`);
             send(res, 400, JSON.stringify({error: 'Missing or invalid X-Profile-ID header'}), {'Content-Type': 'application/json'});
             return;
         }
@@ -1634,11 +1635,11 @@ const server = http.createServer(async (req, res) => {
         const matchSpawnableTypes = pathname.match(/^\/api\/spawnabletypes\/([^/]+)$/);
         if (matchSpawnableTypes) {
             const [, groupRaw] = matchSpawnableTypes;
-            if (!isSafeName(groupRaw)) {
+            const group = decodeURIComponent(groupRaw);
+            if (!isSafeName(group)) {
                 badRequest(res, 'Invalid group');
                 return;
             }
-            const group = groupRaw;
             const target = await spawnableTypesFilePath(profile, paths, group);
             if (!target) {
                 notFound(res);
@@ -1720,12 +1721,13 @@ const server = http.createServer(async (req, res) => {
         const matchTypes = pathname.match(/^\/api\/types\/([^/]+)\/([^/]+)$/);
         if (matchTypes) {
             const [, groupRaw, fileRaw] = matchTypes;
-            if (!isSafeName(groupRaw) || !isSafeName(fileRaw)) {
+            const group = decodeURIComponent(groupRaw);
+            const fileBase = decodeURIComponent(fileRaw).replace(/\.xml$/i, ''); // tolerate .xml in URL
+
+            if (!isSafeName(group) || !isSafeName(fileBase)) {
                 badRequest(res, 'Invalid group or file');
                 return;
             }
-            const group = groupRaw;
-            const fileBase = fileRaw.replace(/\.xml$/i, ''); // tolerate .xml in URL
 
             if (req.method === 'GET') {
                 const target = await declaredTypesFilePath(profile, paths, group, fileBase);
@@ -1862,7 +1864,7 @@ const server = http.createServer(async (req, res) => {
 
             // GET/PUT /api/addons/:addon/file/:name
             if (action === 'file' && parts[5]) {
-                const fileName = parts[5];
+                const fileName = decodeURIComponent(parts[5]);
                 if (!isSafeName(fileName)) {
                     badRequest(res, 'Invalid file name');
                     return;
@@ -1918,11 +1920,12 @@ const server = http.createServer(async (req, res) => {
         const matchMarketCat = pathname.match(/^\/api\/market\/category\/([^/]+)$/);
         if (matchMarketCat) {
             const [, nameRaw] = matchMarketCat;
-            if (!isSafeName(nameRaw)) {
+            const name = decodeURIComponent(nameRaw);
+            if (!isSafeName(name)) {
                 badRequest(res, 'Invalid category name');
                 return;
             }
-            const fileBase = nameRaw.replace(/\.json$/i, '');
+            const fileBase = name.replace(/\.json$/i, '');
             const target = join(paths.marketDirPath, `${fileBase}.json`);
 
             if (req.method === 'GET') {
@@ -2166,11 +2169,12 @@ const server = http.createServer(async (req, res) => {
         const matchTraderZone = pathname.match(/^\/api\/traderzones\/([^/]+)$/);
         if (matchTraderZone) {
             const [, zoneRaw] = matchTraderZone;
-            if (!isSafeName(zoneRaw)) {
+            const name = decodeURIComponent(zoneRaw);
+            if (!isSafeName(name)) {
                 badRequest(res, 'Invalid trader zone name');
                 return;
             }
-            const fileBase = zoneRaw.replace(/\.json$/i, '');
+            const fileBase = name.replace(/\.json$/i, '');
             const target = join(paths.traderZonesDirPath, `${fileBase}.json`);
 
             if (req.method === 'GET') {
