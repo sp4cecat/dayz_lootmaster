@@ -73,7 +73,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
       if (t.name && t.name.length > max) max = t.name.length;
     }
     // Add some padding for the icon (approx 4-5ch) and badges
-    return Math.min(max-10, 80);
+    return Math.min(max + 10, 80);
   }, [types]);
 
   // Measure viewport height
@@ -146,41 +146,58 @@ export default function TypesTable({ definitions, types, selection, setSelection
     setSelection(new Set(rows.map(r => r.name)));
   };
 
+  const clearSelection = () => {
+    setSelection(new Set());
+  };
+
   const condensed = typeof condensedProp === 'boolean' ? condensedProp : (selection.size > 0);
 
+  const gridTemplateColumns = useMemo(() => {
+    const parts = [`${maxNameWidth}ch`];
+    if (showGroupColumn && !condensed) parts.push('8rem');
+    parts.push('5rem'); // Nom
+    parts.push('5rem'); // Min
+    if (!condensed) {
+      parts.push('6rem'); // Lifetime
+      parts.push('8rem'); // Category
+      parts.push('minmax(150px, 1fr)'); // Usage
+      parts.push('minmax(150px, 1fr)'); // Value
+    }
+    return parts.join(' ');
+  }, [maxNameWidth, showGroupColumn, condensed]);
+
   const SortIcon = ({ column }) => {
-    if (sort.key !== column) return null;
-    return sort.dir === 'asc' ? <ArrowUp size={14} className="ml-1" /> : <ArrowDown size={14} className="ml-1" />;
+    if (sort.key !== column) return <ArrowUp size={14} className="ml-1 opacity-0 group-hover:opacity-30 transition-opacity" />;
+    return sort.dir === 'asc' ? <ArrowUp size={14} className="ml-1 text-primary-600 dark:text-primary-400" /> : <ArrowDown size={14} className="ml-1 text-primary-600 dark:text-primary-400" />;
   };
 
   return (
     <div
       className={cn(
-        "flex flex-col h-full bg-white text-sm relative dark:bg-gray-950 dark:text-gray-300",
+        "flex flex-col h-full bg-white text-sm relative dark:bg-gray-900 dark:text-gray-300",
         condensed && "condensed w-fit"
       )}
     >
-      <div className="flex border-b border-gray-200 bg-gray-50 sticky top-0 z-20 shrink-0 select-none dark:border-gray-800 dark:bg-gray-900/50 dark:backdrop-blur-md">
+      <div 
+        className="grid border-b border-gray-200 bg-gray-50 sticky top-0 z-20 shrink-0 select-none dark:border-gray-800 dark:bg-gray-900/50 dark:backdrop-blur-md"
+        style={{ gridTemplateColumns }}
+      >
         <div 
-          className={cn(
-            "px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-gray-800",
-            "shrink-0"
-          )}
-          style={{ width: `${maxNameWidth}ch` }}
+          className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-800 group"
           onClick={() => handleSort('name')}
         >
           <span>Name</span>
           <SortIcon column="name" />
           <button
-            onClick={(e) => { e.stopPropagation(); selectAll(); }}
-            className="ml-auto text-xs font-medium text-primary-600 hover:text-primary-700"
+            onClick={(e) => { e.stopPropagation(); selection.size > 0 ? clearSelection() : selectAll(); }}
+            className="ml-auto text-[10px] font-bold text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
           >
-            Select all
+            {selection.size > 0 ? 'CLEAR SELECTION' : 'SELECT ALL'}
           </button>
         </div>
         {showGroupColumn && !condensed && (
           <div 
-            className="w-32 px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-gray-800"
+            className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-800 group"
             onClick={() => handleSort('group')}
           >
             <span>Group</span>
@@ -188,26 +205,26 @@ export default function TypesTable({ definitions, types, selection, setSelection
           </div>
         )}
         <div 
-          className="w-20 px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end dark:text-gray-300 dark:hover:bg-gray-800"
+          className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end dark:text-gray-400 dark:hover:bg-gray-800 group"
           onClick={() => handleSort('nominal')}
         >
           <span>Nom</span>
           <SortIcon column="nominal" />
         </div>
-        <div className="w-20 px-4 py-3 font-semibold text-gray-700 text-right dark:text-gray-300">Min</div>
+        <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right dark:text-gray-400">Min</div>
         
         {!condensed && (
           <>
             <div 
-              className="w-24 px-4 py-3 font-semibold text-gray-700 flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end dark:text-gray-300 dark:hover:bg-gray-800"
+              className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end dark:text-gray-400 dark:hover:bg-gray-800 group"
               onClick={() => handleSort('lifetime')}
             >
               <span>Lifetime</span>
               <SortIcon column="lifetime" />
             </div>
-            <div className="w-32 px-4 py-3 font-semibold text-gray-700 dark:text-gray-300">Category</div>
-            <div className="flex-1 min-w-[150px] px-4 py-3 font-semibold text-gray-700 dark:text-gray-300">Usage</div>
-            <div className="flex-1 min-w-[150px] px-4 py-3 font-semibold text-gray-700 dark:text-gray-300">Value</div>
+            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Category</div>
+            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Usage</div>
+            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Value</div>
           </>
         )}
       </div>
@@ -233,25 +250,21 @@ export default function TypesTable({ definitions, types, selection, setSelection
             <div
               key={`${t.name}-${globalIndex}`}
               className={cn(
-                "flex border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group dark:border-gray-800 dark:hover:bg-gray-900",
-                selected && "bg-primary-50 hover:bg-primary-50/80 border-primary-200 z-10 sticky dark:bg-primary-900/20 dark:border-primary-800 dark:hover:bg-primary-900/30",
-                t.hasUnknown && "bg-warning-50/30 dark:bg-warning-900/10"
+                "grid border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group dark:border-gray-800/50 dark:hover:bg-gray-900/50",
+                selected && "bg-primary-50/50 hover:bg-primary-50 border-primary-100 z-10 sticky dark:bg-primary-900/10 dark:border-primary-900/50 dark:hover:bg-primary-900/20",
+                t.hasUnknown && "bg-warning-50/30 dark:bg-warning-900/5"
               )}
-              style={{ height: `${rowHeight}px` }}
+              style={{ height: `${rowHeight}px`, gridTemplateColumns }}
               onClick={e => onRowClick(e, globalIndex, t.name)}
             >
               <div 
-                className={cn(
-                  "px-4 flex items-center gap-2 overflow-hidden",
-                  "shrink-0"
-                )}
-                style={{ width: `${maxNameWidth}ch` }}
+                className="px-4 flex items-center gap-3 overflow-hidden"
               >
                 <div className={cn(
                   "size-4 rounded border flex items-center justify-center shrink-0 transition-all",
                   selected ? "bg-primary-600 border-primary-600 dark:bg-primary-500 dark:border-primary-500" : "bg-white border-gray-300 group-hover:border-primary-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-primary-500"
                 )}>
-                  {selected && <Check size={12} className="text-white" />}
+                  {selected && <Check size={12} className="text-white" strokeWidth={3} />}
                 </div>
                 <span className={cn(
                   "truncate font-medium",
@@ -263,44 +276,44 @@ export default function TypesTable({ definitions, types, selection, setSelection
                 {(() => {
                   const groups = duplicatesByName[t.name] || [];
                   const count = groups.filter(g => g !== t.group).length;
-                  return count > 0 && <Badge variant="warning">+{count}</Badge>;
+                  return count > 0 && <Badge variant="warning" className="px-1 py-0 text-[10px]">+{count}</Badge>;
                 })()}
                 {t.hasUnknown && <AlertCircle size={14} className="text-warning-500 shrink-0" />}
               </div>
 
               {showGroupColumn && !condensed && (
-                <div className="w-32 px-4 flex items-center overflow-hidden">
-                  <Badge variant="gray" className="truncate">{t.group || 'vanilla'}</Badge>
+                <div className="px-4 flex items-center overflow-hidden">
+                  <Badge variant="gray" className="truncate text-xs font-normal bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700">{t.group || 'vanilla'}</Badge>
                 </div>
               )}
 
-              <div className="w-20 px-4 flex items-center justify-end font-mono text-gray-600 dark:text-gray-400">{t.nominal}</div>
-              <div className="w-20 px-4 flex items-center justify-end font-mono text-gray-400 dark:text-gray-500">{t.min}</div>
+              <div className="px-4 flex items-center justify-end font-mono text-gray-700 dark:text-gray-300">{t.nominal}</div>
+              <div className="px-4 flex items-center justify-end font-mono text-gray-400 dark:text-gray-500">{t.min}</div>
 
               {!condensed && (
                 <>
-                  <div className="w-24 px-4 flex items-center justify-end font-mono text-gray-500 dark:text-gray-400">
+                  <div className="px-4 flex items-center justify-end font-mono text-gray-500 dark:text-gray-400">
                     {formatLifetime(Number(t.lifetime))}
                   </div>
-                  <div className="w-32 px-4 flex items-center overflow-hidden">
+                  <div className="px-4 flex items-center overflow-hidden">
                     {t.category ? (
-                      <Badge variant={definitions.categories.includes(t.category) ? "primary" : "error"} className="truncate">
+                      <Badge variant={definitions.categories.includes(t.category) ? "primary" : "error"} className="truncate text-xs">
                         {t.category}
                       </Badge>
                     ) : <span className="text-gray-300 dark:text-gray-700">—</span>}
                   </div>
-                  <div className="flex-1 min-w-[150px] px-4 flex items-center gap-1 overflow-hidden">
+                  <div className="px-4 flex items-center gap-1 overflow-hidden">
                     {t.usage?.slice(0, 2).map(u => (
-                      <Badge key={u} variant="gray" className="truncate">{u}</Badge>
+                      <Badge key={u} variant="gray" className="truncate text-xs font-normal">{u}</Badge>
                     ))}
-                    {(t.usage?.length || 0) > 2 && <Badge variant="gray">+{t.usage.length - 2}</Badge>}
+                    {(t.usage?.length || 0) > 2 && <Badge variant="gray" className="text-xs">+{t.usage.length - 2}</Badge>}
                     {(t.usage?.length || 0) === 0 && <span className="text-gray-300 dark:text-gray-700">—</span>}
                   </div>
-                  <div className="flex-1 min-w-[150px] px-4 flex items-center gap-1 overflow-hidden">
+                  <div className="px-4 flex items-center gap-1 overflow-hidden">
                     {t.value?.slice(0, 2).map(v => (
-                      <Badge key={v} variant="gray" className="truncate">{v}</Badge>
+                      <Badge key={v} variant="gray" className="truncate text-xs font-normal">{v}</Badge>
                     ))}
-                    {(t.value?.length || 0) > 2 && <Badge variant="gray">+{t.value.length - 2}</Badge>}
+                    {(t.value?.length || 0) > 2 && <Badge variant="gray" className="text-xs">+{t.value.length - 2}</Badge>}
                     {(t.value?.length || 0) === 0 && <span className="text-gray-300 dark:text-gray-700">—</span>}
                   </div>
                 </>
@@ -310,6 +323,21 @@ export default function TypesTable({ definitions, types, selection, setSelection
         })}
         
         <div style={{ height: `${bottomPad}px` }} />
+      </div>
+
+      <div className="px-4 py-3 border-t border-gray-200 bg-white flex items-center justify-between text-xs text-gray-500 shrink-0 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+        <div>
+          Showing <span className="font-semibold text-gray-900 dark:text-gray-200">{rows.length}</span> types
+          {selection.size > 0 && (
+            <>
+              {' '}&bull;{' '}
+              <span className="font-semibold text-primary-600 dark:text-primary-400">{selection.size}</span> selected
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {condensed && <Badge variant="gray" className="text-[10px] uppercase tracking-wider font-bold py-0 px-1 border-gray-200 dark:border-gray-700">Condensed View</Badge>}
+        </div>
       </div>
     </div>
   );
