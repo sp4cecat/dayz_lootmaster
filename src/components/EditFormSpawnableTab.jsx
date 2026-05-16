@@ -1,5 +1,7 @@
 import React from 'react';
 import { ROOT_SPAWNABLE_GROUP, findSpawnableEntryForType } from '../utils/xml.js';
+import { Slider } from '@/components/base/slider/slider';
+import { Badge } from './ui/Badge.jsx';
 
 function chancePercent(value) {
   const n = Number(value);
@@ -160,18 +162,39 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
               const entry = found?.entry;
               const sourceGroup = found?.group;
               if (!entry) {
+                const defaultMin = globalsDefaults?.LootDamageMin ?? 0;
+                const defaultMax = globalsDefaults?.LootDamageMax ?? 1;
                 return (
-                  <div key={type.name} className="card subtle" onClick={() => addSection(group, type.name, 'damage')} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') addSection(group, type.name, 'damage'); }} role="button" tabIndex={0}>
-                    <strong>{type.name}</strong>
-                    <div className="muted">No explicit spawnable entry. Default loot damage range from globals.xml is shown. Click to create an explicit entry.</div>
-                    <label className="slider-row disabled">
-                      Loot damage min {chancePercent(globalsDefaults?.LootDamageMin)}%
-                      <input type="range" min="0" max="100" step="0.1" value={chancePercent(globalsDefaults?.LootDamageMin)} readOnly />
-                    </label>
-                    <label className="slider-row disabled">
-                      Loot damage max {chancePercent(globalsDefaults?.LootDamageMax)}%
-                      <input type="range" min="0" max="100" step="0.1" value={chancePercent(globalsDefaults?.LootDamageMax)} readOnly />
-                    </label>
+                  <div key={type.name} className="card subtle">
+                    <div className="mb-2"><strong>{type.name}</strong></div>
+                    <div className="stack small py-2">
+                      <div className="row space-between mb-1">
+                        <span className="text-sm font-medium">Loot damage range</span>
+                        <span className="text-sm text-muted">{chancePercent(defaultMin)}% — {chancePercent(defaultMax)}%</span>
+                      </div>
+                      <Slider
+                        value={[chancePercent(defaultMin), chancePercent(defaultMax)]}
+                        onChange={(vals) => {
+                          const newMin = fromPercent(vals[0]);
+                          const newMax = fromPercent(vals[1]);
+                          // Only create entry if it's different from defaults
+                          if (newMin !== defaultMin || newMax !== defaultMax) {
+                            updateEntry(group, type.name, e => ({
+                              ...e,
+                              sections: [{
+                                kind: 'damage',
+                                chance: null,
+                                preset: '',
+                                attrs: { min: String(newMin), max: String(newMax) },
+                                items: []
+                              }]
+                            }));
+                          }
+                        }}
+                        step={0.1}
+                        labelPosition="top-floating"
+                      />
+                    </div>
                   </div>
                 );
               }
@@ -183,7 +206,7 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
                     <div key={`${section.kind}-${sectionIndex}`} className="stack small card subtle" style={{ border: '1px dashed var(--border)' }}>
                       <div className="row wrap space-between">
                         <div className="row wrap">
-                          <span className="badge">{section.kind}</span>
+                          <Badge variant="primary" className="capitalize">{section.kind}</Badge>
                           {section.kind !== 'damage' && (
                             <select value={section.preset || ''} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, preset: e.target.value, attrs: { ...(s.attrs || {}), preset: e.target.value } }))}>
                               <option value="">No preset</option>
@@ -195,36 +218,67 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
                       </div>
 
                       {section.kind === 'damage' && (
-                        <>
-                          <label className="slider-row">
-                            Min damage {chancePercent(section.attrs?.min)}%
-                            <input type="range" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.min)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), min: String(fromPercent(e.target.value)) } }))}/>
-                            <input type="number" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.min)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), min: String(fromPercent(e.target.value)) } }))}/>
-                          </label>
-                          <label className="slider-row">
-                            Max damage {chancePercent(section.attrs?.max)}%
-                            <input type="range" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.max)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), max: String(fromPercent(e.target.value)) } }))}/>
-                            <input type="number" min="0" max="100" step="0.1" value={chancePercent(section.attrs?.max)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, attrs: { ...(s.attrs || {}), max: String(fromPercent(e.target.value)) } }))}/>
-                          </label>
-                        </>
+                        <div className="stack small py-2">
+                          <div className="row space-between mb-1">
+                            <span className="text-sm font-medium">Loot damage range</span>
+                            <span className="text-sm text-muted">{chancePercent(section.attrs?.min)}% — {chancePercent(section.attrs?.max)}%</span>
+                          </div>
+                          <Slider
+                            value={[chancePercent(section.attrs?.min), chancePercent(section.attrs?.max)]}
+                            onChange={(vals) => updateSection(group, type.name, sectionIndex, s => ({
+                              ...s,
+                              attrs: { ...s.attrs, min: String(fromPercent(vals[0])), max: String(fromPercent(vals[1])) }
+                            }))}
+                            step={0.1}
+                            labelPosition="top-floating"
+                          />
+                        </div>
                       )}
 
                       {section.chance != null && section.kind !== 'damage' && (
-                        <label className="slider-row">
-                          Block chance {chancePercent(section.chance)}%
-                          <input type="range" min="0" max="100" step="0.1" value={chancePercent(section.chance)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, chance: fromPercent(e.target.value), attrs: { ...(s.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
-                          <input type="number" min="0" max="100" step="0.1" value={chancePercent(section.chance)} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, chance: fromPercent(e.target.value), attrs: { ...(s.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
-                        </label>
+                        <div className="stack small py-2">
+                          <div className="row space-between mb-1">
+                            <span className="text-sm font-medium">Block chance</span>
+                            <span className="text-sm text-muted">{chancePercent(section.chance)}%</span>
+                          </div>
+                          <Slider
+                            value={chancePercent(section.chance)}
+                            onChange={(val) => updateSection(group, type.name, sectionIndex, s => ({
+                              ...s,
+                              chance: fromPercent(val),
+                              attrs: { ...s.attrs, chance: String(fromPercent(val)) }
+                            }))}
+                            step={0.1}
+                            labelPosition="top-floating"
+                          />
+                        </div>
                       )}
 
                       {(section.items || []).map((item, itemIndex) => (
-                        <div key={`${item.name}-${itemIndex}`} className="row wrap">
-                          <label className="slider-row grow">
-                            <input className="grow" type="text" value={item.name} onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, name: e.target.value, attrs: { ...(it.attrs || {}), name: e.target.value } }))} placeholder="Item name" />
-                            {chancePercent(item.chance)}%
-                            <input type="range" min="0" max="100" step="0.1" value={chancePercent(item.chance)} onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, chance: fromPercent(e.target.value), attrs: { ...(it.attrs || {}), chance: String(fromPercent(e.target.value)) } }))}/>
-                          </label>
-                          <button className="btn btn-danger btn-small" title="Remove item" onClick={() => removeItem(group, type.name, sectionIndex, itemIndex)}>×</button>
+                        <div key={`${item.name}-${itemIndex}`} className="stack small py-2 border-t border-gray-100 dark:border-gray-800 mt-2">
+                          <div className="row wrap space-between mb-1">
+                            <input
+                              className="grow text-sm font-medium bg-transparent border-none focus:ring-0 p-0"
+                              type="text"
+                              value={item.name}
+                              onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, name: e.target.value, attrs: { ...it.attrs, name: e.target.value } }))}
+                              placeholder="Item name"
+                            />
+                            <div className="row small">
+                              <span className="text-sm text-muted">{chancePercent(item.chance)}%</span>
+                              <button className="btn btn-danger btn-small" title="Remove item" onClick={() => removeItem(group, type.name, sectionIndex, itemIndex)}>×</button>
+                            </div>
+                          </div>
+                          <Slider
+                            value={chancePercent(item.chance)}
+                            onChange={(val) => updateItem(group, type.name, sectionIndex, itemIndex, it => ({
+                              ...it,
+                              chance: fromPercent(val),
+                              attrs: { ...it.attrs, chance: String(fromPercent(val)) }
+                            }))}
+                            step={0.1}
+                            labelPosition="top-floating"
+                          />
                         </div>
                       ))}
 
