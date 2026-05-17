@@ -81,6 +81,7 @@ export default function App() {
         setChangeEditorID,
         reloadFromFiles,
         getBaselineFileTypes,
+        persistChangesToServer,
         refreshBaselineFromAPI,
         spawnableTypesByGroup,
         setSpawnableTypesByGroup,
@@ -457,7 +458,7 @@ export default function App() {
                 <StorageStatusModal 
                     diff={storageDiff} 
                     onClose={() => setModal(null)} 
-                    onApply={refreshBaselineFromAPI}
+                    onApply={persistChangesToServer}
                     getBaselineFileTypes={getBaselineFileTypes}
                 />
             )}

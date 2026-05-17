@@ -6,7 +6,11 @@ import {
   parseRandomPresetsXml,
   parseSpawnableTypesXml,
   ROOT_SPAWNABLE_GROUP,
-  parseTypesXml
+  parseTypesXml,
+  generateTypesXml,
+  generateLimitsXml,
+  generateSpawnableTypesXml,
+  generateRandomPresetsXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
 import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog } from '../utils/idb.js';
@@ -294,6 +298,77 @@ export function useLootData() {
     loadBaselineFromAPI();
     return () => { aborted = true; };
   }, [refreshBaselineFromAPI]);
+
+  // Write staged changes (from lootFiles/IndexedDB) to server via PUT
+  const persistChangesToServer = useCallback(async () => {
+    if (!selectedProfileId) return { ok: false, error: 'No profile selected' };
+    const API_BASE = getApiBase();
+    const editorId = currentEditorIdRef.current || 'unknown';
+
+    try {
+      const d = storageDiff;
+
+      // 1. Definitions
+      if (d.definitions.categories || d.definitions.usageflags || d.definitions.valueflags || d.definitions.tags) {
+        const xml = generateLimitsXml(definitions);
+        const res = await fetchWithProfile(`${API_BASE}/api/definitions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
+          body: xml
+        });
+        if (!res.ok) throw new Error(`Failed to save definitions: ${res.statusText}`);
+      }
+
+      // 2. CLE Types
+      for (const [group, files] of Object.entries(d.files)) {
+        if (group === 'vanilla') continue; // Always skip vanilla (overrides are in vanilla_overrides)
+        for (const [file, info] of Object.entries(files)) {
+          if (info.changed) {
+            const types = lootFiles[group]?.[file] || [];
+            const xml = generateTypesXml(types);
+            const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(file)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
+              body: xml
+            });
+            if (!res.ok) throw new Error(`Failed to save ${group}/${file}: ${res.statusText}`);
+          }
+        }
+      }
+
+      // 3. Spawnable Types
+      for (const [group, changed] of Object.entries(d.mission.spawnableGroups)) {
+        if (changed) {
+          const data = spawnableTypesByGroup[group] || { types: [] };
+          const xml = generateSpawnableTypesXml(data);
+          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
+            body: xml
+          });
+          if (!res.ok) throw new Error(`Failed to save spawnable types ${group}: ${res.statusText}`);
+        }
+      }
+
+      // 4. Random Presets
+      if (d.mission.randomPresets) {
+        const xml = generateRandomPresetsXml(randomPresets);
+        const res = await fetchWithProfile(`${API_BASE}/api/mission/randompresets`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
+          body: xml
+        });
+        if (!res.ok) throw new Error(`Failed to save random presets: ${res.statusText}`);
+      }
+
+      // After all saved successfully, refresh baseline from server to clear diffs
+      await refreshBaselineFromAPI();
+      return { ok: true };
+    } catch (e) {
+      console.error('Persistence failed:', e);
+      return { ok: false, error: e.message };
+    }
+  }, [selectedProfileId, getApiBase, storageDiff, definitions, lootFiles, spawnableTypesByGroup, randomPresets, fetchWithProfile, refreshBaselineFromAPI]);
 
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
@@ -1247,6 +1322,7 @@ export function useLootData() {
     setChangeEditorID,
     reloadFromFiles,
     getBaselineFileTypes,
+    persistChangesToServer,
     refreshBaselineFromAPI,
     spawnableTypesByGroup,
     setSpawnableTypesByGroup,

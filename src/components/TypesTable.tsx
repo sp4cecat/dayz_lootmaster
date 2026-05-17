@@ -4,7 +4,7 @@ import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
-import { ArrowUp, ArrowDown, Check, AlertCircle, AlertTriangle } from 'lucide-react';
+import { ArrowUp, ArrowDown, Check, AlertCircle, AlertTriangle, Shield } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import type { Type } from '@/utils/xml';
 
@@ -173,11 +173,12 @@ export default function TypesTable({
         selectedKeys={selection}
         onSelectionChange={handleSelectionChange}
         onScroll={handleScroll}
-        className="w-full flex-1 flex flex-col min-h-0"
+        className="w-full min-h-full flex flex-col"
+        containerClassName="flex-1 min-h-0"
         style={gridStyle}
       >
         <Table.Header 
-          className="block [&>tr]:grid [&>tr]:[grid-template-columns:var(--grid-template-columns)] [&>tr]:items-stretch [&>tr]:h-full h-11 bg-gray-50/50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800"
+          className="block [&>tr]:grid [&>tr]:[grid-template-columns:var(--grid-template-columns)] [&>tr]:items-stretch [&>tr]:h-full h-11 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800"
           style={{ '--grid-template-columns': columnWidths } as React.CSSProperties}
         >
           <Table.Column 
@@ -249,7 +250,7 @@ export default function TypesTable({
         </Table.Header>
 
         <Table.Body
-          className="flex-1 overflow-y-auto scrollbar-thin divide-y-0 relative block"
+          className="flex-1 divide-y-0 relative block"
           style={{
             paddingTop: `${topPad}px`,
             paddingBottom: `${bottomPad}px`,
@@ -259,6 +260,7 @@ export default function TypesTable({
             const isSelected = selection.has(row.name);
             const isModified = storageDiff?.files[row.group || 'vanilla']?.[row.file || 'types']?.changedNames?.includes(row.name);
             const hasDuplicate = !!duplicatesByName[row.name];
+            const isOverride = row.group === 'vanilla_overrides';
 
             return (
               <Table.Row
@@ -295,6 +297,11 @@ export default function TypesTable({
                     {hasDuplicate && (
                       <Badge color="warning" size="sm" type="modern">
                         <AlertTriangle size={12} className="mr-1" /> Duplicate
+                      </Badge>
+                    )}
+                    {isOverride && (
+                      <Badge color="blue" size="sm" type="modern">
+                        <Shield size={12} className="mr-1" /> Override
                       </Badge>
                     )}
                   </div>
