@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { Button } from '@/components/base/button/button';
-import { ThemeToggle } from '../ThemeToggle.jsx';
+import { ThemeToggle } from '../ThemeToggle';
 import { Badge } from '@/components/base/badges/badges';
 
 interface SidebarProps {

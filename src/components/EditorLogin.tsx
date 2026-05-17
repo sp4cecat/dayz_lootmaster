@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Database, UserPlus, History } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
-import { ThemeToggle } from './ThemeToggle.jsx';
+import { ThemeToggle } from './ThemeToggle';
 
 /**
  * Simple login screen to choose or create an editorID.

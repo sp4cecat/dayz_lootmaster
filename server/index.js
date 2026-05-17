@@ -1746,6 +1746,47 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        if (pathname === '/api/deerisle/diving-loot') {
+            if (!paths?.profilesPath) {
+                badRequest(res, 'Profile path not available');
+                return;
+            }
+            const target = join(paths.profilesPath, 'Deerisle', 'DivingLootConfig.json');
+            if (req.method === 'GET') {
+                try {
+                    const content = await readFile(target, 'utf8');
+                    const data = JSON.parse(content);
+                    // Map divingLootListNormal to Items for frontend compatibility if needed
+                    if (!data.Items && data.divingLootListNormal) {
+                        data.Items = data.divingLootListNormal;
+                    }
+                    send(res, 200, JSON.stringify(data), { 'Content-Type': 'application/json; charset=utf-8' });
+                } catch {
+                    // Return a default empty config if not found
+                    send(res, 200, JSON.stringify({ Items: [], divingLootListNormal: [], divingLootListElite: [] }), { 'Content-Type': 'application/json; charset=utf-8' });
+                }
+                return;
+            }
+            if (req.method === 'POST' || req.method === 'PUT') {
+                const body = await readBody(req);
+                try {
+                    const parsed = JSON.parse(body);
+                    // Map Items back to divingLootListNormal for mod compatibility
+                    if (parsed.Items) {
+                        parsed.divingLootListNormal = parsed.Items;
+                    }
+                    await ensureDirFor(target);
+                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
+                } catch (e) {
+                    badRequest(res, `Invalid JSON or write error: ${e.message}`);
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
         // Match /api/types/:group/:file
         const matchTypes = pathname.match(/^\/api\/types\/([^/]+)\/([^/]+)$/);
         if (matchTypes) {

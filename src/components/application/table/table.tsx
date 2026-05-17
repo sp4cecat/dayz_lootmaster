@@ -131,7 +131,7 @@ const TableRoot = forwardRef<HTMLDivElement, TableRootProps>(
 TableRoot.displayName = "Table";
 
 interface TableHeaderProps<T extends object>
-    extends AriaTableHeaderProps<T>, Omit<ComponentPropsWithRef<"thead">, "children" | "className" | "slot" | "style"> {
+    extends AriaTableHeaderProps<T>, Omit<ComponentPropsWithRef<"thead">, "children" | "className" | "slot"> {
     bordered?: boolean;
     size?: "sm" | "md";
 }
@@ -155,16 +155,18 @@ const TableHeader = <T extends object>({ columns, children, bordered = true, cla
                 )
             }
         >
-            {selectionBehavior === "toggle" && (
-                <AriaColumn className={cx("relative py-2 pr-0 pl-4", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
-                    {selectionMode === "multiple" && (
-                        <div className="flex items-start">
-                            <Checkbox slot="selection" size="md" />
-                        </div>
-                    )}
-                </AriaColumn>
-            )}
-            {children}
+            <AriaCollection items={columns}>
+                {selectionBehavior === "toggle" && (
+                    <AriaColumn className={cx("relative py-2 pr-0 pl-4 flex items-center", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
+                        {selectionMode === "multiple" && (
+                            <div className="flex items-center">
+                                <Checkbox slot="selection" size="md" />
+                            </div>
+                        )}
+                    </AriaColumn>
+                )}
+                {children}
+            </AriaCollection>
         </AriaTableHeader>
     );
 };
@@ -185,6 +187,7 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
             className={(state) =>
                 cx(
                     "relative p-0 px-6 py-2 outline-hidden focus-visible:z-1 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-bg-primary focus-visible:ring-inset",
+                    "flex items-center",
                     selectionBehavior === "toggle" && "nth-2:pl-3",
                     state.allowsSorting && "cursor-pointer",
                     typeof className === "function" ? className(state) : className,
@@ -192,8 +195,8 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
             }
         >
             {(state) => (
-                <AriaGroup className="flex items-center gap-1">
-                    <div className="flex items-center gap-1">
+                <AriaGroup className="flex items-center gap-1 w-full">
+                    <div className="flex items-center gap-1 w-full">
                         {label && <span className="text-xs font-semibold whitespace-nowrap text-quaternary">{label}</span>}
                         {typeof children === "function" ? children(state) : children}
                     </div>
@@ -248,14 +251,16 @@ const TableRow = <T extends object>({ columns, children, className, highlightSel
                 )
             }
         >
-            {selectionBehavior === "toggle" && (
-                <AriaCell className={cx("relative py-2 pr-0 pl-4", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
-                    <div className="flex items-end">
-                        <Checkbox slot="selection" size="md" />
-                    </div>
-                </AriaCell>
-            )}
-            {children}
+            <AriaCollection items={columns}>
+                {selectionBehavior === "toggle" && (
+                    <AriaCell className={cx("relative py-2 pr-0 pl-4 flex items-center", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
+                        <div className="flex items-center">
+                            <Checkbox slot="selection" size="md" />
+                        </div>
+                    </AriaCell>
+                )}
+                {children}
+            </AriaCollection>
         </AriaRow>
     );
 };
@@ -294,20 +299,22 @@ const TableCell = ({ className, children, size: sizeProp, ...props }: TableCellP
 };
 TableCell.displayName = "TableCell";
 
-const TableCard = {
-    Root: TableCardRoot,
-    Header: TableCardHeader,
+const TableCard = TableCardRoot as typeof TableCardRoot & {
+    Header: typeof TableCardHeader;
 };
+TableCard.Header = TableCardHeader;
 
 const Table = TableRoot as typeof TableRoot & {
     Body: typeof AriaTableBody;
     Cell: typeof TableCell;
+    Column: typeof TableHead;
     Head: typeof TableHead;
     Header: typeof TableHeader;
     Row: typeof TableRow;
 };
 Table.Body = AriaTableBody;
 Table.Cell = TableCell;
+Table.Column = TableHead;
 Table.Head = TableHead;
 Table.Header = TableHeader;
 Table.Row = TableRow;

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Row as AriaRow, Selection } from 'react-aria-components';
+import { Selection } from 'react-aria-components';
 import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
 import { Badge } from '@/components/base/badges/badges';
@@ -148,6 +148,7 @@ export default function TypesTable({
 
   const columnWidths = useMemo(() => {
     const cols = [];
+    cols.push('2.25rem'); // Selection column
     cols.push(`${maxNameWidth}ch`); // Name
     if (showGroupColumn) cols.push('8rem'); // Group
     cols.push('5rem'); // Nominal
@@ -168,14 +169,23 @@ export default function TypesTable({
         aria-label="Types"
         selectionMode="multiple"
         selectionBehavior="toggle"
+        size="sm"
         selectedKeys={selection}
         onSelectionChange={handleSelectionChange}
         onScroll={handleScroll}
         className="w-full flex-1 flex flex-col min-h-0"
         style={gridStyle}
       >
-        <Table.Header className="bg-gray-50/50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800">
-          <Table.Column isRowHeader sortDescriptor={sort.key === 'name' ? sort.dir : undefined} onSort={() => handleSort('name')}>
+        <Table.Header 
+          className="[&>tr]:grid [&>tr]:items-stretch [&>tr]:h-full h-11 bg-gray-50/50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800"
+          style={{ '--grid-template-columns': columnWidths } as React.CSSProperties}
+        >
+          <Table.Column 
+            isRowHeader 
+            allowsSorting 
+            sortDirection={sort.key === 'name' ? sort.dir : undefined} 
+            onPress={() => handleSort('name')}
+          >
             Name
             <div className="ml-auto flex items-center gap-2">
               <Button
@@ -192,22 +202,42 @@ export default function TypesTable({
             </div>
           </Table.Column>
           {showGroupColumn && (
-            <Table.Column sortDescriptor={sort.key === 'group' ? sort.dir : undefined} onSort={() => handleSort('group')}>
+            <Table.Column 
+              allowsSorting 
+              sortDirection={sort.key === 'group' ? sort.dir : undefined} 
+              onPress={() => handleSort('group')}
+            >
               Group
             </Table.Column>
           )}
-          <Table.Column sortDescriptor={sort.key === 'nominal' ? sort.dir : undefined} onSort={() => handleSort('nominal')}>
+          <Table.Column 
+            allowsSorting 
+            sortDirection={sort.key === 'nominal' ? sort.dir : undefined} 
+            onPress={() => handleSort('nominal')}
+          >
             Nom
           </Table.Column>
           <Table.Column>Min</Table.Column>
-          <Table.Column sortDescriptor={sort.key === 'lifetime' ? sort.dir : undefined} onSort={() => handleSort('lifetime')}>
+          <Table.Column 
+            allowsSorting 
+            sortDirection={sort.key === 'lifetime' ? sort.dir : undefined} 
+            onPress={() => handleSort('lifetime')}
+          >
             Lifetime
           </Table.Column>
           <Table.Column>Category</Table.Column>
-          <Table.Column sortDescriptor={sort.key === 'usage' ? sort.dir : undefined} onSort={() => handleSort('usage')}>
+          <Table.Column 
+            allowsSorting 
+            sortDirection={sort.key === 'usage' ? sort.dir : undefined} 
+            onPress={() => handleSort('usage')}
+          >
             Usage
           </Table.Column>
-          <Table.Column sortDescriptor={sort.key === 'value' ? sort.dir : undefined} onSort={() => handleSort('value')}>
+          <Table.Column 
+            allowsSorting 
+            sortDirection={sort.key === 'value' ? sort.dir : undefined} 
+            onPress={() => handleSort('value')}
+          >
             Value
           </Table.Column>
         </Table.Header>
@@ -225,7 +255,7 @@ export default function TypesTable({
             const hasDuplicate = !!duplicatesByName[row.name];
 
             return (
-              <AriaRow
+              <Table.Row
                 key={row.name}
                 id={row.name}
                 className={cx(
@@ -241,16 +271,6 @@ export default function TypesTable({
               >
                 <Table.Cell className="px-4 py-2 flex items-center min-w-0">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div
-                      className={cx(
-                        'size-5 rounded-md border flex items-center justify-center shrink-0 transition-all',
-                        isSelected
-                          ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
-                          : 'bg-white border-gray-300 dark:bg-gray-950 dark:border-gray-700'
-                      )}
-                    >
-                      {isSelected && <Check size={12} strokeWidth={3} />}
-                    </div>
                     <span
                       className={cx(
                         'text-sm font-semibold truncate',
@@ -322,7 +342,7 @@ export default function TypesTable({
                     <span className="text-gray-400">-</span>
                   )}
                 </Table.Cell>
-              </AriaRow>
+              </Table.Row>
             );
           })}
         </Table.Body>

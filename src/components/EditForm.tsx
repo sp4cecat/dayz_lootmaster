@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import EditFormCLETab from './EditFormCLETab.jsx';
-import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
-import EditFormSpawnableTab from './EditFormSpawnableTab.jsx';
+import EditFormCLETab from './EditFormCLETab';
+import EditFormMarketplaceTab from './EditFormMarketplaceTab';
+import EditFormSpawnableTab from './EditFormSpawnableTab';
 import { cx } from '@/utils/cx';
 import { Button } from '@/components/base/button/button';
 import { X, Save as SaveIcon } from 'lucide-react';
