@@ -1,5 +1,5 @@
 import React from 'react';
-import { findSpawnableEntryForType } from '@/utils/xml';
+import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
@@ -43,9 +43,9 @@ export default function EditFormSpawnableTab({
   }
 
   const type = selectedTypes[0];
-  const entry = findSpawnableEntryForType(type.name, spawnableTypesByGroup);
+  const result = findSpawnableEntryForType(spawnableTypesByGroup, type.group, type.name);
 
-  if (!entry) {
+  if (!result) {
     return (
       <div className="p-12 text-center bg-gray-50 dark:bg-gray-950/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
         <div className="size-16 bg-white dark:bg-gray-900 rounded-2xl flex items-center justify-center text-gray-400 mx-auto mb-4 shadow-sm border border-gray-100 dark:border-gray-800">
@@ -60,8 +60,19 @@ export default function EditFormSpawnableTab({
     );
   }
 
+  const { entry, group: foundGroup } = result;
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="flex items-center justify-between px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl mb-6">
+        <div className="flex items-center gap-2">
+          <Settings2 size={16} className="text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+            Source: <span className="font-bold">{foundGroup === ROOT_SPAWNABLE_GROUP ? 'Mission Root' : `Group: ${foundGroup}`}</span>
+          </span>
+        </div>
+        <Badge color="blue" size="sm">Active</Badge>
+      </div>
       {/* Damage Section */}
       <section>
         <div className="flex items-center gap-2 mb-4">

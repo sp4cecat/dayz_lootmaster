@@ -247,6 +247,7 @@ async function removeItemFromMarketplaceCompletely(className, paths) {
 
 const groupFolderCaches = new Map();
 const groupFilesCaches = new Map();
+const groupSpawnableFilesCaches = new Map();
 
 async function getGroupFolderMap(profile, paths) {
     let cache = groupFolderCaches.get(profile.id);
@@ -262,11 +263,20 @@ async function getGroupFilesMap(profile, paths) {
     return groupFilesCaches.get(profile.id) || {};
 }
 
+async function getGroupSpawnableFilesMap(profile, paths) {
+    let cache = groupSpawnableFilesCaches.get(profile.id);
+    if (cache) return cache;
+    await loadEconomyCoreCaches(profile, paths);
+    return groupSpawnableFilesCaches.get(profile.id) || {};
+}
+
 async function loadEconomyCoreCaches(profile, paths) {
     const folderCache = {};
     const filesCache = {};
+    const spawnableFilesCache = {};
     groupFolderCaches.set(profile.id, folderCache);
     groupFilesCaches.set(profile.id, filesCache);
+    groupSpawnableFilesCaches.set(profile.id, spawnableFilesCache);
     try {
         const xml = await readFile(paths.economyCorePath, 'utf8');
         // Match each <ce folder="...">...</ce>
@@ -281,16 +291,19 @@ async function loadEconomyCoreCaches(profile, paths) {
             if (!group) continue;
             if (!folderCache[group]) folderCache[group] = folder;
             const content = ceMatch[2] || '';
-            // Collect <file name="..." type="types"/>
+            // Collect <file name="..." type="types"/> or type="spawnabletypes"
             const fileRe = /<file\b[^>]*\bname="([^"]+)"[^>]*\btype="([^"]+)"[^>]*\/?>/gi;
             let fMatch;
             const files = [];
+            const spawnableFiles = [];
             while ((fMatch = fileRe.exec(content)) !== null) {
                 const name = fMatch[1];
                 const type = (fMatch[2] || '').trim().toLowerCase();
                 if (name && type === 'types') files.push(name);
+                if (name && type === 'spawnabletypes') spawnableFiles.push(name);
             }
             if (files.length) filesCache[group] = files;
+            if (spawnableFiles.length) spawnableFilesCache[group] = spawnableFiles;
         }
     } catch {
         // leave caches as empty objects if read fails
@@ -343,20 +356,22 @@ async function firstExistingPath(paths) {
 }
 
 async function spawnableTypesFilePath(profile, paths, group) {
-    if (group === '__root') {
+    if (group === '__root' || group === 'vanilla' || group === 'vanilla_overrides') {
         return firstExistingPath([
             join(paths.missionPath, 'cfgspawnabletypes.xml'),
             join(paths.missionPath, 'cfgspawnabletype.xml')
         ]);
     }
-    if (group === 'vanilla') return firstExistingPath([
-        join(paths.dbDirPath, 'cfgspawnabletypes.xml'),
-        join(paths.dbDirPath, 'cfgspawnabletype.xml')
-    ]);
-    if (group === 'vanilla_overrides') return firstExistingPath([
-        join(paths.dbDirPath, 'vanilla_overrides', 'cfgspawnabletypes.xml'),
-        join(paths.dbDirPath, 'vanilla_overrides', 'cfgspawnabletype.xml')
-    ]);
+
+    const spawnableFilesMap = await getGroupSpawnableFilesMap(profile, paths);
+    const declaredSpawnable = spawnableFilesMap[group] || [];
+    if (declaredSpawnable.length > 0) {
+        const folder = await getDeclaredGroupFolder(profile, paths, group);
+        if (folder) {
+            return join(paths.missionPath, folder, declaredSpawnable[0]);
+        }
+    }
+
     const dir = await declaredGroupDir(profile, paths, group);
     return dir ? firstExistingPath([
         join(dir, 'cfgspawnabletypes.xml'),

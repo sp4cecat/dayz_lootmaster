@@ -316,10 +316,9 @@ export function formatChance(value) {
 }
 
 /**
- * Parse cfgeconomycore.xml and return group order and types file paths for each group.
- * Only <file> entries with attribute type="types" are included.
+ * Parse cfgeconomycore.xml and return group order and file paths for each group.
  * @param {string} xml
- * @returns {{ order: string[], filesByGroup: Record<string, string[]> }}
+ * @returns {{ order: string[], filesByGroup: Record<string, string[]>, spawnableFilesByGroup: Record<string, string[]> }}
  */
 export function parseEconomyCoreXml(xml) {
   const doc = safeParseXml(xml);
@@ -329,6 +328,8 @@ export function parseEconomyCoreXml(xml) {
   const order = [];
   /** @type {Record<string, string[]>} */
   const filesByGroup = {};
+  /** @type {Record<string, string[]>} */
+  const spawnableFilesByGroup = {};
 
   for (const ce of ceNodes) {
     const folder = ce.getAttribute('folder');
@@ -344,13 +345,22 @@ export function parseEconomyCoreXml(xml) {
       .filter(Boolean)
       .map(name => `/samples/${folder}/${name}`);
 
-    if (files.length > 0) {
+    const spawnableFileNodes = Array.from(ce.getElementsByTagName('file'))
+      .filter(f => ((f.getAttribute('type') || '').trim().toLowerCase() === 'spawnabletypes'));
+
+    const spawnableFiles = spawnableFileNodes
+      .map(f => f.getAttribute('name'))
+      .filter(Boolean)
+      .map(name => `/samples/${folder}/${name}`);
+
+    if (files.length > 0 || spawnableFiles.length > 0) {
       order.push(group);
-      filesByGroup[group] = files;
+      if (files.length > 0) filesByGroup[group] = files;
+      if (spawnableFiles.length > 0) spawnableFilesByGroup[group] = spawnableFiles;
     }
   }
 
-  return { order, filesByGroup };
+  return { order, filesByGroup, spawnableFilesByGroup };
 }
 
 /**

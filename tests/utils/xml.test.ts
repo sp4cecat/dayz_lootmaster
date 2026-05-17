@@ -166,6 +166,21 @@ describe('spawnabletypes utilities', () => {
     expect(found?.entry.name).toBe('jmc_mjolnir_head');
     expect(found?.entry.sections[0].chance).toBe(0.75);
   });
+
+  it('finds selected type entries from vanilla group redirecting to root', () => {
+    const rootSpawnable = parseSpawnableTypesXml(`
+<spawnabletypes>
+  <type name="jmc_mjolnir_head"><attachments chance="0.75"/></type>
+</spawnabletypes>`);
+    // In our app, 'vanilla' group is explicitly loaded and might point to root
+    const found = findSpawnableEntryForType({
+      vanilla: rootSpawnable,
+      [ROOT_SPAWNABLE_GROUP]: rootSpawnable
+    }, 'vanilla', 'jmc_mjolnir_head');
+
+    expect(found?.group).toBe('vanilla');
+    expect(found?.entry.name).toBe('jmc_mjolnir_head');
+  });
 });
 
 describe('random presets and globals utilities', () => {

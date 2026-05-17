@@ -238,21 +238,26 @@ export function useLootData() {
         const er = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (er.ok) {
           const eText = await er.text();
-          const { order, filesByGroup } = parseEconomyCoreXml(eText);
+          const { order, filesByGroup, spawnableFilesByGroup } = parseEconomyCoreXml(eText);
           for (const group of order) {
             const filesList = filesByGroup[group] || [];
-            for (const samplePath of filesList) {
-              const parts = samplePath.split('/');
-              const fileName = parts[parts.length - 1] || 'types.xml';
-              const fileBase = fileName.replace(/\.xml$/i, '');
-              try {
-                const tr = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
-                if (!tr.ok) continue;
-                const tText = await tr.text();
-                const parsed = parseTypesXml(tText);
-                if (!baseline[group]) baseline[group] = {};
-                baseline[group][fileBase] = parsed;
-              } catch { /* skip */ }
+            if (filesList.length > 0) {
+              for (const samplePath of filesList) {
+                const parts = samplePath.split('/');
+                const fileName = parts[parts.length - 1] || 'types.xml';
+                const fileBase = fileName.replace(/\.xml$/i, '');
+                try {
+                  const tr = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                  if (!tr.ok) continue;
+                  const tText = await tr.text();
+                  const parsed = parseTypesXml(tText);
+                  if (!baseline[group]) baseline[group] = {};
+                  baseline[group][fileBase] = parsed;
+                } catch { /* skip */ }
+              }
+            } else if (spawnableFilesByGroup[group]) {
+              // Ensure group exists in baseline even if no types files, so spawnabletypes are loaded
+              if (!baseline[group]) baseline[group] = {};
             }
           }
         }
