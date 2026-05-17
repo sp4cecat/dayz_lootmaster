@@ -3,7 +3,7 @@ import { cx } from '../utils/cx';
 import { Badge } from './base/badges/badges';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
-import { ChevronDown, ChevronRight, X, Search, Settings, Filter } from 'lucide-react';
+import { ChevronDown, ChevronRight, X, Search, Settings, Filter, RotateCcw } from 'lucide-react';
 
 /**
  * @typedef {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}} Definitions
@@ -14,7 +14,7 @@ import { ChevronDown, ChevronRight, X, Search, Settings, Filter } from 'lucide-r
  * @param {{
  *  definitions: Definitions,
  *  groups: string[],
- *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], flags: string[], groups: string[] },
+ *  filters: { category: string, name: string, usage: string[], value: string[], tag: string[], flags: string[], groups: string[], changedOnly: boolean },
  *  onChange: (next: any) => void,
  *  onManage: (kind: 'usage'|'value'|'tag') => void,
  *  matchingCount: number,
@@ -29,10 +29,11 @@ export default function Filters({definitions, groups, filters, onChange, onManag
 
     const hasNonVanillaGroups = useMemo(() => groups.some(g => g !== 'vanilla'), [groups]);
 
-    const [usageOpen, setUsageOpen] = useState(false);
-    const [valueOpen, setValueOpen] = useState(false);
+    const [usageOpen, setUsageOpen] = useState(true);
+    const [valueOpen, setValueOpen] = useState(true);
     const [flagsOpen, setFlagsOpen] = useState(false);
     const [tagOpen, setTagOpen] = useState(false);
+    const [groupsOpen, setGroupsOpen] = useState(false);
 
     const flagsList = useMemo(() => {
         if (Array.isArray(flagOptions) && flagOptions.length > 0) return flagOptions;
@@ -75,9 +76,6 @@ export default function Filters({definitions, groups, filters, onChange, onManag
         setField('groups', next);
     };
 
-    const selectedGroupsSet = new Set(filters.groups);
-    const allGroupsSelected = filters.groups.length === 0;
-
     const toggleFlag = (key) => {
         const curr = Array.isArray(filters.flags) ? filters.flags : [];
         if (key === 'None') {
@@ -89,138 +87,109 @@ export default function Filters({definitions, groups, filters, onChange, onManag
         setField('flags', next);
     };
 
-    const AccordionItem = ({ title, isOpen, onToggle, onManage, children }) => (
-        <div className="border-b border-gray-100 last:border-0 dark:border-gray-800">
-            <div className="flex items-center justify-between py-3 px-4">
+    const AccordionItem = ({ title, isOpen, onToggle, onManage, badge, children }) => (
+        <div className="border-b border-gray-200 dark:border-gray-800">
+            <div className="flex items-center justify-between py-4 px-4">
                 <button
                     onClick={onToggle}
-                    className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors dark:text-gray-300 dark:hover:text-white"
+                    className="flex items-center gap-2 text-sm font-bold text-gray-900 hover:text-primary-600 transition-colors dark:text-gray-100 dark:hover:text-primary-400"
                 >
-                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    <ChevronDown size={18} className={cx("transition-transform text-gray-400", !isOpen && "-rotate-90")} />
                     {title}
+                    {badge > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-primary-50 text-primary-700 rounded-full dark:bg-primary-900/30 dark:text-primary-400">
+                            {badge}
+                        </span>
+                    )}
                 </button>
                 {onManage && (
                     <button
                         onClick={onManage}
-                        className="text-gray-400 hover:text-primary-600 transition-colors dark:hover:text-primary-400"
-                        title="Manage"
+                        className="text-gray-400 hover:text-primary-600 transition-colors p-1 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+                        title="Manage definitions"
                     >
-                        <Settings size={14} />
+                        <Settings size={16} />
                     </button>
                 )}
             </div>
-            {isOpen && <div className="px-4 pb-4">{children}</div>}
+            {isOpen && <div className="px-4 pb-4 animate-in slide-in-from-top-1 duration-200">{children}</div>}
         </div>
     );
 
-    return (
-        <div className="flex flex-col">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-800">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2 text-gray-900 dark:text-white">
-                        <Filter size={18} />
-                        <h2 className="text-lg font-bold">Filters</h2>
-                    </div>
-                    <Button variant="link" size="sm" onClick={clearFilters}>Clear all</Button>
-                </div>
-                
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Search Types</label>
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                            <Input 
-                                value={filters.name}
-                                onChange={e => setField('name', e.target.value)}
-                                placeholder="e.g. Ammo* or *Dressing"
-                                className="pl-9 pr-9"
-                            />
-                            {filters.name?.length > 0 && (
-                                <button
-                                    onClick={() => setField('name', '')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                >
-                                    <X size={16} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
+    const Pill = ({ active, onClick, children }) => (
+        <button
+            onClick={onClick}
+            className={cx(
+                "px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all shadow-sm",
+                active 
+                    ? "bg-primary-600 border-primary-600 text-white dark:bg-primary-500 dark:border-primary-500" 
+                    : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+            )}
+        >
+            {children}
+        </button>
+    );
 
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Category</label>
+    return (
+        <div className="flex flex-col h-full bg-white dark:bg-gray-900">
+            {/* Filter Header */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <Filter size={18} className="text-gray-400" />
+                        <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Filters</h2>
+                    </div>
+                    <Button variant="tertiary" size="sm" onClick={clearFilters} className="h-8 px-2 text-xs">
+                        <RotateCcw size={14} className="mr-1.5" /> Reset
+                    </Button>
+                </div>
+
+                <div className="space-y-4">
+                    <Input 
+                        placeholder="Search by name..." 
+                        value={filters.name}
+                        onChange={e => setField('name', e.target.value)}
+                        icon={Search}
+                        className="h-9"
+                    />
+
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">Category</label>
                         <select
+                            className="w-full h-9 px-3 py-1 text-sm bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30 dark:focus:border-primary-500"
                             value={filters.category}
                             onChange={e => setField('category', e.target.value)}
-                            className="w-full h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px_20px] bg-right-3 bg-no-repeat dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30 dark:focus:border-primary-500"
                         >
-                            {allCategoryOptions.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
+                            {allCategoryOptions.map(c => (
+                                <option key={c} value={c}>{c === 'all' ? 'All Categories' : c === 'none' ? 'No Category' : c}</option>
                             ))}
                         </select>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-2">
-                        <Button 
-                            variant={filters.changedOnly ? "primary" : "secondary"} 
-                            size="sm" 
-                            className="w-full"
-                            onClick={() => setField('changedOnly', !filters.changedOnly)}
-                        >
-                            Show changed only
-                        </Button>
-                        <Badge color="brand" size="sm" className="py-1">{matchingCount}</Badge>
-                    </div>
+                    <Button 
+                        variant={filters.changedOnly ? "secondary-color" : "secondary-gray"} 
+                        size="sm" 
+                        className="w-full text-xs"
+                        onClick={() => setField('changedOnly', !filters.changedOnly)}
+                    >
+                        {filters.changedOnly ? 'Showing Changed Only' : 'Show Changed Only'}
+                    </Button>
                 </div>
             </div>
 
-            <div className="overflow-y-auto max-h-[calc(100vh-400px)]">
-                {hasNonVanillaGroups && (
-                    <AccordionItem title="Types Groups" isOpen={true} onToggle={() => {}}>
-                        <div className="flex flex-wrap gap-2">
-                            <Badge 
-                                className="cursor-pointer" 
-                                variant={allGroupsSelected ? "primary" : "gray"}
-                                onClick={() => setField('groups', [])}
-                            >
-                                All
-                            </Badge>
-                            {groups.map(g => (
-                                <Badge 
-                                    key={g}
-                                    className="cursor-pointer" 
-                                    variant={selectedGroupsSet.has(g) ? "primary" : "gray"}
-                                    onClick={() => toggleGroup(g)}
-                                >
-                                    {g}
-                                </Badge>
-                            ))}
-                        </div>
-                    </AccordionItem>
-                )}
-
+            {/* Accordions */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
                 <AccordionItem 
                     title="Usage" 
                     isOpen={usageOpen} 
                     onToggle={() => setUsageOpen(!usageOpen)}
                     onManage={() => onManage('usage')}
+                    badge={filters.usage.length}
                 >
                     <div className="flex flex-wrap gap-2">
-                        <Badge 
-                            color={filters.usage.includes('None') ? "brand" : "gray"}
-                            className="cursor-pointer"
-                            onClick={() => toggleUsage('None')}
-                        >
-                            None
-                        </Badge>
-                        {[...definitions.usageflags].sort((a, b) => a.localeCompare(b)).map(opt => (
-                            <Badge 
-                                key={opt}
-                                color={filters.usage.includes(opt) ? "brand" : "gray"}
-                                className="cursor-pointer"
-                                onClick={() => toggleUsage(opt)}
-                            >
-                                {opt}
-                            </Badge>
+                        <Pill active={filters.usage.includes('None')} onClick={() => toggleUsage('None')}>None</Pill>
+                        {definitions.usageflags.map(u => (
+                            <Pill key={u} active={filters.usage.includes(u)} onClick={() => toggleUsage(u)}>{u}</Pill>
                         ))}
                     </div>
                 </AccordionItem>
@@ -230,29 +199,12 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                     isOpen={valueOpen} 
                     onToggle={() => setValueOpen(!valueOpen)}
                     onManage={() => onManage('value')}
+                    badge={filters.value.length}
                 >
                     <div className="flex flex-wrap gap-2">
-                        <Badge 
-                            color={filters.value.includes('None') ? "brand" : "gray"}
-                            className="cursor-pointer"
-                            onClick={() => toggleValue('None')}
-                        >
-                            None
-                        </Badge>
-                        {[...definitions.valueflags].sort((a, b) => {
-                            const ma = /^tier\s*(\d+)$/i.exec(String(a).trim());
-                            const mb = /^tier\s*(\d+)$/i.exec(String(b).trim());
-                            if (ma && mb) return Number(ma[1]) - Number(mb[1]);
-                            return String(a).localeCompare(String(b));
-                        }).map(opt => (
-                            <Badge 
-                                key={opt}
-                                color={filters.value.includes(opt) ? "brand" : "gray"}
-                                className="cursor-pointer"
-                                onClick={() => toggleValue(opt)}
-                            >
-                                {opt}
-                            </Badge>
+                        <Pill active={filters.value.includes('None')} onClick={() => toggleValue('None')}>None</Pill>
+                        {definitions.valueflags.map(v => (
+                            <Pill key={v} active={filters.value.includes(v)} onClick={() => toggleValue(v)}>{v}</Pill>
                         ))}
                     </div>
                 </AccordionItem>
@@ -262,32 +214,16 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                     isOpen={tagOpen} 
                     onToggle={() => setTagOpen(!tagOpen)}
                     onManage={() => onManage('tag')}
+                    badge={filters.tag.length}
                 >
-                    <div className="grid grid-cols-2 gap-2">
-                        {definitions.tags.map(opt => {
-                            const selected = filters.tag.includes(opt);
-                            return (
-                                <label key={opt} className="flex items-center gap-2 cursor-pointer group">
-                                    <div className={cx(
-                                        "size-4 rounded border flex items-center justify-center transition-all",
-                                        selected ? "bg-primary-600 border-primary-600 dark:bg-primary-500 dark:border-primary-500" : "bg-white border-gray-300 group-hover:border-primary-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-primary-500"
-                                    )}>
-                                        {selected && <div className="size-1.5 bg-white rounded-full" />}
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        className="hidden"
-                                        checked={selected}
-                                        onChange={e => {
-                                            const curr = filters.tag;
-                                            const next = e.target.checked ? [...curr, opt] : curr.filter(x => x !== opt);
-                                            setField('tag', next);
-                                        }}
-                                    />
-                                    <span className={cx("text-sm", selected ? "text-gray-900 font-medium dark:text-white" : "text-gray-600 dark:text-gray-400")}>{opt}</span>
-                                </label>
-                            );
-                        })}
+                    <div className="flex flex-wrap gap-2">
+                        {definitions.tags.map(t => (
+                            <Pill key={t} active={filters.tag.includes(t)} onClick={() => {
+                                const curr = filters.tag;
+                                const next = curr.includes(t) ? curr.filter(x => x !== t) : [...curr, t];
+                                setField('tag', next);
+                            }}>{t}</Pill>
+                        ))}
                     </div>
                 </AccordionItem>
 
@@ -295,27 +231,38 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                     title="Flags" 
                     isOpen={flagsOpen} 
                     onToggle={() => setFlagsOpen(!flagsOpen)}
+                    badge={filters.flags.length}
                 >
                     <div className="flex flex-wrap gap-2">
-                        <Badge 
-                            color={(filters.flags || []).includes('None') ? "brand" : "gray"}
-                            className="cursor-pointer"
-                            onClick={() => toggleFlag('None')}
-                        >
-                            None
-                        </Badge>
-                        {flagsList.map(key => (
-                            <Badge 
-                                key={key}
-                                color={(filters.flags || []).includes(key) ? "brand" : "gray"}
-                                className="cursor-pointer"
-                                onClick={() => toggleFlag(key)}
-                            >
-                                {key}
-                            </Badge>
+                        <Pill active={filters.flags.includes('None')} onClick={() => toggleFlag('None')}>None</Pill>
+                        {flagsList.map(f => (
+                            <Pill key={f} active={filters.flags.includes(f)} onClick={() => toggleFlag(f)}>{f}</Pill>
                         ))}
                     </div>
                 </AccordionItem>
+
+                {hasNonVanillaGroups && (
+                    <AccordionItem 
+                        title="Groups" 
+                        isOpen={groupsOpen} 
+                        onToggle={() => setGroupsOpen(!groupsOpen)}
+                        badge={filters.groups.length}
+                    >
+                        <div className="flex flex-wrap gap-2">
+                            {groups.map(g => (
+                                <Pill key={g} active={filters.groups.includes(g)} onClick={() => toggleGroup(g)}>{g}</Pill>
+                            ))}
+                        </div>
+                    </AccordionItem>
+                )}
+            </div>
+
+            {/* Matching Footer */}
+            <div className="p-4 bg-gray-50 border-t border-gray-200 dark:bg-gray-950 dark:border-gray-800">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Matching</span>
+                    <Badge color={matchingCount > 0 ? 'brand' : 'gray'} size="md">{matchingCount} types</Badge>
+                </div>
             </div>
         </div>
     );

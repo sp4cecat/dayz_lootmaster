@@ -2,6 +2,9 @@ import React from 'react';
 import { ROOT_SPAWNABLE_GROUP, findSpawnableEntryForType } from '../utils/xml.js';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from './base/badges/badges';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+import { Plus, Trash2, Settings2, Sparkles, Percent, AlertCircle, X, ChevronRight } from 'lucide-react';
 
 function chancePercent(value) {
   const n = Number(value);
@@ -17,6 +20,7 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
   const presetNames = (randomPresets?.presets || []).map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
   const [bulkChance, setBulkChance] = React.useState('');
   const [bulkPreset, setBulkPreset] = React.useState('');
+  
   const selectedByGroup = selectedTypes.reduce((acc, type) => {
     const group = type.group || 'vanilla';
     if (!acc[group]) acc[group] = [];
@@ -39,7 +43,6 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
       return { ...(prev || {}), [targetGroup]: { ...groupData, types } };
     });
   };
-
 
   const updateSelectedSections = (apply) => {
     setSpawnableTypesByGroup(prev => {
@@ -134,170 +137,235 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
   };
 
   return (
-    <div className="spawnable-tab">
-      <p className="muted">Edit `cfgspawnabletypes.xml` entries. You can adjust chances, presets, and damage ranges, or add/remove sections and items.</p>
+    <div className="space-y-8 animate-in fade-in duration-300">
+      <div className="p-4 bg-primary-50 rounded-xl border border-primary-100 flex items-start gap-3 dark:bg-primary-900/10 dark:border-primary-900/20">
+        <Sparkles size={18} className="text-primary-600 dark:text-primary-400 mt-0.5 shrink-0" />
+        <p className="text-sm text-primary-700 dark:text-primary-300 leading-relaxed">
+          Configure <strong>cfgspawnabletypes.xml</strong> entries. Adjust attachments, cargo, and damage ranges for selected types.
+        </p>
+      </div>
+
       {selectedTypes.length > 1 && (
-        <section className="card subtle">
-          <h4>Bulk spawnable edits</h4>
-          <p className="muted">Applies only to existing spawnable entries for the selected types. Missing entries still use the clickable default sliders below.</p>
-          <div className="row wrap">
-            <label>Chance % <input type="number" min="0" max="100" step="0.1" value={bulkChance} onChange={e => setBulkChance(e.target.value)} placeholder="0-100" /></label>
-            <button className="btn" disabled={bulkChance === ''} onClick={() => updateSelectedBlockChances(fromPercent(bulkChance))}>Apply to block chances</button>
-            <button className="btn" disabled={bulkChance === ''} onClick={() => updateSelectedItemChances(fromPercent(bulkChance))}>Apply to item chances</button>
-            <select value={bulkPreset} onChange={e => setBulkPreset(e.target.value)}>
-              <option value="">Choose preset…</option>
-              {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <button className="btn" disabled={!bulkPreset} onClick={() => updateSelectedPresets(bulkPreset)}>Apply preset to sections</button>
-            <button className="btn" onClick={() => updateSelectedPresets('')}>Clear section presets</button>
+        <div className="p-6 bg-white rounded-xl border border-gray-200 shadow-sm dark:bg-gray-800/50 dark:border-gray-700 space-y-4">
+          <div className="flex items-center gap-2">
+            <Settings2 size={18} className="text-gray-400" />
+            <h4 className="font-bold text-gray-900 dark:text-white">Bulk Spawnable Edits</h4>
           </div>
-        </section>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400 flex items-center gap-1.5">
+                <Percent size={12} /> Chance %
+              </label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  min="0" max="100" step="0.1" 
+                  value={bulkChance} 
+                  onChange={e => setBulkChance(e.target.value)} 
+                  placeholder="0-100" 
+                  className="h-10"
+                />
+                <Button variant="secondary-gray" size="sm" disabled={!bulkChance} onClick={() => updateSelectedBlockChances(fromPercent(bulkChance))}>
+                  Blocks
+                </Button>
+                <Button variant="secondary-gray" size="sm" disabled={!bulkChance} onClick={() => updateSelectedItemChances(fromPercent(bulkChance))}>
+                  Items
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400 flex items-center gap-1.5">
+                Preset
+              </label>
+              <div className="flex gap-2">
+                <select 
+                  className="flex-1 h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-100 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white"
+                  value={bulkPreset} 
+                  onChange={e => setBulkPreset(e.target.value)}
+                >
+                  <option value="">Choose preset...</option>
+                  {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <Button variant="secondary-gray" size="sm" disabled={!bulkPreset} onClick={() => updateSelectedPresets(bulkPreset)}>
+                  Apply
+                </Button>
+                <Button variant="tertiary" size="sm" onClick={() => updateSelectedPresets('')} title="Clear presets">
+                  <X size={16} />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
-      {Object.entries(selectedByGroup).map(([group, types]) => {
-        return (
-          <section key={group} className="card">
-            <h4>{group}</h4>
-            {types.map(type => {
-              const found = findSpawnableEntryForType(spawnableTypesByGroup, group, type.name);
-              const entry = found?.entry;
-              const sourceGroup = found?.group;
-              if (!entry) {
-                const defaultMin = globalsDefaults?.LootDamageMin ?? 0;
-                const defaultMax = globalsDefaults?.LootDamageMax ?? 1;
-                return (
-                  <div key={type.name} className="card subtle">
-                    <div className="mb-2"><strong>{type.name}</strong></div>
-                    <div className="stack small py-2">
-                      <div className="row space-between mb-1">
-                        <span className="text-sm font-medium">Loot damage range</span>
-                        <span className="text-sm text-muted">{chancePercent(defaultMin)}% — {chancePercent(defaultMax)}%</span>
+
+      <div className="space-y-6">
+        {Object.entries(selectedByGroup).map(([group, types]) => (
+          <div key={group} className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Badge color="gray" size="md" type="modern">{group}</Badge>
+              <div className="h-px flex-1 bg-gray-100 dark:bg-gray-800" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {types.map(type => {
+                const found = findSpawnableEntryForType(spawnableTypesByGroup, group, type.name);
+                const entry = found?.entry;
+                const sourceGroup = found?.group;
+
+                if (!entry) {
+                  const defaultMin = globalsDefaults?.LootDamageMin ?? 0;
+                  const defaultMax = globalsDefaults?.LootDamageMax ?? 1;
+                  return (
+                    <div key={type.name} className="p-4 bg-gray-50 rounded-xl border border-gray-200 dark:bg-gray-950/20 dark:border-gray-800">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="font-bold text-gray-900 dark:text-white">{type.name}</span>
+                        <Badge color="gray" size="sm">No entry</Badge>
                       </div>
-                      <Slider
-                        value={[chancePercent(defaultMin), chancePercent(defaultMax)]}
-                        onChange={(vals) => {
-                          const newMin = fromPercent(vals[0]);
-                          const newMax = fromPercent(vals[1]);
-                          // Only create entry if it's different from defaults
-                          if (newMin !== defaultMin || newMax !== defaultMax) {
-                            updateEntry(group, type.name, e => ({
-                              ...e,
-                              sections: [{
-                                kind: 'damage',
-                                chance: null,
-                                preset: '',
-                                attrs: { min: String(newMin), max: String(newMax) },
-                                items: []
-                              }]
-                            }));
-                          }
-                        }}
-                        step={0.1}
-                        labelPosition="top-floating"
-                      />
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                          <span>Default Damage Range</span>
+                          <span>{chancePercent(defaultMin)}% — {chancePercent(defaultMax)}%</span>
+                        </div>
+                        <Slider
+                          value={[chancePercent(defaultMin), chancePercent(defaultMax)]}
+                          onChange={(vals) => {
+                            const newMin = fromPercent(vals[0]);
+                            const newMax = fromPercent(vals[1]);
+                            if (newMin !== defaultMin || newMax !== defaultMax) {
+                              updateEntry(group, type.name, e => ({
+                                ...e,
+                                sections: [{
+                                  kind: 'damage',
+                                  chance: null,
+                                  preset: '',
+                                  attrs: { min: String(newMin), max: String(newMax) },
+                                  items: []
+                                }]
+                              }));
+                            }
+                          }}
+                          step={0.1}
+                        />
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={type.name} className="p-5 bg-white rounded-xl border border-gray-200 shadow-sm dark:bg-gray-800/50 dark:border-gray-700 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900 dark:text-white">{type.name}</span>
+                        {sourceGroup === ROOT_SPAWNABLE_GROUP && (
+                          <Badge color="brand" size="sm">Mission Root</Badge>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="tertiary" size="sm" onClick={() => addSection(group, type.name, 'attachments')} icon={Plus}>Attachment</Button>
+                        <Button variant="tertiary" size="sm" onClick={() => addSection(group, type.name, 'cargo')} icon={Plus}>Cargo</Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {(entry.sections || []).map((section, sectionIndex) => (
+                        <div key={`${section.kind}-${sectionIndex}`} className="p-4 bg-gray-50 rounded-lg border border-gray-100 dark:bg-gray-900 dark:border-gray-800 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <Badge color={section.kind === 'damage' ? 'error' : 'brand'} size="sm" className="capitalize">{section.kind}</Badge>
+                              {section.kind !== 'damage' && (
+                                <select 
+                                  className="h-8 px-2 text-xs bg-white border border-gray-300 rounded focus:ring-2 focus:ring-primary-100 dark:bg-gray-950 dark:border-gray-700 dark:text-white"
+                                  value={section.preset || ''} 
+                                  onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, preset: e.target.value, attrs: { ...(s.attrs || {}), preset: e.target.value } }))}
+                                >
+                                  <option value="">No preset</option>
+                                  {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                                </select>
+                              )}
+                            </div>
+                            <Button variant="tertiary" size="sm" className="text-error-600 h-8 w-8 p-0" onClick={() => removeSection(group, type.name, sectionIndex)}>
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+
+                          {section.kind === 'damage' && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                <span>Damage Range</span>
+                                <span className="font-mono">{chancePercent(section.attrs?.min)}% — {chancePercent(section.attrs?.max)}%</span>
+                              </div>
+                              <Slider
+                                value={[chancePercent(section.attrs?.min), chancePercent(section.attrs?.max)]}
+                                onChange={(vals) => updateSection(group, type.name, sectionIndex, s => ({
+                                  ...s,
+                                  attrs: { ...s.attrs, min: String(fromPercent(vals[0])), max: String(fromPercent(vals[1])) }
+                                }))}
+                                step={0.1}
+                              />
+                            </div>
+                          )}
+
+                          {section.chance != null && section.kind !== 'damage' && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                <span>Block Chance</span>
+                                <span className="font-mono">{chancePercent(section.chance)}%</span>
+                              </div>
+                              <Slider
+                                value={chancePercent(section.chance)}
+                                onChange={(val) => updateSection(group, type.name, sectionIndex, s => ({
+                                  ...s,
+                                  chance: fromPercent(val),
+                                  attrs: { ...s.attrs, chance: String(fromPercent(val)) }
+                                }))}
+                                step={0.1}
+                              />
+                            </div>
+                          )}
+
+                          {(section.items || []).map((item, itemIndex) => (
+                            <div key={`${item.name}-${itemIndex}`} className="pl-4 border-l-2 border-gray-200 dark:border-gray-800 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <input
+                                  className="text-sm font-bold text-gray-700 bg-transparent border-none focus:ring-0 p-0 dark:text-gray-300"
+                                  type="text"
+                                  value={item.name}
+                                  onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, name: e.target.value, attrs: { ...it.attrs, name: e.target.value } }))}
+                                />
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-mono text-gray-500">{chancePercent(item.chance)}%</span>
+                                  <button className="text-gray-400 hover:text-error-600" onClick={() => removeItem(group, type.name, sectionIndex, itemIndex)}>
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                              <Slider
+                                value={chancePercent(item.chance)}
+                                onChange={(val) => updateItem(group, type.name, sectionIndex, itemIndex, it => ({
+                                  ...it,
+                                  chance: fromPercent(val),
+                                  attrs: { ...it.attrs, chance: String(fromPercent(val)) }
+                                }))}
+                                step={0.1}
+                              />
+                            </div>
+                          ))}
+
+                          {section.kind !== 'damage' && !section.preset && (
+                            <Button variant="tertiary" size="sm" onClick={() => addItem(group, type.name, sectionIndex)} icon={Plus}>Add Item</Button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
-              }
-              return (
-                <div key={type.name} className="card subtle">
-                  <strong>{type.name}</strong>
-                  {sourceGroup === ROOT_SPAWNABLE_GROUP && <div className="muted">Using mission-root cfgspawnabletypes.xml entry.</div>}
-                  {(entry.sections || []).map((section, sectionIndex) => (
-                    <div key={`${section.kind}-${sectionIndex}`} className="stack small card subtle" style={{ border: '1px dashed var(--border)' }}>
-                      <div className="row wrap space-between">
-                        <div className="row wrap">
-                          <Badge color="brand" size="sm" className="capitalize">{section.kind}</Badge>
-                          {section.kind !== 'damage' && (
-                            <select value={section.preset || ''} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, preset: e.target.value, attrs: { ...(s.attrs || {}), preset: e.target.value } }))}>
-                              <option value="">No preset</option>
-                              {presetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                          )}
-                        </div>
-                        <button className="btn btn-danger btn-small" title="Remove section" onClick={() => removeSection(group, type.name, sectionIndex)}>×</button>
-                      </div>
-
-                      {section.kind === 'damage' && (
-                        <div className="stack small py-2">
-                          <div className="row space-between mb-1">
-                            <span className="text-sm font-medium">Loot damage range</span>
-                            <span className="text-sm text-muted">{chancePercent(section.attrs?.min)}% — {chancePercent(section.attrs?.max)}%</span>
-                          </div>
-                          <Slider
-                            value={[chancePercent(section.attrs?.min), chancePercent(section.attrs?.max)]}
-                            onChange={(vals) => updateSection(group, type.name, sectionIndex, s => ({
-                              ...s,
-                              attrs: { ...s.attrs, min: String(fromPercent(vals[0])), max: String(fromPercent(vals[1])) }
-                            }))}
-                            step={0.1}
-                            labelPosition="top-floating"
-                          />
-                        </div>
-                      )}
-
-                      {section.chance != null && section.kind !== 'damage' && (
-                        <div className="stack small py-2">
-                          <div className="row space-between mb-1">
-                            <span className="text-sm font-medium">Block chance</span>
-                            <span className="text-sm text-muted">{chancePercent(section.chance)}%</span>
-                          </div>
-                          <Slider
-                            value={chancePercent(section.chance)}
-                            onChange={(val) => updateSection(group, type.name, sectionIndex, s => ({
-                              ...s,
-                              chance: fromPercent(val),
-                              attrs: { ...s.attrs, chance: String(fromPercent(val)) }
-                            }))}
-                            step={0.1}
-                            labelPosition="top-floating"
-                          />
-                        </div>
-                      )}
-
-                      {(section.items || []).map((item, itemIndex) => (
-                        <div key={`${item.name}-${itemIndex}`} className="stack small py-2 border-t border-gray-100 dark:border-gray-800 mt-2">
-                          <div className="row wrap space-between mb-1">
-                            <input
-                              className="grow text-sm font-medium bg-transparent border-none focus:ring-0 p-0"
-                              type="text"
-                              value={item.name}
-                              onChange={e => updateItem(group, type.name, sectionIndex, itemIndex, it => ({ ...it, name: e.target.value, attrs: { ...it.attrs, name: e.target.value } }))}
-                              placeholder="Item name"
-                            />
-                            <div className="row small">
-                              <span className="text-sm text-muted">{chancePercent(item.chance)}%</span>
-                              <button className="btn btn-danger btn-small" title="Remove item" onClick={() => removeItem(group, type.name, sectionIndex, itemIndex)}>×</button>
-                            </div>
-                          </div>
-                          <Slider
-                            value={chancePercent(item.chance)}
-                            onChange={(val) => updateItem(group, type.name, sectionIndex, itemIndex, it => ({
-                              ...it,
-                              chance: fromPercent(val),
-                              attrs: { ...it.attrs, chance: String(fromPercent(val)) }
-                            }))}
-                            step={0.1}
-                            labelPosition="top-floating"
-                          />
-                        </div>
-                      ))}
-
-                      {section.kind !== 'damage' && !section.preset && (
-                        <button className="btn btn-small" onClick={() => addItem(group, type.name, sectionIndex)}>+ Add item</button>
-                      )}
-                    </div>
-                  ))}
-                  <div className="row wrap">
-                    <button className="btn btn-small" onClick={() => addSection(group, type.name, 'damage')}>+ Add damage</button>
-                    <button className="btn btn-small" onClick={() => addSection(group, type.name, 'attachments')}>+ Add attachments</button>
-                    <button className="btn btn-small" onClick={() => addSection(group, type.name, 'cargo')}>+ Add cargo</button>
-                  </div>
-                </div>
-              );
-            })}
-          </section>
-        );
-      })}
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

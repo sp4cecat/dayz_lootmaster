@@ -1,4 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+import { Badge } from './base/badges/badges';
+import { Checkbox } from './base/checkbox/checkbox';
+import { 
+  Store, 
+  MapPin, 
+  Plus, 
+  Trash2, 
+  Save, 
+  Info, 
+  AlertCircle, 
+  ExternalLink,
+  Search,
+  Package,
+  ArrowRight,
+  RefreshCw,
+  X
+} from 'lucide-react';
+import { cx } from '../utils/cx';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -501,64 +521,90 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
   };
 
   return (
-    <div className="marketplace-tab" style={{ display: 'flex', gap: '10px' }}>
-      <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
-        <legend>Expansion Market</legend>
-        <label className="control" style={{ alignItems: 'stretch' }}>
-          <span>Categories</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-            <select multiple size={Math.min(8, Math.max(3, marketCategories.length))}
-                    value={selectedMarketCats}
-                    onChange={e => {
-                      const opts = Array.from(e.target.selectedOptions).map(o => o.value);
-                      setSelectedMarketCats(opts);
-                    }}
-                    style={{ flex: 1 }}
-                    disabled={marketLoading}
-            >
-              {marketCategories.map(c => (
-                <option key={c} value={c}>{c}</option>
+    <div className="space-y-8 animate-in fade-in duration-300">
+      {/* Expansion Market Section */}
+      <div className="p-6 bg-primary-50/30 rounded-2xl border border-primary-100 dark:bg-primary-900/5 dark:border-primary-900/10 space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="size-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
+            <Store size={20} />
+          </div>
+          <div>
+            <h4 className="text-lg font-bold text-gray-900 dark:text-white">Expansion Market</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Manage category assignments and market properties.</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex justify-between">
+              Categories
+              {marketLoading && <RefreshCw size={14} className="animate-spin text-primary-600" />}
+            </label>
+            <div className="flex gap-3">
+              <select 
+                multiple 
+                size={Math.min(8, Math.max(4, marketCategories.length))}
+                className="flex-1 h-auto p-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-4 focus:ring-primary-100 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white min-h-[120px]"
+                value={selectedMarketCats}
+                onChange={e => {
+                  const opts = Array.from(e.target.selectedOptions).map(o => o.value);
+                  setSelectedMarketCats(opts);
+                }}
+                disabled={marketLoading}
+              >
+                {marketCategories.map(c => (
+                  <option key={c} value={c} className="px-3 py-1.5 rounded-lg mb-1 last:mb-0 hover:bg-gray-50 dark:hover:bg-gray-800">{c}</option>
+                ))}
+              </select>
+              <Button 
+                variant="primary" 
+                onClick={onApplyMarketMove}
+                disabled={marketSaving || marketLoading || selectedMarketCats.length !== 1}
+                className="self-start h-10 px-6"
+                icon={ArrowRight}
+                iconPosition="right"
+              >
+                Move
+              </Button>
+            </div>
+            {uncategorizedCount > 0 && !marketLoading && (
+              <p className="text-xs text-warning-600 dark:text-warning-400 font-medium">
+                {uncategorizedCount} of {selectedTypes.length} items are not in any market category.
+              </p>
+            )}
+            {marketError && (
+              <p className="text-xs text-error-600 dark:text-error-400 flex items-center gap-1">
+                <AlertCircle size={12} /> {marketError}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-primary-100 dark:border-primary-900/20">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Item Properties</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {[
+                { key: 'MaxPriceThreshold', label: 'Max Price' },
+                { key: 'MinPriceThreshold', label: 'Min Price' },
+                { key: 'SellPricePercent', label: 'Sell %' },
+                { key: 'MaxStockThreshold', label: 'Max Stock' },
+                { key: 'MinStockThreshold', label: 'Min Stock' },
+                { key: 'QuantityPercent', label: 'Quantity %' },
+              ].map(fld => (
+                <div key={fld.key}>
+                  <Input
+                    label={fld.label}
+                    placeholder={marketForm[fld.key] === '' ? 'Mixed' : '—'}
+                    value={marketForm[fld.key] ?? ''}
+                    onChange={e => setMarketForm(m => ({ ...m, [fld.key]: e.target.value }))}
+                    className="h-9"
+                  />
+                </div>
               ))}
-            </select>
-            <button type="button" className="btn" onClick={onApplyMarketMove}
-                    disabled={marketSaving || marketLoading || selectedMarketCats.length !== 1}
-                    title={selectedMarketCats.length !== 1 ? 'Select exactly one category to apply' : 'Move selected types to this category'}
-            >Apply</button>
-          </div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            {marketLoading ? 'Loading categories…' : (uncategorizedCount ? `${uncategorizedCount} of ${selectedTypes.length} not categorised` : '')}
-            {marketError ? <span className="error-line"> — {marketError}</span> : null}
-          </div>
-        </label>
+            </div>
 
-        <div className="market-props" style={{ marginTop: 10 }}>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-            Edit item properties for existing category entries. Leave a field blank to keep it unchanged.
-          </div>
-          <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-            {[
-              { key: 'MaxPriceThreshold', label: 'Max Price' },
-              { key: 'MinPriceThreshold', label: 'Min Price' },
-              { key: 'SellPricePercent', label: 'Sell %' },
-              { key: 'MaxStockThreshold', label: 'Max Stock' },
-              { key: 'MinStockThreshold', label: 'Min Stock' },
-              { key: 'QuantityPercent', label: 'Quantity %' },
-            ].map(fld => (
-              <label key={fld.key} className={`control ${marketForm[fld.key] === '' ? 'mixed' : ''}`}>
-                <span>{fld.label}</span>
-                <input
-                  type="text"
-                  placeholder={marketForm[fld.key] === '' ? 'Mixed' : ''}
-                  value={marketForm[fld.key] ?? ''}
-                  onChange={e => setMarketForm(m => ({ ...m, [fld.key]: e.target.value }))}
-                />
-              </label>
-            ))}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', width: '100%', marginTop: '10px', flexWrap: 'wrap' }}>
-              {/* SpawnAttachments pill editor */}
-              <div className={`control ${marketArrays.SpawnAttachments === null ? 'mixed' : ''}`}>
-                <span>Spawn Attachments</span>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Spawn Attachments</label>
                 <PillArrayEditor
                   key={`sa-${selectionFp}`}
                   value={marketArrays.SpawnAttachments}
@@ -569,9 +615,8 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
                 />
               </div>
 
-              {/* Variants pill editor (restricted to same-category types) */}
-              <div className={`control ${marketArrays.Variants === null ? 'mixed' : ''}`}>
-                <span>Variants</span>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Variants</label>
                 <PillArrayEditor
                   key={`va-${selectionFp}-${sharedCategory}`}
                   value={marketArrays.Variants}
@@ -582,110 +627,134 @@ export default function EditFormMarketplaceTab({ selectedTypes, typeOptions = []
                   allowClear
                 />
                 {!allSelectedSameCategory && (
-                  <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Select items with the same category to edit variants.</div>
+                  <p className="text-[10px] text-gray-400 italic">Select items with the same category to edit variants.</p>
                 )}
               </div>
             </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <button type="button" className="btn" onClick={onApplyMarketValues} disabled={marketSaving || marketLoading}>Apply values</button>
-          </div>
-        </div>
-      </fieldset>
 
-      {/* Stock levels (Trader Zones) */}
-      <fieldset className="control" style={{ marginTop: 10, background: 'var(--market-section-bg, rgba(255, 215, 0, 0.06))', padding: 10, borderRadius: 6 }}>
-        <legend>Stock levels</legend>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-          Manage per-zone stock for the selected item(s). Enter a value to update existing entries. Use “Add”/“Add missing” to create entries for absent types.
+            <div className="flex justify-end pt-2">
+              <Button 
+                variant="secondary-color" 
+                size="md" 
+                onClick={onApplyMarketValues} 
+                disabled={marketSaving || marketLoading}
+                icon={Save}
+              >
+                Apply Values
+              </Button>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Stock Levels Section */}
+      <div className="p-6 bg-gray-50 rounded-2xl border border-gray-200 dark:bg-gray-900 dark:border-gray-800 space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="size-10 bg-white rounded-lg flex items-center justify-center text-gray-600 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
+            <Package size={20} />
+          </div>
+          <div>
+            <h4 className="text-lg font-bold text-gray-900 dark:text-white">Trader Stock Levels</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Manage per-zone stock for selected items.</p>
+          </div>
+        </div>
+
         {tzError && (
-          <div className="error-line" role="alert" style={{ marginBottom: 6 }}>{tzError}</div>
+          <div className="p-3 bg-error-50 border border-error-100 rounded-xl text-error-700 text-sm flex items-center gap-2">
+            <AlertCircle size={16} /> {tzError}
+          </div>
         )}
-        <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 180px 1fr', gap: 8, alignItems: 'center' }}>
-          <div className="muted" style={{ fontSize: 12 }}>Trader zone</div>
-          <div className="muted" style={{ fontSize: 12 }}>Stock</div>
-          <div className="muted" style={{ fontSize: 12 }}>Actions</div>
-          {traderZones.map(zone => {
-            const info = tzAggregate[zone] || { present: 0, missing: selectedTypes.length, value: undefined };
-            const mixed = info.value === null;
-            const nonePresent = info.present === 0 && info.missing > 0;
-            const someMissing = info.present > 0 && info.missing > 0;
-            return (
-              <React.Fragment key={zone}>
-                <div className="muted">{zone}</div>
-                <label className={`control ${mixed ? 'mixed' : ''}`} style={{ margin: 0 }}>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    placeholder={mixed ? 'Mixed' : ''}
-                    value={tzForm[zone] ?? ''}
-                    onChange={e => {
-                      const v = e.target.value;
-                      if (v === '') setTzForm(f => ({ ...f, [zone]: '' }));
-                      else if (/^\d+$/.test(v)) setTzForm(f => ({ ...f, [zone]: v }));
-                    }}
-                  />
-                  <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-                    {info.present} present, {info.missing} missing
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-12 gap-4 px-4 text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">
+            <div className="col-span-5">Trader Zone</div>
+            <div className="col-span-3">Stock</div>
+            <div className="col-span-4 text-right">Actions</div>
+          </div>
+
+          <div className="space-y-2">
+            {traderZones.map(zone => {
+              const info = tzAggregate[zone] || { present: 0, missing: selectedTypes.length, value: undefined };
+              const mixed = info.value === null;
+              const nonePresent = info.present === 0 && info.missing > 0;
+              
+              return (
+                <div key={zone} className="grid grid-cols-12 gap-4 p-4 bg-white rounded-xl border border-gray-100 shadow-sm items-center dark:bg-gray-950 dark:border-gray-800">
+                  <div className="col-span-5 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate dark:text-white">{zone}</p>
+                    <div className="flex gap-2 mt-1">
+                      {info.present > 0 && <Badge color="success" size="sm">{info.present} present</Badge>}
+                      {info.missing > 0 && <Badge color="gray" size="sm">{info.missing} missing</Badge>}
+                    </div>
                   </div>
-                </label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {nonePresent && (
-                    <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
-                            onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
-                            title="Add selected item(s) to this zone when applying">
-                      {tzAddMissing[zone] ? 'Will add' : 'Add'}
-                    </button>
-                  )}
-                  {someMissing && (
-                    <button type="button" className={`btn ${tzAddMissing[zone] ? 'primary' : ''}`}
-                            onClick={() => setTzAddMissing(m => ({ ...m, [zone]: !m[zone] }))}
-                            title="Add missing selected item(s) to this zone when applying">
-                      {tzAddMissing[zone] ? 'Will add missing' : 'Add missing'}
-                    </button>
-                  )}
+                  <div className="col-span-3">
+                    <Input
+                      placeholder={mixed ? 'Mixed' : '—'}
+                      value={tzForm[zone] ?? ''}
+                      onChange={e => setTzForm(f => ({ ...f, [zone]: e.target.value }))}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="col-span-4 flex justify-end">
+                    <div className="flex items-center gap-3">
+                      {nonePresent ? (
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            isSelected={!!tzAddMissing[zone]}
+                            onChange={c => setTzAddMissing(prev => ({ ...prev, [zone]: c }))}
+                            label="Add"
+                            size="sm"
+                          />
+                        </div>
+                      ) : (
+                        info.missing > 0 && (
+                          <div className="flex items-center gap-2">
+                             <Checkbox
+                              isSelected={!!tzAddMissing[zone]}
+                              onChange={c => setTzAddMissing(prev => ({ ...prev, [zone]: c }))}
+                              label="Missing"
+                              size="sm"
+                            />
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </React.Fragment>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          {tzLoading ? 'Loading trader zones…' : null}
+
+        <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-gray-800">
+          <Button 
+            variant="primary" 
+            onClick={onApplyTraderZones} 
+            disabled={tzSaving || tzLoading}
+            icon={Save}
+          >
+            {tzSaving ? 'Saving...' : 'Apply Stock'}
+          </Button>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-          <button type="button" className="btn" onClick={onApplyTraderZones} disabled={tzSaving || tzLoading}>Apply stock</button>
-        </div>
-      </fieldset>
+      </div>
     </div>
   );
 }
 
-// -------------------- PillArrayEditor --------------------
 /**
  * Lightweight pill/chip multi-select editor with optional Mixed behavior.
- * - value: null => Mixed/indeterminate; string[] => explicit values
- * - allowEditWhenMixed: when true and value is null, clicking the field activates an add-only mode
- * - options: available canonical options; duplicates filtered; case-insensitive matching
- * - disabled: render read-only (no add/remove)
- * - allowClear: show a Clear action to set []
  */
 function PillArrayEditor({ value, onChange, options, allowEditWhenMixed = false, disabled = false, allowClear = false }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const rootRef = useRef(null);
   const inputRef = useRef(null);
-  const [activated, setActivated] = useState(false); // used when value === null and allowEditWhenMixed
+  const [activated, setActivated] = useState(false); 
   const [hoverIndex, setHoverIndex] = useState(-1);
 
-  // Close on outside click
   useEffect(() => {
     const onDown = (e) => {
-      const r = rootRef.current;
-      if (!r) return;
-      if (r.contains(e.target)) return;
-      setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -711,10 +780,8 @@ function PillArrayEditor({ value, onChange, options, allowEditWhenMixed = false,
 
   const onAdd = (name) => {
     const canonical = canonOptions.find(o => String(o).toLowerCase() === String(name).toLowerCase()) || name;
-    const set = new Set(current.map(x => String(x)));
-    set.add(String(canonical));
-    const arr = Array.from(set);
-    onChange(arr);
+    const next = [...new Set([...current, String(canonical)])];
+    onChange(next);
     setOpen(false);
     setQuery('');
     setHoverIndex(-1);
@@ -725,23 +792,10 @@ function PillArrayEditor({ value, onChange, options, allowEditWhenMixed = false,
     onChange(next);
   };
 
-  const onKeyDown = (e) => {
-    if (!open) return;
-    if (e.key === 'Escape') { setOpen(false); return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHoverIndex(i => Math.min(i + 1, filteredOptions.length - 1)); return; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setHoverIndex(i => Math.max(i - 1, 0)); return; }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const choice = filteredOptions[Math.max(0, hoverIndex)] || filteredOptions[0];
-      if (choice) onAdd(choice);
-      return;
-    }
-  };
-
   if (isMixed && !allowEditWhenMixed) {
     return (
-      <div ref={rootRef} className="input" style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 30, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', background: 'transparent', opacity: disabled ? 0.6 : 1 }}>
-        <span className="muted" style={{ fontSize: 12 }}>Mixed</span>
+      <div className="flex h-10 items-center px-3 border border-gray-300 rounded-lg bg-gray-50/50 dark:bg-gray-950/20 dark:border-gray-700 opacity-60">
+        <span className="text-sm text-gray-500 italic">Mixed values</span>
       </div>
     );
   }
@@ -749,101 +803,100 @@ function PillArrayEditor({ value, onChange, options, allowEditWhenMixed = false,
   const showAddOnly = isMixed && allowEditWhenMixed && !activated;
 
   return (
-    <div ref={rootRef} className={`pill-array ${disabled ? 'disabled' : ''}`} style={{ position: 'relative' }}>
+    <div ref={rootRef} className="relative">
       <div
-        className={`pill-input ${isMixed ? 'mixed' : ''}`}
-        style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 30, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', background: 'transparent', cursor: canInteract ? 'text' : 'default' }}
+        className={cx(
+          "flex flex-wrap gap-2 p-2 border rounded-xl transition-all min-h-12 items-center bg-white dark:bg-gray-950",
+          canInteract ? "cursor-text hover:border-primary-300 dark:hover:border-primary-500" : "cursor-default",
+          open ? "border-primary-600 ring-4 ring-primary-100 dark:ring-primary-900/20" : "border-gray-300 dark:border-gray-700",
+          disabled && "opacity-60 grayscale"
+        )}
         onMouseDown={() => {
           if (disabled) return;
-          if (showAddOnly) {
-            setActivated(true);
-            setTimeout(openDialog, 0);
-          } else if (canInteract) {
-            openDialog();
-          }
+          if (showAddOnly) { setActivated(true); setTimeout(openDialog, 0); }
+          else if (canInteract) openDialog();
         }}
-        role="group"
-        aria-label="Pill editor"
       >
-        {Array.isArray(value) && value.map(v => (
-          <span key={v} className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--chip-bg, rgba(128,128,128,.12))' }}>
-            <span>{v}</span>
+        {current.map(v => (
+          <Badge key={v} color="gray" size="md" type="modern" className="pr-1 gap-1">
+            {v}
             {!disabled && (
-              <button type="button" className="link" aria-label={`Remove ${v}`}
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              <button 
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(v); }}
-                style={{ lineHeight: 1 }}>
-                ×
+                className="hover:text-error-600 rounded-full p-0.5"
+              >
+                <X size={14} />
               </button>
             )}
-          </span>
+          </Badge>
         ))}
 
-        {canInteract && (
-          <button
-            type="button"
-            className="btn"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        {canInteract && !showAddOnly && (
+          <Button 
+            variant="tertiary" 
+            size="sm" 
+            className="h-7 px-2 text-xs" 
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); openDialog(); }}
-            style={{ padding: '2px 10px', borderRadius: 999, background: 'var(--chip-add-bg, rgba(0,128,255,.12))', border: '1px solid var(--border)', fontSize: 12 }}
-            aria-haspopup="dialog"
-            aria-expanded={open}
           >
-            add
-          </button>
+            <Plus size={14} className="mr-1" /> Add
+          </Button>
         )}
 
-        {allowClear && Array.isArray(value) && !disabled && (
-          <button
-            type="button"
-            className="btn"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        {allowClear && current.length > 0 && !disabled && (
+          <Button 
+            variant="tertiary" 
+            size="sm" 
+            className="h-7 px-2 text-xs text-error-600 hover:text-error-700" 
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange([]); }}
-            title="Clear all"
-            style={{ padding: '2px 10px', borderRadius: 999, background: 'var(--chip-clear-bg, rgba(255,0,0,.08))', border: '1px solid var(--border)', fontSize: 12 }}
           >
-            clear
-          </button>
+            Clear
+          </Button>
         )}
 
         {showAddOnly && (
-          <span className="muted" style={{ fontSize: 12 }}>Mixed — click to add</span>
+          <span className="text-xs text-primary-600 font-medium italic animate-pulse px-2">Mixed — Click to manage</span>
         )}
       </div>
 
       {open && canInteract && (
-        <div
-          className="popover"
-          role="dialog"
-          aria-label="Choose value"
-          onKeyDown={onKeyDown}
-          style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 5, background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, boxShadow: '0 4px 18px rgba(0,0,0,.2)', minWidth: 260 }}
-        >
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setHoverIndex(0); }}
-            placeholder="Search..."
-            style={{ width: '100%', marginBottom: 6 }}
-          />
-          <div role="listbox" style={{ maxHeight: 220, overflow: 'auto', borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-            {filteredOptions.length === 0 && (
-              <div className="muted" style={{ fontSize: 12 }}>No matches</div>
+        <div className="absolute top-full left-0 mt-2 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-72 flex flex-col overflow-hidden dark:bg-gray-900 dark:border-gray-800 animate-in zoom-in-95 duration-150">
+          <div className="p-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+            <Search size={16} className="text-gray-400 ml-2" />
+            <input
+              ref={inputRef}
+              className="flex-1 h-9 bg-transparent border-none focus:ring-0 text-sm dark:text-white"
+              placeholder="Search items..."
+              value={query}
+              onChange={e => { setQuery(e.target.value); setHoverIndex(0); }}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setOpen(false);
+                if (e.key === 'Enter') {
+                  const choice = filteredOptions[Math.max(0, hoverIndex)] || filteredOptions[0];
+                  if (choice) onAdd(choice);
+                }
+                if (e.key === 'ArrowDown') { e.preventDefault(); setHoverIndex(i => Math.min(i + 1, filteredOptions.length - 1)); }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setHoverIndex(i => Math.max(i - 1, 0)); }
+              }}
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto p-1 scrollbar-thin">
+            {filteredOptions.length === 0 ? (
+              <div className="p-3 text-xs text-center text-gray-500 italic">No matches found</div>
+            ) : (
+              filteredOptions.map((opt, i) => (
+                <button
+                  key={opt}
+                  className={cx(
+                    "w-full text-left px-3 py-2 text-sm rounded-lg transition-colors",
+                    i === hoverIndex ? "bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300" : "hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
+                  )}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdd(opt); }}
+                  onMouseEnter={() => setHoverIndex(i)}
+                >
+                  {opt}
+                </button>
+              ))
             )}
-            {filteredOptions.map((opt, i) => (
-              <div
-                key={opt}
-                role="option"
-                aria-selected={i === hoverIndex}
-                onMouseEnter={() => setHoverIndex(i)}
-                onMouseDown={(e) => { e.preventDefault(); }}
-                onClick={(e) => { e.preventDefault(); onAdd(opt); }}
-                style={{ padding: '4px 6px', background: i === hoverIndex ? 'var(--row-hover, rgba(128,128,128,.1))' : 'transparent', borderRadius: 4, cursor: 'pointer' }}
-              >
-                {opt}
-              </div>
-            ))}
           </div>
         </div>
       )}

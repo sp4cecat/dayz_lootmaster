@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateTypeAgainstDefinitions } from '../utils/validation.js';
 import { formatLifetime } from '../utils/time.js';
+import { Badge } from './base/badges/badges';
+import { Input } from './ui/Input';
+import { Button } from './ui/Button';
+import { Clock, Info, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Checkbox } from './base/checkbox/checkbox';
+import { cx } from '../utils/cx';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -200,73 +206,59 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
   };
 
   return (
-    <div className="cle-tab">
-      <div className="basics-stack">
-        <label className={`control ${form.category && !definitions.categories.includes(form.category) ? 'error' : ''}`}>
-          <span>Category</span>
+    <div className="space-y-8">
+      {/* Basic Properties */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="col-span-2">
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1.5">Category</label>
           <select
-            value={form.category}
+            className="w-full h-10 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white"
+            value={form.category === null ? '' : form.category}
             onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
           >
-            <option value="">—</option>
+            <option value="">{form.category === null ? 'Mixed' : '—'}</option>
             {definitions.categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-        </label>
+        </div>
 
         {['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'].map(k => (
-          <label
-            key={k}
-            className={`control ${form[k] === null ? 'mixed' : ''}`}
-            style={{ position: 'relative' }}
-            ref={k === 'lifetime' ? lifetimeRef : null}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div key={k} className="relative" ref={k === 'lifetime' ? lifetimeRef : null}>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 mb-1.5">
               {labelFor(k)}
               {k === 'lifetime' && (
                 <button
                   type="button"
-                  className="link"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(true); }}
+                  className="text-gray-400 hover:text-primary-600 transition-colors"
                   title="Open lifetime picker"
-                  aria-label="Open lifetime picker"
-                  style={{ textDecoration: 'none', padding: 0, display: 'inline-flex', alignItems: 'center' }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5"/>
-                    <path d="M12 7v5l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+                  <Clock size={14} />
                 </button>
               )}
-            </span>
-            <input
+            </label>
+            <Input
               type="number"
               placeholder={form[k] === null ? 'Mixed' : ''}
               value={form[k] === null ? '' : form[k]}
               onChange={e => setNum(k, e.target.value)}
+              error={errors[k]}
+              className={cx(form[k] === null && "placeholder:text-primary-600 placeholder:font-bold")}
             />
 
             {k === 'lifetime' && showLifetimePicker && (
               <div
-                className="lifetime-popover"
+                className="absolute top-full left-0 mt-2 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-4 w-72 animate-in zoom-in-95 duration-200 dark:bg-gray-900 dark:border-gray-800"
                 role="dialog"
-                aria-label="Lifetime picker"
                 ref={popoverRef}
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  marginTop: 6,
-                  zIndex: 2,
-                  background: 'var(--bg)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: 10,
-                  boxShadow: '0 4px 18px rgba(0,0,0,.2)',
-                  minWidth: 260
-                }}
               >
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="size-8 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
+                    <Clock size={18} />
+                  </div>
+                  <h4 className="font-bold text-gray-900 dark:text-white">Lifetime Picker</h4>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   {[
                     { key: 'weeks', label: 'Weeks' },
                     { key: 'days', label: 'Days' },
@@ -274,106 +266,117 @@ export default function EditFormCLETab({ definitions, selectedTypes, onSave, onC
                     { key: 'minutes', label: 'Minutes' },
                     { key: 'seconds', label: 'Seconds' },
                   ].map(f => (
-                    <label key={f.key} className="control" style={{ margin: 0 }}>
-                      <span style={{ fontSize: 11 }}>{f.label}</span>
-                      <input
+                    <div key={f.key}>
+                      <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block dark:text-gray-400">{f.label}</label>
+                      <Input
                         type="number"
                         min={0}
                         value={lp[f.key]}
                         onChange={e => setLp(prev => ({ ...prev, [f.key]: Math.max(0, Number(e.target.value || 0)) }))}
+                        className="h-9 px-2"
                       />
-                    </label>
+                    </div>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(false); }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn primary"
+
+                <div className="flex gap-2 mt-6">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="flex-1"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       const total = unitsToSeconds(lp);
                       setNum('lifetime', String(total));
                       setShowLifetimePicker(false);
-                      if (document && document.activeElement instanceof HTMLElement) {
-                        document.activeElement.blur();
-                      }
                     }}
                   >
                     Apply
-                  </button>
+                  </Button>
+                  <Button
+                    variant="secondary-gray"
+                    size="sm"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowLifetimePicker(false); }}
+                  >
+                    Cancel
+                  </Button>
                 </div>
               </div>
             )}
 
             {k === 'lifetime' && form[k] !== null && form[k] !== '' && Number.isFinite(Number(form[k])) && (
-              <div className="muted" style={{ fontSize: '11px' }}>
+              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
                 ≈ {formatLifetime(Number(form[k]))}
-              </div>
+              </p>
             )}
-          </label>
+          </div>
         ))}
       </div>
 
-      <div className="panels-wrap" style={{display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 20, marginTop: 10, flexGrow: 1, alignItems: "flex-start"}}>
+      {/* Property Groups */}
+      <div className="space-y-8">
         {renderTriStateGroup('usage', form, definitions.usageflags, cycleTri)}
         {renderTriStateGroup('value', form, definitions.valueflags, cycleTri)}
-
-        <fieldset className="control panels-item">
-          <legend>Flags</legend>
-          <div className="checkbox-grid">
-            {Object.keys(base.flags).map(k => (
-              <label key={k} className="checkbox">
-                <input type="checkbox" checked={!!form.flags[k]} onChange={() => toggleFlag(k)} />
-                <span>{k}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
         {renderTriStateGroup('tag', form, definitions.tags, cycleTri)}
 
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">
+            Flags
+          </h4>
+          <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100 dark:bg-gray-950/20 dark:border-gray-800">
+            {Object.keys(form.flags).sort().map(key => (
+              <Checkbox 
+                key={key}
+                label={key.replace(/_/g, ' ')}
+                isSelected={form.flags[key]}
+                onChange={() => toggleFlag(key)}
+                size="sm"
+              />
+            ))}
+          </div>
+        </div>
+
         {hasDivingConfig && (
-          <fieldset className="control panels-item">
-            <legend>Deerisle Diving Loot</legend>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '5px 0' }}>
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">
+              Deerisle Diving Loot
+            </h4>
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-4 dark:bg-gray-950/20 dark:border-gray-800">
               {['divingLootListNormal', 'divingLootListElite'].map(listName => {
                 const label = listName === 'divingLootListNormal' ? 'Normal Diving Loot' : 'Elite Diving Loot';
                 const typeKey = listName === 'divingLootListNormal' ? 'normal' : 'elite';
                 const count = divingCounts[typeKey];
                 return (
-                  <div key={listName} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: '13px', minWidth: '130px' }}>{label}</span>
-                    <input
+                  <div key={listName}>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1.5">{label}</label>
+                    <Input
                       type="number"
                       min="0"
-                      style={{ width: 60, padding: '4px 6px', fontSize: '12px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)' }}
                       value={count === null ? '' : count}
                       placeholder={count === null ? 'Mixed' : ''}
                       onChange={e => setDivingCount(listName, e.target.value)}
-                      title="Number of times in list"
+                      hint="Number of times in list"
                     />
                   </div>
                 );
               })}
             </div>
-          </fieldset>
+          </div>
         )}
       </div>
 
-      {/* Save button moved to the EditForm header; keep area for layout spacing if needed */}
-
       {Object.keys(errors).length > 0 && (
-        <div className="errors" style={{ marginTop: 8 }}>
+        <div className="p-4 bg-error-50 rounded-xl border border-error-100 space-y-2 dark:bg-error-900/10 dark:border-error-900/20">
+          <div className="flex items-center gap-2 text-error-700 dark:text-error-400 mb-1">
+            <AlertCircle size={18} />
+            <span className="font-bold">Validation Issues</span>
+          </div>
           {Object.entries(errors).map(([k, msg]) => (
-            <div key={k} className="error-line">{msg}</div>
+            <div key={k} className="text-sm text-error-600 dark:text-error-400 flex items-start gap-2">
+              <span className="mt-1 size-1 bg-error-400 rounded-full shrink-0" />
+              {msg}
+            </div>
           ))}
         </div>
       )}
@@ -409,26 +412,29 @@ function makeTriState(allOptions, arrays) {
 
 function renderTriStateGroup(group, form, options, cycleTri) {
   return (
-    <fieldset className={`control panels-item ${group}-panel`}>
-      <legend>{group[0].toUpperCase() + group.slice(1)}</legend>
-      <div className="checkbox-grid">
+    <div className="space-y-3">
+      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">
+        {group[0].toUpperCase() + group.slice(1)}
+      </h4>
+      <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100 dark:bg-gray-950/20 dark:border-gray-800">
         {options.map(opt => {
           const state = form[group][opt];
-          const indeterminate = state === 'mixed';
+          const isSelected = state === true;
+          const isIndeterminate = state === 'mixed';
+          
           return (
-            <label key={opt} className={`checkbox ${indeterminate ? 'indeterminate' : state ? 'checked' : ''}`}>
-              <input
-                type="checkbox"
-                checked={state === true}
-                ref={el => { if (el) el.indeterminate = indeterminate; }}
-                onChange={() => cycleTri(group, opt)}
-              />
-              <span>{opt}</span>
-            </label>
+            <Checkbox 
+              key={opt}
+              label={opt}
+              isSelected={isSelected}
+              isIndeterminate={isIndeterminate}
+              onChange={() => cycleTri(group, opt)}
+              size="sm"
+            />
           );
         })}
       </div>
-    </fieldset>
+    </div>
   );
 }
 

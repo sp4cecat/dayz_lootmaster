@@ -682,13 +682,14 @@ export default function App() {
                                     <p className="text-gray-500 mt-1 dark:text-gray-400">Manage loot types and economic settings for {selectedProfile?.name}.</p>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm p-1 dark:bg-gray-800 dark:border-gray-700">
+                                    <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm p-1 dark:bg-gray-800 dark:border-gray-700">
                                         <Button 
                                             variant="tertiary" 
                                             size="sm" 
                                             onClick={undo} 
                                             disabled={!canUndo} 
                                             title="Undo"
+                                            className="h-9 w-9 p-0"
                                         >
                                             <Undo size={18} />
                                         </Button>
@@ -699,20 +700,21 @@ export default function App() {
                                             onClick={redo} 
                                             disabled={!canRedo} 
                                             title="Redo"
+                                            className="h-9 w-9 p-0"
                                         >
                                             <Redo size={18} />
                                         </Button>
                                     </div>
-                                    <Button variant="secondary" onClick={() => setShowExport(true)} disabled={saving || !storageDirty}>
-                                        <Download size={18} className="mr-2" /> Export
-                                    </Button>
-                                    <Button variant="primary" onClick={persistAllToFiles} disabled={saving || !storageDirty}>
-                                        <Save size={18} className="mr-2" /> {saving ? 'Saving...' : 'Set Changes Live'}
+                                    <Button variant="secondary" onClick={() => setShowExport(true)} disabled={saving || !storageDirty} size="md" icon={Download}>
+                                        Export
                                     </Button>
                                     <Button variant="secondary" onClick={() => {
                                         if (window.confirm('Reload all data from files? Any unsaved changes will be lost.')) reloadFromFiles();
-                                    }}>
-                                        <RefreshCw size={18} className="mr-2" /> Reload
+                                    }} size="md" icon={RefreshCw}>
+                                        Reload
+                                    </Button>
+                                    <Button variant="primary" onClick={persistAllToFiles} disabled={saving || !storageDirty} size="md" icon={Save}>
+                                        {saving ? 'Saving...' : 'Set Changes Live'}
                                     </Button>
                                 </div>
                             </div>
