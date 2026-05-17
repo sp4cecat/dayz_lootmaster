@@ -429,7 +429,7 @@ function TriStatePanel({ title, options, state, onToggle }: { title: string, opt
               key={opt}
               onClick={() => onToggle(opt)}
               className={cx(
-                "flex items-center gap-2 p-1.5 px-2.5 rounded-lg cursor-pointer transition-all border",
+                "flex items-center p-1.5 px-2.5 rounded-lg cursor-pointer transition-all border",
                 val === true 
                   ? "bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-900/20 dark:border-primary-800 dark:text-primary-300"
                   : val === 'mixed'
@@ -438,8 +438,6 @@ function TriStatePanel({ title, options, state, onToggle }: { title: string, opt
               )}
             >
               <span className="text-xs font-medium">{opt}</span>
-              {val === true && <div className="size-1.5 rounded-full bg-primary-600 dark:bg-primary-400" />}
-              {val === 'mixed' && <AlertTriangle size={12} className="text-warning-500" />}
             </div>
           );
         })}
