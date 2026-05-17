@@ -177,7 +177,7 @@ export default function TypesTable({
         style={gridStyle}
       >
         <Table.Header 
-          className="[&>tr]:grid [&>tr]:items-stretch [&>tr]:h-full h-11 bg-gray-50/50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800"
+          className="block [&>tr]:grid [&>tr]:[grid-template-columns:var(--grid-template-columns)] [&>tr]:items-stretch [&>tr]:h-full h-11 bg-gray-50/50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800"
           style={{ '--grid-template-columns': columnWidths } as React.CSSProperties}
         >
           <Table.Column 
@@ -185,6 +185,7 @@ export default function TypesTable({
             allowsSorting 
             sortDirection={sort.key === 'name' ? sort.dir : undefined} 
             onPress={() => handleSort('name')}
+            className="px-4"
           >
             Name
             <div className="ml-auto flex items-center gap-2">
@@ -206,6 +207,7 @@ export default function TypesTable({
               allowsSorting 
               sortDirection={sort.key === 'group' ? sort.dir : undefined} 
               onPress={() => handleSort('group')}
+              className="px-4"
             >
               Group
             </Table.Column>
@@ -214,22 +216,25 @@ export default function TypesTable({
             allowsSorting 
             sortDirection={sort.key === 'nominal' ? sort.dir : undefined} 
             onPress={() => handleSort('nominal')}
+            className="px-4"
           >
             Nom
           </Table.Column>
-          <Table.Column>Min</Table.Column>
+          <Table.Column className="px-4">Min</Table.Column>
           <Table.Column 
             allowsSorting 
             sortDirection={sort.key === 'lifetime' ? sort.dir : undefined} 
             onPress={() => handleSort('lifetime')}
+            className="px-4"
           >
             Lifetime
           </Table.Column>
-          <Table.Column>Category</Table.Column>
+          <Table.Column className="px-4">Category</Table.Column>
           <Table.Column 
             allowsSorting 
             sortDirection={sort.key === 'usage' ? sort.dir : undefined} 
             onPress={() => handleSort('usage')}
+            className="px-4"
           >
             Usage
           </Table.Column>
@@ -237,6 +242,7 @@ export default function TypesTable({
             allowsSorting 
             sortDirection={sort.key === 'value' ? sort.dir : undefined} 
             onPress={() => handleSort('value')}
+            className="px-4"
           >
             Value
           </Table.Column>
