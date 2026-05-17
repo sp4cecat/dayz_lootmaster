@@ -82,14 +82,26 @@ export default function TypesTable({
   }, [types, unknowns, sort]);
 
   const maxNameWidth = useMemo(() => {
-    if (types.length === 0) return 20;
+    if (rows.length === 0) return 20;
     let max = 0;
-    for (const t of types) {
-      if (t.name && t.name.length > max) max = t.name.length;
+    let maxName = '';
+    for (const r of rows) {
+      let width = r.name.length;
+      if (r.hasUnknown) width += 10;
+      if (r.group === 'vanilla_overrides') width += 4;
+      if (width > max)
+      {
+        max = width;
+        maxName = r.name;
+      }
+
+      console.log(`Name width for ${r.name}: ${width}`);
     }
-    // Add some padding for the icon (approx 4-5ch) and badges
-    return Math.min(max + 10, 80);
-  }, [types]);
+    // Header needs space for "Name" + "All" button
+    const headerWidth = 14;
+    console.log(`Max name width: ${maxName} (${max} chars)`);
+    return Math.min(Math.max(max, headerWidth) + 4, 80);
+  }, [rows]);
 
   // Measure viewport height
   useEffect(() => {
@@ -262,8 +274,8 @@ export default function TypesTable({
                   height: `${rowHeight}px`,
                 }}
               >
-                <Table.Cell className="px-4 py-2 flex items-center min-w-0">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Table.Cell className="px-4 py-2 flex items-center">
+                  <div className="flex items-center gap-3 flex-1">
                     <span
                       className={cx(
                         'text-sm font-semibold truncate',

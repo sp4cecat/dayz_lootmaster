@@ -57,7 +57,7 @@ export function useLootData() {
     value: [],
     tag: [],
     flags: [],
-    changedOnly: false,
+    changeFilter: 'all',
     groups: /** @type {string[]} */([])
   });
   const [selection, setSelection] = useState(new Set());

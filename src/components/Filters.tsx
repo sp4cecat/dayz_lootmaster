@@ -20,7 +20,7 @@ interface FilterState {
   tag: string[];
   flags: string[];
   groups: string[];
-  changedOnly: boolean;
+  changeFilter: 'all' | 'changed' | 'unchanged';
 }
 
 interface FiltersProps {
@@ -72,7 +72,7 @@ export default function Filters({
       value: [],
       tag: [],
       flags: [],
-      changedOnly: false,
+      changeFilter: 'all',
       groups: [],
     });
   };
@@ -210,11 +210,18 @@ export default function Filters({
             </div>
 
             <Button
-              variant={filters.changedOnly ? 'secondary-color' : 'secondary-gray'}
+              variant={filters.changeFilter !== 'all' ? 'secondary-color' : 'secondary-gray'}
               className="w-full text-xs py-2 px-3"
-              onClick={() => setField('changedOnly', !filters.changedOnly)}
+              onClick={() => {
+                const states: ('all' | 'changed' | 'unchanged')[] = ['all', 'changed', 'unchanged'];
+                const currentIndex = states.indexOf(filters.changeFilter);
+                const nextIndex = (currentIndex + 1) % states.length;
+                setField('changeFilter', states[nextIndex]);
+              }}
             >
-              {filters.changedOnly ? 'Showing Changed Only' : 'Show Changed Only'}
+              {filters.changeFilter === 'all' && 'Show Changed Only'}
+              {filters.changeFilter === 'changed' && 'Show Unchanged Only'}
+              {filters.changeFilter === 'unchanged' && 'Show All'}
             </Button>
           </div>
         </div>

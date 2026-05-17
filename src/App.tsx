@@ -163,9 +163,10 @@ export default function App() {
 
             if (filters.groups.length > 0 && !filters.groups.includes(t.group || 'vanilla')) return false;
 
-            if (filters.changedOnly) {
+            if (filters.changeFilter !== 'all') {
                 const isModified = storageDiff?.files[t.group || 'vanilla']?.[t.file || 'types']?.changedNames?.includes(t.name);
-                if (!isModified) return false;
+                if (filters.changeFilter === 'changed' && !isModified) return false;
+                if (filters.changeFilter === 'unchanged' && isModified) return false;
             }
 
             return true;
@@ -304,7 +305,7 @@ export default function App() {
                                 <Button onClick={() => window.location.reload()}>Retry Connection</Button>
                             </div>
                         ) : (
-                            <div className="flex-1 flex flex-col min-h-0 max-w-[1600px] mx-auto w-full">
+                            <div className="flex-1 flex flex-col min-h-0 mx-auto w-full">
                                 {/* Page Header */}
                                 <div className="flex items-center justify-between mb-8">
                                     <div>
