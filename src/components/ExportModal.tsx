@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { generateLimitsXml, generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
+import { generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
 import { createZip } from '../utils/zip.js';
-import { getChangeLogsForGroup } from '../utils/idb.js';
 import { Modal } from '@/components/base/modal/modal';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';

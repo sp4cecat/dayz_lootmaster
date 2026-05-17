@@ -3,7 +3,7 @@ import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { Input } from '@/components/base/input/input';
 import { Button } from '@/components/base/button/button';
-import { ChevronDown, ChevronRight, X, Search, Settings, Filter, RotateCcw } from 'lucide-react';
+import { ChevronDown, Search, Settings, Filter, RotateCcw } from 'lucide-react';
 
 export interface Definitions {
   categories: string[];

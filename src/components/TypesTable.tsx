@@ -4,24 +4,17 @@ import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
-import { ArrowUp, ArrowDown, Check, AlertCircle, Milk } from 'lucide-react';
+import { AlertCircle, Milk } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import type { Type } from '@/utils/xml';
 
 interface TypesTableProps {
-  definitions: {
-    categories: string[];
-    usageflags: string[];
-    valueflags: string[];
-    tags: string[];
-  };
   types: (Type & { group?: string; file?: string })[];
   selection: Set<string>;
   setSelection: (sel: Set<string>) => void;
   unknowns: {
     byType: Record<string, { category?: string[]; usage: string[]; value: string[]; tag: string[] }>;
   };
-  condensed?: boolean;
   storageDiff?: {
     files: Record<string, Record<string, { changedNames?: string[] }>>;
   };
@@ -31,12 +24,10 @@ interface TypesTableProps {
 type SortKey = 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value';
 
 export default function TypesTable({
-  definitions,
   types,
   selection,
   setSelection,
   unknowns,
-  condensed: condensedProp,
   storageDiff,
   showGroupColumn = true,
 }: TypesTableProps) {
@@ -80,12 +71,9 @@ export default function TypesTable({
       arr.sort((a, b) => {
         const av = getVal(a);
         const bv = getVal(b);
-        let cmp = 0;
-        if (typeof av === 'number' && typeof bv === 'number') {
-          cmp = av - bv;
-        } else {
-          cmp = av < bv ? -1 : av > bv ? 1 : 0;
-        }
+        const cmp = (typeof av === 'number' && typeof bv === 'number')
+          ? av - bv
+          : (av < bv ? -1 : av > bv ? 1 : 0);
         return sort.dir === 'asc' ? cmp : -cmp;
       });
     }

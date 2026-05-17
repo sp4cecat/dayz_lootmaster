@@ -367,7 +367,6 @@ export default function App() {
                                         )}>
                                             <div className="min-w-0 min-h-0 flex flex-col flex-1">
                                                 <TypesTable 
-                                                    definitions={definitions}
                                                     types={filteredTypes}
                                                     selection={selection}
                                                     setSelection={setSelection}
@@ -457,7 +456,6 @@ export default function App() {
                     diff={storageDiff} 
                     onClose={() => setModal(null)} 
                     onApply={persistChangesToServer}
-                    getBaselineFileTypes={getBaselineFileTypes}
                 />
             )}
             {modal === 'random-presets' && (

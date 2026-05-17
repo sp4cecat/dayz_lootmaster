@@ -1,10 +1,9 @@
 import React from 'react';
-import { ROOT_SPAWNABLE_GROUP, findSpawnableEntryForType } from '@/utils/xml';
+import { findSpawnableEntryForType } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
-import { Input } from '@/components/base/input/input';
-import { Plus, Trash2, Settings2, Sparkles, Percent, AlertCircle, X, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Settings2, Sparkles, Percent, ChevronRight } from 'lucide-react';
 import type { Type } from '@/utils/xml';
 
 interface EditFormSpawnableTabProps {
@@ -23,8 +22,8 @@ function chancePercent(value: any) {
 export default function EditFormSpawnableTab({ 
   selectedTypes, 
   spawnableTypesByGroup, 
-  setSpawnableTypesByGroup,
-  randomPresets,
+  setSpawnableTypesByGroup: _setSpawnableTypesByGroup,
+  randomPresets: _randomPresets,
   globalsDefaults
 }: EditFormSpawnableTabProps) {
   const isMulti = selectedTypes.length > 1;

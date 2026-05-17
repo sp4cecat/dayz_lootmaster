@@ -12,10 +12,9 @@ interface StorageStatusModalProps {
   } | null;
   onClose: () => void;
   onApply: () => Promise<{ ok: boolean, error?: string }>;
-  getBaselineFileTypes: (group: string, file: string) => any[];
 }
 
-export default function StorageStatusModal({ diff, onClose, onApply, getBaselineFileTypes }: StorageStatusModalProps) {
+export default function StorageStatusModal({ diff, onClose, onApply }: StorageStatusModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

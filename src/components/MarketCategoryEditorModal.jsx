@@ -126,7 +126,7 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId }
         setBusy(false);
       }
     })();
-  }, [API_BASE, selectedCategory]);
+  }, [API_BASE, selectedCategory, selectedProfileId]);
 
   const filteredItems = useMemo(() => {
     const f = (filterText || '').trim().toLowerCase();
@@ -135,7 +135,7 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId }
     const dir = sortDir === 'desc' ? -1 : 1;
     const key = sortKey;
     const isNumeric = key !== 'ClassName';
-    const arr = [...subset].sort((a, b) => {
+    return [...subset].sort((a, b) => {
       const av = a && Object.prototype.hasOwnProperty.call(a, key) ? a[key] : undefined;
       const bv = b && Object.prototype.hasOwnProperty.call(b, key) ? b[key] : undefined;
       if (isNumeric) {
@@ -150,7 +150,6 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId }
       const bs = String(bv || '').toLowerCase();
       return as === bs ? 0 : (as < bs ? -1 : 1) * dir;
     });
-    return arr;
   }, [items, filterText, sortKey, sortDir]);
 
   const onHeaderClick = (key) => {

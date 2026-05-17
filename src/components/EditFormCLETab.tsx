@@ -57,7 +57,6 @@ export default function EditFormCLETab({
   const [form, setForm] = useState(initial);
   useEffect(() => setForm(initial), [initial]);
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Deerisle Diving Loot Addon support
   const [divingConfig, setDivingConfig] = useState<any>(null);
@@ -115,7 +114,7 @@ export default function EditFormCLETab({
 
   const canSave = useMemo(() => {
     // Build a representative type to validate; for multi-selection, only validate when fields are set (not null)
-    const sample = applyToType(selectedTypes[0], form, definitions);
+    const sample = applyToType(selectedTypes[0], form);
     const issues = validateTypeAgainstDefinitions(sample, definitions);
     return issues.length === 0;
   }, [form, selectedTypes, definitions]);
@@ -126,7 +125,7 @@ export default function EditFormCLETab({
 
   const handleSave = useCallback(() => {
     if (!canSave) return;
-    onSave((t: Type) => applyToType(t, form, definitions));
+    onSave((t: Type) => applyToType(t, form));
     
     // Also save diving config if present and dirty
     if (divingConfigDirty && divingConfig) {
@@ -462,7 +461,7 @@ function makeTriState(options: string[], selectedArrays: (string[]|undefined)[])
   return obj;
 }
 
-function applyToType(t: Type, form: any, definitions: any): Type {
+function applyToType(t: Type, form: any): Type {
   const next = { ...t };
   const nums = ['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax'] as const;
   nums.forEach(k => {

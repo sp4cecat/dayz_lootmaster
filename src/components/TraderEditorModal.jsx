@@ -159,7 +159,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId }) {
         setBusy(false);
       }
     })();
-  }, [API_BASE, selectedTrader]);
+  }, [API_BASE, selectedTrader, selectedProfileId]);
 
   // Load profile JSON when traderFileName changes
   useEffect(() => {
@@ -187,7 +187,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId }) {
         setBusy(false);
       }
     })();
-  }, [API_BASE, traderFileName]);
+  }, [API_BASE, traderFileName, selectedProfileId]);
 
   const setAllFlags = (flag) => {
     setCategories(prev => prev.map(c => ({ ...c, flag })));

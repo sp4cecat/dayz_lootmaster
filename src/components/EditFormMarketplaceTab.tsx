@@ -1,24 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@/components/base/button/button';
-import { Input } from '@/components/base/input/input';
+import React from 'react';
 import { Badge } from '@/components/base/badges/badges';
-import { Checkbox } from '@/components/base/checkbox/checkbox';
-import { 
-  Store, 
-  MapPin, 
-  Plus, 
-  Trash2, 
-  Save, 
-  Info, 
-  AlertCircle, 
-  ExternalLink,
-  Search,
-  Package,
-  ArrowRight,
-  RefreshCw,
-  X
-} from 'lucide-react';
-import { cx } from '@/utils/cx';
+import { Store } from 'lucide-react';
 import type { Type } from '@/utils/xml';
 
 interface EditFormMarketplaceTabProps {
@@ -30,11 +12,11 @@ interface EditFormMarketplaceTabProps {
 }
 
 export default function EditFormMarketplaceTab({ 
-  selectedTypes, 
-  typeOptions, 
-  typeOptionsByCategory,
-  activated,
-  selectedProfileId
+  selectedTypes: _selectedTypes, 
+  typeOptions: _typeOptions, 
+  typeOptionsByCategory: _typeOptionsByCategory,
+  activated: _activated,
+  selectedProfileId: _selectedProfileId
 }: EditFormMarketplaceTabProps) {
   // Mocking marketplace integration for now as it needs a backend endpoint
   return (
