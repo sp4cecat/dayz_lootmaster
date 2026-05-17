@@ -4,7 +4,7 @@ import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
-import { ArrowUp, ArrowDown, Check, AlertCircle, AlertTriangle, Milk } from 'lucide-react';
+import { ArrowUp, ArrowDown, Check, AlertCircle, Milk } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import type { Type } from '@/utils/xml';
 
@@ -22,7 +22,6 @@ interface TypesTableProps {
     byType: Record<string, { category?: string[]; usage: string[]; value: string[]; tag: string[] }>;
   };
   condensed?: boolean;
-  duplicatesByName?: Record<string, string[]>;
   storageDiff?: {
     files: Record<string, Record<string, { changedNames?: string[] }>>;
   };
@@ -38,7 +37,6 @@ export default function TypesTable({
   setSelection,
   unknowns,
   condensed: condensedProp,
-  duplicatesByName = {},
   storageDiff,
   showGroupColumn = true,
 }: TypesTableProps) {
@@ -259,7 +257,6 @@ export default function TypesTable({
           {visibleRows.map((row) => {
             const isSelected = selection.has(row.name);
             const isModified = storageDiff?.files[row.group || 'vanilla']?.[row.file || 'types']?.changedNames?.includes(row.name);
-            const hasDuplicate = !!duplicatesByName[row.name];
             const isOverride = row.group === 'vanilla_overrides';
 
             return (
@@ -292,11 +289,6 @@ export default function TypesTable({
                     {row.hasUnknown && (
                       <Badge color="error" size="sm" type="modern">
                         <AlertCircle size={12} className="mr-1" /> Unknown
-                      </Badge>
-                    )}
-                    {hasDuplicate && (
-                      <Badge color="warning" size="sm" type="modern">
-                        <AlertTriangle size={12} className="mr-1" /> Duplicate
                       </Badge>
                     )}
                     {isOverride && (

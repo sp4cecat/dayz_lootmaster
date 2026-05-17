@@ -72,7 +72,6 @@ export default function App() {
         summaryOpen,
         closeSummary,
         groups,
-        duplicatesByName,
         manage,
         getGroupTypes,
         getGroupFiles,
@@ -373,7 +372,6 @@ export default function App() {
                                                     selection={selection}
                                                     setSelection={setSelection}
                                                     unknowns={unknowns}
-                                                    duplicatesByName={duplicatesByName}
                                                     storageDiff={storageDiff}
                                                     showGroupColumn={filters.groups.length !== 1}
                                                 />

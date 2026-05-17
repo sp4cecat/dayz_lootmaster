@@ -77,8 +77,6 @@ export function useLootData() {
   const [loadSummary, setLoadSummary] = useState(/** @type {{typesTotal: number, definitions: {categories: number, usageflags: number, valueflags: number, tags: number}, groups?: { name: string, count: number }[] }|null} */(null));
   const [summaryOpen, setSummaryOpen] = useState(false);
 
-  // Map type name -> array of groups the type appears in
-  const [duplicatesByName, setDuplicatesByName] = useState(/** @type {Record<string, string[]>} */({}));
 
   // Baseline parsed from samples (read-only reference to compare against edits)
   const [baselineFiles, setBaselineFiles] = useState(/** @type {TypeFiles|null} */(null));
@@ -576,7 +574,6 @@ export function useLootData() {
     // Derive grouped and merged views
     const updatedGroups = combineFilesToGroups(updatedFiles);
     setLootGroups(updatedGroups);
-    setDuplicatesByName(computeDuplicatesMap(updatedGroups));
     const merged = mergeFromFiles(updatedFiles);
     _setLootTypes(merged);
 
@@ -771,7 +768,6 @@ export function useLootData() {
         // Derive grouped and merged views
         const groups = combineFilesToGroups(files);
         setLootGroups(groups);
-        setDuplicatesByName(computeDuplicatesMap(groups));
 
         const merged = mergeFromFiles(files);
         _setLootTypes(merged);
@@ -1183,7 +1179,6 @@ export function useLootData() {
 
       const groupsCombined = combineFilesToGroups(assembledFiles);
       setLootGroups(groupsCombined);
-      setDuplicatesByName(computeDuplicatesMap(groupsCombined));
 
       const merged = mergeFromFiles(assembledFiles);
       _setLootTypes(merged);
@@ -1307,7 +1302,6 @@ export function useLootData() {
     groups: groupsList,
     getGroupTypes,
     getGroupFiles,
-    duplicatesByName,
     storageDirty,
     storageDiff,
     // Summary modal
@@ -1456,26 +1450,4 @@ function makeUnknownsEmpty() {
     sets: { usage: new Set(), value: new Set(), tag: new Set(), category: new Set() },
     byType: {}
   };
-}
-
-/**
- * Compute duplicates map: type name -> list of groups the type appears in.
- * @param {TypeGroups} groups
- * @returns {Record<string, string[]>}
- */
-function computeDuplicatesMap(groups) {
-  /** @type {Map<string, Set<string>>} */
-  const map = new Map();
-  for (const [group, arr] of Object.entries(groups)) {
-    for (const t of arr) {
-      if (!map.has(t.name)) map.set(t.name, new Set());
-      map.get(t.name).add(group);
-    }
-  }
-  /** @type {Record<string, string[]>} */
-  const out = {};
-  for (const [name, set] of map.entries()) {
-    out[name] = Array.from(set);
-  }
-  return out;
 }
