@@ -1,6 +1,6 @@
 import React, {useMemo, useState} from 'react';
-import { cn } from '../utils/cn';
-import { Badge } from './ui/Badge';
+import { cx } from '../utils/cx';
+import { Badge } from './base/badges/badges';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { ChevronDown, ChevronRight, X, Search, Settings, Filter } from 'lucide-react';
@@ -168,7 +168,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                         >
                             Show changed only
                         </Button>
-                        <Badge variant="primary" className="py-1">{matchingCount}</Badge>
+                        <Badge color="brand" size="sm" className="py-1">{matchingCount}</Badge>
                     </div>
                 </div>
             </div>
@@ -206,7 +206,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                 >
                     <div className="flex flex-wrap gap-2">
                         <Badge 
-                            variant={filters.usage.includes('None') ? "primary" : "gray"}
+                            color={filters.usage.includes('None') ? "brand" : "gray"}
                             className="cursor-pointer"
                             onClick={() => toggleUsage('None')}
                         >
@@ -215,7 +215,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                         {[...definitions.usageflags].sort((a, b) => a.localeCompare(b)).map(opt => (
                             <Badge 
                                 key={opt}
-                                variant={filters.usage.includes(opt) ? "primary" : "gray"}
+                                color={filters.usage.includes(opt) ? "brand" : "gray"}
                                 className="cursor-pointer"
                                 onClick={() => toggleUsage(opt)}
                             >
@@ -233,7 +233,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                 >
                     <div className="flex flex-wrap gap-2">
                         <Badge 
-                            variant={filters.value.includes('None') ? "primary" : "gray"}
+                            color={filters.value.includes('None') ? "brand" : "gray"}
                             className="cursor-pointer"
                             onClick={() => toggleValue('None')}
                         >
@@ -247,7 +247,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                         }).map(opt => (
                             <Badge 
                                 key={opt}
-                                variant={filters.value.includes(opt) ? "primary" : "gray"}
+                                color={filters.value.includes(opt) ? "brand" : "gray"}
                                 className="cursor-pointer"
                                 onClick={() => toggleValue(opt)}
                             >
@@ -268,7 +268,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                             const selected = filters.tag.includes(opt);
                             return (
                                 <label key={opt} className="flex items-center gap-2 cursor-pointer group">
-                                    <div className={cn(
+                                    <div className={cx(
                                         "size-4 rounded border flex items-center justify-center transition-all",
                                         selected ? "bg-primary-600 border-primary-600 dark:bg-primary-500 dark:border-primary-500" : "bg-white border-gray-300 group-hover:border-primary-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-primary-500"
                                     )}>
@@ -284,7 +284,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                                             setField('tag', next);
                                         }}
                                     />
-                                    <span className={cn("text-sm", selected ? "text-gray-900 font-medium dark:text-white" : "text-gray-600 dark:text-gray-400")}>{opt}</span>
+                                    <span className={cx("text-sm", selected ? "text-gray-900 font-medium dark:text-white" : "text-gray-600 dark:text-gray-400")}>{opt}</span>
                                 </label>
                             );
                         })}
@@ -298,7 +298,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                 >
                     <div className="flex flex-wrap gap-2">
                         <Badge 
-                            variant={(filters.flags || []).includes('None') ? "primary" : "gray"}
+                            color={(filters.flags || []).includes('None') ? "brand" : "gray"}
                             className="cursor-pointer"
                             onClick={() => toggleFlag('None')}
                         >
@@ -307,7 +307,7 @@ export default function Filters({definitions, groups, filters, onChange, onManag
                         {flagsList.map(key => (
                             <Badge 
                                 key={key}
-                                variant={(filters.flags || []).includes(key) ? "primary" : "gray"}
+                                color={(filters.flags || []).includes(key) ? "brand" : "gray"}
                                 className="cursor-pointer"
                                 onClick={() => toggleFlag(key)}
                             >

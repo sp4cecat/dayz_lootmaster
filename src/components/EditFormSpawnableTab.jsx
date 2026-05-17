@@ -1,7 +1,7 @@
 import React from 'react';
 import { ROOT_SPAWNABLE_GROUP, findSpawnableEntryForType } from '../utils/xml.js';
 import { Slider } from '@/components/base/slider/slider';
-import { Badge } from './ui/Badge.jsx';
+import { Badge } from './base/badges/badges';
 
 function chancePercent(value) {
   const n = Number(value);
@@ -206,7 +206,7 @@ export default function EditFormSpawnableTab({ selectedTypes, spawnableTypesByGr
                     <div key={`${section.kind}-${sectionIndex}`} className="stack small card subtle" style={{ border: '1px dashed var(--border)' }}>
                       <div className="row wrap space-between">
                         <div className="row wrap">
-                          <Badge variant="primary" className="capitalize">{section.kind}</Badge>
+                          <Badge color="brand" size="sm" className="capitalize">{section.kind}</Badge>
                           {section.kind !== 'damage' && (
                             <select value={section.preset || ''} onChange={e => updateSection(group, type.name, sectionIndex, s => ({ ...s, preset: e.target.value, attrs: { ...(s.attrs || {}), preset: e.target.value } }))}>
                               <option value="">No preset</option>

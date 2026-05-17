@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
+import { Badge } from './base/badges/badges';
 import { Plus, Trash2 } from 'lucide-react';
 
 /**
@@ -122,7 +122,8 @@ function ResolveSection({ title, items, selected, onToggle }) {
         {items.map(it => (
           <Badge
             key={it}
-            variant={selected.has(it) ? "primary" : "gray"}
+            color={selected.has(it) ? "brand" : "gray"}
+            size="sm"
             className="cursor-pointer py-1.5 px-3"
             onClick={() => onToggle(it)}
           >

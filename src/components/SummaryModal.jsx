@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
+import { Badge } from './base/badges/badges';
 import { Database, FileCode, Tags, Layers } from 'lucide-react';
 
 /**
@@ -73,7 +73,7 @@ export default function SummaryModal({ summary, onClose }) {
                 <div key={g.name} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
                   <div className="flex justify-between items-center mb-1">
                     <span className="font-bold text-gray-900 dark:text-white">{g.name}</span>
-                    <Badge variant="primary">{g.count}</Badge>
+                    <Badge color="brand" size="sm">{g.count}</Badge>
                   </div>
                   {Array.isArray(g.files) && g.files.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">

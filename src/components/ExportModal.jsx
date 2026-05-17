@@ -4,8 +4,8 @@ import { createZip } from '../utils/zip.js';
 import { getChangeLogsForGroup } from '../utils/idb.js';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { cn } from '../utils/cn';
+import { Badge } from './base/badges/badges';
+import { cx } from '../utils/cx';
 import { Download, Copy, FileText, Check } from 'lucide-react';
 
 /**

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
+import { Badge } from './base/badges/badges';
 import { FileDiff, List, FileCode, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 /**
@@ -46,10 +46,10 @@ export default function StorageStatusModal({ diff, onClose }) {
           </div>
           {defChanged ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {diff.definitions.categories && <Badge variant="warning">Categories Changed</Badge>}
-              {diff.definitions.usageflags && <Badge variant="warning">Usage Flags Changed</Badge>}
-              {diff.definitions.valueflags && <Badge variant="warning">Value Flags Changed</Badge>}
-              {diff.definitions.tags && <Badge variant="warning">Tags Changed</Badge>}
+              {diff.definitions.categories && <Badge color="warning">Categories Changed</Badge>}
+              {diff.definitions.usageflags && <Badge color="warning">Usage Flags Changed</Badge>}
+              {diff.definitions.valueflags && <Badge color="warning">Value Flags Changed</Badge>}
+              {diff.definitions.tags && <Badge color="warning">Tags Changed</Badge>}
             </div>
           ) : (
             <div className="flex items-center gap-2 text-sm text-gray-500 italic px-4 py-3 bg-gray-50 rounded-lg border border-dashed border-gray-200">
@@ -81,7 +81,7 @@ export default function StorageStatusModal({ diff, onClose }) {
                   <div key={g} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                     <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
                       <span className="font-bold text-gray-900">{g}</span>
-                      <Badge variant="primary">{fileKeys.length} files</Badge>
+                      <Badge color="brand" size="sm">{fileKeys.length} files</Badge>
                     </div>
                     <div className="divide-y divide-gray-100">
                       {fileKeys.map(f => {
@@ -97,9 +97,9 @@ export default function StorageStatusModal({ diff, onClose }) {
                                 {info.changedCount} total changes
                               </span>
                               <div className="flex gap-1">
-                                {info.added > 0 && <Badge variant="success" className="text-[10px] px-1.5">+{info.added}</Badge>}
-                                {info.removed > 0 && <Badge variant="error" className="text-[10px] px-1.5">-{info.removed}</Badge>}
-                                {info.modified > 0 && <Badge variant="primary" className="text-[10px] px-1.5">~{info.modified}</Badge>}
+                                {info.added > 0 && <Badge color="success" size="sm">+{info.added}</Badge>}
+                                {info.removed > 0 && <Badge color="error" size="sm">-{info.removed}</Badge>}
+                                {info.modified > 0 && <Badge color="brand" size="sm">~{info.modified}</Badge>}
                               </div>
                             </div>
                           </div>

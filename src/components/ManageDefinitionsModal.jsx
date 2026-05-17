@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Modal } from './ui/Modal.jsx';
 import { Button } from './ui/Button.jsx';
-import { Badge } from './ui/Badge.jsx';
+import { Badge } from './base/badges/badges';
 import { Input } from './ui/Input.jsx';
 import { Plus, X, AlertTriangle } from 'lucide-react';
 
@@ -85,7 +85,7 @@ export const ManageDefinitionsModal = ({ kind, entries, countRefs, removeEntry, 
             {isCapped && <span className="text-gray-400 font-normal dark:text-gray-500"> / {cap} limit</span>}
           </div>
           {isCapped && (
-            <Badge variant={count >= cap ? "error" : "primary"}>
+            <Badge color={count >= cap ? "error" : "brand"} size="sm">
               {Math.max(0, cap - count)} remaining
             </Badge>
           )}

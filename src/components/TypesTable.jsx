@@ -1,7 +1,8 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import { formatLifetime } from '../utils/time.js';
-import { Badge } from './ui/Badge';
-import { cn } from '../utils/cn';
+import { Table, TableCard } from './application/table/table';
+import { Badge } from './base/badges/badges';
+import { cx } from '../utils/cx';
 import { ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
 
 /**
@@ -25,7 +26,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
   // Virtualization state
   const containerRef = useRef(/** @type {HTMLDivElement|null} */(null));
-  const rowHeight = 48; // Taller rows for Untitled UI
+  const rowHeight = 56; // Matching Untitled UI 'sm' size
   const [viewportHeight, setViewportHeight] = useState(600);
   const [scrollTop, setScrollTop] = useState(0);
   const overscan = 10;
@@ -168,177 +169,186 @@ export default function TypesTable({ definitions, types, selection, setSelection
 
   const SortIcon = ({ column }) => {
     if (sort.key !== column) return <ArrowUp size={14} className="ml-1 opacity-0 group-hover:opacity-30 transition-opacity" />;
-    return sort.dir === 'asc' ? <ArrowUp size={14} className="ml-1 text-primary-600 dark:text-primary-400" /> : <ArrowDown size={14} className="ml-1 text-primary-600 dark:text-primary-400" />;
+    return sort.dir === 'asc' ? <ArrowUp size={14} className="ml-1 text-primary-600 dark:text-brand-400" /> : <ArrowDown size={14} className="ml-1 text-primary-600 dark:text-brand-400" />;
   };
 
   return (
-    <div
-      className={cn(
-        "flex flex-col h-full bg-white text-sm relative dark:bg-gray-900 dark:text-gray-300",
-        condensed && "condensed w-fit"
-      )}
-    >
-      <div 
-        className="grid border-b border-gray-200 bg-gray-50 sticky top-0 z-20 shrink-0 select-none dark:border-gray-800 dark:bg-gray-900/50 dark:backdrop-blur-md"
-        style={{ gridTemplateColumns }}
+    <TableCard.Root className={cx("h-full border-none shadow-none ring-0 rounded-none bg-white dark:bg-gray-950 flex flex-col", condensed && "w-fit")}>
+      <Table 
+        size="sm"
+        aria-label="Types" 
+        className="flex-1 flex flex-col min-h-0"
       >
-        <div 
-          className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-800 group"
-          onClick={() => handleSort('name')}
+        <Table.Header 
+          className="grid shrink-0 select-none border-b border-secondary"
+          style={{ gridTemplateColumns }}
         >
-          <span>Name</span>
-          <SortIcon column="name" />
-          <button
-            onClick={(e) => { e.stopPropagation(); selection.size > 0 ? clearSelection() : selectAll(); }}
-            className="ml-auto text-[10px] font-bold text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
+          <Table.Head 
+            className="flex items-center cursor-pointer hover:bg-secondary transition-colors group px-4"
+            onClick={() => handleSort('name')}
           >
-            {selection.size > 0 ? 'CLEAR SELECTION' : 'SELECT ALL'}
-          </button>
-        </div>
-        {showGroupColumn && !condensed && (
-          <div 
-            className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-800 group"
-            onClick={() => handleSort('group')}
+            <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Name</span>
+            <SortIcon column="name" />
+            <button
+              onClick={(e) => { e.stopPropagation(); selection.size > 0 ? clearSelection() : selectAll(); }}
+              className="ml-auto text-[10px] font-bold text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 transition-colors"
+            >
+              {selection.size > 0 ? 'CLEAR SELECTION' : 'SELECT ALL'}
+            </button>
+          </Table.Head>
+          {showGroupColumn && !condensed && (
+            <Table.Head 
+              className="flex items-center cursor-pointer hover:bg-secondary transition-colors group px-4"
+              onClick={() => handleSort('group')}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Group</span>
+              <SortIcon column="group" />
+            </Table.Head>
+          )}
+          <Table.Head 
+            className="flex items-center cursor-pointer hover:bg-secondary transition-colors text-right justify-end group px-4"
+            onClick={() => handleSort('nominal')}
           >
-            <span>Group</span>
-            <SortIcon column="group" />
-          </div>
-        )}
-        <div 
-          className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end dark:text-gray-400 dark:hover:bg-gray-800 group"
-          onClick={() => handleSort('nominal')}
-        >
-          <span>Nom</span>
-          <SortIcon column="nominal" />
-        </div>
-        <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right dark:text-gray-400">Min</div>
-        
-        {!condensed && (
-          <>
-            <div 
-              className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center cursor-pointer hover:bg-gray-100 transition-colors text-right justify-end dark:text-gray-400 dark:hover:bg-gray-800 group"
-              onClick={() => handleSort('lifetime')}
-            >
-              <span>Lifetime</span>
-              <SortIcon column="lifetime" />
-            </div>
-            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Category</div>
-            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Usage</div>
-            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Value</div>
-          </>
-        )}
-      </div>
-
-      <div 
-        className="flex-1 overflow-auto scrollbar-thin" 
-        ref={containerRef}
-        onScroll={handleScroll}
-      >
-        <div style={{ height: `${topPad}px` }} />
-        
-        {visibleRows.map((t, i) => {
-          const globalIndex = startIndex + i;
-          const selected = selection.has(t.name);
-          const isModified = (() => {
-            const g = t.group || '';
-            const f = t.file || 'types';
-            const changedSet = storageDiff?.files?.[g]?.[f]?.changedNames || [];
-            return changedSet.includes(t.name);
-          })();
-
-          return (
-            <div
-              key={`${t.name}-${globalIndex}`}
-              className={cn(
-                "grid border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group dark:border-gray-800/50 dark:hover:bg-gray-900/50",
-                selected && "bg-primary-50/50 hover:bg-primary-50 border-primary-100 z-10 sticky dark:bg-primary-900/10 dark:border-primary-900/50 dark:hover:bg-primary-900/20",
-                t.hasUnknown && "bg-warning-50/30 dark:bg-warning-900/5"
-              )}
-              style={{ height: `${rowHeight}px`, gridTemplateColumns }}
-              onClick={e => onRowClick(e, globalIndex, t.name)}
-            >
-              <div 
-                className="px-4 flex items-center gap-3 overflow-hidden"
+            <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Nom</span>
+            <SortIcon column="nominal" />
+          </Table.Head>
+          <Table.Head className="text-right px-4 justify-end">
+            <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Min</span>
+          </Table.Head>
+          
+          {!condensed && (
+            <>
+              <Table.Head 
+                className="flex items-center cursor-pointer hover:bg-secondary transition-colors text-right justify-end group px-4"
+                onClick={() => handleSort('lifetime')}
               >
-                <div className={cn(
-                  "size-4 rounded border flex items-center justify-center shrink-0 transition-all",
-                  selected ? "bg-primary-600 border-primary-600 dark:bg-primary-500 dark:border-primary-500" : "bg-white border-gray-300 group-hover:border-primary-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-primary-500"
-                )}>
-                  {selected && <Check size={12} className="text-white" strokeWidth={3} />}
-                </div>
-                <span className={cn(
-                  "truncate font-medium",
-                  selected ? "text-primary-700 dark:text-primary-300" : "text-gray-900 dark:text-gray-100",
-                  isModified && "text-primary-600 dark:text-primary-400"
-                )}>
-                  {t.name}
-                </span>
-                {(() => {
-                  const groups = duplicatesByName[t.name] || [];
-                  const count = groups.filter(g => g !== t.group).length;
-                  return count > 0 && <Badge variant="warning" className="px-1 py-0 text-[10px]">+{count}</Badge>;
-                })()}
-                {t.hasUnknown && <AlertCircle size={14} className="text-warning-500 shrink-0" />}
-              </div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Lifetime</span>
+                <SortIcon column="lifetime" />
+              </Table.Head>
+              <Table.Head className="px-4">
+                <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Category</span>
+              </Table.Head>
+              <Table.Head className="px-4">
+                <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Usage</span>
+              </Table.Head>
+              <Table.Head className="px-4">
+                <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">Value</span>
+              </Table.Head>
+            </>
+          )}
+        </Table.Header>
 
-              {showGroupColumn && !condensed && (
-                <div className="px-4 flex items-center overflow-hidden">
-                  <Badge variant="gray" className="truncate text-xs font-normal bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700">{t.group || 'vanilla'}</Badge>
-                </div>
-              )}
+        <Table.Body 
+          className="flex-1 overflow-auto scrollbar-thin divide-y-0 relative block" 
+          ref={containerRef}
+          onScroll={handleScroll}
+        >
+          <div style={{ height: `${topPad}px` }} />
+          
+          {visibleRows.map((t, i) => {
+            const globalIndex = startIndex + i;
+            const selected = selection.has(t.name);
+            const isModified = (() => {
+              const g = t.group || '';
+              const f = t.file || 'types';
+              const changedSet = storageDiff?.files?.[g]?.[f]?.changedNames || [];
+              return changedSet.includes(t.name);
+            })();
 
-              <div className="px-4 flex items-center justify-end font-mono text-gray-700 dark:text-gray-300">{t.nominal}</div>
-              <div className="px-4 flex items-center justify-end font-mono text-gray-400 dark:text-gray-500">{t.min}</div>
+            return (
+              <Table.Row
+                key={`${t.name}-${globalIndex}`}
+                className={cx(
+                  "grid border-b border-secondary hover:bg-secondary transition-colors",
+                  t.hasUnknown && "bg-warning-50/30 dark:bg-warning-900/5",
+                  selected && "bg-brand-50/50 dark:bg-brand-900/10"
+                )}
+                style={{ height: `${rowHeight}px`, gridTemplateColumns }}
+                onClick={e => onRowClick(e, globalIndex, t.name)}
+              >
+                <Table.Cell 
+                  className="gap-3 px-4 flex items-center"
+                >
+                  <div className={cx(
+                    "size-4 rounded border flex items-center justify-center shrink-0 transition-all",
+                    selected ? "bg-brand-600 border-brand-600 dark:bg-brand-500 dark:border-brand-500" : "bg-white border-secondary group-hover:border-brand-300 dark:bg-gray-800 dark:border-gray-700 dark:group-hover:border-brand-500"
+                  )}>
+                    {selected && <Check size={12} className="text-white" strokeWidth={3} />}
+                  </div>
+                  <span className={cx(
+                    "truncate font-medium",
+                    selected ? "text-brand-700 dark:text-brand-300" : "text-gray-900 dark:text-gray-100",
+                    isModified && "text-brand-600 dark:text-brand-400"
+                  )}>
+                    {t.name}
+                  </span>
+                  {(() => {
+                    const groups = duplicatesByName[t.name] || [];
+                    const count = groups.filter(g => g !== t.group).length;
+                    return count > 0 && <Badge color="warning" size="sm">+{count}</Badge>;
+                  })()}
+                  {t.hasUnknown && <AlertCircle size={14} className="text-warning-500 shrink-0" />}
+                </Table.Cell>
 
-              {!condensed && (
-                <>
-                  <div className="px-4 flex items-center justify-end font-mono text-gray-500 dark:text-gray-400">
-                    {formatLifetime(Number(t.lifetime))}
-                  </div>
-                  <div className="px-4 flex items-center overflow-hidden">
-                    {t.category ? (
-                      <Badge variant={definitions.categories.includes(t.category) ? "primary" : "error"} className="truncate text-xs">
-                        {t.category}
-                      </Badge>
-                    ) : <span className="text-gray-300 dark:text-gray-700">—</span>}
-                  </div>
-                  <div className="px-4 flex items-center gap-1 overflow-hidden">
-                    {t.usage?.slice(0, 2).map(u => (
-                      <Badge key={u} variant="gray" className="truncate text-xs font-normal">{u}</Badge>
-                    ))}
-                    {(t.usage?.length || 0) > 2 && <Badge variant="gray" className="text-xs">+{t.usage.length - 2}</Badge>}
-                    {(t.usage?.length || 0) === 0 && <span className="text-gray-300 dark:text-gray-700">—</span>}
-                  </div>
-                  <div className="px-4 flex items-center gap-1 overflow-hidden">
-                    {t.value?.slice(0, 2).map(v => (
-                      <Badge key={v} variant="gray" className="truncate text-xs font-normal">{v}</Badge>
-                    ))}
-                    {(t.value?.length || 0) > 2 && <Badge variant="gray" className="text-xs">+{t.value.length - 2}</Badge>}
-                    {(t.value?.length || 0) === 0 && <span className="text-gray-300 dark:text-gray-700">—</span>}
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
-        
-        <div style={{ height: `${bottomPad}px` }} />
-      </div>
+                {showGroupColumn && !condensed && (
+                  <Table.Cell className="px-4 flex items-center">
+                    <Badge color="gray" size="sm">{t.group || 'vanilla'}</Badge>
+                  </Table.Cell>
+                )}
 
-      <div className="px-4 py-3 border-t border-gray-200 bg-white flex items-center justify-between text-xs text-gray-500 shrink-0 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-        <div>
-          Showing <span className="font-semibold text-gray-900 dark:text-gray-200">{rows.length}</span> types
+                <Table.Cell className="justify-end font-mono text-gray-700 dark:text-gray-300 px-4 flex items-center">{t.nominal}</Table.Cell>
+                <Table.Cell className="justify-end font-mono text-gray-400 dark:text-gray-500 px-4 flex items-center">{t.min}</Table.Cell>
+
+                {!condensed && (
+                  <>
+                    <Table.Cell className="justify-end font-mono text-gray-500 dark:text-gray-400 px-4 flex items-center">
+                      {formatLifetime(Number(t.lifetime))}
+                    </Table.Cell>
+                    <Table.Cell className="px-4 flex items-center">
+                      {t.category ? (
+                        <Badge color={definitions.categories.includes(t.category) ? "brand" : "error"} size="sm">
+                          {t.category}
+                        </Badge>
+                      ) : <span className="text-gray-300 dark:text-gray-700">—</span>}
+                    </Table.Cell>
+                    <Table.Cell className="gap-1 px-4 flex items-center">
+                      {t.usage?.slice(0, 2).map(u => (
+                        <Badge key={u} color="gray" size="sm">{u}</Badge>
+                      ))}
+                      {(t.usage?.length || 0) > 2 && <Badge color="gray" size="sm">+{t.usage.length - 2}</Badge>}
+                      {(t.usage?.length || 0) === 0 && <span className="text-gray-300 dark:text-gray-700">—</span>}
+                    </Table.Cell>
+                    <Table.Cell className="gap-1 px-4 flex items-center">
+                      {t.value?.slice(0, 2).map(v => (
+                        <Badge key={v} color="gray" size="sm">{v}</Badge>
+                      ))}
+                      {(t.value?.length || 0) > 2 && <Badge color="gray" size="sm">+{t.value.length - 2}</Badge>}
+                      {(t.value?.length || 0) === 0 && <span className="text-gray-300 dark:text-gray-700">—</span>}
+                    </Table.Cell>
+                  </>
+                )}
+              </Table.Row>
+            );
+          })}
+          
+          <div style={{ height: `${bottomPad}px` }} />
+        </Table.Body>
+      </Table>
+
+      <div className="flex items-center justify-between px-6 py-4 border-t border-secondary shrink-0 bg-primary dark:bg-gray-950">
+        <div className="text-sm text-tertiary">
+          Showing <span className="font-semibold text-primary">{rows.length}</span> types
           {selection.size > 0 && (
             <>
               {' '}&bull;{' '}
-              <span className="font-semibold text-primary-600 dark:text-primary-400">{selection.size}</span> selected
+              <span className="font-semibold text-brand-600 dark:text-brand-400">{selection.size}</span> selected
             </>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {condensed && <Badge variant="gray" className="text-[10px] uppercase tracking-wider font-bold py-0 px-1 border-gray-200 dark:border-gray-700">Condensed View</Badge>}
+          {condensed && <Badge color="success" size="sm" className="animate-pulse">Condensed View</Badge>}
         </div>
       </div>
-    </div>
+    </TableCard.Root>
   );
 }

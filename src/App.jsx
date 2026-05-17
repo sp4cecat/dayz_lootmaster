@@ -23,9 +23,8 @@ import {generateTypesXml, generateLimitsXml, generateRandomPresetsXml, generateS
 
 import { Sidebar } from './components/layout/Sidebar.jsx';
 import { Button } from './components/ui/Button.jsx';
-import { Badge } from './components/ui/Badge.jsx';
-import { Input } from './components/ui/Input.jsx';
-import { cn } from './utils/cn.js';
+import { Badge } from './components/base/badges/badges';
+import { cx } from './utils/cx';
 import { 
     Undo, 
     Redo, 
@@ -550,7 +549,7 @@ export default function App() {
                 </aside>
                 <div className="flex-1 min-w-0">
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex dark:bg-gray-900 dark:border-gray-800">
-                        <div className={cn("min-w-0", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
+                        <div className={cx("min-w-0", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
                             <TypesTable
                                 definitions={definitions}
                                 types={filteredTypes}
@@ -589,7 +588,7 @@ export default function App() {
     })();
 
     return (
-        <div className={cn("flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100")}>
+        <div className={cx("flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100")}>
             <Sidebar 
                 activeTab={activeTab} 
                 onTabChange={handleTabChange} 
@@ -637,13 +636,13 @@ export default function App() {
                         </div>
                     )}
                     {saveNotice && (
-                        <div className={cn(
+                        <div className={cx(
                             "px-6 py-3 flex items-center gap-4 transition-all",
                             saveNotice.startsWith('Save failed') 
                                 ? "bg-error-50 dark:bg-error-900/10" 
                                 : "bg-success-50 dark:bg-success-900/10"
                         )}>
-                            <div className={cn(
+                            <div className={cx(
                                 "size-10 rounded-full flex items-center justify-center shrink-0",
                                 saveNotice.startsWith('Save failed') 
                                     ? "bg-error-100 text-error-600 dark:bg-error-900/30 dark:text-error-500" 
@@ -652,7 +651,7 @@ export default function App() {
                                 {saveNotice.startsWith('Save failed') ? <AlertTriangle size={20} /> : <Check size={20} />}
                             </div>
                             <div className="flex-1">
-                                <p className={cn(
+                                <p className={cx(
                                     "text-sm font-bold",
                                     saveNotice.startsWith('Save failed') 
                                         ? "text-error-900 dark:text-error-300" 
@@ -660,7 +659,7 @@ export default function App() {
                                 )}>
                                     {saveNotice.startsWith('Save failed') ? 'Persist Failed' : 'Success'}
                                 </p>
-                                <p className={cn(
+                                <p className={cx(
                                     "text-sm",
                                     saveNotice.startsWith('Save failed') 
                                         ? "text-error-700 dark:text-error-400" 
