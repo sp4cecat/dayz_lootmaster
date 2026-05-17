@@ -187,6 +187,7 @@ export default function Filters({
             <Input
               value={filters.name}
               onChange={(e) => setField('name', e.target.value)}
+              onClear={() => setField('name', '')}
               placeholder="Search by name..."
               icon={Search}
               className="h-9"
