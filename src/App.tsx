@@ -288,7 +288,7 @@ export default function App() {
                         </div>
                     </main>
                 ) : (
-                    <main className="flex-1 flex flex-col min-h-0 p-8 overflow-hidden">
+                    <main className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
                         {loading ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-center">
                                 <div className="size-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mb-4" />
@@ -349,7 +349,7 @@ export default function App() {
                                     </div>
                                 </div>
 
-                                <div className="flex-1 flex gap-8 min-h-0">
+                                <div className="flex-1 flex gap-6 min-h-0">
                                     <aside className="w-80 shrink-0 h-full overflow-y-auto scrollbar-none">
                                         <Filters 
                                             definitions={definitions}
@@ -366,7 +366,10 @@ export default function App() {
                                             "flex-1 flex min-h-0 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800",
                                             selection.size > 0 ? "gap-0" : ""
                                         )}>
-                                            <div className="min-w-0 min-h-0 flex flex-col flex-1">
+                                            <div className={cx(
+                                                "min-w-0 min-h-0 flex flex-col",
+                                                selection.size > 0 ? "w-fit shrink-0" : "flex-1"
+                                            )}>
                                                 <TypesTable 
                                                     types={filteredTypes}
                                                     selection={selection}
@@ -378,7 +381,7 @@ export default function App() {
                                             </div>
 
                                             {selection.size > 0 && (
-                                                <div className="w-[450px] shrink-0 min-h-0 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-gray-950/20">
+                                                <div className="flex-1 min-w-[450px] shrink-0 min-h-0 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-gray-950/20">
                                                     <EditForm 
                                                         definitions={definitions}
                                                         selectedTypes={selectedTypes}

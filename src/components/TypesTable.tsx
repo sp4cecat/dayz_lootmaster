@@ -100,7 +100,7 @@ export default function TypesTable({
     // Header needs space for "Name" + "All" button
     const headerWidth = 14;
     console.log(`Max name width: ${maxName} (${max} chars)`);
-    return Math.min(Math.max(max, headerWidth) + 4, 80);
+    return Math.min(Math.max(max, headerWidth) + 4, 40);
   }, [rows]);
 
   // Measure viewport height
@@ -144,19 +144,22 @@ export default function TypesTable({
     }
   };
 
+  const isAnySelected = selection.size > 0;
   const columnWidths = useMemo(() => {
     const cols = [];
     cols.push('2.25rem'); // Selection column
     cols.push(`${maxNameWidth}ch`); // Name
-    if (showGroupColumn) cols.push('8rem'); // Group
-    cols.push('5rem'); // Nominal
-    cols.push('5rem'); // Min
-    cols.push('6rem'); // Lifetime
-    cols.push('8rem'); // Category
-    cols.push('minmax(150px, 1fr)'); // Usage
-    cols.push('minmax(150px, 1fr)'); // Value
+    if (!isAnySelected && showGroupColumn) cols.push('7.5rem'); // Group
+    cols.push('4.5rem'); // Nominal
+    cols.push('4.5rem'); // Min
+    if (!isAnySelected) {
+      cols.push('5rem'); // Lifetime
+      cols.push('7.5rem'); // Category
+      cols.push('minmax(120px, 1fr)'); // Usage
+      cols.push('minmax(120px, 1fr)'); // Value
+    }
     return cols.join(' ');
-  }, [maxNameWidth, showGroupColumn]);
+  }, [maxNameWidth, showGroupColumn, isAnySelected]);
 
   const gridStyle = { '--grid-template-columns': columnWidths } as React.CSSProperties;
 
@@ -184,7 +187,7 @@ export default function TypesTable({
             allowsSorting 
             sortDirection={sort.key === 'name' ? sort.dir : undefined} 
             onPress={() => handleSort('name')}
-            className="px-4"
+            className="px-3"
           >
             Name
             <div className="ml-auto flex items-center gap-2">
@@ -201,12 +204,12 @@ export default function TypesTable({
               </Button>
             </div>
           </Table.Column>
-          {showGroupColumn && (
+          {showGroupColumn && !isAnySelected && (
             <Table.Column 
               allowsSorting 
               sortDirection={sort.key === 'group' ? sort.dir : undefined} 
               onPress={() => handleSort('group')}
-              className="px-4"
+              className="px-3"
             >
               Group
             </Table.Column>
@@ -215,36 +218,40 @@ export default function TypesTable({
             allowsSorting 
             sortDirection={sort.key === 'nominal' ? sort.dir : undefined} 
             onPress={() => handleSort('nominal')}
-            className="px-4"
+            className="px-3"
           >
             Nom
           </Table.Column>
-          <Table.Column className="px-4">Min</Table.Column>
-          <Table.Column 
-            allowsSorting 
-            sortDirection={sort.key === 'lifetime' ? sort.dir : undefined} 
-            onPress={() => handleSort('lifetime')}
-            className="px-4"
-          >
-            Lifetime
-          </Table.Column>
-          <Table.Column className="px-4">Category</Table.Column>
-          <Table.Column 
-            allowsSorting 
-            sortDirection={sort.key === 'usage' ? sort.dir : undefined} 
-            onPress={() => handleSort('usage')}
-            className="px-4"
-          >
-            Usage
-          </Table.Column>
-          <Table.Column 
-            allowsSorting 
-            sortDirection={sort.key === 'value' ? sort.dir : undefined} 
-            onPress={() => handleSort('value')}
-            className="px-4"
-          >
-            Value
-          </Table.Column>
+          <Table.Column className="px-3">Min</Table.Column>
+          {!isAnySelected && (
+            <>
+              <Table.Column 
+                allowsSorting 
+                sortDirection={sort.key === 'lifetime' ? sort.dir : undefined} 
+                onPress={() => handleSort('lifetime')}
+                className="px-3"
+              >
+                Lifetime
+              </Table.Column>
+              <Table.Column className="px-3">Category</Table.Column>
+              <Table.Column 
+                allowsSorting 
+                sortDirection={sort.key === 'usage' ? sort.dir : undefined} 
+                onPress={() => handleSort('usage')}
+                className="px-3"
+              >
+                Usage
+              </Table.Column>
+              <Table.Column 
+                allowsSorting 
+                sortDirection={sort.key === 'value' ? sort.dir : undefined} 
+                onPress={() => handleSort('value')}
+                className="px-3"
+              >
+                Value
+              </Table.Column>
+            </>
+          )}
         </Table.Header>
 
         <Table.Body
@@ -274,7 +281,7 @@ export default function TypesTable({
                   height: `${rowHeight}px`,
                 }}
               >
-                <Table.Cell className="px-4 py-2 flex items-center">
+                <Table.Cell className="px-3 py-2 flex items-center">
                   <div className="flex items-center gap-3 flex-1">
                     <span
                       className={cx(
@@ -298,55 +305,59 @@ export default function TypesTable({
                     )}
                   </div>
                 </Table.Cell>
-                {showGroupColumn && (
-                  <Table.Cell className="px-4 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
+                {showGroupColumn && !isAnySelected && (
+                  <Table.Cell className="px-3 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
                     {row.group || '-'}
                   </Table.Cell>
                 )}
-                <Table.Cell className="px-4 py-2 flex items-center justify-end text-sm font-bold text-gray-900 dark:text-gray-100">
+                <Table.Cell className="px-3 py-2 flex items-center justify-end text-sm font-bold text-gray-900 dark:text-white">
                   {row.nominal}
                 </Table.Cell>
-                <Table.Cell className="px-4 py-2 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400">
+                <Table.Cell className="px-3 py-2 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400">
                   {row.min}
                 </Table.Cell>
-                <Table.Cell className="px-4 py-2 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400 font-mono">
-                  {formatLifetime(row.lifetime)}
-                </Table.Cell>
-                <Table.Cell className="px-4 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
-                  {row.category || '-'}
-                </Table.Cell>
-                <Table.Cell className="px-4 py-2 flex items-center gap-1 flex-wrap overflow-hidden">
-                  {(row.usage || []).length > 0 ? (
-                    row.usage.map((u: string) => (
-                      <Badge
-                        key={u}
-                        color={row.unk.usage?.includes(u) ? 'error' : 'gray'}
-                        size="sm"
-                        className="whitespace-nowrap"
-                      >
-                        {u}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
-                </Table.Cell>
-                <Table.Cell className="px-4 py-2 flex items-center gap-1 flex-wrap overflow-hidden">
-                  {(row.value || []).length > 0 ? (
-                    row.value.map((v: string) => (
-                      <Badge
-                        key={v}
-                        color={row.unk.value?.includes(v) ? 'error' : 'gray'}
-                        size="sm"
-                        className="whitespace-nowrap"
-                      >
-                        {v}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
-                </Table.Cell>
+                {!isAnySelected && (
+                  <>
+                    <Table.Cell className="px-3 py-2 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400 font-mono">
+                      {formatLifetime(row.lifetime)}
+                    </Table.Cell>
+                    <Table.Cell className="px-3 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
+                      {row.category || '-'}
+                    </Table.Cell>
+                    <Table.Cell className="px-3 py-2 flex items-center gap-1 flex-wrap overflow-hidden">
+                      {(row.usage || []).length > 0 ? (
+                        row.usage.map((u: string) => (
+                          <Badge
+                            key={u}
+                            color={row.unk.usage?.includes(u) ? 'error' : 'gray'}
+                            size="sm"
+                            className="whitespace-nowrap"
+                          >
+                            {u}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell className="px-3 py-2 flex items-center gap-1 flex-wrap overflow-hidden">
+                      {(row.value || []).length > 0 ? (
+                        row.value.map((v: string) => (
+                          <Badge
+                            key={v}
+                            color={row.unk.value?.includes(v) ? 'error' : 'gray'}
+                            size="sm"
+                            className="whitespace-nowrap"
+                          >
+                            {v}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </Table.Cell>
+                  </>
+                )}
               </Table.Row>
             );
           })}
