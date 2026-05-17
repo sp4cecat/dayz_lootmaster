@@ -7,6 +7,7 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
   error?: string;
   hint?: string;
   icon?: React.ElementType;
+  suffix?: string | React.ReactNode;
   onClear?: () => void;
 }
 
@@ -18,6 +19,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
   hint,
   icon: Icon,
   onClear,
+  suffix,
   ...props 
 }, ref) => {
   return (
@@ -38,13 +40,18 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
           className={cx(
             'flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 disabled:cursor-not-allowed disabled:opacity-50 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:ring-primary-900/30 dark:focus:border-primary-500',
             Icon && 'pl-10',
-            onClear && props.value && 'pr-10',
+            (suffix || (onClear && props.value)) && 'pr-8',
             error && 'border-error-300 focus:ring-error-100 focus:border-error-300 dark:border-error-800 dark:focus:ring-error-900/30',
             className
           )}
           ref={ref}
           {...props}
         />
+        {suffix && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm font-medium">
+            {suffix}
+          </div>
+        )}
         {onClear && props.value && (
           <button
             type="button"

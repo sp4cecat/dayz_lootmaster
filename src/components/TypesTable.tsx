@@ -94,12 +94,9 @@ export default function TypesTable({
         max = width;
         maxName = r.name;
       }
-
-      console.log(`Name width for ${r.name}: ${width}`);
     }
     // Header needs space for "Name" + "All" button
     const headerWidth = 14;
-    console.log(`Max name width: ${maxName} (${max} chars)`);
     return Math.min(Math.max(max, headerWidth) + 4, 40);
   }, [rows]);
 

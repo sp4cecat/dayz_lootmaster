@@ -199,12 +199,13 @@ export default function EditFormCLETab({
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      {/* Basics Section */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <Badge color="brand" size="sm" type="modern">Basic Properties</Badge>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        {/* Basics Section */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Badge color="brand" size="sm" type="modern">Basic Properties</Badge>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <Input 
             label="Nominal" 
             type="number" 
@@ -305,21 +306,23 @@ export default function EditFormCLETab({
           />
           
           <Input 
-            label="Quant Min (%)" 
-            type="number" 
+            label="Quant Min" 
+            type="number"
+            suffix="%"
             value={form.quantmin ?? ''} 
             placeholder={form.quantmin === null ? 'Mixed' : '-1'}
             onChange={e => setNum('quantmin', e.target.value)} 
           />
           <Input 
-            label="Quant Max (%)" 
+            label="Quant Max" 
             type="number" 
+            suffix="%"
             value={form.quantmax ?? ''} 
             placeholder={form.quantmax === null ? 'Mixed' : '-1'}
             onChange={e => setNum('quantmax', e.target.value)} 
           />
 
-          <div className="col-span-2">
+          <div className="col-span-2 sm:col-span-3">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Category</label>
             <select 
               value={form.category} 
@@ -336,9 +339,9 @@ export default function EditFormCLETab({
       {/* Flags Section */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <Badge color="brand" size="sm" type="modern">Economic Flags</Badge>
+          <Badge color="brand" size="sm" type="modern">Flags</Badge>
         </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 bg-gray-50 dark:bg-gray-950/20 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 bg-gray-50 dark:bg-gray-950/20 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
           {Object.keys(form.flags).map(flag => (
             <Checkbox
               key={flag}
@@ -349,8 +352,9 @@ export default function EditFormCLETab({
           ))}
         </div>
       </section>
+    </div>
 
-      {/* Attributes Section */}
+    {/* Attributes Section */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <TriStatePanel 
           title="Usage" 
@@ -417,7 +421,7 @@ function TriStatePanel({ title, options, state, onToggle }: { title: string, opt
       <div className="px-4 py-3 bg-gray-50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800">
         <h4 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h4>
       </div>
-      <div className="p-4 space-y-2 flex-1 overflow-y-auto max-h-64 scrollbar-thin">
+      <div className="p-4 flex flex-wrap gap-2 flex-1 overflow-y-auto max-h-64 scrollbar-thin content-start">
         {options.map(opt => {
           const val = state[opt];
           return (
@@ -425,7 +429,7 @@ function TriStatePanel({ title, options, state, onToggle }: { title: string, opt
               key={opt}
               onClick={() => onToggle(opt)}
               className={cx(
-                "flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border",
+                "flex items-center gap-2 p-1.5 px-2.5 rounded-lg cursor-pointer transition-all border",
                 val === true 
                   ? "bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-900/20 dark:border-primary-800 dark:text-primary-300"
                   : val === 'mixed'

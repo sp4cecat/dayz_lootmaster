@@ -381,7 +381,7 @@ export default function App() {
                                             </div>
 
                                             {selection.size > 0 && (
-                                                <div className="flex-1 min-w-[450px] shrink-0 min-h-0 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-gray-950/20">
+                                                <div className="flex-1 min-w-[500px] shrink-0 min-h-0 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-gray-950/20">
                                                     <EditForm 
                                                         definitions={definitions}
                                                         selectedTypes={selectedTypes}
