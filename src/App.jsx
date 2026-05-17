@@ -530,9 +530,9 @@ export default function App() {
         }
 
         return (
-            <div className="flex gap-8 items-start">
-                <aside className="w-80 shrink-0 sticky top-0">
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
+            <div className="flex-1 flex gap-8 min-h-0">
+                <aside className="w-80 shrink-0 h-full overflow-y-auto scrollbar-none">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm dark:bg-gray-900 dark:border-gray-800">
                         <Filters
                             definitions={definitions}
                             groups={groups}
@@ -547,9 +547,9 @@ export default function App() {
                         />
                     </div>
                 </aside>
-                <div className="flex-1 min-w-0">
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex dark:bg-gray-900 dark:border-gray-800">
-                        <div className={cx("min-w-0", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
+                <div className="flex-1 flex flex-col min-w-0">
+                    <div className="flex-1 flex min-h-0 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
+                        <div className={cx("min-w-0 flex flex-col", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
                             <TypesTable
                                 definitions={definitions}
                                 types={filteredTypes}
@@ -673,9 +673,9 @@ export default function App() {
                     )}
                 </div>
 
-                <main className="flex-1 overflow-auto p-8">
+                <main className="flex-1 flex flex-col min-h-0 p-8 overflow-hidden">
                     {activeTab === 'cle' && (
-                        <div className="max-w-[1600px] mx-auto">
+                        <div className="flex-1 flex flex-col min-h-0 max-w-[1600px] mx-auto w-full">
                             <div className="flex items-center justify-between mb-8">
                                 <div>
                                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight dark:text-white">CLE Editor</h1>
