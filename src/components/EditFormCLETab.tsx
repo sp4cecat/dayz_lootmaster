@@ -46,7 +46,15 @@ export default function EditFormCLETab({
       obj[k] = allSame ? selectedTypes[0][k] : null; // null => Mixed placeholder
     });
     obj.category = allSameField(selectedTypes.map(t => t.category)) || '';
-    obj.flags = { ...base.flags };
+    
+    // Calculate tri-state for flags
+    const flagKeys = ['count_in_cargo', 'count_in_hoarder', 'count_in_map', 'count_in_player', 'crafted', 'deloot'];
+    obj.flags = {};
+    flagKeys.forEach(k => {
+      const allSame = selectedTypes.every(t => t.flags[k as keyof typeof base.flags] === base.flags[k as keyof typeof base.flags]);
+      obj.flags[k] = allSame ? base.flags[k as keyof typeof base.flags] : 'mixed';
+    });
+
     // Calculate tri-state for arrays: on/off/mixed label handling happens in UI via map
     obj.usage = makeTriState(definitions.usageflags, selectedTypes.map(t => t.usage));
     obj.value = makeTriState(definitions.valueflags, selectedTypes.map(t => t.value));
@@ -99,9 +107,6 @@ export default function EditFormCLETab({
     setForm((f: any) => ({ ...f, [key]: v }));
   };
 
-  const toggleFlag = (key: string) => {
-    setForm((f: any) => ({ ...f, flags: { ...f.flags, [key]: !f.flags[key] } }));
-  };
 
   const cycleTri = (group: string, key: string) => {
     setForm((f: any) => {
@@ -199,9 +204,9 @@ export default function EditFormCLETab({
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      <div className="columns-1 sm:columns-2 gap-8">
         {/* Basics Section */}
-        <section>
+        <section className="min-w-[200px] break-inside-avoid mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Badge color="brand" size="sm" type="modern">Basic Properties</Badge>
           </div>
@@ -336,92 +341,90 @@ export default function EditFormCLETab({
         </div>
       </section>
 
-      {/* Flags Section */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <Badge color="brand" size="sm" type="modern">Flags</Badge>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 bg-gray-50 dark:bg-gray-950/20 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
-          {Object.keys(form.flags).map(flag => (
-            <Checkbox
-              key={flag}
-              label={flag.replace('count_in_', '').replace('_', ' ')}
-              checked={form.flags[flag]}
-              onChange={() => toggleFlag(flag)}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
 
-    {/* Attributes Section */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <TriStatePanel 
+          title="Flags" 
+          options={Object.keys(form.flags)} 
+          state={form.flags} 
+          onToggle={key => cycleTri('flags', key)}
+          labelFormatter={s => s.replace('count_in_', '').replace('_', ' ')}
+        />
+
         <TriStatePanel 
           title="Usage" 
-          group="usage" 
           options={definitions.usageflags} 
           state={form.usage} 
           onToggle={key => cycleTri('usage', key)} 
         />
-        <TriStatePanel 
-          title="Value" 
-          group="value" 
-          options={definitions.valueflags} 
-          state={form.value} 
-          onToggle={key => cycleTri('value', key)} 
+        <TriStatePanel
+          title="Value"
+          options={definitions.valueflags}
+          state={form.value}
+          onToggle={key => cycleTri('value', key)}
         />
-        <TriStatePanel 
-          title="Tags" 
-          group="tag" 
-          options={definitions.tags} 
-          state={form.tag} 
-          onToggle={key => cycleTri('tag', key)} 
+        <TriStatePanel
+          title="Tags"
+          options={definitions.tags}
+          state={form.tag}
+          onToggle={key => cycleTri('tag', key)}
         />
-      </section>
 
-      {/* Deerisle Specifics */}
-      {hasDivingConfig && (
-        <section className="p-4 bg-primary-50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/20">
-          <div className="flex items-center gap-2 mb-4">
-            <Badge color="brand" size="sm" type="modern">Deerisle Diving Loot</Badge>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="size-10 bg-white dark:bg-gray-900 rounded-lg flex items-center justify-center text-primary-600 shadow-sm border border-primary-100 dark:border-primary-900/30">
-                <AlertCircle size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-900 dark:text-white">Diving Config</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Include items in the deep-sea diving loot pool.</p>
-              </div>
+        {/* Deerisle Specifics */}
+        {hasDivingConfig && (
+          <section className="min-w-[200px] break-inside-avoid mb-8 p-4 bg-primary-50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/20">
+            <div className="flex items-center gap-2 mb-4">
+              <Badge color="brand" size="sm" type="modern">Deerisle Diving Loot</Badge>
             </div>
-            <Checkbox 
-              label={allSelectedInDiving ? "Included" : someSelectedInDiving ? "Mixed" : "Excluded"}
-              checked={allSelectedInDiving}
-              indeterminate={!allSelectedInDiving && someSelectedInDiving}
-              onChange={() => {
-                const next = !allSelectedInDiving;
-                selectedTypes.forEach(t => {
-                  const currentlyIn = divingConfig?.Items?.includes(t.name);
-                  if (next && !currentlyIn) toggleDiving(t.name);
-                  else if (!next && currentlyIn) toggleDiving(t.name);
-                });
-              }}
-            />
-          </div>
-        </section>
-      )}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="size-10 bg-white dark:bg-gray-900 rounded-lg flex items-center justify-center text-primary-600 shadow-sm border border-primary-100 dark:border-primary-900/30">
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">Diving Config</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Include items in the deep-sea diving loot pool.</p>
+                </div>
+              </div>
+              <Checkbox 
+                label={allSelectedInDiving ? "Included" : someSelectedInDiving ? "Mixed" : "Excluded"}
+                checked={allSelectedInDiving}
+                indeterminate={!allSelectedInDiving && someSelectedInDiving}
+                onChange={() => {
+                  const next = !allSelectedInDiving;
+                  selectedTypes.forEach(t => {
+                    const currentlyIn = divingConfig?.Items?.includes(t.name);
+                    if (next && !currentlyIn) toggleDiving(t.name);
+                    else if (!next && currentlyIn) toggleDiving(t.name);
+                  });
+                }}
+              />
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
 
-function TriStatePanel({ title, options, state, onToggle }: { title: string, options: string[], state: any, onToggle: (k: string) => void }) {
+function TriStatePanel({ 
+  title, 
+  options, 
+  state, 
+  onToggle,
+  labelFormatter
+}: { 
+  title: string, 
+  options: string[], 
+  state: any, 
+  onToggle: (k: string) => void,
+  labelFormatter?: (opt: string) => string
+}) {
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm overflow-hidden">
-      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800">
-        <h4 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h4>
+    <section className="min-w-[200px] break-inside-avoid mb-8">
+      <div className="flex items-center gap-2 mb-4">
+        <Badge color="brand" size="sm" type="modern">{title}</Badge>
       </div>
-      <div className="p-4 flex flex-wrap gap-2 flex-1 overflow-y-auto max-h-64 scrollbar-thin content-start">
+      <div className="p-4 flex flex-wrap gap-2 bg-gray-50 dark:bg-gray-950/20 rounded-xl border border-gray-100 dark:border-gray-800 content-start">
         {options.map(opt => {
           const val = state[opt];
           return (
@@ -437,12 +440,12 @@ function TriStatePanel({ title, options, state, onToggle }: { title: string, opt
                     : "bg-white border-transparent text-gray-500 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
               )}
             >
-              <span className="text-xs font-medium">{opt}</span>
+              <span className="text-xs font-medium">{labelFormatter ? labelFormatter(opt) : opt}</span>
             </div>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -474,7 +477,12 @@ function applyToType(t: Type, form: any): Type {
 
   if (form.category !== null) next.category = form.category;
   
-  next.flags = { ...next.flags, ...form.flags };
+  // Apply tri-state flags
+  Object.keys(form.flags).forEach(k => {
+    if (form.flags[k] !== 'mixed') {
+      next.flags[k as keyof typeof next.flags] = form.flags[k] as boolean;
+    }
+  });
 
   // Helper to apply tri-state back to array
   const applyTri = (group: string, currentArr: string[] | undefined) => {
