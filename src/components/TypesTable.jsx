@@ -177,6 +177,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
       <Table 
         size="sm"
         aria-label="Types" 
+        containerClassName="flex-1 flex flex-col min-h-0"
         className="flex-1 flex flex-col min-h-0"
       >
         <Table.Header 
@@ -239,7 +240,7 @@ export default function TypesTable({ definitions, types, selection, setSelection
         </Table.Header>
 
         <Table.Body 
-          className="flex-1 overflow-auto scrollbar-thin divide-y-0 relative block" 
+          className="flex-1 min-h-0 overflow-auto scrollbar-thin divide-y-0 relative block" 
           ref={containerRef}
           onScroll={handleScroll}
         >

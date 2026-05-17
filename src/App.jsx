@@ -549,7 +549,7 @@ export default function App() {
                 </aside>
                 <div className="flex-1 flex flex-col min-w-0">
                     <div className="flex-1 flex min-h-0 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
-                        <div className={cx("min-w-0 flex flex-col", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
+                        <div className={cx("min-w-0 min-h-0 flex flex-col", selectedTypes.length > 0 ? "shrink-0 border-r border-gray-200 dark:border-gray-800" : "flex-1")}>
                             <TypesTable
                                 definitions={definitions}
                                 types={filteredTypes}
@@ -563,7 +563,7 @@ export default function App() {
                             />
                         </div>
                         {selectedTypes.length > 0 && (
-                            <div className="flex-1 min-w-0" key={editKey}>
+                            <div className="flex-1 min-w-0 min-h-0" key={editKey}>
                                 <EditForm
                                     definitions={definitions}
                                     selectedTypes={selectedTypes}
