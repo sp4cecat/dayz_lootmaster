@@ -399,7 +399,9 @@ export function useLootData() {
           }
         }
       }
-      if (logs.length) void appendChangeLogs(logs);
+      if (logs.length) {
+        appendChangeLogs(logs).catch(err => console.error('Failed to append logs:', err));
+      }
     } catch {
       // ignore logging errors
     }
@@ -728,7 +730,9 @@ export function useLootData() {
           }
         }
       }
-      if (logs.length) void appendChangeLogs(logs);
+      if (logs.length) {
+        appendChangeLogs(logs).catch(err => console.error('Failed to append logs:', err));
+      }
     } catch {
       // ignore logging errors
     }
@@ -946,7 +950,6 @@ export function useLootData() {
           const econText = await econRes.text();
           const { order, filesByGroup } = parseEconomyCoreXml(econText);
 
-          console.log('ECON', order, filesByGroup);
 
           for (const group of order) {
             const filesList = filesByGroup[group] || [];
@@ -1199,7 +1202,7 @@ export function useLootData() {
     }
 
     if (logs.length) {
-      appendChangeLogs(logs).finally(() => {
+      appendChangeLogs(logs).catch(err => console.error('Failed to append logs:', err)).finally(() => {
         manualLoggedRef.current = true;
       });
     } else {

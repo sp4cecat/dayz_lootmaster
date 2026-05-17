@@ -1,4 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
+import { Row as AriaRow } from 'react-aria-components';
 import { formatLifetime } from '../utils/time.js';
 import { Table, TableCard } from './application/table/table';
 import { Badge } from './base/badges/badges';
@@ -177,81 +178,90 @@ export default function TypesTable({ definitions, types, selection, setSelection
     <div className={cx("h-full flex flex-col bg-white dark:bg-gray-900 overflow-hidden", !condensed && "rounded-xl border border-gray-200 shadow-sm dark:border-gray-800")}>
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         <Table 
+          ref={containerRef}
+          onScroll={handleScroll}
           size="sm"
           aria-label="Types" 
-          containerClassName="flex-1 flex flex-col min-h-0"
-          className="flex-1 flex flex-col min-h-0"
+          containerClassName="flex-1 min-h-0"
+          selectionMode="multiple"
+          selectionBehavior="none"
+          selectedKeys={selection}
+          onSelectionChange={(keys) => {
+            if (keys === 'all') {
+              setSelection(new Set(rows.map(r => r.name)));
+            } else {
+              setSelection(new Set(keys));
+            }
+          }}
         >
           <Table.Header 
-            className="grid shrink-0 select-none border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/20"
-            style={{ gridTemplateColumns }}
+            className="shrink-0 [&>tr]:grid [&>tr]:[grid-template-columns:var(--grid-template-columns)] [&>tr]:select-none [&>tr]:border-b [&>tr]:border-gray-200 [&>tr]:dark:border-gray-800 [&>tr]:bg-gray-50/50 [&>tr]:dark:bg-gray-950/20"
+            style={{ '--grid-template-columns': gridTemplateColumns }}
           >
             <Table.Head 
-              className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group px-4"
-              onClick={() => handleSort('name')}
-            >
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</span>
-              <SortIcon column="name" />
-              <div className="ml-auto flex items-center gap-2">
-                <Button 
-                    variant="link-gray" 
-                    size="sm" 
-                    onClick={(e) => { e.stopPropagation(); selection.size > 0 ? clearSelection() : selectAll(); }}
-                    className="text-[10px] uppercase tracking-tighter"
-                >
-                    {selection.size > 0 ? 'Clear' : 'All'}
-                </Button>
-              </div>
-            </Table.Head>
-            {showGroupColumn && !condensed && (
-              <Table.Head 
+              isRowHeader
                 className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group px-4"
-                onClick={() => handleSort('group')}
+                onClick={() => handleSort('name')}
               >
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Group</span>
-                <SortIcon column="group" />
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</span>
+                <SortIcon column="name" />
+                <div className="ml-auto flex items-center gap-2">
+                  <Button 
+                      variant="link-gray" 
+                      size="sm" 
+                      onClick={(e) => { e.stopPropagation(); selection.size > 0 ? clearSelection() : selectAll(); }}
+                      className="text-[10px] uppercase tracking-tighter"
+                  >
+                      {selection.size > 0 ? 'Clear' : 'All'}
+                  </Button>
+                </div>
               </Table.Head>
-            )}
-            <Table.Head 
-              className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-right justify-end group px-4"
-              onClick={() => handleSort('nominal')}
-            >
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Nom</span>
-              <SortIcon column="nominal" />
-            </Table.Head>
-            <Table.Head className="text-right px-4 justify-end">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Min</span>
-            </Table.Head>
-            
-            {!condensed && (
-              <>
+              {showGroupColumn && !condensed && (
                 <Table.Head 
-                  className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-right justify-end group px-4"
-                  onClick={() => handleSort('lifetime')}
+                  className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group px-4"
+                  onClick={() => handleSort('group')}
                 >
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Lifetime</span>
-                  <SortIcon column="lifetime" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Group</span>
+                  <SortIcon column="group" />
                 </Table.Head>
-                <Table.Head className="px-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Category</span>
-                </Table.Head>
-                <Table.Head className="px-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Usage</span>
-                </Table.Head>
-                <Table.Head className="px-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Value</span>
-                </Table.Head>
-              </>
-            )}
+              )}
+              <Table.Head 
+                className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-right justify-end group px-4"
+                onClick={() => handleSort('nominal')}
+              >
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Nom</span>
+                <SortIcon column="nominal" />
+              </Table.Head>
+              <Table.Head className="text-right px-4 justify-end">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Min</span>
+              </Table.Head>
+              
+              {!condensed && (
+                <>
+                  <Table.Head 
+                    className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-right justify-end group px-4"
+                    onClick={() => handleSort('lifetime')}
+                  >
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Lifetime</span>
+                    <SortIcon column="lifetime" />
+                  </Table.Head>
+                  <Table.Head className="px-4">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Category</span>
+                  </Table.Head>
+                  <Table.Head className="px-4">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Usage</span>
+                  </Table.Head>
+                  <Table.Head className="px-4">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Value</span>
+                  </Table.Head>
+                </>
+              )}
           </Table.Header>
 
           <Table.Body 
-            className="flex-1 min-h-0 overflow-auto scrollbar-thin divide-y-0 relative block dark:bg-gray-900" 
-            ref={containerRef}
-            onScroll={handleScroll}
+            className="divide-y-0 relative block dark:bg-gray-900"
+            style={{ paddingTop: topPad, paddingBottom: bottomPad }}
           >
-            <div style={{ height: `${topPad}px` }} />
-            
             {visibleRows.map((t, i) => {
               const globalIndex = startIndex + i;
               const selected = selection.has(t.name);
@@ -338,8 +348,6 @@ export default function TypesTable({ definitions, types, selection, setSelection
                 </Table.Row>
               );
             })}
-            
-            <div style={{ height: `${bottomPad}px` }} />
           </Table.Body>
         </Table>
       </div>

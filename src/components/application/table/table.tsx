@@ -1,5 +1,5 @@
 import type { ComponentPropsWithRef, HTMLAttributes, ReactNode, Ref, TdHTMLAttributes, ThHTMLAttributes } from "react";
-import { createContext, isValidElement, useContext } from "react";
+import React, { createContext, forwardRef, isValidElement, useContext } from "react";
 import { ArrowDown, ChevronSelectorVertical, Copy01, Edit01, HelpCircle, Trash01 } from "@untitledui/icons";
 import type {
     CellProps as AriaCellProps,
@@ -106,17 +106,28 @@ interface TableRootProps extends AriaTableProps, Omit<ComponentPropsWithRef<"tab
     containerClassName?: string;
 }
 
-const TableRoot = ({ className, containerClassName, size = "md", ...props }: TableRootProps) => {
-    const context = useContext(TableContext);
+const TableRoot = forwardRef<HTMLDivElement, TableRootProps>(
+    ({ className, containerClassName, size = "md", onScroll, ...props }, ref) => {
+        const context = useContext(TableContext);
 
-    return (
-        <TableContext.Provider value={{ size: context?.size ?? size }}>
-            <div className={cx("overflow-x-auto", containerClassName)}>
-                <AriaTable className={(state) => cx("w-full overflow-x-hidden", typeof className === "function" ? className(state) : className)} {...props} />
-            </div>
-        </TableContext.Provider>
-    );
-};
+        return (
+            <TableContext.Provider value={{ size: context?.size ?? size }}>
+                <div
+                    ref={ref}
+                    onScroll={onScroll}
+                    className={cx("overflow-auto scrollbar-thin [scrollbar-gutter:stable]", containerClassName)}
+                >
+                    <AriaTable
+                        className={(state) =>
+                            cx("min-w-full w-max", typeof className === "function" ? className(state) : className)
+                        }
+                        {...props}
+                    />
+                </div>
+            </TableContext.Provider>
+        );
+    },
+);
 TableRoot.displayName = "Table";
 
 interface TableHeaderProps<T extends object>
@@ -136,13 +147,10 @@ const TableHeader = <T extends object>({ columns, children, bordered = true, cla
             {...props}
             className={(state) =>
                 cx(
-                    "relative bg-secondary",
-                    size === "sm" ? "h-9" : "h-11",
-
+                    "sticky top-0 z-10 bg-secondary",
                     // Row border—using an "after" pseudo-element to avoid the border taking up space.
                     bordered &&
                         "[&>tr>th]:after:pointer-events-none [&>tr>th]:after:absolute [&>tr>th]:after:inset-x-0 [&>tr>th]:after:bottom-0 [&>tr>th]:after:h-px [&>tr>th]:after:bg-border-secondary [&>tr>th]:focus-visible:after:bg-transparent",
-
                     typeof className === "function" ? className(state) : className,
                 )
             }
@@ -156,7 +164,7 @@ const TableHeader = <T extends object>({ columns, children, bordered = true, cla
                     )}
                 </AriaColumn>
             )}
-            <AriaCollection items={columns}>{children}</AriaCollection>
+            {children}
         </AriaTableHeader>
     );
 };
@@ -212,7 +220,8 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
 TableHead.displayName = "TableHead";
 
 interface TableRowProps<T extends object>
-    extends AriaRowProps<T>, Omit<ComponentPropsWithRef<"tr">, "children" | "className" | "onClick" | "slot" | "style" | "id"> {
+    extends AriaRowProps<T>,
+        Omit<ComponentPropsWithRef<"tr">, "children" | "className" | "slot" | "id"> {
     highlightSelectedRow?: boolean;
     size?: "sm" | "md";
 }
@@ -240,13 +249,13 @@ const TableRow = <T extends object>({ columns, children, className, highlightSel
             }
         >
             {selectionBehavior === "toggle" && (
-                <AriaCell className={cx("relative py-2 pr-0 pl-4", size === "sm" ? "md:pl-5" : "md:pl-6")}>
+                <AriaCell className={cx("relative py-2 pr-0 pl-4", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
                     <div className="flex items-end">
                         <Checkbox slot="selection" size="md" />
                     </div>
                 </AriaCell>
             )}
-            <AriaCollection items={columns}>{children}</AriaCollection>
+            {children}
         </AriaRow>
     );
 };
