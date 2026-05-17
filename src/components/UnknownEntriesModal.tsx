@@ -1,28 +1,34 @@
 import React, { useMemo, useState } from 'react';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import { Badge } from './base/badges/badges';
-import { Plus, Trash2 } from 'lucide-react';
+import { Modal } from '@/components/base/modal/modal';
+import { Button } from '@/components/base/button/button';
+import { Badge } from '@/components/base/badges/badges';
+import { Plus, Trash2, AlertCircle } from 'lucide-react';
 
-/**
- * @param {{
- *  unknowns: {
- *    hasAny: boolean,
- *    sets: { usage: Set<string>, value: Set<string>, tag: Set<string>, category: Set<string> }
- *  },
- *  onApply: (opts: { add: {usage: string[], value: string[], tag: string[], category: string[]}, remove: boolean }) => void,
- *  onClose: () => void
- * }} props
- */
-export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
+interface UnknownsSets {
+  usage: Set<string>;
+  value: Set<string>;
+  tag: Set<string>;
+  category: Set<string>;
+}
+
+interface UnknownEntriesModalProps {
+  unknowns: {
+    hasAny: boolean;
+    sets: UnknownsSets;
+  };
+  onApply: (opts: { add: { usage: string[]; value: string[]; tag: string[]; category: string[] }; remove: boolean }) => void;
+  onClose: () => void;
+}
+
+export default function UnknownEntriesModal({ unknowns, onApply, onClose }: UnknownEntriesModalProps) {
   const [state, setState] = useState({
-    addUsage: new Set(),
-    addValue: new Set(),
-    addTag: new Set(),
-    addCategory: new Set(),
+    addUsage: new Set<string>(),
+    addValue: new Set<string>(),
+    addTag: new Set<string>(),
+    addCategory: new Set<string>(),
   });
 
-  const toggleSet = (key, val) => {
+  const toggleSet = (key: keyof typeof state, val: string) => {
     setState(s => {
       const ns = new Set(s[key]);
       if (ns.has(val)) ns.delete(val);
@@ -56,9 +62,9 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
 
   const footer = (
     <>
-      <Button variant="secondary" onClick={onClose}>Cancel</Button>
+      <Button variant="secondary-gray" onClick={onClose}>Cancel</Button>
       <Button 
-        variant="secondary" 
+        variant="secondary-gray" 
         onClick={onRemoveSelected} 
         disabled={selectionCount === 0}
         title="Remove selected entries from affected types"
@@ -82,6 +88,8 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
       title="Resolve Unknown Entries"
       description="Select unknown entries and choose how to resolve them."
       footer={footer}
+      icon={AlertCircle}
+      iconVariant="warning"
     >
       <div className="space-y-6">
         <ResolveSection
@@ -113,7 +121,14 @@ export default function UnknownEntriesModal({ unknowns, onApply, onClose }) {
   );
 }
 
-function ResolveSection({ title, items, selected, onToggle }) {
+interface ResolveSectionProps {
+  title: string;
+  items: string[];
+  selected: Set<string>;
+  onToggle: (v: string) => void;
+}
+
+function ResolveSection({ title, items, selected, onToggle }: ResolveSectionProps) {
   if (items.length === 0) return null;
   return (
     <div className="space-y-3">

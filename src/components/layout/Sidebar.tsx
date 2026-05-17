@@ -3,7 +3,6 @@ import {
   Database, 
   Store, 
   Map as MapIcon, 
-  Search, 
   LogOut, 
   User, 
   ChevronRight,
@@ -14,12 +13,24 @@ import {
   Bell,
   Search as SearchIcon
 } from 'lucide-react';
-import { cn } from '../../utils/cn';
-import { Button } from '../ui/Button';
+import { cx } from '@/utils/cx';
+import { Button } from '@/components/base/button/button';
 import { ThemeToggle } from '../ThemeToggle.jsx';
-import { Badge } from '../base/badges/badges';
+import { Badge } from '@/components/base/badges/badges';
 
-export const Sidebar = ({ 
+interface SidebarProps {
+  className?: string;
+  activeTab?: string;
+  onTabChange: (tabId: string) => void;
+  editorID: string;
+  onSignOut: () => void;
+  selectedProfile?: { id: string; name: string };
+  onProfileClick: () => void;
+  storageDirty: boolean;
+  onStorageClick: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ 
   className, 
   activeTab, 
   onTabChange, 
@@ -30,14 +41,14 @@ export const Sidebar = ({
   storageDirty,
   onStorageClick
 }) => {
-  const [expandedItems, setExpandedItems] = useState({
-    marketplace: activeTab?.startsWith('marketplace'),
-    'map-tools': activeTab?.startsWith('map-tools'),
-    'mission-files': activeTab?.startsWith('mission-files'),
-    tools: activeTab?.startsWith('tools')
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
+    marketplace: !!activeTab?.startsWith('marketplace'),
+    'map-tools': !!activeTab?.startsWith('map-tools'),
+    'mission-files': !!activeTab?.startsWith('mission-files'),
+    tools: !!activeTab?.startsWith('tools')
   });
 
-  const toggleExpand = (id) => {
+  const toggleExpand = (id: string) => {
     setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
@@ -61,12 +72,9 @@ export const Sidebar = ({
     ]},
   ];
 
-  const handleItemClick = (item) => {
+  const handleItemClick = (item: any) => {
     if (item.subItems) {
       toggleExpand(item.id);
-      // If it's the current main tab, we just toggle expansion.
-      // If not, we might want to switch to the first sub-item or just toggle.
-      // Current behavior in App.jsx seems to expect the ID.
       onTabChange(item.id);
     } else {
       onTabChange(item.id);
@@ -74,7 +82,7 @@ export const Sidebar = ({
   };
 
   return (
-    <aside className={cn("flex flex-col h-full bg-white border-r border-gray-200 w-72 dark:bg-gray-900 dark:border-gray-800", className)}>,search:
+    <aside className={cx("flex flex-col h-full bg-white border-r border-gray-200 w-72 dark:bg-gray-900 dark:border-gray-800", className)}>
       {/* Header */}
       <div className="p-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -107,19 +115,19 @@ export const Sidebar = ({
             <div key={item.id} className="space-y-1">
               <button
                 onClick={() => handleItemClick(item)}
-                className={cn(
+                className={cx(
                   "flex items-center w-full px-3 py-2 text-sm font-semibold rounded-lg transition-all group",
                   isActive 
                     ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300" 
                     : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
                 )}
               >
-                <item.icon className={cn("mr-3 shrink-0 transition-colors", isActive ? "text-primary-600 dark:text-primary-400" : "text-gray-400 group-hover:text-gray-500")} size={20} />
+                <item.icon className={cx("mr-3 shrink-0 transition-colors", isActive ? "text-primary-600 dark:text-primary-400" : "text-gray-400 group-hover:text-gray-500")} size={20} />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.subItems && (
                   <ChevronDown 
                     size={16} 
-                    className={cn("transition-transform text-gray-400", isExpanded && "rotate-180")} 
+                    className={cx("transition-transform text-gray-400", isExpanded && "rotate-180")} 
                   />
                 )}
               </button>
@@ -137,7 +145,7 @@ export const Sidebar = ({
                           e.stopPropagation();
                           onTabChange(subId);
                         }}
-                        className={cn(
+                        className={cx(
                           "flex items-center w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors",
                           isSubActive
                             ? "text-primary-700 dark:text-primary-300"
@@ -179,18 +187,14 @@ export const Sidebar = ({
             <p className="text-sm font-bold text-gray-900 truncate dark:text-gray-100">{editorID}</p>
             <p className="text-xs text-gray-500 truncate dark:text-gray-400">Editor</p>
           </div>
-          
           <div className="flex items-center gap-1 shrink-0">
             {storageDirty && (
               <button 
                 onClick={onStorageClick}
-                className="size-8 flex items-center justify-center text-warning-500 hover:bg-warning-50 rounded-lg transition-colors dark:hover:bg-warning-900/20"
-                title="Unsaved changes"
+                className="size-8 flex items-center justify-center text-warning-500 hover:bg-warning-50 rounded-lg transition-all dark:hover:bg-warning-900/20 animate-pulse"
+                title="Pending changes"
               >
-                <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-warning-500"></span>
-                </span>
+                <Bell size={18} />
               </button>
             )}
             <ThemeToggle />

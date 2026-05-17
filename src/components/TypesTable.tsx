@@ -1,0 +1,332 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Row as AriaRow, Selection } from 'react-aria-components';
+import { formatLifetime } from '@/utils/time';
+import { Table, TableCard } from '@/components/application/table/table';
+import { Badge } from '@/components/base/badges/badges';
+import { cx } from '@/utils/cx';
+import { ArrowUp, ArrowDown, Check, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/base/button/button';
+import type { Type } from '@/utils/xml';
+
+interface TypesTableProps {
+  definitions: {
+    categories: string[];
+    usageflags: string[];
+    valueflags: string[];
+    tags: string[];
+  };
+  types: (Type & { group?: string; file?: string })[];
+  selection: Set<string>;
+  setSelection: (sel: Set<string>) => void;
+  unknowns: {
+    byType: Record<string, { category?: string[]; usage: string[]; value: string[]; tag: string[] }>;
+  };
+  condensed?: boolean;
+  duplicatesByName?: Record<string, string[]>;
+  storageDiff?: {
+    files: Record<string, Record<string, { changedNames?: string[] }>>;
+  };
+  showGroupColumn?: boolean;
+}
+
+type SortKey = 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value';
+
+export default function TypesTable({
+  definitions,
+  types,
+  selection,
+  setSelection,
+  unknowns,
+  condensed: condensedProp,
+  duplicatesByName = {},
+  storageDiff,
+  showGroupColumn = true,
+}: TypesTableProps) {
+  const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({
+    key: 'name',
+    dir: 'asc',
+  });
+
+  // Virtualization state
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const rowHeight = 56; // Matching Untitled UI 'sm' size
+  const [viewportHeight, setViewportHeight] = useState(600);
+  const [scrollTop, setScrollTop] = useState(0);
+  const overscan = 10;
+
+  const rows = useMemo(() => {
+    const arr = types.map((t) => {
+      const unk = unknowns.byType[t.name] || { usage: [], value: [], tag: [] };
+      const hasUnknown =
+        (unk.usage?.length || 0) +
+          (unk.value?.length || 0) +
+          (unk.tag?.length || 0) +
+          (unk.category ? 1 : 0) >
+        0;
+      return { ...t, hasUnknown, unk };
+    });
+
+    if (sort.key) {
+      const getVal = (r: any) => {
+        if (sort.key === 'usage' || sort.key === 'value') {
+          return (r[sort.key] || []).join(',').toLowerCase();
+        }
+        if (sort.key === 'name') {
+          return String(r.name).toLowerCase();
+        }
+        if (sort.key === 'group') {
+          return String(r.group || '').toLowerCase();
+        }
+        return Number(r[sort.key] ?? 0);
+      };
+      arr.sort((a, b) => {
+        const av = getVal(a);
+        const bv = getVal(b);
+        let cmp = 0;
+        if (typeof av === 'number' && typeof bv === 'number') {
+          cmp = av - bv;
+        } else {
+          cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        }
+        return sort.dir === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    return arr;
+  }, [types, unknowns, sort]);
+
+  const maxNameWidth = useMemo(() => {
+    if (types.length === 0) return 20;
+    let max = 0;
+    for (const t of types) {
+      if (t.name && t.name.length > max) max = t.name.length;
+    }
+    // Add some padding for the icon (approx 4-5ch) and badges
+    return Math.min(max + 10, 80);
+  }, [types]);
+
+  // Measure viewport height
+  useEffect(() => {
+    const updateViewport = () => {
+      if (containerRef.current) {
+        setViewportHeight(containerRef.current.clientHeight);
+      }
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  };
+
+  // Compute visible window
+  const total = rows.length;
+  const visibleCount = Math.max(1, Math.ceil(viewportHeight / rowHeight) + overscan);
+  const startIndex = Math.max(0, Math.min(Math.max(0, total - visibleCount), Math.floor(scrollTop / rowHeight)));
+  const endIndex = Math.min(total, startIndex + visibleCount);
+  const topPad = startIndex * rowHeight;
+  const bottomPad = Math.max(0, (total - endIndex) * rowHeight);
+  const visibleRows = rows.slice(startIndex, endIndex);
+
+  const handleSort = (key: SortKey) => {
+    setSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  };
+
+  const handleSelectionChange = (keys: Selection) => {
+    if (keys === 'all') {
+      setSelection(new Set(rows.map((r) => r.name)));
+    } else {
+      setSelection(new Set(Array.from(keys).map(String)));
+    }
+  };
+
+  const columnWidths = useMemo(() => {
+    const cols = [];
+    cols.push(`${maxNameWidth}ch`); // Name
+    if (showGroupColumn) cols.push('8rem'); // Group
+    cols.push('5rem'); // Nominal
+    cols.push('5rem'); // Min
+    cols.push('6rem'); // Lifetime
+    cols.push('8rem'); // Category
+    cols.push('minmax(150px, 1fr)'); // Usage
+    cols.push('minmax(150px, 1fr)'); // Value
+    return cols.join(' ');
+  }, [maxNameWidth, showGroupColumn]);
+
+  const gridStyle = { '--grid-template-columns': columnWidths } as React.CSSProperties;
+
+  return (
+    <TableCard className="flex-1 min-h-0 flex flex-col p-0">
+      <Table
+        ref={containerRef}
+        aria-label="Types"
+        selectionMode="multiple"
+        selectionBehavior="toggle"
+        selectedKeys={selection}
+        onSelectionChange={handleSelectionChange}
+        onScroll={handleScroll}
+        className="w-full flex-1 flex flex-col min-h-0"
+        style={gridStyle}
+      >
+        <Table.Header className="bg-gray-50/50 dark:bg-gray-950/20 border-b border-gray-200 dark:border-gray-800">
+          <Table.Column isRowHeader sortDescriptor={sort.key === 'name' ? sort.dir : undefined} onSort={() => handleSort('name')}>
+            Name
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="link-gray"
+                size="sm"
+                className="text-[10px] uppercase tracking-tighter"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelection(new Set(rows.map((r) => r.name)));
+                }}
+              >
+                All
+              </Button>
+            </div>
+          </Table.Column>
+          {showGroupColumn && (
+            <Table.Column sortDescriptor={sort.key === 'group' ? sort.dir : undefined} onSort={() => handleSort('group')}>
+              Group
+            </Table.Column>
+          )}
+          <Table.Column sortDescriptor={sort.key === 'nominal' ? sort.dir : undefined} onSort={() => handleSort('nominal')}>
+            Nom
+          </Table.Column>
+          <Table.Column>Min</Table.Column>
+          <Table.Column sortDescriptor={sort.key === 'lifetime' ? sort.dir : undefined} onSort={() => handleSort('lifetime')}>
+            Lifetime
+          </Table.Column>
+          <Table.Column>Category</Table.Column>
+          <Table.Column sortDescriptor={sort.key === 'usage' ? sort.dir : undefined} onSort={() => handleSort('usage')}>
+            Usage
+          </Table.Column>
+          <Table.Column sortDescriptor={sort.key === 'value' ? sort.dir : undefined} onSort={() => handleSort('value')}>
+            Value
+          </Table.Column>
+        </Table.Header>
+
+        <Table.Body
+          className="flex-1 overflow-y-auto scrollbar-thin divide-y-0 relative block"
+          style={{
+            paddingTop: `${topPad}px`,
+            paddingBottom: `${bottomPad}px`,
+          }}
+        >
+          {visibleRows.map((row) => {
+            const isSelected = selection.has(row.name);
+            const isModified = storageDiff?.files[row.group || 'vanilla']?.[row.file || 'types']?.changedNames?.includes(row.name);
+            const hasDuplicate = !!duplicatesByName[row.name];
+
+            return (
+              <AriaRow
+                key={row.name}
+                id={row.name}
+                className={cx(
+                  'grid items-stretch cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-800/50 outline-none focus-visible:bg-primary-50 dark:focus-visible:bg-primary-900/10',
+                  isSelected
+                    ? 'bg-primary-50/50 dark:bg-primary-900/10'
+                    : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/50'
+                )}
+                style={{
+                  gridTemplateColumns: columnWidths,
+                  height: `${rowHeight}px`,
+                }}
+              >
+                <Table.Cell className="px-4 py-2 flex items-center min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={cx(
+                        'size-5 rounded-md border flex items-center justify-center shrink-0 transition-all',
+                        isSelected
+                          ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
+                          : 'bg-white border-gray-300 dark:bg-gray-950 dark:border-gray-700'
+                      )}
+                    >
+                      {isSelected && <Check size={12} strokeWidth={3} />}
+                    </div>
+                    <span
+                      className={cx(
+                        'text-sm font-semibold truncate',
+                        isSelected ? 'text-primary-700 dark:text-primary-300' : 'text-gray-900 dark:text-gray-100',
+                        isModified && 'text-warning-600 dark:text-warning-400'
+                      )}
+                      title={row.name}
+                    >
+                      {row.name}
+                    </span>
+                    {row.hasUnknown && (
+                      <Badge color="error" size="sm" type="modern">
+                        <AlertCircle size={12} className="mr-1" /> Unknown
+                      </Badge>
+                    )}
+                    {hasDuplicate && (
+                      <Badge color="warning" size="sm" type="modern">
+                        <AlertTriangle size={12} className="mr-1" /> Duplicate
+                      </Badge>
+                    )}
+                  </div>
+                </Table.Cell>
+                {showGroupColumn && (
+                  <Table.Cell className="px-4 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
+                    {row.group || '-'}
+                  </Table.Cell>
+                )}
+                <Table.Cell className="px-4 py-2 flex items-center justify-end text-sm font-bold text-gray-900 dark:text-gray-100">
+                  {row.nominal}
+                </Table.Cell>
+                <Table.Cell className="px-4 py-2 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400">
+                  {row.min}
+                </Table.Cell>
+                <Table.Cell className="px-4 py-2 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400 font-mono">
+                  {formatLifetime(row.lifetime)}
+                </Table.Cell>
+                <Table.Cell className="px-4 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
+                  {row.category || '-'}
+                </Table.Cell>
+                <Table.Cell className="px-4 py-2 flex items-center gap-1 flex-wrap overflow-hidden">
+                  {(row.usage || []).length > 0 ? (
+                    row.usage.map((u: string) => (
+                      <Badge
+                        key={u}
+                        color={row.unk.usage?.includes(u) ? 'error' : 'gray'}
+                        size="sm"
+                        className="whitespace-nowrap"
+                      >
+                        {u}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </Table.Cell>
+                <Table.Cell className="px-4 py-2 flex items-center gap-1 flex-wrap overflow-hidden">
+                  {(row.value || []).length > 0 ? (
+                    row.value.map((v: string) => (
+                      <Badge
+                        key={v}
+                        color={row.unk.value?.includes(v) ? 'error' : 'gray'}
+                        size="sm"
+                        className="whitespace-nowrap"
+                      >
+                        {v}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </Table.Cell>
+              </AriaRow>
+            );
+          })}
+        </Table.Body>
+      </Table>
+    </TableCard>
+  );
+}

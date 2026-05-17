@@ -1,9 +1,23 @@
 import React from 'react';
-import { cn } from '../../utils/cn';
+import { cx } from '@/utils/cx';
 import { X } from 'lucide-react';
-import { Button } from './Button';
 
-export const Modal = ({ 
+export type ModalIconVariant = 'primary' | 'error' | 'warning' | 'success' | 'gray';
+
+export interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  maxWidth?: string;
+  className?: string;
+  icon?: React.ElementType;
+  iconVariant?: ModalIconVariant;
+}
+
+export const Modal: React.FC<ModalProps> = ({ 
   isOpen, 
   onClose, 
   title, 
@@ -17,7 +31,7 @@ export const Modal = ({
 }) => {
   if (!isOpen) return null;
 
-  const iconVariants = {
+  const iconVariants: Record<ModalIconVariant, string> = {
     primary: 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
     error: 'bg-error-100 text-error-600 dark:bg-error-900/30 dark:text-error-400',
     warning: 'bg-warning-100 text-warning-600 dark:bg-warning-900/30 dark:text-warning-400',
@@ -28,7 +42,7 @@ export const Modal = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className={cn(
+        className={cx(
           "bg-white rounded-xl shadow-xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 dark:bg-gray-900 border border-gray-200 dark:border-gray-800",
           maxWidth,
           className
@@ -37,7 +51,7 @@ export const Modal = ({
         <div className="p-6 flex items-start justify-between shrink-0">
           <div className="flex gap-4">
             {Icon && (
-              <div className={cn("size-12 rounded-lg flex items-center justify-center shrink-0 shadow-sm", iconVariants[iconVariant])}>
+              <div className={cx("size-12 rounded-lg flex items-center justify-center shrink-0 shadow-sm", iconVariants[iconVariant])}>
                 <Icon size={24} />
               </div>
             )}

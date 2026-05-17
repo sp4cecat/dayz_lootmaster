@@ -1,24 +1,29 @@
 import React, { useMemo, useState } from 'react';
-import { Modal } from './ui/Modal.jsx';
-import { Button } from './ui/Button.jsx';
-import { Badge } from './base/badges/badges';
-import { Input } from './ui/Input.jsx';
+import { Modal } from '@/components/base/modal/modal';
+import { Button } from '@/components/base/button/button';
+import { Badge } from '@/components/base/badges/badges';
+import { Input } from '@/components/base/input/input';
 import { Plus, X, AlertTriangle } from 'lucide-react';
 
-/**
- * Modal to manage entries in usage/value/tags definitions.
- * Renders entries as chips with an 'x' button to remove and allows adding new entries.
- *
- * @param {{
- *  kind: 'usage'|'value'|'tag',
- *  entries: string[],
- *  countRefs: (kind: 'usage'|'value'|'tag', entry: string) => number,
- *  removeEntry: (kind: 'usage'|'value'|'tag', entry: string) => void,
- *  addEntry: (kind: 'usage'|'value'|'tag', entry: string) => void,
- *  onClose: () => void
- * }} props
- */
-export const ManageDefinitionsModal = ({ kind, entries, countRefs, removeEntry, addEntry, onClose }) => {
+export type DefinitionKind = 'usage' | 'value' | 'tag';
+
+interface ManageDefinitionsModalProps {
+  kind: DefinitionKind;
+  entries: string[];
+  countRefs: (kind: DefinitionKind, entry: string) => number;
+  removeEntry: (kind: DefinitionKind, entry: string) => void;
+  addEntry: (kind: DefinitionKind, entry: string) => void;
+  onClose: () => void;
+}
+
+export const ManageDefinitionsModal: React.FC<ManageDefinitionsModalProps> = ({ 
+  kind, 
+  entries, 
+  countRefs, 
+  removeEntry, 
+  addEntry, 
+  onClose 
+}) => {
   const label = kind === 'usage' ? 'Usage' : kind === 'value' ? 'Value' : 'Tag';
   const [newEntry, setNewEntry] = useState('');
 
@@ -27,13 +32,12 @@ export const ManageDefinitionsModal = ({ kind, entries, countRefs, removeEntry, 
   const count = entries.length;
 
   const entryCounts = useMemo(() => {
-    /** @type {Record<string, number>} */
-    const m = {};
+    const m: Record<string, number> = {};
     for (const e of entries) m[e] = countRefs(kind, e);
     return m;
   }, [entries, kind, countRefs]);
 
-  const onRemoveClick = (entry) => {
+  const onRemoveClick = (entry: string) => {
     const refCount = countRefs(kind, entry);
     const proceed = window.confirm(
       refCount > 0
@@ -59,7 +63,7 @@ export const ManageDefinitionsModal = ({ kind, entries, countRefs, removeEntry, 
     setNewEntry('');
   };
 
-  const onKeyDown = (e) => {
+  const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       onAdd();
@@ -67,7 +71,7 @@ export const ManageDefinitionsModal = ({ kind, entries, countRefs, removeEntry, 
   };
 
   const footer = (
-    <Button variant="secondary" onClick={onClose}>Close</Button>
+    <Button variant="secondary-gray" onClick={onClose}>Close</Button>
   );
 
   return (

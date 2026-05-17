@@ -1,7 +1,28 @@
 import React from 'react';
-import { cn } from '../../utils/cn';
+import { cx } from '@/utils/cx';
 
-export const Button = React.forwardRef(({ 
+export type ButtonVariant = 
+  | 'primary' 
+  | 'secondary' 
+  | 'secondary-gray' 
+  | 'secondary-color' 
+  | 'tertiary' 
+  | 'tertiary-color' 
+  | 'error' 
+  | 'error-secondary' 
+  | 'link' 
+  | 'link-gray';
+
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  icon?: React.ElementType;
+  iconPosition?: 'left' | 'right';
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ 
   className, 
   variant = 'primary', 
   size = 'md', 
@@ -10,7 +31,7 @@ export const Button = React.forwardRef(({
   children,
   ...props 
 }, ref) => {
-  const variants = {
+  const variants: Record<string, string> = {
     primary: 'bg-primary-600 text-white hover:bg-primary-700 shadow-sm border border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600 dark:border-primary-500',
     'secondary-gray': 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700',
     'secondary-color': 'bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-50 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-900/30 dark:hover:bg-primary-900/40',
@@ -22,7 +43,7 @@ export const Button = React.forwardRef(({
     'link-gray': 'text-gray-600 hover:text-gray-800 p-0 h-auto font-semibold dark:text-gray-400 dark:hover:text-gray-200',
   };
 
-  const sizes = {
+  const sizes: Record<ButtonSize, string> = {
     sm: 'px-3 py-2 text-sm gap-2',
     md: 'px-4 py-2.5 text-sm gap-2',
     lg: 'px-5 py-3 text-base gap-2',
@@ -36,10 +57,10 @@ export const Button = React.forwardRef(({
   return (
     <button
       ref={ref}
-      className={cn(
+      className={cx(
         'inline-flex items-center justify-center rounded-lg font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-primary-100 disabled:opacity-50 disabled:cursor-not-allowed',
         variants[actualVariant] || variants.primary,
-        !actualVariant.startsWith('link') && sizes[size],
+        !actualVariant.startsWith('link') && sizes[size as ButtonSize],
         className
       )}
       {...props}

@@ -2,43 +2,57 @@ import React, { useState, useCallback } from 'react';
 import EditFormCLETab from './EditFormCLETab.jsx';
 import EditFormMarketplaceTab from './EditFormMarketplaceTab.jsx';
 import EditFormSpawnableTab from './EditFormSpawnableTab.jsx';
-import { cn } from '../utils/cn';
-import { Button } from './ui/Button';
+import { cx } from '@/utils/cx';
+import { Button } from '@/components/base/button/button';
 import { X, Save as SaveIcon } from 'lucide-react';
+import type { Type } from '@/utils/xml';
 
-/**
- * @typedef {import('../utils/xml.js').Type} Type
- */
+interface EditFormProps {
+  definitions: {
+    categories: string[];
+    usageflags: string[];
+    valueflags: string[];
+    tags: string[];
+  };
+  selectedTypes: Type[];
+  onCancel: () => void;
+  onSave: (apply: (t: Type) => Type) => void;
+  typeOptions?: string[];
+  typeOptionsByCategory?: Record<string, string[]>;
+  selectedProfileId: string;
+  selectedProfile?: { id: string; addons?: string[] };
+  getApiBase: () => string;
+  spawnableTypesByGroup?: Record<string, any>;
+  setSpawnableTypesByGroup?: (next: any) => void;
+  randomPresets?: { presets: any[] };
+  globalsDefaults?: { LootDamageMin: number | null; LootDamageMax: number | null };
+}
 
-/**
- * Container EditForm that separates CLE and Marketplace states completely.
- * @param {{
- *  definitions: {categories: string[], usageflags: string[], valueflags: string[], tags: string[]},
- *  selectedTypes: Type[],
- *  onCancel: () => void,
- *  onSave: (apply: (t: Type) => Type) => void,
- *  typeOptions?: string[],
- *  typeOptionsByCategory?: Record<string, string[]>,
- *  selectedProfileId: string,
- *  selectedProfile?: {id: string, addons?: string[]},
- *  getApiBase: () => string,
- *  spawnableTypesByGroup?: Record<string, any>,
- *  setSpawnableTypesByGroup?: (next: any) => void,
- *  randomPresets?: {presets: any[]},
- *  globalsDefaults?: {LootDamageMin: number|null, LootDamageMax: number|null}
- * }} props
- */
-export default function EditForm({ definitions, selectedTypes, onCancel, onSave, typeOptions = [], typeOptionsByCategory = {}, selectedProfileId, selectedProfile, getApiBase, spawnableTypesByGroup = {}, setSpawnableTypesByGroup = () => {}, randomPresets = { presets: [] }, globalsDefaults = { LootDamageMin: null, LootDamageMax: null } }) {
-  const [activeTab, setActiveTab] = useState('CLE');
+export default function EditForm({ 
+  definitions, 
+  selectedTypes, 
+  onCancel, 
+  onSave, 
+  typeOptions = [], 
+  typeOptionsByCategory = {}, 
+  selectedProfileId, 
+  selectedProfile, 
+  getApiBase, 
+  spawnableTypesByGroup = {}, 
+  setSpawnableTypesByGroup = () => {}, 
+  randomPresets = { presets: [] }, 
+  globalsDefaults = { LootDamageMin: null, LootDamageMax: null } 
+}: EditFormProps) {
+  const [activeTab, setActiveTab] = useState<'CLE' | 'Spawnable' | 'Marketplace'>('CLE');
   const [marketTabOpened, setMarketTabOpened] = useState(false);
   const [canSaveCLE, setCanSaveCLE] = useState(false);
-  const [saveCLE, setSaveCLE] = useState(/** @type {null | (() => void)} */(null));
+  const [saveCLE, setSaveCLE] = useState<null | (() => void)>(null);
   
-  const registerSaveHandler = useCallback((fn /** @type {null | (() => void)} */) => {
+  const registerSaveHandler = useCallback((fn: null | (() => void)) => {
     setSaveCLE(() => fn);
   }, []);
 
-  const tabs = [
+  const tabs: { id: 'CLE' | 'Spawnable' | 'Marketplace'; label: string }[] = [
     { id: 'CLE', label: 'Loot Economy' },
     { id: 'Spawnable', label: 'Spawnable / Cargo' },
     { id: 'Marketplace', label: 'Marketplace' },
@@ -94,7 +108,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
                   setActiveTab(tab.id);
                   if (tab.id === 'Marketplace' && !marketTabOpened) setMarketTabOpened(true);
                 }}
-                className={cn(
+                className={cx(
                   "py-4 text-sm font-bold border-b-2 transition-all relative",
                   isActive 
                     ? "border-primary-600 text-primary-700 dark:border-primary-500 dark:text-primary-300" 
@@ -113,7 +127,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
 
       <div className="flex-1 overflow-y-auto p-6 scrollbar-thin edit-form-content">
         {/* Keep tabs mounted; only show active via CSS */}
-        <div className={cn(activeTab !== 'CLE' && "hidden")}>
+        <div className={cx(activeTab !== 'CLE' && "hidden")}>
           <EditFormCLETab
             definitions={definitions}
             selectedTypes={selectedTypes}
@@ -126,7 +140,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
           />
         </div>
 
-        <div className={cn(activeTab !== 'Spawnable' && "hidden")}>
+        <div className={cx(activeTab !== 'Spawnable' && "hidden")}>
           <EditFormSpawnableTab
             selectedTypes={selectedTypes}
             spawnableTypesByGroup={spawnableTypesByGroup}
@@ -137,7 +151,7 @@ export default function EditForm({ definitions, selectedTypes, onCancel, onSave,
         </div>
 
         {marketTabOpened && (
-          <div className={cn(activeTab !== 'Marketplace' && "hidden")}>
+          <div className={cx(activeTab !== 'Marketplace' && "hidden")}>
             <EditFormMarketplaceTab
               selectedTypes={selectedTypes}
               typeOptions={typeOptions}

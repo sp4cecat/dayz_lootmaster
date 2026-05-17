@@ -1,7 +1,14 @@
 import React from 'react';
-import { cn } from '../../utils/cn';
+import { cx } from '@/utils/cx';
 
-export const Input = React.forwardRef(({ 
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+  error?: string;
+  hint?: string;
+  icon?: React.ElementType;
+}
+
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ 
   className, 
   type = 'text', 
   label, 
@@ -25,7 +32,7 @@ export const Input = React.forwardRef(({
         )}
         <input
           type={type}
-          className={cn(
+          className={cx(
             'flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 disabled:cursor-not-allowed disabled:opacity-50 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:ring-primary-900/30 dark:focus:border-primary-500',
             Icon && 'pl-10',
             error && 'border-error-300 focus:ring-error-100 focus:border-error-300 dark:border-error-800 dark:focus:ring-error-900/30',
