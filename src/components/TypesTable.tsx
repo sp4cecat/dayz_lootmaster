@@ -4,7 +4,7 @@ import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
-import { ArrowUp, ArrowDown, Check, AlertCircle, AlertTriangle, Shield } from 'lucide-react';
+import { ArrowUp, ArrowDown, Check, AlertCircle, AlertTriangle, Milk } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import type { Type } from '@/utils/xml';
 
@@ -301,7 +301,7 @@ export default function TypesTable({
                     )}
                     {isOverride && (
                       <Badge color="blue" size="sm" type="modern">
-                        <Shield size={12} className="mr-1" /> Override
+                        <Milk size={12} className="mr-1" />
                       </Badge>
                     )}
                   </div>

@@ -299,6 +299,96 @@ export function useLootData() {
     return () => { aborted = true; };
   }, [refreshBaselineFromAPI]);
 
+  const storageDiff = useMemo(() => {
+    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>> }} */
+    const diff = {
+      definitions: { categories: false, usageflags: false, valueflags: false, tags: false },
+      files: {},
+      mission: {
+        spawnableGroups: {},
+        randomPresets: false
+      }
+    };
+    // Definitions compare
+    if (baselineDefinitions && definitions) {
+      const cmp = (a, b) => JSON.stringify([...a].sort()) !== JSON.stringify([...b].sort());
+      diff.definitions.categories = cmp(baselineDefinitions.categories, definitions.categories);
+      diff.definitions.usageflags = cmp(baselineDefinitions.usageflags, definitions.usageflags);
+      diff.definitions.valueflags = cmp(baselineDefinitions.valueflags, definitions.valueflags);
+      diff.definitions.tags = cmp(baselineDefinitions.tags, definitions.tags);
+    }
+    // Files compare
+    if (baselineFiles && lootFiles) {
+      const allGroups = new Set([...Object.keys(baselineFiles), ...Object.keys(lootFiles)]);
+      for (const g of allGroups) {
+        const basePer = baselineFiles[g] || {};
+        const currPer = lootFiles[g] || {};
+        const allFiles = new Set([...Object.keys(basePer), ...Object.keys(currPer)]);
+        for (const f of allFiles) {
+          const baseArr = basePer[f] || [];
+          const currArr = currPer[f] || [];
+          const baseNames = new Set(baseArr.map(t => t.name));
+          const currNames = new Set(currArr.map(t => t.name));
+          const addedNames = [...currNames].filter(n => !baseNames.has(n));
+          const removedNames = [...baseNames].filter(n => !currNames.has(n));
+
+          // Modified: intersection where any field differs
+          const normalize = (t) => ({
+            name: t.name,
+            category: t.category || null,
+            nominal: t.nominal, min: t.min, lifetime: t.lifetime, restock: t.restock,
+            quantmin: t.quantmin, quantmax: t.quantmax,
+            flags: t.flags,
+            usage: [...t.usage].sort(),
+            value: [...t.value].sort(),
+            tag: [...t.tag].sort(),
+          });
+          const baseByName = new Map(baseArr.map(t => [t.name, normalize(t)]));
+          const currByName = new Map(currArr.map(t => [t.name, normalize(t)]));
+          const modifiedNames = [];
+          for (const name of [...baseNames].filter(n => currNames.has(n))) {
+            const a = baseByName.get(name);
+            const b = currByName.get(name);
+            if (JSON.stringify(a) !== JSON.stringify(b)) modifiedNames.push(name);
+          }
+
+          const added = addedNames.length;
+          const removed = removedNames.length;
+          const modified = modifiedNames.length;
+
+          const changedNames = [...new Set([...addedNames, ...modifiedNames])];
+          const changedCount = added + removed + modified;
+          const changed = changedCount > 0;
+
+          if (!diff.files[g]) diff.files[g] = {};
+          diff.files[g][f] = { changed, added, removed, modified, changedCount, addedNames, removedNames, modifiedNames, changedNames };
+        }
+      }
+    }
+    const allSpawnableGroups = new Set([...Object.keys(baselineSpawnableTypesByGroup), ...Object.keys(spawnableTypesByGroup)]);
+    for (const group of allSpawnableGroups) {
+      diff.mission.spawnableGroups[group] = JSON.stringify(baselineSpawnableTypesByGroup[group] || { types: [] }) !== JSON.stringify(spawnableTypesByGroup[group] || { types: [] });
+    }
+    diff.mission.randomPresets = JSON.stringify(baselineRandomPresets || { presets: [] }) !== JSON.stringify(randomPresets || { presets: [] });
+    return diff;
+  }, [baselineDefinitions, definitions, baselineFiles, lootFiles, baselineSpawnableTypesByGroup, spawnableTypesByGroup, baselineRandomPresets, randomPresets]);
+
+  const storageDirty = useMemo(() => {
+    const d = storageDiff;
+    if (!d) return false;
+    if (d.definitions.categories || d.definitions.usageflags || d.definitions.valueflags || d.definitions.tags) return true;
+    for (const g of Object.keys(d.files)) {
+      for (const f of Object.keys(d.files[g])) {
+        if (d.files[g][f].changed) return true;
+      }
+    }
+    if (d.mission?.randomPresets) return true;
+    for (const changed of Object.values(d.mission?.spawnableGroups || {})) {
+      if (changed) return true;
+    }
+    return false;
+  }, [storageDiff]);
+
   // Write staged changes (from lootFiles/IndexedDB) to server via PUT
   const persistChangesToServer = useCallback(async () => {
     if (!selectedProfileId) return { ok: false, error: 'No profile selected' };
@@ -1134,95 +1224,6 @@ export function useLootData() {
     return (baselineFiles[group]?.[file]) || [];
   }, [baselineFiles]);
 
-  const storageDiff = useMemo(() => {
-    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>> }} */
-    const diff = {
-      definitions: { categories: false, usageflags: false, valueflags: false, tags: false },
-      files: {},
-      mission: {
-        spawnableGroups: {},
-        randomPresets: false
-      }
-    };
-    // Definitions compare
-    if (baselineDefinitions && definitions) {
-      const cmp = (a, b) => JSON.stringify([...a].sort()) !== JSON.stringify([...b].sort());
-      diff.definitions.categories = cmp(baselineDefinitions.categories, definitions.categories);
-      diff.definitions.usageflags = cmp(baselineDefinitions.usageflags, definitions.usageflags);
-      diff.definitions.valueflags = cmp(baselineDefinitions.valueflags, definitions.valueflags);
-      diff.definitions.tags = cmp(baselineDefinitions.tags, definitions.tags);
-    }
-    // Files compare
-    if (baselineFiles && lootFiles) {
-      const allGroups = new Set([...Object.keys(baselineFiles), ...Object.keys(lootFiles)]);
-      for (const g of allGroups) {
-        const basePer = baselineFiles[g] || {};
-        const currPer = lootFiles[g] || {};
-        const allFiles = new Set([...Object.keys(basePer), ...Object.keys(currPer)]);
-        for (const f of allFiles) {
-          const baseArr = basePer[f] || [];
-          const currArr = currPer[f] || [];
-          const baseNames = new Set(baseArr.map(t => t.name));
-          const currNames = new Set(currArr.map(t => t.name));
-          const addedNames = [...currNames].filter(n => !baseNames.has(n));
-          const removedNames = [...baseNames].filter(n => !currNames.has(n));
-
-          // Modified: intersection where any field differs
-          const normalize = (t) => ({
-            name: t.name,
-            category: t.category || null,
-            nominal: t.nominal, min: t.min, lifetime: t.lifetime, restock: t.restock,
-            quantmin: t.quantmin, quantmax: t.quantmax,
-            flags: t.flags,
-            usage: [...t.usage].sort(),
-            value: [...t.value].sort(),
-            tag: [...t.tag].sort(),
-          });
-          const baseByName = new Map(baseArr.map(t => [t.name, normalize(t)]));
-          const currByName = new Map(currArr.map(t => [t.name, normalize(t)]));
-          const modifiedNames = [];
-          for (const name of [...baseNames].filter(n => currNames.has(n))) {
-            const a = baseByName.get(name);
-            const b = currByName.get(name);
-            if (JSON.stringify(a) !== JSON.stringify(b)) modifiedNames.push(name);
-          }
-
-          const added = addedNames.length;
-          const removed = removedNames.length;
-          const modified = modifiedNames.length;
-
-          const changedNames = [...new Set([...addedNames, ...modifiedNames])];
-          const changedCount = added + removed + modified;
-          const changed = changedCount > 0;
-
-          if (!diff.files[g]) diff.files[g] = {};
-          diff.files[g][f] = { changed, added, removed, modified, changedCount, addedNames, removedNames, modifiedNames, changedNames };
-        }
-      }
-    }
-    const allSpawnableGroups = new Set([...Object.keys(baselineSpawnableTypesByGroup), ...Object.keys(spawnableTypesByGroup)]);
-    for (const group of allSpawnableGroups) {
-      diff.mission.spawnableGroups[group] = JSON.stringify(baselineSpawnableTypesByGroup[group] || { types: [] }) !== JSON.stringify(spawnableTypesByGroup[group] || { types: [] });
-    }
-    diff.mission.randomPresets = JSON.stringify(baselineRandomPresets || { presets: [] }) !== JSON.stringify(randomPresets || { presets: [] });
-    return diff;
-  }, [baselineDefinitions, definitions, baselineFiles, lootFiles, baselineSpawnableTypesByGroup, spawnableTypesByGroup, baselineRandomPresets, randomPresets]);
-
-  const storageDirty = useMemo(() => {
-    const d = storageDiff;
-    if (!d) return false;
-    if (d.definitions.categories || d.definitions.usageflags || d.definitions.valueflags || d.definitions.tags) return true;
-    for (const g of Object.keys(d.files)) {
-      for (const f of Object.keys(d.files[g])) {
-        if (d.files[g][f].changed) return true;
-      }
-    }
-    if (d.mission?.randomPresets) return true;
-    for (const changed of Object.values(d.mission?.spawnableGroups || {})) {
-      if (changed) return true;
-    }
-    return false;
-  }, [storageDiff]);
 
   // Track current editor ID for change logging
   const currentEditorIdRef = useRef(/** @type {string} */(''));

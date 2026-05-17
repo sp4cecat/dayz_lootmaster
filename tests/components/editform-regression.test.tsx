@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import EditForm from '../../src/components/EditForm.jsx';
+import EditForm from '../../src/components/EditForm';
 
 describe('EditForm regression: opening edit panel must not auto-save or close', () => {
   it('does not call onSave immediately after mount', async () => {
@@ -44,6 +44,8 @@ describe('EditForm regression: opening edit panel must not auto-save or close', 
         onSave={onSave}
         typeOptions={[]}
         typeOptionsByCategory={{}}
+        selectedProfileId="test-profile"
+        getApiBase={() => 'http://localhost:4317'}
       />
     );
 

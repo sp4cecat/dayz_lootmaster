@@ -49,11 +49,11 @@ export default function Filters({
 
   const hasNonVanillaGroups = useMemo(() => groups.some((g) => g !== 'vanilla'), [groups]);
 
-  const [usageOpen, setUsageOpen] = useState(true);
-  const [valueOpen, setValueOpen] = useState(true);
-  const [flagsOpen, setFlagsOpen] = useState(false);
-  const [tagOpen, setTagOpen] = useState(false);
-  const [groupsOpen, setGroupsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(filters.usage.length > 0);
+  const [valueOpen, setValueOpen] = useState(filters.value.length > 0);
+  const [flagsOpen, setFlagsOpen] = useState(filters.flags.length > 0);
+  const [tagOpen, setTagOpen] = useState(filters.tag.length > 0);
+  const [groupsOpen, setGroupsOpen] = useState(filters.groups.length > 0);
 
   const flagsList = useMemo(() => {
     if (Array.isArray(flagOptions) && flagOptions.length > 0) return flagOptions;
