@@ -129,6 +129,10 @@ describe('spawnabletypes utilities', () => {
     expect(parsed.types[0].sections[0].kind).toBe('damage');
     expect(parsed.types[0].sections[0].attrs.min).toBe('0.3');
     expect(parsed.types[0].sections[0].attrs.max).toBe('0.7');
+    
+    // Check structured accessors
+    expect(parsed.types[0].damage?.min).toBe(0.3);
+    expect(parsed.types[0].damage?.max).toBe(0.7);
 
     parsed.types[0].sections[0].attrs.min = '0.4567';
     const out = generateSpawnableTypesXml(parsed);

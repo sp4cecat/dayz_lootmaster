@@ -152,10 +152,20 @@ export function parseSpawnableTypesXml(xml) {
   const root = doc.documentElement;
   const typeNodes = Array.from(root?.children || []).filter(n => n.tagName === 'type');
   return {
-    types: typeNodes.map(node => ({
-      name: node.getAttribute('name') || '',
-      sections: Array.from(node.children || []).map(section => parseSpawnableNode(section))
-    }))
+    types: typeNodes.map(node => {
+      const sections = Array.from(node.children || []).map(section => parseSpawnableNode(section));
+      const damageSection = sections.find(s => s.kind === 'damage');
+      return {
+        name: node.getAttribute('name') || '',
+        sections,
+        damage: damageSection ? {
+          min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
+          max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
+        } : null,
+        attachments: sections.filter(s => s.kind === 'attachments'),
+        cargo: sections.filter(s => s.kind === 'cargo')
+      };
+    })
   };
 }
 

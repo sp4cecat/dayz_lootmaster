@@ -22,11 +22,62 @@ function chancePercent(value: any) {
 export default function EditFormSpawnableTab({ 
   selectedTypes, 
   spawnableTypesByGroup, 
-  setSpawnableTypesByGroup: _setSpawnableTypesByGroup,
+  setSpawnableTypesByGroup,
   randomPresets: _randomPresets,
   globalsDefaults
 }: EditFormSpawnableTabProps) {
   const isMulti = selectedTypes.length > 1;
+
+  const type = selectedTypes[0];
+  const result = findSpawnableEntryForType(spawnableTypesByGroup, type.group, type.name);
+
+  const handleDamageChange = (key: 'min' | 'max', val: number) => {
+    if (!result) return;
+    const { entry, group: foundGroup } = result;
+    const newVal = val / 100;
+    const nextGroups = { ...spawnableTypesByGroup };
+    const groupData = { ...nextGroups[foundGroup] };
+    
+    groupData.types = groupData.types.map((t: any) => {
+      if (t.name === entry.name) {
+        const nextSections = [...(t.sections || [])];
+        let damageIdx = nextSections.findIndex(s => s.kind === 'damage');
+        const formatted = newVal.toFixed(3);
+        
+        if (damageIdx === -1) {
+          nextSections.push({
+            kind: 'damage',
+            chance: null,
+            preset: '',
+            attrs: { [key]: formatted },
+            items: []
+          });
+        } else {
+          nextSections[damageIdx] = {
+            ...nextSections[damageIdx],
+            attrs: {
+              ...nextSections[damageIdx].attrs,
+              [key]: formatted
+            }
+          };
+        }
+        
+        const damageSection = nextSections.find(s => s.kind === 'damage');
+        return {
+          ...t,
+          sections: nextSections,
+          damage: damageSection ? {
+            min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
+            max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
+          } : null
+        };
+      }
+      return t;
+    });
+    
+    nextGroups[foundGroup] = groupData;
+    setSpawnableTypesByGroup(nextGroups);
+  };
 
   if (isMulti) {
     return (
@@ -41,10 +92,6 @@ export default function EditFormSpawnableTab({
       </div>
     );
   }
-
-  const type = selectedTypes[0];
-  const result = findSpawnableEntryForType(spawnableTypesByGroup, type.group, type.name);
-
   if (!result) {
     return (
       <div className="p-12 text-center bg-gray-50 dark:bg-gray-950/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
@@ -88,7 +135,7 @@ export default function EditFormSpawnableTab({
               value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
               max={100} 
               step={1}
-              onValueChange={() => {}}
+              onValueChange={(vals) => handleDamageChange('min', vals[0])}
             />
           </div>
           <div className="space-y-4">
@@ -100,7 +147,7 @@ export default function EditFormSpawnableTab({
               value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
               max={100} 
               step={1}
-              onValueChange={() => {}}
+              onValueChange={(vals) => handleDamageChange('max', vals[0])}
             />
           </div>
         </div>
