@@ -222,7 +222,15 @@ export default {
           700: '#b54708',
           800: '#93370d',
           900: '#7a2e0e',
-        }
+        },
+        'brand-solid': '#7f56d9',
+        'brand-solid_hover': '#6941c0',
+        'quaternary': '#eaecf0',
+        'secondary': '#344054',
+        'tertiary': '#475467',
+        'slider-handle-bg': '#ffffff',
+        'slider-handle-border': '#7f56d9',
+        'focus-ring': '#d6bbfb',
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],

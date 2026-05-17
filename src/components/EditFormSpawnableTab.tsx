@@ -126,30 +126,22 @@ export default function EditFormSpawnableTab({
           <Badge color="brand" size="sm" type="modern">Item Condition</Badge>
         </div>
         <div className="grid grid-cols-2 gap-6 bg-gray-50 dark:bg-gray-950/20 p-6 rounded-xl border border-gray-100 dark:border-gray-800">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Min Damage</label>
-              <span className="text-xs font-mono font-bold text-primary-600 dark:text-primary-400">{chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)}%</span>
-            </div>
-            <Slider 
-              value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
-              max={100} 
-              step={1}
-              onValueChange={(vals) => handleDamageChange('min', vals[0])}
-            />
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Max Damage</label>
-              <span className="text-xs font-mono font-bold text-primary-600 dark:text-primary-400">{chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)}%</span>
-            </div>
-            <Slider 
-              value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
-              max={100} 
-              step={1}
-              onValueChange={(vals) => handleDamageChange('max', vals[0])}
-            />
-          </div>
+          <Slider 
+            label="Min Damage" 
+            value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
+            max={100} 
+            step={1}
+            onValueChange={(vals) => handleDamageChange('min', vals[0])}
+            helperText="Minimum condition when spawning"
+          />
+          <Slider 
+            label="Max Damage" 
+            value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
+            max={100} 
+            step={1}
+            onValueChange={(vals) => handleDamageChange('max', vals[0])}
+            helperText="Maximum condition when spawning"
+          />
         </div>
       </section>
 

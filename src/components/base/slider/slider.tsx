@@ -19,9 +19,10 @@ const styles = sortCx({
 interface SliderProps extends AriaSliderProps {
     labelPosition?: keyof typeof styles;
     labelFormatter?: (value: number) => string;
+    helperText?: React.ReactNode;
 }
 
-export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100, labelFormatter, formatOptions, ...rest }: SliderProps) => {
+export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100, labelFormatter, formatOptions, label, helperText, ...rest }: SliderProps) => {
     // Format thumb value as percentage by default.
     const defaultFormatOptions: Intl.NumberFormatOptions = {
         style: "percent",
@@ -29,46 +30,66 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
     };
 
     return (
-        <AriaSlider {...rest} {...{ minValue, maxValue }} formatOptions={formatOptions ?? defaultFormatOptions}>
-            <AriaLabel />
-            <AriaSliderTrack className="relative h-6 w-full">
-                {({ state: { values, getThumbValue, getThumbPercent, getFormattedValue } }) => {
-                    const left = values.length === 1 ? 0 : getThumbPercent(0);
-                    const width = values.length === 1 ? getThumbPercent(0) : getThumbPercent(1) - left;
+        <AriaSlider {...rest} {...{ minValue, maxValue }} formatOptions={formatOptions ?? defaultFormatOptions} className="w-full">
+            <div className="flex flex-col gap-3">
+                {(label || labelPosition === "default") && (
+                    <div className="flex items-center justify-between gap-4">
+                        <AriaLabel className="text-sm font-medium text-secondary truncate">{label}</AriaLabel>
+                        <AriaSliderOutput className="text-sm font-bold text-brand-solid whitespace-nowrap">
+                            {({ state }) => 
+                                labelFormatter 
+                                    ? labelFormatter(state.getThumbValue(0)) 
+                                    : state.getFormattedValue(state.getThumbValue(0) / 100)
+                            }
+                        </AriaSliderOutput>
+                    </div>
+                )}
+                <AriaSliderTrack className="relative h-6 w-full flex items-center">
+                    {({ state: { values, getThumbValue, getThumbPercent, getFormattedValue } }) => {
+                        const left = values.length === 1 ? 0 : getThumbPercent(0);
+                        const width = values.length === 1 ? getThumbPercent(0) : getThumbPercent(1) - left;
 
-                    return (
-                        <>
-                            <span className="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full bg-quaternary" />
-                            <span
-                                className="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full bg-brand-solid"
-                                style={{
-                                    left: `${left * 100}%`,
-                                    width: `${width * 100}%`,
-                                }}
-                            />
-                            {values.map((_, index) => {
-                                return (
-                                    <AriaSliderThumb
-                                        key={index}
-                                        index={index}
-                                        className={({ isFocusVisible, isDragging }) =>
-                                            cx(
-                                                "top-1/2 box-border size-6 cursor-grab rounded-full bg-slider-handle-bg shadow-md ring-2 ring-slider-handle-border ring-inset",
-                                                isFocusVisible && "outline-2 outline-offset-2 outline-focus-ring",
-                                                isDragging && "cursor-grabbing",
-                                            )
-                                        }
-                                    >
-                                        <AriaSliderOutput className={cx("whitespace-nowrap", styles[labelPosition])}>
-                                            {labelFormatter ? labelFormatter(getThumbValue(index)) : getFormattedValue(getThumbValue(index) / 100)}
-                                        </AriaSliderOutput>
-                                    </AriaSliderThumb>
-                                );
-                            })}
-                        </>
-                    );
-                }}
-            </AriaSliderTrack>
+                        return (
+                            <>
+                                <span className="absolute h-2 w-full rounded-full bg-quaternary" />
+                                <span
+                                    className="absolute h-2 rounded-full bg-brand-solid"
+                                    style={{
+                                        left: `${left * 100}%`,
+                                        width: `${width * 100}%`,
+                                    }}
+                                />
+                                {values.map((_, index) => {
+                                    return (
+                                        <AriaSliderThumb
+                                            key={index}
+                                            index={index}
+                                            className={({ isFocusVisible, isDragging }) =>
+                                                cx(
+                                                    "top-1/2 box-border size-6 cursor-grab rounded-full bg-slider-handle-bg shadow-md ring-2 ring-slider-handle-border ring-inset",
+                                                    isFocusVisible && "outline-2 outline-offset-2 outline-focus-ring",
+                                                    isDragging && "cursor-grabbing",
+                                                )
+                                            }
+                                        >
+                                            {labelPosition !== "default" && (
+                                                <AriaSliderOutput className={cx("whitespace-nowrap", styles[labelPosition])}>
+                                                    {labelFormatter ? labelFormatter(getThumbValue(index)) : getFormattedValue(getThumbValue(index) / 100)}
+                                                </AriaSliderOutput>
+                                            )}
+                                        </AriaSliderThumb>
+                                    );
+                                })}
+                            </>
+                        );
+                    }}
+                </AriaSliderTrack>
+                {helperText && (
+                    <div className="text-sm text-tertiary">
+                        {helperText}
+                    </div>
+                )}
+            </div>
         </AriaSlider>
     );
 };
