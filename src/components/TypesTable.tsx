@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type UIEvent, type CSSProperties } from 'react';
 import { Selection } from 'react-aria-components';
 import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
@@ -112,7 +112,7 @@ export default function TypesTable({
     return () => window.removeEventListener('resize', updateViewport);
   }, []);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = (e: UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop);
   };
 
@@ -158,7 +158,7 @@ export default function TypesTable({
     return cols.join(' ');
   }, [maxNameWidth, showGroupColumn, isAnySelected]);
 
-  const gridStyle = { '--grid-template-columns': columnWidths } as React.CSSProperties;
+  const gridStyle = { '--grid-template-columns': columnWidths } as CSSProperties;
 
   return (
     <TableCard className="flex-1 min-h-0 flex flex-col p-0">
@@ -177,7 +177,7 @@ export default function TypesTable({
       >
         <Table.Header 
           className="block [&>tr]:grid [&>tr]:[grid-template-columns:var(--grid-template-columns)] [&>tr]:items-stretch [&>tr]:h-full h-11 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800"
-          style={{ '--grid-template-columns': columnWidths } as React.CSSProperties}
+          style={{ '--grid-template-columns': columnWidths } as CSSProperties}
         >
           <Table.Column 
             isRowHeader 

@@ -2,10 +2,8 @@
  * Format a lifetime in seconds as non-zero unit parts:
  * n week/s n day/s n hour/s n minute/s n second/s
  * If all units are zero, returns "0 seconds".
- * @param {number} secs
- * @returns {string}
  */
-export function formatLifetime(secs) {
+export function formatLifetime(secs: number | string): string {
   let total = Math.max(0, Math.floor(Number(secs) || 0));
   const WEEK = 7 * 24 * 60 * 60;
   const DAY = 24 * 60 * 60;
@@ -20,9 +18,9 @@ export function formatLifetime(secs) {
   total %= HOUR;
   const minutes = Math.floor(total / MINUTE);
   const seconds = total % MINUTE;
-
-  const s = (n, singular) => `${n} ${singular}${n === 1 ? '' : 's'}`;
-  const parts = [];
+  
+  const s = (n: number, singular: string) => `${n} ${singular}${n === 1 ? '' : 's'}`;
+  const parts: string[] = [];
   if (weeks) parts.push(s(weeks, 'week'));
   if (days) parts.push(s(days, 'day'));
   if (hours) parts.push(s(hours, 'hour'));

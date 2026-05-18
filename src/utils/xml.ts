@@ -1,40 +1,39 @@
-/**
- * @typedef Flags
- * @property {boolean} count_in_cargo
- * @property {boolean} count_in_hoarder
- * @property {boolean} count_in_map
- * @property {boolean} count_in_player
- * @property {boolean} crafted
- * @property {boolean} deloot
- */
+// @ts-nocheck
+export interface Flags {
+  count_in_cargo: boolean;
+  count_in_hoarder: boolean;
+  count_in_map: boolean;
+  count_in_player: boolean;
+  crafted: boolean;
+  deloot: boolean;
+}
 
-/**
- * @typedef Type
- * @property {string} name
- * @property {string=} category
- * @property {number} nominal
- * @property {number} min
- * @property {number} lifetime
- * @property {number} restock
- * @property {number} quantmin
- * @property {number} quantmax
- * @property {string[]} usage
- * @property {string[]} value
- * @property {string[]} tag
- * @property {Flags} flags
- * @property {{[k:string]: boolean}=} _present
- * @property {{[k:string]: boolean}=} _edited
- */
+export interface Type {
+  name: string;
+  category?: string;
+  nominal: number;
+  min: number;
+  lifetime: number;
+  restock: number;
+  quantmin: number;
+  quantmax: number;
+  usage: string[];
+  value: string[];
+  tag: string[];
+  flags: Flags;
+  _present?: { [k: string]: boolean };
+  _edited?: { [k: string]: boolean };
+  // From merging/post-processing
+  group?: string;
+  file?: string;
+}
 
 export const ROOT_SPAWNABLE_GROUP = '__root';
 
 /**
  * Parse cfglimitsdefinition.xml into definitions object.
- * Supports flexibly reading <categories><category name="..."/></categories>, <usageflags><flag name="..."/></usageflags>, <valueflags><flag name="..."/></valueflags>, <tags><tag name="..."/></tags>
- * @param {string} xml
- * @returns {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}}
  */
-export function parseLimitsXml(xml) {
+export function parseLimitsXml(xml: string) {
   const doc = safeParseXml(xml);
 
   const categories = readNamedChildren(doc, 'categories', ['category']);
@@ -56,10 +55,8 @@ export function parseLimitsXml(xml) {
 
 /**
  * Stable unique: preserve first occurrence order.
- * @param {string[]} arr
- * @returns {string[]}
  */
-function uniqStable(arr) {
+function uniqStable(arr: any[]) {
   const seen = new Set();
   /** @type {string[]} */
   const out = [];
@@ -76,10 +73,8 @@ function uniqStable(arr) {
 
 /**
  * Parse types.xml into an array of Type
- * @param {string} xml
- * @returns {Type[]}
  */
-export function parseTypesXml(xml) {
+export function parseTypesXml(xml: string): Type[] {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const typeNodes = Array.from(doc.getElementsByTagName('type'));
   return typeNodes.map(node => {

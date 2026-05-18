@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useLootData } from './hooks/useLootData.js';
 import Filters from './components/Filters';
 import TypesTable from './components/TypesTable';
@@ -19,15 +19,6 @@ import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.js
 import ProfileManager from './components/ProfileManager';
 import AddonEditorModal from './components/AddonEditorModal.jsx';
 import HeatMapModal from './components/HeatMapModal.jsx';
-import { 
-  generateTypesXml, 
-  generateLimitsXml, 
-  generateRandomPresetsXml, 
-  generateSpawnableTypesXml, 
-  ROOT_SPAWNABLE_GROUP, 
-  validateSpawnableReferences 
-} from './utils/xml.js';
-
 import { Sidebar } from './components/layout/Sidebar';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
