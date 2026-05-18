@@ -136,7 +136,7 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
               <p className="text-xs text-gray-500 dark:text-gray-400">Choose between a random preset or a specific list of items.</p>
             </div>
             <Toggle 
-              label={usePreset ? "Using Preset" : "Using Item List"}
+              label={usePreset ? "Showing: Presets" : "Showing: Types"}
               isSelected={usePreset}
               onChange={setUsePreset}
             />
