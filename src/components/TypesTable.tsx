@@ -56,17 +56,18 @@ export default function TypesTable({
     });
 
     if (sort.key) {
+      const currentKey = sort.key;
       const getVal = (r: any) => {
-        if (sort.key === 'usage' || sort.key === 'value') {
-          return (r[sort.key] || []).join(',').toLowerCase();
+        if (currentKey === 'usage' || currentKey === 'value') {
+          return (r[currentKey] || []).join(',').toLowerCase();
         }
-        if (sort.key === 'name') {
+        if (currentKey === 'name') {
           return String(r.name).toLowerCase();
         }
-        if (sort.key === 'group') {
+        if (currentKey === 'group') {
           return String(r.group || '').toLowerCase();
         }
-        return Number(r[sort.key] ?? 0);
+        return Number(r[currentKey] ?? 0);
       };
       arr.sort((a, b) => {
         const av = getVal(a);
@@ -84,7 +85,6 @@ export default function TypesTable({
   const maxNameWidth = useMemo(() => {
     if (rows.length === 0) return 20;
     let max = 0;
-    let maxName = '';
     for (const r of rows) {
       let width = r.name.length;
       if (r.hasUnknown) width += 10;
@@ -92,7 +92,6 @@ export default function TypesTable({
       if (width > max)
       {
         max = width;
-        maxName = r.name;
       }
     }
     // Header needs space for "Name" + "All" button
@@ -160,6 +159,8 @@ export default function TypesTable({
 
   const gridStyle = { '--grid-template-columns': columnWidths } as CSSProperties;
 
+  const ariaSortDir = sort.dir === 'asc' ? 'ascending' as const : 'descending' as const;
+
   return (
     <TableCard className="flex-1 min-h-0 flex flex-col p-0">
       <Table
@@ -182,7 +183,7 @@ export default function TypesTable({
           <Table.Column 
             isRowHeader 
             allowsSorting 
-            sortDirection={sort.key === 'name' ? sort.dir : undefined} 
+            sortDirection={sort.key === 'name' ? ariaSortDir : undefined} 
             onPress={() => handleSort('name')}
             className="px-3"
           >
@@ -204,7 +205,7 @@ export default function TypesTable({
           {showGroupColumn && !isAnySelected && (
             <Table.Column 
               allowsSorting 
-              sortDirection={sort.key === 'group' ? sort.dir : undefined} 
+              sortDirection={sort.key === 'group' ? ariaSortDir : undefined} 
               onPress={() => handleSort('group')}
               className="px-3"
             >
@@ -213,7 +214,7 @@ export default function TypesTable({
           )}
           <Table.Column 
             allowsSorting 
-            sortDirection={sort.key === 'nominal' ? sort.dir : undefined} 
+            sortDirection={sort.key === 'nominal' ? ariaSortDir : undefined} 
             onPress={() => handleSort('nominal')}
             className="px-3"
           >
@@ -224,7 +225,7 @@ export default function TypesTable({
             <>
               <Table.Column 
                 allowsSorting 
-                sortDirection={sort.key === 'lifetime' ? sort.dir : undefined} 
+                sortDirection={sort.key === 'lifetime' ? ariaSortDir : undefined} 
                 onPress={() => handleSort('lifetime')}
                 className="px-3"
               >
@@ -233,7 +234,7 @@ export default function TypesTable({
               <Table.Column className="px-3">Category</Table.Column>
               <Table.Column 
                 allowsSorting 
-                sortDirection={sort.key === 'usage' ? sort.dir : undefined} 
+                sortDirection={sort.key === 'usage' ? ariaSortDir : undefined} 
                 onPress={() => handleSort('usage')}
                 className="px-3"
               >
@@ -241,7 +242,7 @@ export default function TypesTable({
               </Table.Column>
               <Table.Column 
                 allowsSorting 
-                sortDirection={sort.key === 'value' ? sort.dir : undefined} 
+                sortDirection={sort.key === 'value' ? ariaSortDir : undefined} 
                 onPress={() => handleSort('value')}
                 className="px-3"
               >
