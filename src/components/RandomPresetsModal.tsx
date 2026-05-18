@@ -53,8 +53,11 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   const presets = randomPresets?.presets || [];
   const presetNames = new Set(presets.map(p => p.name).filter(Boolean));
   const [pendingDelete, setPendingDelete] = useState<{ index: number; name: string; refs: number } | null>(null);
+  const [pendingRename, setPendingRename] = useState<{ index: number; oldName: string; newName: string; refs: number } | null>(null);
   const [transferOnDelete, setTransferOnDelete] = useState(false);
+  const [updateRefsOnRename, setUpdateRefsOnRename] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [localName, setLocalName] = useState<{ index: number; name: string } | null>(null);
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set());
 
   const toggleExpand = (name: string) => {
@@ -67,13 +70,19 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   };
 
   const updatePreset = (index: number, apply: (p: Preset) => Preset) => {
-    const nextPresets = [...presets];
-    nextPresets[index] = apply(nextPresets[index]);
-    setRandomPresets({ ...randomPresets, presets: nextPresets });
+    setRandomPresets((prev: any) => {
+      const nextPresets = [...(prev?.presets || [])];
+      if (nextPresets[index]) {
+        nextPresets[index] = apply(nextPresets[index]);
+      }
+      return { ...prev, presets: nextPresets };
+    });
   };
 
   const renamePresetReferences = (oldName: string, newName: string) => {
     if (!oldName || !newName || oldName === newName) return;
+    
+    // Update spawnable types
     setSpawnableTypesByGroup((prev: any) => {
       const next = { ...prev };
       for (const group in next) {
@@ -91,6 +100,74 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       }
       return next;
     });
+
+    // Update other presets' references in cfgrandompresets.xml
+    setRandomPresets((prev: any) => {
+      if (!prev?.presets) return prev;
+      return {
+        ...prev,
+        presets: prev.presets.map((p: Preset) => ({
+          ...p,
+          items: (p.items || []).map((item: PresetItem) => 
+            ((item.kind === XMLNodeKind.ATTACHMENTS || item.kind === XMLNodeKind.CARGO) && item.name === oldName)
+              ? { ...item, name: newName, attrs: { ...(item.attrs || {}), name: newName } }
+              : item
+          )
+        }))
+      };
+    });
+  };
+
+  const handleRename = (index: number, oldName: string, newName?: string) => {
+    if (!newName || oldName === newName) {
+      setLocalName(null);
+      return;
+    }
+
+    const refs = countReferences(oldName);
+    if (refs > 0) {
+      setPendingRename({ index, oldName, newName, refs });
+      setUpdateRefsOnRename(true);
+    } else {
+      // Just update it directly if no references
+      updatePreset(index, p => ({ ...p, name: newName, attrs: { ...(p.attrs || {}), name: newName } }));
+      setLocalName(null);
+      
+      // Update expanded names to follow the rename
+      setExpandedNames(prev => {
+        const next = new Set(prev);
+        if (next.has(oldName)) {
+          next.delete(oldName);
+          next.add(newName);
+        }
+        return next;
+      });
+    }
+  };
+
+  const confirmRename = () => {
+    if (!pendingRename) return;
+    const { index, oldName, newName } = pendingRename;
+
+    if (updateRefsOnRename) {
+      renamePresetReferences(oldName, newName);
+    }
+
+    // Update the preset itself in the main presets list
+    updatePreset(index, p => ({ ...p, name: newName, attrs: { ...(p.attrs || {}), name: newName } }));
+
+    // Update expanded names to follow the rename
+    setExpandedNames(prev => {
+      const next = new Set(prev);
+      if (next.has(oldName)) {
+        next.delete(oldName);
+        next.add(newName);
+      }
+      return next;
+    });
+
+    setPendingRename(null);
+    setLocalName(null);
   };
 
   const transferPresetToReferences = (preset: Preset) => {
@@ -122,6 +199,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
 
   const countReferences = (name: string) => {
     let total = 0;
+    // References in spawnable types
     for (const group in spawnableTypesByGroup) {
       const data = spawnableTypesByGroup[group];
       if (data?.types) {
@@ -130,6 +208,14 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
             total += type.sections.filter((s: any) => s.preset === name).length;
           }
         }
+      }
+    }
+    // References in other presets (cfgrandompresets.xml)
+    for (const p of presets) {
+      if (p.items) {
+        total += p.items.filter(item => 
+          (item.kind === XMLNodeKind.ATTACHMENTS || item.kind === XMLNodeKind.CARGO) && item.name === name
+        ).length;
       }
     }
     return total;
@@ -254,6 +340,37 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
           </div>
         )}
 
+        {pendingRename && (
+          <div className="p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl space-y-4">
+            <div className="flex gap-3">
+              <AlertTriangle className="text-primary-600 shrink-0" size={20} />
+              <div>
+                <h4 className="text-sm font-bold text-primary-900 dark:text-primary-100">Rename preset “{pendingRename.oldName}”?</h4>
+                <div className="mt-2 space-y-3">
+                  <p className="text-sm text-primary-700 dark:text-primary-300">
+                    This preset is referenced by {pendingRename.refs} entry/entries.
+                  </p>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-primary-300 text-primary-600 focus:ring-primary-500"
+                      checked={updateRefsOnRename} 
+                      onChange={e => setUpdateRefsOnRename(e.target.checked)} 
+                    />
+                    <span className="text-xs text-primary-800 dark:text-primary-200">
+                      Update all references to use the new name “{pendingRename.newName}”.
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary-gray" size="sm" onClick={() => { setPendingRename(null); setLocalName(null); }}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={confirmRename}>Rename & Update</Button>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin">
           {filteredPresets.map((preset) => {
             const index = preset.originalIndex;
@@ -300,20 +417,15 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                     <div className="grid grid-cols-3 gap-4">
                       <Input
                         label="Preset Name"
-                        value={preset.name}
-                        onChange={e => updatePreset(index, p => {
-                          const newName = e.target.value;
-                          renamePresetReferences(p.name, newName);
-                          setExpandedNames(prev => {
-                            const next = new Set(prev);
-                            if (next.has(p.name)) {
-                              next.delete(p.name);
-                              next.add(newName);
-                            }
-                            return next;
-                          });
-                          return { ...p, name: newName, attrs: { ...(p.attrs || {}), name: newName } };
-                        })}
+                        value={localName?.index === index ? localName.name : preset.name}
+                        onChange={e => setLocalName({ index, name: e.target.value })}
+                        onBlur={() => handleRename(index, preset.name, localName?.name)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            handleRename(index, preset.name, localName?.name);
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
                         size="sm"
                       />
                       <Select
