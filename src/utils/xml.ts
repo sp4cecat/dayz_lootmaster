@@ -30,6 +30,8 @@ export interface Type {
 
 export const ROOT_SPAWNABLE_GROUP = '__root';
 
+import { XMLNodeKind } from '@/types/xml';
+
 /**
  * Parse cfglimitsdefinition.xml into definitions object.
  */
@@ -149,7 +151,7 @@ export function parseSpawnableTypesXml(xml) {
   return {
     types: typeNodes.map(node => {
       const sections = Array.from(node.children || []).map(section => parseSpawnableNode(section));
-      const damageSection = sections.find(s => s.kind === 'damage');
+      const damageSection = sections.find(s => s.kind === XMLNodeKind.DAMAGE);
       return {
         name: node.getAttribute('name') || '',
         sections,
@@ -157,8 +159,8 @@ export function parseSpawnableTypesXml(xml) {
           min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
           max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
         } : null,
-        attachments: sections.filter(s => s.kind === 'attachments'),
-        cargo: sections.filter(s => s.kind === 'cargo')
+        attachments: sections.filter(s => s.kind === XMLNodeKind.ATTACHMENTS),
+        cargo: sections.filter(s => s.kind === XMLNodeKind.CARGO)
       };
     })
   };
@@ -227,7 +229,7 @@ export function generateRandomPresetsXml(data) {
     lines.push(`  <${preset.kind}${attrs}>`);
     for (const item of items) {
       const itemAttrs = buildAttrs({ ...(item.attrs || {}), name: item.name, chance: item.chance });
-      lines.push(`    <${item.kind || 'item'}${itemAttrs}/>`);
+      lines.push(`    <${item.kind || XMLNodeKind.ITEM}${itemAttrs}/>`);
     }
     lines.push(`  </${preset.kind}>`);
   }
@@ -547,7 +549,7 @@ function renderSpawnableSection(section, indent) {
   const lines = [`${space}<${section.kind}${attrs}>`];
   for (const item of items) {
     const itemAttrs = buildAttrs({ ...(item.attrs || {}), name: item.name, chance: item.chance, preset: item.preset });
-    lines.push(`${space}  <${item.kind || 'item'}${itemAttrs}/>`);
+    lines.push(`${space}  <${item.kind || XMLNodeKind.ITEM}${itemAttrs}/>`);
   }
   lines.push(`${space}</${section.kind}>`);
   return lines;

@@ -6,6 +6,7 @@ import { Badge } from '@/components/base/badges/badges';
 import { Slider } from '@/components/base/slider/slider';
 import { Plus, Trash2, Copy, Layers, Search, AlertTriangle } from 'lucide-react';
 import { cx } from '@/utils/cx';
+import { XMLNodeKind } from '@/types/xml';
 
 interface PresetItem {
   kind: string;
@@ -131,7 +132,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
     }
     setRandomPresets({
       ...randomPresets,
-      presets: [...presets, { kind: 'attachments', name, chance: 1, attrs: { name, chance: '1' }, items: [] }]
+      presets: [...presets, { kind: XMLNodeKind.ATTACHMENTS, name, chance: 1, attrs: { name, chance: '1' }, items: [] }]
     });
   };
 
@@ -254,7 +255,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                     <Input
                       label="XML Node Kind"
                       value={preset.kind}
-                      onChange={e => updatePreset(index, p => ({ ...p, kind: e.target.value || 'attachments' }))}
+                      onChange={e => updatePreset(index, p => ({ ...p, kind: e.target.value || XMLNodeKind.ATTACHMENTS }))}
                       size="sm"
                     />
                   </div>
@@ -285,7 +286,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                     <h5 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Preset Items</h5>
                     <Button variant="secondary-gray" size="xs" icon={Plus} onClick={() => updatePreset(index, p => ({ 
                       ...p, 
-                      items: [...(p.items || []), { kind: 'item', name: '', chance: 1, attrs: { chance: '1' } }] 
+                      items: [...(p.items || []), { kind: XMLNodeKind.ITEM, name: '', chance: 1, attrs: { chance: '1' } }] 
                     }))}>
                       Add Item
                     </Button>
@@ -296,10 +297,10 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                       <div key={itemIndex} className="flex items-center gap-3">
                         <input
                           className="w-20 px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded shadow-sm focus:ring-1 focus:ring-primary-500 outline-none"
-                          value={item.kind || 'item'}
+                          value={item.kind || XMLNodeKind.ITEM}
                           onChange={e => updatePreset(index, p => ({ 
                             ...p, 
-                            items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, kind: e.target.value || 'item' } : it) 
+                            items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, kind: e.target.value || XMLNodeKind.ITEM } : it) 
                           }))}
                         />
                         <input

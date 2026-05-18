@@ -7,6 +7,7 @@ import { Slider } from '@/components/base/slider/slider';
 import { Toggle } from '@/components/base/toggle/toggle';
 import { Plus, Trash2, Package, Layers, Settings2, Search } from 'lucide-react';
 import { cx } from '@/utils/cx';
+import { XMLNodeKind } from '@/types/xml';
 
 interface SpawnableSlotModalProps {
   isOpen: boolean;
@@ -15,7 +16,7 @@ interface SpawnableSlotModalProps {
   onSave: (nextSlot: any) => void;
   presets: any[];
   typeOptions: string[];
-  kind: 'attachments' | 'cargo';
+  kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO;
   title?: string;
 }
 
@@ -70,7 +71,7 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
     setEditedSlot({
       ...editedSlot,
       items: [...editedSlot.items, {
-        kind: 'item',
+        kind: XMLNodeKind.ITEM,
         name,
         chance: 1.0,
         attrs: { name, chance: '1.00' }
@@ -103,8 +104,8 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={title || `Edit ${kind === 'attachments' ? 'Attachment Slot' : 'Cargo Item'}`}
-      icon={kind === 'attachments' ? Settings2 : Package}
+      title={title || `Edit ${kind === XMLNodeKind.ATTACHMENTS ? 'Attachment Slot' : 'Cargo Item'}`}
+      icon={kind === XMLNodeKind.ATTACHMENTS ? Settings2 : Package}
       maxWidth="max-w-3xl"
       footer={
         <>

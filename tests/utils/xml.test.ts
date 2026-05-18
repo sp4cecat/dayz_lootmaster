@@ -14,6 +14,7 @@ import {
   renameSpawnablePresetReferences,
   validateSpawnableReferences
 } from '../../src/utils/xml.js';
+import { XMLNodeKind } from '@/types/xml';
 
 describe('xml parsing', () => {
   const limitsXml = `
@@ -107,7 +108,7 @@ describe('spawnabletypes utilities', () => {
   it('parses and generates chance and preset settings', () => {
     const parsed = parseSpawnableTypesXml(xml);
     expect(parsed.types).toHaveLength(2);
-    expect(parsed.types[0].sections[0].kind).toBe('attachments');
+    expect(parsed.types[0].sections[0].kind).toBe(XMLNodeKind.ATTACHMENTS);
     expect(parsed.types[0].sections[0].chance).toBe(0.5);
     expect(parsed.types[0].sections[0].items[0].chance).toBe(0.125);
     expect(parsed.types[0].sections[1].preset).toBe('MedicalPreset');
@@ -126,7 +127,7 @@ describe('spawnabletypes utilities', () => {
   </type>
 </spawnabletypes>`;
     const parsed = parseSpawnableTypesXml(damageXml);
-    expect(parsed.types[0].sections[0].kind).toBe('damage');
+    expect(parsed.types[0].sections[0].kind).toBe(XMLNodeKind.DAMAGE);
     expect(parsed.types[0].sections[0].attrs.min).toBe('0.3');
     expect(parsed.types[0].sections[0].attrs.max).toBe('0.7');
     
@@ -204,7 +205,7 @@ describe('random presets and globals utilities', () => {
   </attachments>
   <cargo name="Medical"/>
 </randompresets>`);
-    expect(parsed.presets[0].kind).toBe('attachments');
+    expect(parsed.presets[0].kind).toBe(XMLNodeKind.ATTACHMENTS);
     expect(parsed.presets[0].chance).toBe(0.75);
     expect(parsed.presets[0].items[0].chance).toBe(0.25);
     parsed.presets[0].items[0].chance = 0.12345;

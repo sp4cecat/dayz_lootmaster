@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { Type } from '@/utils/xml';
 import { SpawnableSlotModal } from './SpawnableSlotModal';
+import { XMLNodeKind } from '@/types/xml';
 
 interface EditFormSpawnableTabProps {
   selectedTypes: Type[];
@@ -38,7 +39,7 @@ export default function EditFormSpawnableTab({
   typeOptions
 }: EditFormSpawnableTabProps) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingSlot, setEditingSlot] = useState<{ idx: number; kind: 'attachments' | 'cargo' } | null>(null);
+  const [editingSlot, setEditingSlot] = useState<{ idx: number; kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO } | null>(null);
 
   const isMulti = selectedTypes.length > 1;
 
@@ -73,7 +74,7 @@ export default function EditFormSpawnableTab({
       currentEntry = {
         name: type.name,
         sections: [{
-          kind: 'damage',
+          kind: XMLNodeKind.DAMAGE,
           chance: null,
           preset: '',
           attrs: {
@@ -96,13 +97,13 @@ export default function EditFormSpawnableTab({
     const nextEntry = updater(currentEntry);
     
     // Recalculate helper properties
-    const damageSection = nextEntry.sections?.find((s: any) => s.kind === 'damage');
+    const damageSection = nextEntry.sections?.find((s: any) => s.kind === XMLNodeKind.DAMAGE);
     nextEntry.damage = damageSection ? {
       min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
       max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
     } : null;
-    nextEntry.attachments = nextEntry.sections?.filter((s: any) => s.kind === 'attachments') || [];
-    nextEntry.cargo = nextEntry.sections?.filter((s: any) => s.kind === 'cargo') || [];
+    nextEntry.attachments = nextEntry.sections?.filter((s: any) => s.kind === XMLNodeKind.ATTACHMENTS) || [];
+    nextEntry.cargo = nextEntry.sections?.filter((s: any) => s.kind === XMLNodeKind.CARGO) || [];
 
     if (existingIdx === -1) {
       groupData.types = [...groupData.types, nextEntry];
@@ -120,11 +121,11 @@ export default function EditFormSpawnableTab({
     
     updateSpawnableEntry(current => {
       const nextSections = [...(current.sections || [])];
-      let damageIdx = nextSections.findIndex(s => s.kind === 'damage');
+      let damageIdx = nextSections.findIndex(s => s.kind === XMLNodeKind.DAMAGE);
       
       if (damageIdx === -1) {
         nextSections.push({
-          kind: 'damage',
+          kind: XMLNodeKind.DAMAGE,
           chance: null,
           preset: '',
           attrs: {
@@ -151,7 +152,7 @@ export default function EditFormSpawnableTab({
     updateSpawnableEntry(current => ({
       ...current,
       sections: [...(current.sections || []), {
-        kind: 'attachments',
+        kind: XMLNodeKind.ATTACHMENTS,
         chance: 1.0,
         preset: '',
         attrs: { chance: '1.00' },
@@ -181,7 +182,7 @@ export default function EditFormSpawnableTab({
     updateSpawnableEntry(current => ({
       ...current,
       sections: [...(current.sections || []), {
-        kind: 'cargo',
+        kind: XMLNodeKind.CARGO,
         chance: 1.0,
         preset: '',
         attrs: { chance: '1.00' },
@@ -190,7 +191,7 @@ export default function EditFormSpawnableTab({
     }));
   };
 
-  const handleEditSlot = (idx: number, kind: 'attachments' | 'cargo') => {
+  const handleEditSlot = (idx: number, kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO) => {
     setEditingSlot({ idx, kind });
     setModalOpen(true);
   };
@@ -290,14 +291,14 @@ export default function EditFormSpawnableTab({
                 </p>
               </div>
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button size="sm" variant="tertiary" className="p-2" onClick={() => handleEditSlot(idx, 'attachments')}>
+                <Button size="sm" variant="tertiary" className="p-2" onClick={() => handleEditSlot(idx, XMLNodeKind.ATTACHMENTS)}>
                   <ChevronRight size={18} />
                 </Button>
                 <Button 
                   size="sm" 
                   variant="tertiary" 
                   className="p-2 text-error-600 hover:text-error-700 hover:bg-error-50 dark:hover:bg-error-900/20"
-                  onClick={() => handleRemoveSection(idx, 'attachments')}
+                  onClick={() => handleRemoveSection(idx, XMLNodeKind.ATTACHMENTS)}
                 >
                   <Trash2 size={18} />
                 </Button>
@@ -340,7 +341,7 @@ export default function EditFormSpawnableTab({
                   size="sm" 
                   variant="tertiary" 
                   className="p-1.5"
-                  onClick={() => handleEditSlot(idx, 'cargo')}
+                  onClick={() => handleEditSlot(idx, XMLNodeKind.CARGO)}
                 >
                   <ChevronRight size={16} />
                 </Button>
@@ -348,7 +349,7 @@ export default function EditFormSpawnableTab({
                   size="sm" 
                   variant="tertiary" 
                   className="p-1.5 text-error-600 hover:text-error-700 hover:bg-error-50 dark:hover:bg-error-900/20"
-                  onClick={() => handleRemoveSection(idx, 'cargo')}
+                  onClick={() => handleRemoveSection(idx, XMLNodeKind.CARGO)}
                 >
                   <Trash2 size={16} />
                 </Button>
