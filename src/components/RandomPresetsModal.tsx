@@ -378,18 +378,17 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                                 items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, name: e.target.value, attrs: { ...(it.attrs || {}), name: e.target.value } } : it) 
                               }))}
                             />
-                            <div className="w-24">
-                              <Slider
-                                value={chancePercent(item.chance)}
-                                onChange={v => updatePreset(index, p => ({ 
-                                  ...p, 
-                                  items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, chance: fromPercent(v), attrs: { ...(it.attrs || {}), chance: String(fromPercent(v)) } } : it) 
-                                }))}
-                                minValue={0}
-                                maxValue={100}
-                                label=""
-                              />
-                            </div>
+                            <Slider
+                              className="w-24"
+                              labelPosition="hidden"
+                              value={chancePercent(item.chance)}
+                              onChange={v => updatePreset(index, p => ({ 
+                                ...p, 
+                                items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, chance: fromPercent(v), attrs: { ...(it.attrs || {}), chance: String(fromPercent(v)) } } : it) 
+                              }))}
+                              minValue={0}
+                              maxValue={100}
+                            />
                             <span className="w-10 text-[10px] font-medium text-gray-500 text-right">{chancePercent(item.chance)}%</span>
                             <Button 
                               variant="tertiary" 

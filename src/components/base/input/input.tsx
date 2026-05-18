@@ -1,5 +1,5 @@
 import React from 'react';
-import { cx } from '@/utils/cx';
+import { cx, hasLayoutClass } from '@/utils/cx';
 import { X } from 'lucide-react';
 
 export type InputSize = 'sm' | 'md';
@@ -27,7 +27,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
   ...props 
 }, ref) => {
   return (
-    <div className={cx("w-full space-y-1.5", className)}>
+    <div className={cx(!hasLayoutClass(className) && "w-full", "space-y-1.5", className)}>
       {label && (
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {label}

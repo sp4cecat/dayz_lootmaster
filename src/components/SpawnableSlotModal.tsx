@@ -199,15 +199,14 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{item.name}</p>
                       </div>
-                      <div className="w-48 px-4 border-l border-gray-100 dark:border-gray-800">
-                        <Slider
-                          value={Math.round(item.chance * 100)}
-                          onChange={v => handleItemChanceChange(idx, v)}
-                          minValue={0}
-                          maxValue={100}
-                          label=""
-                        />
-                      </div>
+                      <Slider
+                        className="w-48 px-4 border-l border-gray-100 dark:border-gray-800"
+                        labelPosition="hidden"
+                        value={Math.round(item.chance * 100)}
+                        onChange={v => handleItemChanceChange(idx, v)}
+                        minValue={0}
+                        maxValue={100}
+                      />
                       <div className="w-12 text-xs font-medium text-gray-500 text-right">
                         {Math.round(item.chance * 100)}%
                       </div>

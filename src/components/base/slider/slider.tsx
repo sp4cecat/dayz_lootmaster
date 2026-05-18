@@ -7,22 +7,35 @@ import {
     SliderThumb as AriaSliderThumb,
     SliderTrack as AriaSliderTrack,
 } from "react-aria-components";
-import { cx, sortCx } from "@/utils/cx";
+import { cx, sortCx, hasLayoutClass } from "@/utils/cx";
 
 const styles = sortCx({
     default: "hidden",
     bottom: "absolute top-2 left-1/2 -translate-x-1/2 translate-y-full text-md font-medium text-primary",
     "top-floating":
         "absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full rounded-lg bg-primary px-2 py-1.5 text-xs font-semibold text-secondary shadow-lg ring-1 ring-secondary_alt",
+    hidden: "hidden",
 });
 
 interface SliderProps extends AriaSliderProps {
     labelPosition?: keyof typeof styles;
     labelFormatter?: (value: number) => string;
     helperText?: React.ReactNode;
+    suffix?: string;
 }
 
-export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100, labelFormatter, formatOptions, label, helperText, ...rest }: SliderProps) => {
+export const Slider = ({ 
+    labelPosition = "default", 
+    minValue = 0, 
+    maxValue = 100, 
+    labelFormatter, 
+    formatOptions, 
+    label, 
+    helperText, 
+    suffix,
+    className,
+    ...rest 
+}: SliderProps) => {
     // Format thumb value as percentage by default.
     const defaultFormatOptions: Intl.NumberFormatOptions = {
         style: "percent",
@@ -30,17 +43,23 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
     };
 
     return (
-        <AriaSlider {...rest} {...{ minValue, maxValue }} formatOptions={formatOptions ?? defaultFormatOptions} className="w-full">
+        <AriaSlider 
+            {...rest} 
+            {...{ minValue, maxValue }} 
+            formatOptions={formatOptions ?? defaultFormatOptions} 
+            className={cx(!hasLayoutClass(className) && "w-full", className)}
+        >
             <div className="flex flex-col gap-3">
-                {(label || labelPosition === "default") && (
+                {labelPosition !== "hidden" && (label || labelPosition === "default") && (
                     <div className="flex items-center justify-between gap-4">
                         <AriaLabel className="text-sm font-medium text-secondary dark:text-gray-300 truncate">{label}</AriaLabel>
                         <AriaSliderOutput className="text-sm font-bold text-brand-solid whitespace-nowrap">
-                            {({ state }) => 
-                                labelFormatter 
-                                    ? labelFormatter(state.getThumbValue(0)) 
-                                    : state.getFormattedValue(state.getThumbValue(0) / 100)
-                            }
+                            {({ state }) => {
+                                const val = state.getThumbValue(0);
+                                if (labelFormatter) return labelFormatter(val);
+                                if (suffix) return `${val}${suffix}`;
+                                return state.getFormattedValue(val / 100);
+                            }}
                         </AriaSliderOutput>
                     </div>
                 )}
@@ -74,7 +93,11 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
                                         >
                                             {labelPosition !== "default" && (
                                                 <AriaSliderOutput className={cx("whitespace-nowrap", styles[labelPosition])}>
-                                                    {labelFormatter ? labelFormatter(getThumbValue(index)) : getFormattedValue(getThumbValue(index) / 100)}
+                                                    {labelFormatter 
+                                                        ? labelFormatter(getThumbValue(index)) 
+                                                        : suffix 
+                                                            ? `${getThumbValue(index)}${suffix}` 
+                                                            : getFormattedValue(getThumbValue(index) / 100)}
                                                 </AriaSliderOutput>
                                             )}
                                         </AriaSliderThumb>

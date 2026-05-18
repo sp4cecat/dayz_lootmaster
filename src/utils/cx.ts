@@ -25,3 +25,13 @@ export function cx(...inputs: ClassValue[]) {
 export function sortCx<T extends Record<string, string | number | Record<string, string | number | Record<string, string | number>>>>(classes: T): T {
     return classes;
 }
+
+/**
+ * Checks if a className string contains any Tailwind layout-affecting classes
+ * (width, flex-grow, flex-shrink, basis, or grid spans)
+ */
+export function hasLayoutClass(className?: string): boolean {
+    if (!className) return false;
+    const layoutRegex = /\b(w-|flex-|basis-|col-span-|row-span-)\b/;
+    return layoutRegex.test(className);
+}
