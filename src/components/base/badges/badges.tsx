@@ -7,7 +7,7 @@ import { badgeTypes } from "./badge-types";
 
 export const filledColors: Record<BadgeColors, { root: string; addon: string; addonButton: string }> = {
     gray: {
-        root: "bg-utility-neutral-50 text-utility-neutral-700 ring-utility-neutral-200 dark:bg-utility-neutral-900 dark:text-utility-neutral-300 dark:ring-utility-neutral-800",
+        root: "bg-utility-neutral-50 text-utility-neutral-700 ring-utility-neutral-300 dark:bg-utility-neutral-800 dark:text-utility-neutral-300 dark:ring-utility-neutral-700",
         addon: "text-utility-neutral-500 dark:text-utility-neutral-400",
         addonButton: "hover:bg-utility-neutral-100 text-utility-neutral-400 hover:text-utility-neutral-500 dark:hover:bg-utility-neutral-800 dark:text-utility-neutral-500 dark:hover:text-utility-neutral-400",
     },

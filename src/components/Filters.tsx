@@ -240,7 +240,7 @@ export default function Filters({
                 key={opt}
                 color={filters.usage.includes(opt) ? 'brand' : 'gray'}
                 size="sm"
-                className="cursor-pointer py-1.5 px-3"
+                className="cursor-pointer py-1.5 px-3 transition-colors"
                 onClick={() => toggleUsage(opt)}
               >
                 {opt}
@@ -260,7 +260,7 @@ export default function Filters({
                 key={opt}
                 color={filters.value.includes(opt) ? 'brand' : 'gray'}
                 size="sm"
-                className="cursor-pointer py-1.5 px-3"
+                className="cursor-pointer py-1.5 px-3 transition-colors"
                 onClick={() => toggleValue(opt)}
               >
                 {opt}
@@ -280,7 +280,7 @@ export default function Filters({
                 key={opt}
                 color={filters.tag.includes(opt) ? 'brand' : 'gray'}
                 size="sm"
-                className="cursor-pointer py-1.5 px-3"
+                className="cursor-pointer py-1.5 px-3 transition-colors"
                 onClick={() => {
                   const curr = filters.tag;
                   const next = curr.includes(opt) ? curr.filter((x) => x !== opt) : [...curr, opt];
@@ -303,7 +303,7 @@ export default function Filters({
                 key={opt}
                 color={filters.flags.includes(opt) ? 'brand' : 'gray'}
                 size="sm"
-                className="cursor-pointer py-1.5 px-3"
+                className="cursor-pointer py-1.5 px-3 transition-colors"
                 onClick={() => toggleFlag(opt)}
               >
                 {opt.replace('count_in_', '').replace('_', ' ')}
@@ -323,7 +323,7 @@ export default function Filters({
                   key={g}
                   color={filters.groups.includes(g) ? 'brand' : 'gray'}
                   size="sm"
-                  className="cursor-pointer py-1.5 px-3"
+                  className="cursor-pointer py-1.5 px-3 transition-colors"
                   onClick={() => toggleGroup(g)}
                 >
                   {g}

@@ -437,7 +437,7 @@ function TriStatePanel({
                   ? "bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-900/20 dark:border-primary-800 dark:text-primary-300"
                   : val === 'mixed'
                     ? "bg-gray-50 border-gray-200 text-gray-600 italic dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
-                    : "bg-white border-transparent text-gray-500 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
+                    : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300 dark:bg-gray-950 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-900"
               )}
             >
               <span className="text-xs font-medium">{labelFormatter ? labelFormatter(opt) : opt}</span>
