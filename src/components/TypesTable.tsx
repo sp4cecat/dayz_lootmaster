@@ -268,7 +268,7 @@ export default function TypesTable({
                 key={row.name}
                 id={row.name}
                 className={cx(
-                  'grid items-stretch cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-800/50 outline-none focus-visible:bg-primary-50 dark:focus-visible:bg-primary-900/10',
+                  'grid items-stretch cursor-pointer transition-colors outline-none focus-visible:bg-primary-50 dark:focus-visible:bg-primary-900/10',
                   isSelected
                     ? 'bg-primary-50/50 dark:bg-primary-900/10'
                     : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/50'
