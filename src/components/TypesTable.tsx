@@ -296,9 +296,7 @@ export default function TypesTable({
                       </Badge>
                     )}
                     {isOverride && (
-                      <Badge color="blue" size="sm" type="modern">
                         <Milk size={12} className="mr-1" />
-                      </Badge>
                     )}
                   </div>
                 </Table.Cell>

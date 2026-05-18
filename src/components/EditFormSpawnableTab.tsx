@@ -250,7 +250,7 @@ export default function EditFormSpawnableTab({
             maxValue={100} 
             step={1}
             onValueChange={(vals) => handleDamageChange('min', vals[0])}
-            helperText="Minimum condition when spawning"
+            helperText="Minimum damage when spawned"
           />
           <Slider 
             label="Max Damage" 
@@ -258,7 +258,7 @@ export default function EditFormSpawnableTab({
             maxValue={100} 
             step={1}
             onValueChange={(vals) => handleDamageChange('max', vals[0])}
-            helperText="Maximum condition when spawning"
+            helperText="Maximum damage when spawned"
           />
         </div>
       </section>
