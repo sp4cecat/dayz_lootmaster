@@ -34,7 +34,7 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
             <div className="flex flex-col gap-3">
                 {(label || labelPosition === "default") && (
                     <div className="flex items-center justify-between gap-4">
-                        <AriaLabel className="text-sm font-medium text-secondary truncate">{label}</AriaLabel>
+                        <AriaLabel className="text-sm font-medium text-secondary dark:text-gray-300 truncate">{label}</AriaLabel>
                         <AriaSliderOutput className="text-sm font-bold text-brand-solid whitespace-nowrap">
                             {({ state }) => 
                                 labelFormatter 
@@ -85,7 +85,7 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
                     }}
                 </AriaSliderTrack>
                 {helperText && (
-                    <div className="text-sm text-tertiary">
+                    <div className="text-sm text-tertiary dark:text-gray-400">
                         {helperText}
                     </div>
                 )}

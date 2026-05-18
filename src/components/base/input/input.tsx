@@ -2,6 +2,8 @@ import React from 'react';
 import { cx } from '@/utils/cx';
 import { X } from 'lucide-react';
 
+export type InputSize = 'sm' | 'md';
+
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
@@ -9,6 +11,7 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
   icon?: React.ElementType;
   suffix?: string | React.ReactNode;
   onClear?: () => void;
+  size?: InputSize;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ 
@@ -20,6 +23,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
   icon: Icon,
   onClear,
   suffix,
+  size = 'md',
   ...props 
 }, ref) => {
   return (
@@ -32,13 +36,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
       <div className="relative">
         {Icon && (
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-            <Icon size={18} />
+            <Icon size={size === 'md' ? 18 : 16} />
           </div>
         )}
         <input
           type={type}
           className={cx(
-            'flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 disabled:cursor-not-allowed disabled:opacity-50 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:ring-primary-900/30 dark:focus:border-primary-500',
+            'flex w-full rounded-lg border border-gray-300 bg-white px-3 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 disabled:cursor-not-allowed disabled:opacity-50 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:ring-primary-900/30 dark:focus:border-primary-500',
+            size === 'md' ? 'h-10 py-2' : 'h-8 py-1 text-xs',
             Icon && 'pl-10',
             (suffix || (onClear && props.value)) && 'pr-8',
             error && 'border-error-300 focus:ring-error-100 focus:border-error-300 dark:border-error-800 dark:focus:ring-error-900/30',

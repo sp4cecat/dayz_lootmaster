@@ -83,7 +83,7 @@ const withPillTypes = {
         styles: filledColors,
     },
     [badgeTypes.badgeModern]: {
-        common: "size-max flex items-center whitespace-nowrap rounded-md ring-1 ring-inset bg-primary text-secondary ring-primary shadow-xs",
+        common: "size-max flex items-center whitespace-nowrap rounded-md ring-1 ring-inset bg-primary text-secondary dark:text-gray-300 ring-primary shadow-xs",
         styles: addonOnlyColors,
     },
 };
@@ -98,7 +98,7 @@ const withBadgeTypes = {
         styles: filledColors,
     },
     [badgeTypes.badgeModern]: {
-        common: "size-max flex items-center whitespace-nowrap rounded-md ring-1 ring-inset bg-primary text-secondary ring-primary shadow-xs",
+        common: "size-max flex items-center whitespace-nowrap rounded-md ring-1 ring-inset bg-primary text-secondary dark:text-gray-300 ring-primary shadow-xs",
         styles: addonOnlyColors,
     },
 };

@@ -8,6 +8,8 @@ import { Plus, Trash2, Copy, Layers, Search, AlertTriangle } from 'lucide-react'
 import { cx } from '@/utils/cx';
 import { XMLNodeKind } from '@/types/xml';
 
+import { Select } from '@/components/base/select/select';
+
 interface PresetItem {
   kind: string;
   name: string;
@@ -252,11 +254,14 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                       })}
                       size="sm"
                     />
-                    <Input
+                    <Select
                       label="XML Node Kind"
                       value={preset.kind}
-                      onChange={e => updatePreset(index, p => ({ ...p, kind: e.target.value || XMLNodeKind.ATTACHMENTS }))}
-                      size="sm"
+                      onChange={e => updatePreset(index, p => ({ ...p, kind: e.target.value as XMLNodeKind }))}
+                      options={[
+                        { label: 'Attachments', value: XMLNodeKind.ATTACHMENTS },
+                        { label: 'Cargo', value: XMLNodeKind.CARGO }
+                      ]}
                     />
                   </div>
                   <div className="flex items-center gap-2 pt-6">
@@ -295,16 +300,23 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                   <div className="space-y-2">
                     {preset.items.map((item, itemIndex) => (
                       <div key={itemIndex} className="flex items-center gap-3">
-                        <input
-                          className="w-20 px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded shadow-sm focus:ring-1 focus:ring-primary-500 outline-none"
+                        <Select
+                          className="w-32"
+                          size="sm"
                           value={item.kind || XMLNodeKind.ITEM}
                           onChange={e => updatePreset(index, p => ({ 
                             ...p, 
-                            items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, kind: e.target.value || XMLNodeKind.ITEM } : it) 
+                            items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, kind: e.target.value as XMLNodeKind } : it) 
                           }))}
+                          options={[
+                            { label: 'Item', value: XMLNodeKind.ITEM },
+                            { label: 'Attachments', value: XMLNodeKind.ATTACHMENTS },
+                            { label: 'Cargo', value: XMLNodeKind.CARGO }
+                          ]}
                         />
-                        <input
-                          className="flex-1 px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded shadow-sm focus:ring-1 focus:ring-primary-500 outline-none"
+                        <Input
+                          className="flex-1"
+                          size="sm"
                           value={item.name}
                           placeholder="Item name..."
                           onChange={e => updatePreset(index, p => ({ 

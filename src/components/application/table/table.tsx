@@ -94,7 +94,7 @@ const TableCardHeader = ({ title, badge, description, contentTrailing, className
                         )
                     ) : null}
                 </div>
-                {description && <p className="text-sm text-tertiary">{description}</p>}
+                {description && <p className="text-sm text-tertiary dark:text-gray-400">{description}</p>}
             </div>
             {contentTrailing}
         </div>
@@ -289,7 +289,7 @@ const TableCell = ({ className, children, size: sizeProp, ...props }: TableCellP
             {...props}
             className={(state) =>
                 cx(
-                    "relative text-sm text-tertiary focus-visible:z-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
+                    "relative text-sm text-tertiary dark:text-gray-400 focus-visible:z-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
                     size === "sm" && "px-5 py-3",
                     size === "md" && "px-6 py-4",
 
