@@ -8,7 +8,7 @@ import UnknownEntriesModal from './components/UnknownEntriesModal';
 import SummaryModal from './components/SummaryModal';
 import { ManageDefinitionsModal } from './components/ManageDefinitionsModal';
 import StorageStatusModal from './components/StorageStatusModal';
-import RandomPresetsModal from './components/RandomPresetsModal.jsx';
+import { RandomPresetsModal } from './components/RandomPresetsModal';
 import EditorLogin from './components/EditorLogin';
 import AdmRecordsModal from './components/AdmRecordsModal.jsx';
 import ExpansionLogModal from './components/ExpansionLogModal.jsx';
@@ -466,10 +466,9 @@ export default function App() {
                 <RandomPresetsModal 
                     onClose={() => setModal(null)}
                     randomPresets={randomPresets}
-                    setRandomPresets={(next: any) => {
-                        setRandomPresets(next);
-                        // For simplicity, we don't push to undo history for random presets yet
-                    }}
+                    setRandomPresets={setRandomPresets}
+                    spawnableTypesByGroup={spawnableTypesByGroup}
+                    setSpawnableTypesByGroup={setSpawnableTypesByGroup}
                 />
             )}
             {modal === 'adm' && (

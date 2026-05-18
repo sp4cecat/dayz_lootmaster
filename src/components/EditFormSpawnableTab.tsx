@@ -1,10 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
-import { Plus, Trash2, Settings2, Sparkles, Percent, ChevronRight } from 'lucide-react';
+import { 
+  Plus, 
+  Trash2, 
+  Settings2, 
+  Percent, 
+  ChevronRight,
+  Package,
+  AlertCircle 
+} from 'lucide-react';
 import type { Type } from '@/utils/xml';
+import { SpawnableSlotModal } from './SpawnableSlotModal';
 
 interface EditFormSpawnableTabProps {
   selectedTypes: Type[];
@@ -12,6 +21,7 @@ interface EditFormSpawnableTabProps {
   setSpawnableTypesByGroup: (next: any) => void;
   randomPresets: { presets: any[] };
   globalsDefaults: { LootDamageMin: number | null; LootDamageMax: number | null };
+  typeOptions: string[];
 }
 
 function chancePercent(value: any) {
@@ -23,60 +33,184 @@ export default function EditFormSpawnableTab({
   selectedTypes, 
   spawnableTypesByGroup, 
   setSpawnableTypesByGroup,
-  randomPresets: _randomPresets,
-  globalsDefaults
+  randomPresets,
+  globalsDefaults,
+  typeOptions
 }: EditFormSpawnableTabProps) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<{ idx: number; kind: 'attachments' | 'cargo' } | null>(null);
+
   const isMulti = selectedTypes.length > 1;
 
   const type = selectedTypes[0];
   const result = findSpawnableEntryForType(spawnableTypesByGroup, type.group, type.name);
 
-  const handleDamageChange = (key: 'min' | 'max', val: number) => {
-    if (!result) return;
-    const { entry, group: foundGroup } = result;
-    const newVal = val / 100;
+  const effectiveGroup = result ? result.group : (
+    (type.group === 'vanilla' || type.group === 'vanilla_overrides') ? ROOT_SPAWNABLE_GROUP : type.group
+  );
+
+  const entry = result?.entry || {
+    name: type.name,
+    sections: [],
+    damage: {
+      min: globalsDefaults.LootDamageMin,
+      max: globalsDefaults.LootDamageMax
+    },
+    attachments: [],
+    cargo: []
+  };
+
+  const updateSpawnableEntry = (updater: (entry: any) => any) => {
     const nextGroups = { ...spawnableTypesByGroup };
-    const groupData = { ...nextGroups[foundGroup] };
+    if (!nextGroups[effectiveGroup]) {
+      nextGroups[effectiveGroup] = { types: [] };
+    }
+    const groupData = { ...nextGroups[effectiveGroup] };
+    const existingIdx = groupData.types.findIndex((t: any) => t.name.toLowerCase() === type.name.toLowerCase());
     
-    groupData.types = groupData.types.map((t: any) => {
-      if (t.name === entry.name) {
-        const nextSections = [...(t.sections || [])];
-        let damageIdx = nextSections.findIndex(s => s.kind === 'damage');
-        const formatted = newVal.toFixed(3);
-        
-        if (damageIdx === -1) {
-          nextSections.push({
-            kind: 'damage',
-            chance: null,
-            preset: '',
-            attrs: { [key]: formatted },
-            items: []
-          });
-        } else {
-          nextSections[damageIdx] = {
-            ...nextSections[damageIdx],
-            attrs: {
-              ...nextSections[damageIdx].attrs,
-              [key]: formatted
-            }
-          };
-        }
-        
-        const damageSection = nextSections.find(s => s.kind === 'damage');
-        return {
-          ...t,
-          sections: nextSections,
-          damage: damageSection ? {
-            min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
-            max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
-          } : null
+    let currentEntry;
+    if (existingIdx === -1) {
+      currentEntry = {
+        name: type.name,
+        sections: [{
+          kind: 'damage',
+          chance: null,
+          preset: '',
+          attrs: {
+            min: String(globalsDefaults.LootDamageMin ?? '0.000'),
+            max: String(globalsDefaults.LootDamageMax ?? '0.000')
+          },
+          items: []
+        }],
+        damage: {
+          min: globalsDefaults.LootDamageMin,
+          max: globalsDefaults.LootDamageMax
+        },
+        attachments: [],
+        cargo: []
+      };
+    } else {
+      currentEntry = { ...groupData.types[existingIdx] };
+    }
+    
+    const nextEntry = updater(currentEntry);
+    
+    // Recalculate helper properties
+    const damageSection = nextEntry.sections?.find((s: any) => s.kind === 'damage');
+    nextEntry.damage = damageSection ? {
+      min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
+      max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
+    } : null;
+    nextEntry.attachments = nextEntry.sections?.filter((s: any) => s.kind === 'attachments') || [];
+    nextEntry.cargo = nextEntry.sections?.filter((s: any) => s.kind === 'cargo') || [];
+
+    if (existingIdx === -1) {
+      groupData.types = [...groupData.types, nextEntry];
+    } else {
+      groupData.types = groupData.types.map((t: any, i: number) => i === existingIdx ? nextEntry : t);
+    }
+    
+    nextGroups[effectiveGroup] = groupData;
+    setSpawnableTypesByGroup(nextGroups);
+  };
+
+  const handleDamageChange = (key: 'min' | 'max', val: number) => {
+    const newVal = val / 100;
+    const formatted = newVal.toFixed(3);
+    
+    updateSpawnableEntry(current => {
+      const nextSections = [...(current.sections || [])];
+      let damageIdx = nextSections.findIndex(s => s.kind === 'damage');
+      
+      if (damageIdx === -1) {
+        nextSections.push({
+          kind: 'damage',
+          chance: null,
+          preset: '',
+          attrs: {
+            min: String(globalsDefaults.LootDamageMin ?? '0.000'),
+            max: String(globalsDefaults.LootDamageMax ?? '0.000'),
+            [key]: formatted
+          },
+          items: []
+        });
+      } else {
+        nextSections[damageIdx] = {
+          ...nextSections[damageIdx],
+          attrs: {
+            ...nextSections[damageIdx].attrs,
+            [key]: formatted
+          }
         };
       }
-      return t;
+      return { ...current, sections: nextSections };
     });
-    
-    nextGroups[foundGroup] = groupData;
-    setSpawnableTypesByGroup(nextGroups);
+  };
+
+  const handleAddAttachmentSlot = () => {
+    updateSpawnableEntry(current => ({
+      ...current,
+      sections: [...(current.sections || []), {
+        kind: 'attachments',
+        chance: 1.0,
+        preset: '',
+        attrs: { chance: '1.00' },
+        items: []
+      }]
+    }));
+  };
+
+  const handleRemoveSection = (sectionIndexInKind: number, kind: string) => {
+    updateSpawnableEntry(current => {
+      let count = 0;
+      const nextSections = (current.sections || []).filter((s: any) => {
+        if (s.kind === kind) {
+          if (count === sectionIndexInKind) {
+            count++;
+            return false;
+          }
+          count++;
+        }
+        return true;
+      });
+      return { ...current, sections: nextSections };
+    });
+  };
+
+  const handleAddCargo = () => {
+    updateSpawnableEntry(current => ({
+      ...current,
+      sections: [...(current.sections || []), {
+        kind: 'cargo',
+        chance: 1.0,
+        preset: '',
+        attrs: { chance: '1.00' },
+        items: []
+      }]
+    }));
+  };
+
+  const handleEditSlot = (idx: number, kind: 'attachments' | 'cargo') => {
+    setEditingSlot({ idx, kind });
+    setModalOpen(true);
+  };
+
+  const handleSaveSlot = (nextSlot: any) => {
+    if (!editingSlot) return;
+    updateSpawnableEntry(current => {
+      let count = 0;
+      const nextSections = (current.sections || []).map((s: any) => {
+        if (s.kind === editingSlot.kind) {
+          if (count === editingSlot.idx) {
+            count++;
+            return nextSlot;
+          }
+          count++;
+        }
+        return s;
+      });
+      return { ...current, sections: nextSections };
+    });
   };
 
   if (isMulti) {
@@ -92,33 +226,17 @@ export default function EditFormSpawnableTab({
       </div>
     );
   }
-  if (!result) {
-    return (
-      <div className="p-12 text-center bg-gray-50 dark:bg-gray-950/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
-        <div className="size-16 bg-white dark:bg-gray-900 rounded-2xl flex items-center justify-center text-gray-400 mx-auto mb-4 shadow-sm border border-gray-100 dark:border-gray-800">
-          <Sparkles size={32} />
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">No Spawnable Entry</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto mb-6">
-          This item doesn't have a configuration in cfgspawnabletypes.xml. Create one to manage its cargo and attachments.
-        </p>
-        <Button onClick={() => {}} icon={Plus}>Create Spawnable Entry</Button>
-      </div>
-    );
-  }
-
-  const { entry, group: foundGroup } = result;
-
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="flex items-center justify-between px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl mb-6">
         <div className="flex items-center gap-2">
           <Settings2 size={16} className="text-blue-600 dark:text-blue-400" />
           <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-            Source: <span className="font-bold">{foundGroup === ROOT_SPAWNABLE_GROUP ? 'Mission Root' : `Group: ${foundGroup}`}</span>
+            Source: <span className="font-bold">{effectiveGroup === ROOT_SPAWNABLE_GROUP ? 'Mission Root' : `Group: ${effectiveGroup}`}</span>
+            {(!result) && <span className="ml-2 italic text-xs">(New Entry)</span>}
           </span>
         </div>
-        <Badge color="blue" size="sm">Active</Badge>
+        <Badge color={result ? "blue" : "warning"} size="sm">{result ? "Active" : "Virtual"}</Badge>
       </div>
       {/* Damage Section */}
       <section>
@@ -129,7 +247,7 @@ export default function EditFormSpawnableTab({
           <Slider 
             label="Min Damage" 
             value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
-            max={100} 
+            maxValue={100} 
             step={1}
             onValueChange={(vals) => handleDamageChange('min', vals[0])}
             helperText="Minimum condition when spawning"
@@ -137,7 +255,7 @@ export default function EditFormSpawnableTab({
           <Slider 
             label="Max Damage" 
             value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
-            max={100} 
+            maxValue={100} 
             step={1}
             onValueChange={(vals) => handleDamageChange('max', vals[0])}
             helperText="Maximum condition when spawning"
@@ -152,7 +270,7 @@ export default function EditFormSpawnableTab({
             <Badge color="brand" size="sm" type="modern">Attachments</Badge>
             <span className="text-xs text-gray-400 font-medium">({entry.attachments?.length || 0} slots)</span>
           </div>
-          <Button size="sm" variant="secondary-gray" icon={Plus}>Add Slot</Button>
+          <Button size="sm" variant="secondary-gray" icon={Plus} onClick={handleAddAttachmentSlot}>Add Slot</Button>
         </div>
         
         <div className="space-y-3">
@@ -165,14 +283,24 @@ export default function EditFormSpawnableTab({
                 <div className="flex items-center gap-2 mb-1">
                   <p className="text-sm font-bold text-gray-900 dark:text-white truncate">Slot {idx + 1}</p>
                   <Badge color="gray" size="sm">{chancePercent(slot.chance)}% Chance</Badge>
+                  {slot.preset && <Badge color="blue" size="sm">Preset: {slot.preset}</Badge>}
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                   {slot.items?.length || 0} possible items in this slot
                 </p>
               </div>
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button size="sm" variant="tertiary" className="p-2"><ChevronRight size={18} /></Button>
-                <Button size="sm" variant="tertiary" className="p-2 text-error-600 hover:text-error-700 hover:bg-error-50 dark:hover:bg-error-900/20"><Trash2 size={18} /></Button>
+                <Button size="sm" variant="tertiary" className="p-2" onClick={() => handleEditSlot(idx, 'attachments')}>
+                  <ChevronRight size={18} />
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="tertiary" 
+                  className="p-2 text-error-600 hover:text-error-700 hover:bg-error-50 dark:hover:bg-error-900/20"
+                  onClick={() => handleRemoveSection(idx, 'attachments')}
+                >
+                  <Trash2 size={18} />
+                </Button>
               </div>
             </div>
           ))}
@@ -191,7 +319,7 @@ export default function EditFormSpawnableTab({
             <Badge color="brand" size="sm" type="modern">Cargo</Badge>
             <span className="text-xs text-gray-400 font-medium">({entry.cargo?.length || 0} items)</span>
           </div>
-          <Button size="sm" variant="secondary-gray" icon={Plus}>Add Cargo</Button>
+          <Button size="sm" variant="secondary-gray" icon={Plus} onClick={handleAddCargo}>Add Cargo</Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -202,11 +330,29 @@ export default function EditFormSpawnableTab({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-900 dark:text-white truncate">Cargo Item {idx + 1}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{chancePercent(item.chance)}% chance</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{chancePercent(item.chance)}% chance</p>
+                  {item.preset && <Badge color="blue" size="xs">Preset: {item.preset}</Badge>}
+                </div>
               </div>
-              <Button size="sm" variant="tertiary" className="p-1.5 text-error-600 hover:text-error-700 hover:bg-error-50 dark:hover:bg-error-900/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Trash2 size={16} />
-              </Button>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button 
+                  size="sm" 
+                  variant="tertiary" 
+                  className="p-1.5"
+                  onClick={() => handleEditSlot(idx, 'cargo')}
+                >
+                  <ChevronRight size={16} />
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="tertiary" 
+                  className="p-1.5 text-error-600 hover:text-error-700 hover:bg-error-50 dark:hover:bg-error-900/20"
+                  onClick={() => handleRemoveSection(idx, 'cargo')}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </div>
             </div>
           ))}
           {!entry.cargo?.length && (
@@ -216,6 +362,18 @@ export default function EditFormSpawnableTab({
           )}
         </div>
       </section>
+
+      {modalOpen && editingSlot && (
+        <SpawnableSlotModal
+          isOpen={modalOpen}
+          onClose={() => { setModalOpen(false); setEditingSlot(null); }}
+          slot={entry[editingSlot.kind][editingSlot.idx]}
+          onSave={handleSaveSlot}
+          presets={randomPresets.presets?.filter((p: any) => p.kind === editingSlot.kind) || []}
+          typeOptions={typeOptions}
+          kind={editingSlot.kind}
+        />
+      )}
     </div>
   );
 }

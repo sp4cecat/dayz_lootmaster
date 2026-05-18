@@ -374,9 +374,56 @@ async function spawnableTypesFilePath(profile, paths, group) {
 
     const dir = await declaredGroupDir(profile, paths, group);
     return dir ? firstExistingPath([
+        join(dir, 'spawnabletypes.xml'),
         join(dir, 'cfgspawnabletypes.xml'),
         join(dir, 'cfgspawnabletype.xml')
     ]) : null;
+}
+
+async function ensureSpawnableTypeFileInEconomyCore(profile, paths, group, fileName) {
+    const economyCore = paths.economyCorePath;
+    try {
+        let xml = await readFile(economyCore, 'utf8');
+        const folder = await getDeclaredGroupFolder(profile, paths, group);
+        if (!folder) return;
+
+        // Escape folder name for regex if it contains special chars
+        const escapedFolder = folder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // Find the specific ce block for this folder
+        const ceRe = new RegExp(`(<ce\\s+folder="${escapedFolder}"[^>]*>)([\\s\\S]*?)(<\\/ce>)`, 'i');
+        const match = xml.match(ceRe);
+        if (!match) return;
+
+        const [full, openTag, inner, closeTag] = match;
+        
+        // Check if file entry already exists in this ce block
+        const fileRe = new RegExp(`<file\\b[^>]*\\bname="${fileName}"[^>]*\\btype="spawnabletypes"[^>]*\\/?>`, 'i');
+        if (fileRe.test(inner)) return;
+
+        const insertion = `\n        <file name="${fileName}" type="spawnabletypes" />`;
+        
+        // Try to find where to insert. If there are existing <file> tags, insert after the last one.
+        // Otherwise insert at the end of the block.
+        let newInner = inner;
+        const lastFileMatch = Array.from(inner.matchAll(/<file\b[^>]*\/>/gi)).pop();
+        if (lastFileMatch) {
+            const lastFileIndex = lastFileMatch.index + lastFileMatch[0].length;
+            newInner = inner.substring(0, lastFileIndex) + insertion + inner.substring(lastFileIndex);
+        } else {
+            newInner = inner.trimEnd() + insertion + '\n    ';
+        }
+
+        const newXml = xml.replace(full, openTag + newInner + closeTag);
+        await writeFile(economyCore, newXml, 'utf8');
+        
+        // Clear caches to force reload
+        groupFolderCaches.delete(profile.id);
+        groupFilesCaches.delete(profile.id);
+        groupSpawnableFilesCaches.delete(profile.id);
+    } catch (e) {
+        console.error('Failed to update economycore:', e);
+    }
 }
 
 async function createBackupIfExists(target) {
@@ -1675,7 +1722,6 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // Match /api/spawnabletypes/:group
         const matchSpawnableTypes = pathname.match(/^\/api\/spawnabletypes\/([^/]+)$/);
         if (matchSpawnableTypes) {
             const [, groupRaw] = matchSpawnableTypes;
@@ -1707,9 +1753,22 @@ const server = http.createServer(async (req, res) => {
                     badRequest(res, 'Empty body');
                     return;
                 }
+
+                let isNew = false;
+                try {
+                    await stat(target);
+                } catch {
+                    isNew = true;
+                }
+
                 const backup = await createBackupIfExists(target);
                 await ensureDirFor(target);
                 await writeFile(target, body, 'utf8');
+
+                if (isNew && group !== '__root' && group !== 'vanilla' && group !== 'vanilla_overrides') {
+                    await ensureSpawnableTypeFileInEconomyCore(profile, paths, group, String(target).split(/[\\/]/).pop());
+                }
+
                 send(res, 200, JSON.stringify({ok: true, path: target, backup}), {'Content-Type': 'application/json'});
                 return;
             }

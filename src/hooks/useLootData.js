@@ -13,7 +13,7 @@ import {
   generateRandomPresetsXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile, clearAllMissionFiles } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -99,6 +99,18 @@ export function useLootData() {
   const selectedProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
 
   useEffect(() => {
+    if (spawnableTypesByGroup && Object.keys(spawnableTypesByGroup).length > 0) {
+      void saveMissionFile('spawnableTypesByGroup', spawnableTypesByGroup);
+    }
+  }, [spawnableTypesByGroup]);
+
+  useEffect(() => {
+    if (randomPresets && randomPresets.presets?.length > 0) {
+      void saveMissionFile('randomPresets', randomPresets);
+    }
+  }, [randomPresets]);
+
+  useEffect(() => {
     if (selectedProfileId) {
       localStorage.setItem('dayz-editor:selectedProfileId', selectedProfileId);
     } else {
@@ -117,33 +129,45 @@ export function useLootData() {
 
   const loadMissionFilesFromAPI = useCallback(async (API_BASE, files, warnings = []) => {
     const groups = Object.keys(files || {});
-    const nextSpawnable = {};
-    try {
-      const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}`);
-      if (res.ok) {
-        const text = await res.text();
-        nextSpawnable[ROOT_SPAWNABLE_GROUP] = parseSpawnableTypesXml(text);
-      }
-    } catch (e) {
-      warnings.push(`Mission root cfgspawnabletypes.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
-    }
-    for (const group of groups) {
+    
+    // Try to load from IndexedDB first
+    const idbSpawnable = await loadMissionFile('spawnableTypesByGroup');
+    const idbRandomPresets = await loadMissionFile('randomPresets');
+    
+    let nextSpawnable = idbSpawnable || {};
+    let nextRandomPresets = idbRandomPresets || { presets: [] };
+
+    // If IDB is empty for spawnable, load from API
+    if (!idbSpawnable) {
       try {
-        const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`);
-        if (!res.ok) continue;
-        const text = await res.text();
-        nextSpawnable[group] = parseSpawnableTypesXml(text);
+        const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}`);
+        if (res.ok) {
+          const text = await res.text();
+          nextSpawnable[ROOT_SPAWNABLE_GROUP] = parseSpawnableTypesXml(text);
+        }
       } catch (e) {
-        warnings.push(`Group "${group}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+        warnings.push(`Mission root cfgspawnabletypes.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+      }
+      for (const group of groups) {
+        try {
+          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`);
+          if (!res.ok) continue;
+          const text = await res.text();
+          nextSpawnable[group] = parseSpawnableTypesXml(text);
+        } catch (e) {
+          warnings.push(`Group "${group}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+        }
       }
     }
 
-    let nextRandomPresets = { presets: [] };
-    try {
-      const res = await fetchWithProfile(`${API_BASE}/api/mission/randompresets`);
-      if (res.ok) nextRandomPresets = parseRandomPresetsXml(await res.text());
-    } catch (e) {
-      warnings.push(`cfgrandompresets.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+    // If IDB is empty for presets, load from API
+    if (!idbRandomPresets) {
+      try {
+        const res = await fetchWithProfile(`${API_BASE}/api/mission/randompresets`);
+        if (res.ok) nextRandomPresets = parseRandomPresetsXml(await res.text());
+      } catch (e) {
+        warnings.push(`cfgrandompresets.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+      }
     }
 
     let nextGlobals = { LootDamageMin: null, LootDamageMax: null };

@@ -147,6 +147,7 @@ export default function EditForm({
             setSpawnableTypesByGroup={setSpawnableTypesByGroup}
             randomPresets={randomPresets}
             globalsDefaults={globalsDefaults}
+            typeOptions={typeOptions}
           />
         </div>
 

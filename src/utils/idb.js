@@ -12,7 +12,7 @@
  */
 export function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('dayz-types-editor', 2);
+    const req = indexedDB.open('dayz-types-editor', 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('lootTypes')) {
@@ -22,6 +22,9 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains('changeLog')) {
         db.createObjectStore('changeLog', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('missionFiles')) {
+        db.createObjectStore('missionFiles', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -123,6 +126,54 @@ export async function loadAllGrouped() {
     out[r.group][r.file] = r.types || [];
   }
   return out;
+}
+
+/**
+ * Persist a mission file (e.g. spawnabletypes, randompresets)
+ * @param {string} id Unique identifier for the file
+ * @param {any} data The parsed file content
+ */
+export async function saveMissionFile(id, data) {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('missionFiles', 'readwrite');
+    const store = tx.objectStore('missionFiles');
+    store.put({ id, data });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/**
+ * Load a mission file by ID
+ * @param {string} id
+ * @returns {Promise<any|null>}
+ */
+export async function loadMissionFile(id) {
+  const db = await openDB();
+  return await new Promise((resolve, reject) => {
+    const tx = db.transaction('missionFiles', 'readonly');
+    const store = tx.objectStore('missionFiles');
+    const req = store.get(id);
+    req.onsuccess = () => resolve(req.result ? req.result.data : null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Clear all mission files.
+ */
+export async function clearAllMissionFiles() {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('missionFiles', 'readwrite');
+    const store = tx.objectStore('missionFiles');
+    store.clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
 }
 
 /**

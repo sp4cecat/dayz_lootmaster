@@ -250,6 +250,7 @@ export function parseGlobalsXml(xml) {
   const get = (name) => {
     const nodes = Array.from(doc.getElementsByTagName('var'));
     const node = nodes.find(n => (n.getAttribute('name') || '') === name);
+    if (!node) return null;
     const raw = node?.getAttribute('value') ?? node?.textContent;
     const n = Number(String(raw || '').trim());
     return Number.isFinite(n) ? n : null;

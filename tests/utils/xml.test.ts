@@ -185,6 +185,14 @@ describe('spawnabletypes utilities', () => {
     expect(found?.group).toBe('vanilla');
     expect(found?.entry.name).toBe('jmc_mjolnir_head');
   });
+
+  it('returns null when entry is not found in either group or root', () => {
+    const rootSpawnable = parseSpawnableTypesXml(`<spawnabletypes></spawnabletypes>`);
+    const found = findSpawnableEntryForType({
+      [ROOT_SPAWNABLE_GROUP]: rootSpawnable
+    }, 'weapons', 'NonExistentItem');
+    expect(found).toBeNull();
+  });
 });
 
 describe('random presets and globals utilities', () => {
@@ -211,5 +219,11 @@ describe('random presets and globals utilities', () => {
     expect(globals.LootDamageMax).toBe(0.85);
     expect(formatChance(2)).toBe('1.000');
     expect(formatChance(0.12345)).toBe('0.123');
+  });
+
+  it('handles missing globals gracefully', () => {
+    const globals = parseGlobalsXml('<variables/>');
+    expect(globals.LootDamageMin).toBeNull();
+    expect(globals.LootDamageMax).toBeNull();
   });
 });
