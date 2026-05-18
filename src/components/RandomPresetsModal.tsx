@@ -378,7 +378,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                                 items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, name: e.target.value, attrs: { ...(it.attrs || {}), name: e.target.value } } : it) 
                               }))}
                             />
-                            <div className="w-32">
+                            <div className="w-24">
                               <Slider
                                 value={chancePercent(item.chance)}
                                 onChange={v => updatePreset(index, p => ({ 

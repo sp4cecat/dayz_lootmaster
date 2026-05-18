@@ -27,7 +27,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
   ...props 
 }, ref) => {
   return (
-    <div className="w-full space-y-1.5">
+    <div className={cx("w-full space-y-1.5", className)}>
       {label && (
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {label}
@@ -46,8 +46,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
             size === 'md' ? 'h-10 py-2' : 'h-8 py-1 text-xs',
             Icon && 'pl-10',
             (suffix || (onClear && props.value)) && 'pr-8',
-            error && 'border-error-300 focus:ring-error-100 focus:border-error-300 dark:border-error-800 dark:focus:ring-error-900/30',
-            className
+            error && 'border-error-300 focus:ring-error-100 focus:border-error-300 dark:border-error-800 dark:focus:ring-error-900/30'
           )}
           ref={ref}
           {...props}
