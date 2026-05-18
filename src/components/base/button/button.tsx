@@ -13,7 +13,7 @@ export type ButtonVariant =
   | 'link' 
   | 'link-gray';
 
-export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -44,6 +44,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   };
 
   const sizes: Record<ButtonSize, string> = {
+    xs: 'px-2 py-1.5 text-xs gap-1.5',
     sm: 'px-3 py-2 text-sm gap-2',
     md: 'px-4 py-2.5 text-sm gap-2',
     lg: 'px-5 py-3 text-base gap-2',
@@ -65,9 +66,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
       )}
       {...props}
     >
-      {Icon && iconPosition === 'left' && <Icon size={size === 'sm' ? 18 : 20} className="shrink-0" />}
+      {Icon && iconPosition === 'left' && <Icon size={size === 'xs' ? 14 : size === 'sm' ? 18 : 20} className="shrink-0" />}
       {children}
-      {Icon && iconPosition === 'right' && <Icon size={size === 'sm' ? 18 : 20} className="shrink-0" />}
+      {Icon && iconPosition === 'right' && <Icon size={size === 'xs' ? 14 : size === 'sm' ? 18 : 20} className="shrink-0" />}
     </button>
   );
 });

@@ -17,14 +17,15 @@ const styles = sortCx({
     hidden: "hidden",
 });
 
-interface SliderProps extends AriaSliderProps {
+interface SliderProps<T extends number | number[] = number> extends AriaSliderProps<T> {
+    label?: string;
     labelPosition?: keyof typeof styles;
     labelFormatter?: (value: number) => string;
     helperText?: React.ReactNode;
     suffix?: string;
 }
 
-export const Slider = ({ 
+export const Slider = <T extends number | number[] = number>({ 
     labelPosition = "default", 
     minValue = 0, 
     maxValue = 100, 
@@ -35,7 +36,7 @@ export const Slider = ({
     suffix,
     className,
     ...rest 
-}: SliderProps) => {
+}: SliderProps<T>) => {
     // Format thumb value as percentage by default.
     const defaultFormatOptions: Intl.NumberFormatOptions = {
         style: "percent",
