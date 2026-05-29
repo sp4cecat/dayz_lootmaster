@@ -115,8 +115,8 @@ export default function App() {
 
     // View state
     const [editorID, setEditorID] = useState(() => localStorage.getItem('dayz-editor:id') || '');
-    const [view, setView] = useState('editor'); // 'editor', 'profiles'
-    const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'diff', 'manage-definitions', 'addons', 'heatmap'
+    const [view, setView] = useState('cle'); // 'cle', 'profiles', and sidebar IDs
+    const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'diff', 'manage-definitions'
     const [manageDefKind, setManageDefKind] = useState<'usage' | 'value' | 'tag' | null>(null);
     const [saveCLEHandler, setSaveCLEHandler] = useState<null | (() => void)>(null);
 
@@ -218,20 +218,10 @@ export default function App() {
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
             <Sidebar 
-                activeTab={view === 'profiles' ? 'profiles' : modal === 'addons' ? 'tools:addons' : modal === 'heatmap' ? 'map-tools:heatmap' : 'cle'}
+                activeTab={view}
                 onTabChange={(id) => {
-                    if (id === 'profiles') { setView('profiles'); setModal(null); }
-                    else if (id === 'tools:addons') { setModal('addons'); }
-                    else if (id === 'map-tools:heatmap') { setModal('heatmap'); }
-                    else if (id === 'tools:snapshots') { setModal('snapshots'); }
-                    else if (id === 'tools:adm') { setModal('adm'); }
-                    else if (id === 'tools:expansion-log') { setModal('expansion-log'); }
-                    else if (id === 'tools:stash-report') { setModal('stash-report'); }
-                    else if (id === 'tools:lint') { setModal('lint'); }
-                    else if (id === 'marketplace:traders') { setModal('traders'); }
-                    else if (id === 'marketplace:market-categories') { setModal('market-categories'); }
-                    else if (id === 'mission-files:random-presets') { setModal('random-presets'); }
-                    else { setView('editor'); setModal(null); }
+                    setView(id);
+                    setModal(null);
                 }}
                 editorID={editorID}
                 onSignOut={onSignOut}
@@ -270,17 +260,17 @@ export default function App() {
                                     <h2 className="text-3xl font-bold text-gray-900 tracking-tight dark:text-white">Server Profiles</h2>
                                     <p className="text-gray-500 mt-1 dark:text-gray-400">Manage and switch between different server configurations.</p>
                                 </div>
-                                <Button variant="secondary-gray" onClick={() => setView('editor')}>Back to Editor</Button>
+                                <Button variant="secondary-gray" onClick={() => setView('cle')}>Back to Editor</Button>
                             </div>
                             <ProfileManager 
                                 profiles={profiles} 
                                 selectedProfileId={selectedProfileId} 
-                                onSelect={(id) => { setSelectedProfileId(id); setView('editor'); }} 
+                                onSelect={(id) => { setSelectedProfileId(id); setView('cle'); }} 
                                 getApiBase={getApiBase}
                             />
                         </div>
                     </main>
-                ) : (
+                ) : view === 'cle' ? (
                     <main className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
                         {loading ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -398,6 +388,96 @@ export default function App() {
                             </div>
                         )}
                     </main>
+                ) : (
+                    <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                        {view === 'marketplace:traders' && (
+                            <TraderEditorModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                typeOptions={allTypeNames}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'marketplace:market-categories' && (
+                            <MarketCategoryEditorModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                typeOptions={allTypeNames}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'map-tools:heatmap' && (
+                            <HeatMapModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'mission-files:random-presets' && (
+                            <RandomPresetsModal 
+                                onClose={() => setView('cle')}
+                                randomPresets={randomPresets}
+                                setRandomPresets={setRandomPresets}
+                                spawnableTypesByGroup={spawnableTypesByGroup}
+                                setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                                inline={true}
+                            />
+                        )}
+                        {view === 'tools:snapshots' && (
+                            <SnapshotModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                inline={true}
+                            />
+                        )}
+                        {view === 'tools:adm' && (
+                            <AdmRecordsModal 
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'tools:expansion-log' && (
+                            <ExpansionLogModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'tools:stash-report' && (
+                            <StashReportModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'tools:lint' && (
+                            <LintFilesModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'tools:addons' && (
+                            <AddonEditorModal
+                                onClose={() => setView('cle')}
+                                selectedProfile={selectedProfile}
+                                knownAddons={KNOWN_ADDONS}
+                                onSave={(addons: string[]) => {
+                                    console.log('Save addons', addons);
+                                }}
+                                isPanel={true}
+                            />
+                        )}
+                    </main>
                 )}
             </div>
 
@@ -453,84 +533,6 @@ export default function App() {
                     diff={storageDiff} 
                     onClose={() => setModal(null)} 
                     onApply={persistChangesToServer}
-                />
-            )}
-            {modal === 'random-presets' && (
-                <RandomPresetsModal 
-                    onClose={() => setModal(null)}
-                    randomPresets={randomPresets}
-                    setRandomPresets={setRandomPresets}
-                    spawnableTypesByGroup={spawnableTypesByGroup}
-                    setSpawnableTypesByGroup={setSpawnableTypesByGroup}
-                />
-            )}
-            {modal === 'snapshots' && (
-                <SnapshotModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                />
-            )}
-            {modal === 'adm' && (
-                <AdmRecordsModal 
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                />
-            )}
-            {modal === 'expansion-log' && (
-                <ExpansionLogModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                />
-            )}
-            {modal === 'stash-report' && (
-                <StashReportModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                />
-            )}
-            {modal === 'traders' && (
-                <TraderEditorModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                    typeOptions={allTypeNames}
-                />
-            )}
-            {modal === 'lint' && (
-                <LintFilesModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                />
-            )}
-            {modal === 'market-categories' && (
-                <MarketCategoryEditorModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
-                    typeOptions={allTypeNames}
-                />
-            )}
-            {modal === 'addons' && (
-                <AddonEditorModal
-                    onClose={() => setModal(null)}
-                    selectedProfile={selectedProfile}
-                    knownAddons={KNOWN_ADDONS}
-                    onSave={(addons: string[]) => {
-                        // This would call a profile update API
-                        console.log('Save addons', addons);
-                    }}
-                />
-            )}
-            {modal === 'heatmap' && (
-                <HeatMapModal
-                    onClose={() => setModal(null)}
-                    selectedProfileId={selectedProfileId}
-                    getApiBase={getApiBase}
                 />
             )}
         </div>

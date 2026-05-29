@@ -14,6 +14,7 @@ import {
     Clock
 } from 'lucide-react';
 import moment from 'moment';
+import { cx } from '@/utils/cx';
 
 interface Snapshot {
     id: string;
@@ -27,12 +28,14 @@ interface SnapshotModalProps {
     onClose: () => void;
     selectedProfileId: string;
     getApiBase: () => string;
+    inline?: boolean;
 }
 
 export const SnapshotModal: React.FC<SnapshotModalProps> = ({ 
     onClose, 
     selectedProfileId, 
-    getApiBase 
+    getApiBase,
+    inline = false
 }) => {
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
     const [loading, setLoading] = useState(true);
@@ -143,8 +146,9 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
             title="Server Profile Snapshots"
             description="Create and manage snapshots of your CLE configurations and mission files."
             footer={footer}
+            inline={inline}
         >
-            <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin">
+            <div className={cx("space-y-6 overflow-y-auto pr-2 scrollbar-thin", inline ? "flex-1" : "max-h-[70vh]")}>
                 {/* Create Section */}
                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 dark:bg-gray-900 dark:border-gray-800 space-y-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">

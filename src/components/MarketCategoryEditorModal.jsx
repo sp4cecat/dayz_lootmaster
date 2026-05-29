@@ -40,7 +40,7 @@ function dedupeItemsByClassName(list) {
   return out;
 }
 
-export default function MarketCategoryEditorModal({ onClose, selectedProfileId }) {
+export default function MarketCategoryEditorModal({ onClose, selectedProfileId, isPanel = false }) {
   const API_BASE = useApiBase();
   const editorID = useEditorID();
 
@@ -396,138 +396,144 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId }
     </th>
   );
 
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Market categories editor">
-      <div className="modal fullscreen-modal">
-        <div className="modal-header">
-          <h3>Market Categories</h3>
-          <div className="spacer" />
-          <button className="btn" onClick={onClose} disabled={busy}>Close</button>
+  const content = (
+    <div className={isPanel ? "panel" : "modal fullscreen-modal"}>
+      <div className="modal-header">
+        <h3>Market Categories</h3>
+        <div className="spacer" />
+        <button className="btn" onClick={onClose} disabled={busy}>Close</button>
+      </div>
+      <div className="modal-body">
+        {/* Category selection and filter */}
+        <div className="controls-row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <label className="control" style={{ minWidth: 280 }}>
+            <span>Category</span>
+            <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} disabled={busy}>
+              {categoryNames.map(n => <option key={n} value={n}>{n}.json</option>)}
+            </select>
+          </label>
+          <label className="control" style={{ minWidth: 280 }}>
+            <span>Filter by ClassName</span>
+            <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} placeholder="Type to filter..." />
+          </label>
         </div>
-        <div className="modal-body">
-          {/* Category selection and filter */}
-          <div className="controls-row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <label className="control" style={{ minWidth: 280 }}>
-              <span>Category</span>
-              <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} disabled={busy}>
-                {categoryNames.map(n => <option key={n} value={n}>{n}.json</option>)}
-              </select>
-            </label>
-            <label className="control" style={{ minWidth: 280 }}>
-              <span>Filter by ClassName</span>
-              <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} placeholder="Type to filter..." />
-            </label>
+
+        {/* Bulk edit */}
+        <fieldset className="control" style={{ marginTop: 8 }}>
+          <legend>Bulk edit (applies to {filteredCount} filtered row{filteredCount === 1 ? '' : 's'})</legend>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {EDIT_FIELDS.map((field) => (
+              <label key={field} className="control" style={{ minWidth: 180 }}>
+                <span>{field}</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={bulkDraft[field]}
+                  onChange={e => setBulkDraft(prev => ({ ...prev, [field]: e.target.value }))}
+                  placeholder="(no change)"
+                  aria-label={`Bulk ${field}`}
+                />
+              </label>
+            ))}
           </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={applyBulk} disabled={busy}>Apply to filtered</button>
+            <button className="btn" onClick={clearBulk} disabled={busy}>Clear</button>
+          </div>
+        </fieldset>
 
-          {/* Bulk edit */}
-          <fieldset className="control" style={{ marginTop: 8 }}>
-            <legend>Bulk edit (applies to {filteredCount} filtered row{filteredCount === 1 ? '' : 's'})</legend>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {EDIT_FIELDS.map((field) => (
-                <label key={field} className="control" style={{ minWidth: 180 }}>
-                  <span>{field}</span>
-                  <input
-                    type="number"
-                    step="any"
-                    value={bulkDraft[field]}
-                    onChange={e => setBulkDraft(prev => ({ ...prev, [field]: e.target.value }))}
-                    placeholder="(no change)"
-                    aria-label={`Bulk ${field}`}
-                  />
-                </label>
-              ))}
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-              <button className="btn" onClick={applyBulk} disabled={busy}>Apply to filtered</button>
-              <button className="btn" onClick={clearBulk} disabled={busy}>Clear</button>
-            </div>
-          </fieldset>
+        {error && <div className="banner error" role="alert" style={{ marginTop: 8 }}>{String(error)}</div>}
+        {notice && (
+          <div className="banner" role="status" aria-live="polite" style={{ marginTop: 8 }}>
+            <span>{String(notice)}</span>
+            <div className="spacer" />
+            <button className="link" onClick={() => setNotice(null)} title="Dismiss">Dismiss</button>
+          </div>
+        )}
 
-          {error && <div className="banner error" role="alert" style={{ marginTop: 8 }}>{String(error)}</div>}
-          {notice && (
-            <div className="banner" role="status" aria-live="polite" style={{ marginTop: 8 }}>
-              <span>{String(notice)}</span>
-              <div className="spacer" />
-              <button className="link" onClick={() => setNotice(null)} title="Dismiss">Dismiss</button>
-            </div>
-          )}
-
-          {/* Items table */}
-          <div style={{ marginTop: 12, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  {renderHeaderCell('ClassName', 'ClassName')}
-                  {renderHeaderCell('MaxPriceThreshold', 'MaxPriceThreshold')}
-                  {renderHeaderCell('MinPriceThreshold', 'MinPriceThreshold')}
-                  {renderHeaderCell('SellPricePercent', 'SellPricePercent')}
-                  {renderHeaderCell('MaxStockThreshold', 'MaxStockThreshold')}
-                  {renderHeaderCell('MinStockThreshold', 'MinStockThreshold')}
-                  {renderHeaderCell('QuantityPercent', 'QuantityPercent')}
-                  <th style={{ width: 80 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map(row => {
-                  const isEditing = editingKey === row.ClassName;
-                  return (
-                    <tr key={row.ClassName}>
-                      <td className="classname-cell" style={{ padding: '8px', textAlign: 'left', fontFamily: 'monospace' }}>{row.ClassName}</td>
-                      {EDIT_FIELDS.map((field) => (
-                        <td key={field} style={{ padding: '4px 8px', textAlign: 'right' }}>
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              step="any"
-                              value={editDraft[field]}
-                              onChange={e => setEditDraft(prev => ({ ...prev, [field]: e.target.value }))}
-                              style={{ width: 120 }}
-                              aria-label={`${row.ClassName} ${field}`}
-                            />
-                          ) : (
-                            <span>{Number.isFinite(Number(row[field])) ? row[field] : ''}</span>
-                          )}
-                        </td>
-                      ))}
-                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        {!isEditing ? (
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button className="link" title="Edit row" onClick={() => startEdit(row)} aria-label={`Edit ${row.ClassName}`}>
-                              ✎
-                            </button>
-                            <button className="link warn" title="Remove from this category" onClick={() => removeItemFromCategory(row.ClassName)} aria-label={`Remove ${row.ClassName} from category`}>
-                              🗑
-                            </button>
-                            <button className="link error" title="Remove from Marketplace completely" onClick={() => removeItemFromMarketplaceCompletely(row.ClassName)} aria-label={`Remove ${row.ClassName} from marketplace`}>
-                              ❌
-                            </button>
-                          </div>
+        {/* Items table */}
+        <div style={{ marginTop: 12, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {renderHeaderCell('ClassName', 'ClassName')}
+                {renderHeaderCell('MaxPriceThreshold', 'MaxPriceThreshold')}
+                {renderHeaderCell('MinPriceThreshold', 'MinPriceThreshold')}
+                {renderHeaderCell('SellPricePercent', 'SellPricePercent')}
+                {renderHeaderCell('MaxStockThreshold', 'MaxStockThreshold')}
+                {renderHeaderCell('MinStockThreshold', 'MinStockThreshold')}
+                {renderHeaderCell('QuantityPercent', 'QuantityPercent')}
+                <th style={{ width: 80 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map(row => {
+                const isEditing = editingKey === row.ClassName;
+                return (
+                  <tr key={row.ClassName}>
+                    <td className="classname-cell" style={{ padding: '8px', textAlign: 'left', fontFamily: 'monospace' }}>{row.ClassName}</td>
+                    {EDIT_FIELDS.map((field) => (
+                      <td key={field} style={{ padding: '4px 8px', textAlign: 'right' }}>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="any"
+                            value={editDraft[field]}
+                            onChange={e => setEditDraft(prev => ({ ...prev, [field]: e.target.value }))}
+                            style={{ width: 120 }}
+                            aria-label={`${row.ClassName} ${field}`}
+                          />
                         ) : (
-                          <>
-                            <button className="link" title="Apply" onClick={applyEdit} style={{ marginRight: 6 }}>Save</button>
-                            <button className="link" title="Cancel" onClick={cancelEdit}>Cancel</button>
-                          </>
+                          <span>{Number.isFinite(Number(row[field])) ? row[field] : ''}</span>
                         )}
                       </td>
-                    </tr>
-                  );
-                })}
-                {filteredItems.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="muted" style={{ padding: 12 }}>No items match the filter.</td>
+                    ))}
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {!isEditing ? (
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button className="link" title="Edit row" onClick={() => startEdit(row)} aria-label={`Edit ${row.ClassName}`}>
+                            ✎
+                          </button>
+                          <button className="link warn" title="Remove from this category" onClick={() => removeItemFromCategory(row.ClassName)} aria-label={`Remove ${row.ClassName} from category`}>
+                            🗑
+                          </button>
+                          <button className="link error" title="Remove from Marketplace completely" onClick={() => removeItemFromMarketplaceCompletely(row.ClassName)} aria-label={`Remove ${row.ClassName} from marketplace`}>
+                            ❌
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button className="link" title="Apply" onClick={applyEdit} style={{ marginRight: 6 }}>Save</button>
+                          <button className="link" title="Cancel" onClick={cancelEdit}>Cancel</button>
+                        </>
+                      )}
+                    </td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn primary" onClick={onSave} disabled={busy || !selectedCategory}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-          <button className="btn" onClick={onClose} disabled={busy}>Close</button>
+                );
+              })}
+              {filteredItems.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="muted" style={{ padding: 12 }}>No items match the filter.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
+      <div className="modal-footer">
+        <button className="btn primary" onClick={onSave} disabled={busy || !selectedCategory}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button className="btn" onClick={onClose} disabled={busy}>Close</button>
+      </div>
+    </div>
+  );
+
+  if (isPanel) return content;
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Market categories editor">
+      {content}
     </div>
   );
 }

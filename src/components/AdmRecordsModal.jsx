@@ -5,7 +5,7 @@ import 'react-calendar/dist/Calendar.css';
 import 'react-clock/dist/Clock.css';
 import moment from 'moment';
 
-export default function AdmRecordsModal({ onClose, selectedProfileId }) {
+export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = false }) {
   const [start, setStart] = useState(/** @type {Date|null} */(null));
   const [end, setEnd] = useState(/** @type {Date|null} */(null));
   const [busy, setBusy] = useState(false);

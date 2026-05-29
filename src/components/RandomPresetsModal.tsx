@@ -31,6 +31,7 @@ interface RandomPresetsModalProps {
   setRandomPresets: (next: any) => void;
   spawnableTypesByGroup?: Record<string, any>;
   setSpawnableTypesByGroup?: (next: any) => void;
+  inline?: boolean;
 }
 
 function chancePercent(value: any) {
@@ -48,7 +49,8 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   randomPresets,
   setRandomPresets,
   spawnableTypesByGroup = {},
-  setSpawnableTypesByGroup = () => {}
+  setSpawnableTypesByGroup = () => {},
+  inline = false
 }) => {
   const presets = randomPresets?.presets || [];
   const presetNames = new Set(presets.map(p => p.name).filter(Boolean));
@@ -288,6 +290,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       icon={Layers}
       maxWidth="max-w-4xl"
       footer={<Button variant="primary" onClick={onClose}>Done</Button>}
+      inline={inline}
     >
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-4">

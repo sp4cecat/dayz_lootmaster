@@ -8,7 +8,7 @@ import deerIsleMap from '../assets/maps/deerisle/DeerIsle.jpg';
 
 const WORLD_SIZE = 16384;
 
-export default function HeatMapModal({ onClose, selectedProfileId, getApiBase }) {
+export default function HeatMapModal({ onClose, selectedProfileId, getApiBase, isPanel = false }) {
     const [start, setStart] = useState(() => {
         const d = new Date();
         d.setHours(0, 0, 0, 0);
@@ -295,129 +295,135 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase })
         setMapLoaded(true);
     };
 
-    return (
-        <div className="modal-backdrop" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onClick={onClose}>
-            <div className="modal full" style={{ width: '90vw', height: '90vh', maxWidth: 'none', padding: 0 }} onClick={e => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h3>Deer Isle Heat Map</h3>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: '20px' }}>
-                        <label>Start:</label>
-                        <div className="dtp-wrap">
-                            <DateTimePicker value={start} onChange={setStart} format="y-MM-dd HH:mm:ss" />
-                        </div>
-                        <label>End:</label>
-                        <div className="dtp-wrap">
-                            <DateTimePicker value={end} onChange={setEnd} format="y-MM-dd HH:mm:ss" />
-                        </div>
-                        <label>Filter:</label>
-                        <select 
-                            value={dataType} 
-                            onChange={e => setDataType(e.target.value)}
-                            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
-                        >
-                            <option value="all">All Positions</option>
-                            <option value="connect">Logins</option>
-                            <option value="disconnect">Logouts</option>
-                            <option value="kill">Deaths</option>
-                        </select>
-                        <button className="btn-primary" onClick={fetchData} disabled={loading}>
-                            {loading ? 'Loading...' : 'Fetch Data'}
-                        </button>
+    const content = (
+        <div className={isPanel ? "panel" : "modal full"} style={isPanel ? {} : { width: '90vw', height: '90vh', maxWidth: 'none', padding: 0 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+                <h3>Deer Isle Heat Map</h3>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: '20px' }}>
+                    <label>Start:</label>
+                    <div className="dtp-wrap">
+                        <DateTimePicker value={start} onChange={setStart} format="y-MM-dd HH:mm:ss" />
                     </div>
-                    <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginLeft: 'auto', marginRight: '20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <label>Zoom:</label>
-                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(-1)}>-</button>
-                            <input 
-                                type="range" 
-                                min="0" 
-                                max="3" 
-                                step="1" 
-                                value={activeBreakpointIndex} 
-                                onChange={handleZoomSliderChange} 
-                                style={{ width: '100px' }}
-                            />
-                            <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(1)}>+</button>
-                            <span style={{ minWidth: '45px', textAlign: 'right' }}>
-                                {breakpoints[3] ? Math.round((transform.scale / breakpoints[3]) * 100) : Math.round(transform.scale * 100)}%
-                            </span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <label>Radius:</label>
-                            <input type="range" min="5" max="25" value={pointRadius} onChange={e => setPointRadius(parseInt(e.target.value))} />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <label>Opacity:</label>
-                            <input type="range" min="0.1" max="1" step="0.1" value={opacity} onChange={e => setOpacity(parseFloat(e.target.value))} />
-                        </div>
-                        <span>Points: {coords.length}</span>
+                    <label>End:</label>
+                    <div className="dtp-wrap">
+                        <DateTimePicker value={end} onChange={setEnd} format="y-MM-dd HH:mm:ss" />
                     </div>
-                    <button className="close-button" onClick={onClose}>&times;</button>
-                </div>
-                <div 
-                    className="modal-body" 
-                    style={{ flex: 1, overflow: 'hidden', position: 'relative', background: '#000', padding: 0, cursor: isPanning ? 'grabbing' : 'grab' }}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                >
-                    {error && <div className="error-message" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: 'rgba(255,0,0,0.8)', color: 'white', padding: '5px 10px', borderRadius: '4px' }}>{error}</div>}
-                    {isRendering && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            background: 'rgba(0,0,0,0.8)',
-                            color: 'white',
-                            padding: '15px 30px',
-                            borderRadius: '8px',
-                            zIndex: 1000,
-                            pointerEvents: 'none',
-                            fontSize: '1.2em',
-                            fontWeight: 'bold',
-                            boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                            border: '1px solid rgba(255,255,255,0.2)'
-                        }}>
-                            Rendering Heatmap...
-                        </div>
-                    )}
-                    <div 
-                        ref={containerRef}
-                        style={{ 
-                            width: '100%', 
-                            height: '100%', 
-                            position: 'relative',
-                            userSelect: 'none'
-                        }}
+                    <label>Filter:</label>
+                    <select 
+                        value={dataType} 
+                        onChange={e => setDataType(e.target.value)}
+                        style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
                     >
-                        <div style={{ 
-                            position: 'absolute', 
-                            width: '2048px', 
-                            height: '2048px',
-                            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-                            transformOrigin: '0 0'
-                        }}>
-                            <img 
-                                src={deerIsleMap} 
-                                alt="Deer Isle Map" 
-                                onLoad={handleImageLoad}
-                                style={{ width: '100%', height: '100%', display: 'block' }}
-                            />
-                            <canvas 
-                                ref={canvasRef}
-                                style={{ 
-                                    position: 'absolute', 
-                                    top: 0, 
-                                    left: 0, 
-                                    width: '100%', 
-                                    height: '100%',
-                                    pointerEvents: 'none'
-                                }}
-                            />
-                        </div>
+                        <option value="all">All Positions</option>
+                        <option value="connect">Logins</option>
+                        <option value="disconnect">Logouts</option>
+                        <option value="kill">Deaths</option>
+                    </select>
+                    <button className="btn-primary" onClick={fetchData} disabled={loading}>
+                        {loading ? 'Loading...' : 'Fetch Data'}
+                    </button>
+                </div>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginLeft: 'auto', marginRight: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <label>Zoom:</label>
+                        <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(-1)}>-</button>
+                        <input 
+                            type="range" 
+                            min="0" 
+                            max="3" 
+                            step="1" 
+                            value={activeBreakpointIndex} 
+                            onChange={handleZoomSliderChange} 
+                            style={{ width: '100px' }}
+                        />
+                        <button className="btn-secondary" style={{ padding: '2px 8px' }} onClick={() => adjustZoom(1)}>+</button>
+                        <span style={{ minWidth: '45px', textAlign: 'right' }}>
+                            {breakpoints[3] ? Math.round((transform.scale / breakpoints[3]) * 100) : Math.round(transform.scale * 100)}%
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <label>Radius:</label>
+                        <input type="range" min="5" max="25" value={pointRadius} onChange={e => setPointRadius(parseInt(e.target.value))} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <label>Opacity:</label>
+                        <input type="range" min="0.1" max="1" step="0.1" value={opacity} onChange={e => setOpacity(parseFloat(e.target.value))} />
+                    </div>
+                    <span>Points: {coords.length}</span>
+                </div>
+                <button className="close-button" onClick={onClose}>&times;</button>
+            </div>
+            <div 
+                className="modal-body" 
+                style={{ flex: 1, overflow: 'hidden', position: 'relative', background: '#000', padding: 0, cursor: isPanning ? 'grabbing' : 'grab' }}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+            >
+                {error && <div className="error-message" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: 'rgba(255,0,0,0.8)', color: 'white', padding: '5px 10px', borderRadius: '4px' }}>{error}</div>}
+                {isRendering && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        background: 'rgba(0,0,0,0.8)',
+                        color: 'white',
+                        padding: '15px 30px',
+                        borderRadius: '8px',
+                        zIndex: 1000,
+                        pointerEvents: 'none',
+                        fontSize: '1.2em',
+                        fontWeight: 'bold',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }}>
+                        Rendering Heatmap...
+                    </div>
+                )}
+                <div 
+                    ref={containerRef}
+                    style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        position: 'relative',
+                        userSelect: 'none'
+                    }}
+                >
+                    <div style={{ 
+                        position: 'absolute', 
+                        width: '2048px', 
+                        height: '2048px',
+                        transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                        transformOrigin: '0 0'
+                    }}>
+                        <img 
+                            src={deerIsleMap} 
+                            alt="Deer Isle Map" 
+                            onLoad={handleImageLoad}
+                            style={{ width: '100%', height: '100%', display: 'block' }}
+                        />
+                        <canvas 
+                            ref={canvasRef}
+                            style={{ 
+                                position: 'absolute', 
+                                top: 0, 
+                                left: 0, 
+                                width: '100%', 
+                                height: '100%',
+                                pointerEvents: 'none'
+                            }}
+                        />
                     </div>
                 </div>
             </div>
+        </div>
+    );
+
+    if (isPanel) return content;
+
+    return (
+        <div className="modal-backdrop" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onClick={onClose}>
+            {content}
         </div>
     );
 }
