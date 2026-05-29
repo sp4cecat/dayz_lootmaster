@@ -41,11 +41,12 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
     const [restoring, setRestoring] = useState<string | null>(null);
 
     const apiBase = getApiBase();
+    const normalizedApiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
 
     const fetchSnapshots = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots`, {
+            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots`, {
                 headers: { 'x-profile-id': selectedProfileId }
             });
             if (res.ok) {
@@ -69,7 +70,7 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         if (!newSnapshot.name.trim()) return;
         setCreating(true);
         try {
-            const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots`, {
+            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -92,7 +93,7 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
     const handleDelete = async (id: string) => {
         if (!window.confirm('Are you sure you want to delete this snapshot? This cannot be undone.')) return;
         try {
-            const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots/${id}`, {
+            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots/${id}`, {
                 method: 'DELETE',
                 headers: { 'x-profile-id': selectedProfileId }
             });
@@ -110,7 +111,7 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         
         setRestoring(id);
         try {
-            const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots/${id}/restore`, {
+            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots/${id}/restore`, {
                 method: 'POST',
                 headers: { 
                     'x-profile-id': selectedProfileId,
