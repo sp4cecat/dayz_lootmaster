@@ -17,6 +17,7 @@ import TraderEditorModal from './components/TraderEditorModal.jsx';
 import LintFilesModal from './components/LintFilesModal.jsx';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal.jsx';
 import ProfileManager from './components/ProfileManager';
+import { SnapshotModal } from './components/SnapshotModal';
 import AddonEditorModal from './components/AddonEditorModal.jsx';
 import HeatMapModal from './components/HeatMapModal.jsx';
 import { Sidebar } from './components/layout/Sidebar';
@@ -222,6 +223,7 @@ export default function App() {
                     if (id === 'profiles') { setView('profiles'); setModal(null); }
                     else if (id === 'tools:addons') { setModal('addons'); }
                     else if (id === 'map-tools:heatmap') { setModal('heatmap'); }
+                    else if (id === 'tools:snapshots') { setModal('snapshots'); }
                     else if (id === 'tools:adm') { setModal('adm'); }
                     else if (id === 'tools:expansion-log') { setModal('expansion-log'); }
                     else if (id === 'tools:stash-report') { setModal('stash-report'); }
@@ -460,6 +462,13 @@ export default function App() {
                     setRandomPresets={setRandomPresets}
                     spawnableTypesByGroup={spawnableTypesByGroup}
                     setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                />
+            )}
+            {modal === 'snapshots' && (
+                <SnapshotModal
+                    onClose={() => setModal(null)}
+                    selectedProfileId={selectedProfileId}
+                    getApiBase={getApiBase}
                 />
             )}
             {modal === 'adm' && (

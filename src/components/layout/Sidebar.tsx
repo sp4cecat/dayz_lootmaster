@@ -63,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'random-presets', label: 'Random Presets' }
     ]},
     { id: 'tools', label: 'Tools', icon: Settings, subItems: [
+      { id: 'snapshots', label: 'Snapshots' },
       { id: 'adm', label: 'ADM records' },
       { id: 'expansion-log', label: 'Expansion Log' },
       { id: 'stash-report', label: 'Stash report' },
