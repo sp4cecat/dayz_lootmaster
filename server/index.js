@@ -108,7 +108,7 @@ function getPaths(profile) {
 }
 
 async function getSnapshotPaths(profileId) {
-    const profile = profiles.find(p => p.id === profileId);
+    const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
     if (!profile) return { snapshotDir: null, paths: null };
     const paths = getPaths(profile);
     const snapshotDir = join(paths.missionPath, '.lootmaster', 'snapshots');
@@ -1372,6 +1372,127 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // Snapshot Management
+        const matchSnapshots = pathname.match(/^\/api\/profiles\/([^/]+)\/snapshots\/?$/);
+        if (matchSnapshots) {
+            const profileId = matchSnapshots[1];
+            const { snapshotDir } = await getSnapshotPaths(profileId);
+            if (!snapshotDir) { notFound(res); return; }
+
+            if (req.method === 'GET') {
+                try {
+                    const entries = await readdir(snapshotDir, { withFileTypes: true });
+                    const snapshots = [];
+                    for (const entry of entries) {
+                        if (entry.isDirectory()) {
+                            try {
+                                const metaPath = join(snapshotDir, entry.name, 'metadata.json');
+                                const metaData = await readFile(metaPath, 'utf8');
+                                snapshots.push(JSON.parse(metaData));
+                            } catch { /* skip invalid snapshots */ }
+                        }
+                    }
+                    snapshots.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    send(res, 200, JSON.stringify(snapshots), { 'Content-Type': 'application/json' });
+                } catch {
+                    send(res, 200, JSON.stringify([]), { 'Content-Type': 'application/json' });
+                }
+                return;
+            }
+
+            if (req.method === 'POST') {
+                const body = await readBody(req);
+                const data = JSON.parse(body || '{}');
+                try {
+                    const metadata = await internalCreateSnapshot(
+                        profileId,
+                        data.name,
+                        data.description,
+                        req.headers['x-editor-id']
+                    );
+                    send(res, 201, JSON.stringify(metadata), { 'Content-Type': 'application/json' });
+                } catch (e) {
+                    send(res, 500, JSON.stringify({ error: e.message }), { 'Content-Type': 'application/json' });
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        const matchSnapshotAction = pathname.match(/^\/api\/profiles\/([^/]+)\/snapshots\/([^/]+)\/?$/);
+        if (matchSnapshotAction) {
+            const profileId = matchSnapshotAction[1];
+            const snapshotId = matchSnapshotAction[2];
+            const { snapshotDir } = await getSnapshotPaths(profileId);
+            if (!snapshotDir) { notFound(res); return; }
+
+            const targetDir = join(snapshotDir, snapshotId);
+
+            if (req.method === 'DELETE') {
+                try {
+                    await rm(targetDir, { recursive: true, force: true });
+                    send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
+                } catch (e) {
+                    send(res, 500, JSON.stringify({ error: e.message }), { 'Content-Type': 'application/json' });
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        const matchRestoreSnapshot = pathname.match(/^\/api\/profiles\/([^/]+)\/snapshots\/([^/]+)\/restore\/?$/);
+        if (matchRestoreSnapshot && req.method === 'POST') {
+            const profileId = matchRestoreSnapshot[1];
+            const snapshotId = matchRestoreSnapshot[2];
+            const { snapshotDir, paths } = await getSnapshotPaths(profileId);
+            if (!paths) { notFound(res); return; }
+
+            const srcDir = join(snapshotDir, snapshotId);
+            try {
+                await stat(srcDir);
+            } catch {
+                notFound(res, 'Snapshot not found');
+                return;
+            }
+
+            try {
+                // 1. Create a "Pre-restore" snapshot
+                const meta = await readFile(join(srcDir, 'metadata.json'), 'utf8');
+                const metaJson = JSON.parse(meta);
+                await internalCreateSnapshot(
+                    profileId,
+                    `Pre-restore: ${metaJson.name}`,
+                    `Automatic backup before restoring snapshot ${snapshotId}`,
+                    'system'
+                );
+
+                // 2. Restore files
+                const items = await readdir(srcDir);
+                for (const item of items) {
+                    if (item === 'metadata.json') continue;
+                    const src = join(srcDir, item);
+                    const dest = item === 'ExpansionMod' 
+                        ? join(paths.profilesPath, 'ExpansionMod')
+                        : join(paths.missionPath, item);
+
+                    // Delete existing dest if it exists to ensure clean restore
+                    try {
+                        await rm(dest, { recursive: true, force: true });
+                    } catch { /* ignore */ }
+
+                    await cp(src, dest, { recursive: true });
+                }
+
+                send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
+            } catch (e) {
+                console.error('Restore error:', e);
+                send(res, 500, JSON.stringify({ error: e.message }), { 'Content-Type': 'application/json' });
+            }
+            return;
+        }
+
         const matchProfile = pathname.match(/^\/api\/profiles\/([^/]+)$/);
         if (matchProfile) {
             const id = matchProfile[1];
@@ -1431,6 +1552,7 @@ const server = http.createServer(async (req, res) => {
             }
             return;
         }
+
 
         // Helper to scan missions for a raw path (used when creating a new profile)
         if (pathname === '/api/scan-missions' && req.method === 'POST') {
@@ -1888,126 +2010,6 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // Snapshot Management
-        const matchSnapshots = pathname.match(/^\/api\/profiles\/([^/]+)\/snapshots$/);
-        if (matchSnapshots) {
-            const profileId = matchSnapshots[1];
-            const { snapshotDir } = await getSnapshotPaths(profileId);
-            if (!snapshotDir) { notFound(res); return; }
-
-            if (req.method === 'GET') {
-                try {
-                    const entries = await readdir(snapshotDir, { withFileTypes: true });
-                    const snapshots = [];
-                    for (const entry of entries) {
-                        if (entry.isDirectory()) {
-                            try {
-                                const metaPath = join(snapshotDir, entry.name, 'metadata.json');
-                                const metaData = await readFile(metaPath, 'utf8');
-                                snapshots.push(JSON.parse(metaData));
-                            } catch { /* skip invalid snapshots */ }
-                        }
-                    }
-                    snapshots.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    send(res, 200, JSON.stringify(snapshots), { 'Content-Type': 'application/json' });
-                } catch {
-                    send(res, 200, JSON.stringify([]), { 'Content-Type': 'application/json' });
-                }
-                return;
-            }
-
-            if (req.method === 'POST') {
-                const body = await readBody(req);
-                const data = JSON.parse(body || '{}');
-                try {
-                    const metadata = await internalCreateSnapshot(
-                        profileId,
-                        data.name,
-                        data.description,
-                        req.headers['x-editor-id']
-                    );
-                    send(res, 201, JSON.stringify(metadata), { 'Content-Type': 'application/json' });
-                } catch (e) {
-                    send(res, 500, JSON.stringify({ error: e.message }), { 'Content-Type': 'application/json' });
-                }
-                return;
-            }
-            methodNotAllowed(res);
-            return;
-        }
-
-        const matchSnapshotAction = pathname.match(/^\/api\/profiles\/([^/]+)\/snapshots\/([^/]+)$/);
-        if (matchSnapshotAction) {
-            const profileId = matchSnapshotAction[1];
-            const snapshotId = matchSnapshotAction[2];
-            const { snapshotDir } = await getSnapshotPaths(profileId);
-            if (!snapshotDir) { notFound(res); return; }
-
-            const targetDir = join(snapshotDir, snapshotId);
-
-            if (req.method === 'DELETE') {
-                try {
-                    await rm(targetDir, { recursive: true, force: true });
-                    send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
-                } catch (e) {
-                    send(res, 500, JSON.stringify({ error: e.message }), { 'Content-Type': 'application/json' });
-                }
-                return;
-            }
-            methodNotAllowed(res);
-            return;
-        }
-
-        const matchRestoreSnapshot = pathname.match(/^\/api\/profiles\/([^/]+)\/snapshots\/([^/]+)\/restore$/);
-        if (matchRestoreSnapshot && req.method === 'POST') {
-            const profileId = matchRestoreSnapshot[1];
-            const snapshotId = matchRestoreSnapshot[2];
-            const { snapshotDir, paths } = await getSnapshotPaths(profileId);
-            if (!paths) { notFound(res); return; }
-
-            const srcDir = join(snapshotDir, snapshotId);
-            try {
-                await stat(srcDir);
-            } catch {
-                notFound(res, 'Snapshot not found');
-                return;
-            }
-
-            try {
-                // 1. Create a "Pre-restore" snapshot
-                const meta = await readFile(join(srcDir, 'metadata.json'), 'utf8');
-                const metaJson = JSON.parse(meta);
-                await internalCreateSnapshot(
-                    profileId,
-                    `Pre-restore: ${metaJson.name}`,
-                    `Automatic backup before restoring snapshot ${snapshotId}`,
-                    'system'
-                );
-
-                // 2. Restore files
-                const items = await readdir(srcDir);
-                for (const item of items) {
-                    if (item === 'metadata.json') continue;
-                    const src = join(srcDir, item);
-                    const dest = item === 'ExpansionMod' 
-                        ? join(paths.profilesPath, 'ExpansionMod')
-                        : join(paths.missionPath, item);
-
-                    // Delete existing dest if it exists to ensure clean restore
-                    try {
-                        await rm(dest, { recursive: true, force: true });
-                    } catch { /* ignore */ }
-
-                    await cp(src, dest, { recursive: true });
-                }
-
-                send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
-            } catch (e) {
-                console.error('Restore error:', e);
-                send(res, 500, JSON.stringify({ error: e.message }), { 'Content-Type': 'application/json' });
-            }
-            return;
-        }
 
         if (pathname === '/api/deerisle/diving-loot') {
             if (!paths?.profilesPath) {
