@@ -1339,7 +1339,7 @@ const server = http.createServer(async (req, res) => {
         const {pathname} = url;
 
         // Profile & Snapshot Management
-        if (pathname.startsWith('/api/profiles')) {
+        if (pathname === '/api/profiles' || pathname.startsWith('/api/profiles/')) {
             const parts = pathname.split('/').filter(Boolean);
             
             // /api/profiles
@@ -1475,7 +1475,7 @@ const server = http.createServer(async (req, res) => {
 
             // /api/profiles/:id/missions
             if (parts.length === 4 && parts[3] === 'missions') {
-                const profile = profiles.find(p => p.id === profileId);
+                const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
                 if (!profile) { notFound(res); return; }
                 try {
                     const mpmissionsPath = join(profile.serverPath, 'mpmissions');
@@ -1570,11 +1570,11 @@ const server = http.createServer(async (req, res) => {
         }
 
         // All other /api/ endpoints require a profile ID header
-        const profileId = req.headers['x-profile-id'];
-        const profile = profiles.find(p => p.id === profileId);
+        const xProfileId = req.headers['x-profile-id'];
+        const profile = profiles.find(p => String(p.id).toLowerCase() === String(xProfileId).toLowerCase());
 
         if (!profile && pathname.startsWith('/api/') && pathname !== '/api/health') {
-            console.warn(`[400] Profile not found for path: ${pathname}, Profile ID: ${profileId}`);
+            console.warn(`[400] Profile not found for path: ${pathname}, Profile ID: ${xProfileId}`);
             send(res, 400, JSON.stringify({error: 'Missing or invalid X-Profile-ID header'}), {'Content-Type': 'application/json'});
             return;
         }
