@@ -11,9 +11,9 @@ import { cx, sortCx, hasLayoutClass } from "@/utils/cx";
 
 const styles = sortCx({
     default: "hidden",
-    bottom: "absolute top-2 left-1/2 -translate-x-1/2 translate-y-full text-md font-medium text-primary",
+    bottom: "absolute top-2 left-1/2 -translate-x-1/2 translate-y-full text-md font-medium text-gray-900 dark:text-gray-100",
     "top-floating":
-        "absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full rounded-lg bg-primary px-2 py-1.5 text-xs font-semibold text-secondary shadow-lg ring-1 ring-secondary_alt",
+        "absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full rounded-lg bg-white dark:bg-gray-800 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 shadow-lg ring-1 ring-gray-200 dark:ring-gray-700",
     hidden: "hidden",
 });
 

@@ -164,8 +164,10 @@ export default function EditFormCLETab({
 
   // Deerisle Diving Loot Logic
   useEffect(() => {
-    const isDeerisle = selectedProfile?.addons?.includes('deerisle') || selectedProfileId.toLowerCase().includes('deerisle');
-    setHasDivingConfig(isDeerisle);
+    const isDeerisle = selectedProfile?.addons?.includes('deerisle') || 
+                      selectedProfileId.toLowerCase().includes('deerisle') ||
+                      selectedProfile?.missionName?.toLowerCase().includes('deerisle');
+    setHasDivingConfig(!!isDeerisle);
 
     if (isDeerisle) {
       loadDivingConfig();
@@ -179,6 +181,15 @@ export default function EditFormCLETab({
       });
       if (res.ok) {
         const data = await res.json();
+        
+        // Ensure the list fields exist and handle backward compatibility
+        if (!data.divingLootListNormal) {
+          data.divingLootListNormal = data.Items || [];
+        }
+        if (!data.divingLootListElite) {
+          data.divingLootListElite = [];
+        }
+        
         setDivingConfig(data);
       }
     } catch (e) {
@@ -202,19 +213,41 @@ export default function EditFormCLETab({
     }
   };
 
-  const toggleDiving = (name: string) => {
+  const updateDivingCount = (listKey: 'divingLootListNormal' | 'divingLootListElite', count: number) => {
     if (!divingConfig) return;
-    const items = [...(divingConfig.Items || [])];
-    const idx = items.indexOf(name);
-    if (idx >= 0) items.splice(idx, 1);
-    else items.push(name);
+    const nextConfig = { ...divingConfig };
+    
+    selectedTypes.forEach(t => {
+      let list = [...(nextConfig[listKey] || [])];
+      list = list.filter((n: string) => n !== t.name);
+      for (let i = 0; i < count; i++) {
+        list.push(t.name);
+      }
+      nextConfig[listKey] = list;
+      if (listKey === 'divingLootListNormal') {
+        nextConfig.Items = list;
+      }
+    });
 
-    setDivingConfig({ ...divingConfig, Items: items });
+    setDivingConfig(nextConfig);
     setDivingConfigDirty(true);
   };
 
-  const allSelectedInDiving = selectedTypes.every(t => divingConfig?.Items?.includes(t.name));
-  const someSelectedInDiving = selectedTypes.some(t => divingConfig?.Items?.includes(t.name));
+  const normalCount = useMemo(() => {
+    if (!divingConfig) return 0;
+    const list = divingConfig.divingLootListNormal || divingConfig.Items || [];
+    const counts = selectedTypes.map(t => list.filter((n: string) => n === t.name).length);
+    const first = counts[0];
+    return counts.every(c => c === first) ? first : null;
+  }, [divingConfig, selectedTypes]);
+
+  const eliteCount = useMemo(() => {
+    if (!divingConfig) return 0;
+    const list = divingConfig.divingLootListElite || [];
+    const counts = selectedTypes.map(t => list.filter((n: string) => n === t.name).length);
+    const first = counts[0];
+    return counts.every(c => c === first) ? first : null;
+  }, [divingConfig, selectedTypes]);
 
   const applyLifetime = () => {
     const total = (lp.weeks * 604800) + (lp.days * 86400) + (lp.hours * 3600) + (lp.minutes * 60) + lp.seconds;
@@ -395,29 +428,47 @@ export default function EditFormCLETab({
             <div className="flex items-center gap-2 mb-4">
               <Badge color="brand" size="sm" type="modern">Deerisle Diving Loot</Badge>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="size-10 bg-white dark:bg-gray-900 rounded-lg flex items-center justify-center text-primary-600 shadow-sm border border-primary-100 dark:border-primary-900/30">
-                  <AlertCircle size={20} />
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 bg-white dark:bg-gray-900 rounded-lg flex items-center justify-center text-primary-600 shadow-sm border border-primary-100 dark:border-primary-900/30">
+                    <AlertCircle size={20} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">Normal Loot</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Include in standard diving loot pool.</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-900 dark:text-white">Diving Config</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Include items in the deep-sea diving loot pool.</p>
-                </div>
+                <Input 
+                  type="number"
+                  className="w-24"
+                  size="sm"
+                  value={normalCount ?? ''}
+                  placeholder={normalCount === null ? 'Mixed' : '0'}
+                  onChange={e => updateDivingCount('divingLootListNormal', Math.max(0, parseInt(e.target.value) || 0))}
+                />
               </div>
-              <Checkbox 
-                label={allSelectedInDiving ? "Included" : someSelectedInDiving ? "Mixed" : "Excluded"}
-                checked={allSelectedInDiving}
-                indeterminate={!allSelectedInDiving && someSelectedInDiving}
-                onChange={() => {
-                  const next = !allSelectedInDiving;
-                  selectedTypes.forEach(t => {
-                    const currentlyIn = divingConfig?.Items?.includes(t.name);
-                    if (next && !currentlyIn) toggleDiving(t.name);
-                    else if (!next && currentlyIn) toggleDiving(t.name);
-                  });
-                }}
-              />
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 bg-white dark:bg-gray-900 rounded-lg flex items-center justify-center text-primary-600 shadow-sm border border-primary-100 dark:border-primary-900/30">
+                    <AlertCircle size={20} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">Elite Loot</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Include in elite diving loot pool.</p>
+                  </div>
+                </div>
+                <Input 
+                  type="number"
+                  className="w-24"
+                  size="sm"
+                  value={eliteCount ?? ''}
+                  placeholder={eliteCount === null ? 'Mixed' : '0'}
+                  onChange={e => updateDivingCount('divingLootListElite', Math.max(0, parseInt(e.target.value) || 0))}
+                />
+              </div>
             </div>
           </section>
         )}

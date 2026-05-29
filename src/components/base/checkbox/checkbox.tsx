@@ -15,11 +15,11 @@ export const CheckboxBase = ({ className, isSelected, isDisabled, isIndeterminat
     return (
         <div
             className={cx(
-                "relative flex size-4 shrink-0 cursor-pointer appearance-none items-center justify-center rounded bg-primary ring-1 ring-primary ring-inset",
+                "relative flex size-4 shrink-0 cursor-pointer appearance-none items-center justify-center rounded bg-white ring-1 ring-gray-300 ring-inset dark:bg-gray-900 dark:ring-gray-700",
                 size === "md" && "size-5 rounded-md",
-                (isSelected || isIndeterminate) && "bg-brand-solid ring-brand-solid",
+                (isSelected || isIndeterminate) && "bg-brand-solid ring-brand-solid dark:bg-brand-solid dark:ring-brand-solid",
                 isDisabled && "cursor-not-allowed opacity-50",
-                isDisabled && !(isSelected || isIndeterminate) && "bg-tertiary",
+                isDisabled && !(isSelected || isIndeterminate) && "bg-gray-100 dark:bg-gray-800",
                 isFocusVisible && "outline-2 outline-offset-2 outline-focus-ring",
                 className,
             )}
