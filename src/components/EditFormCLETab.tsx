@@ -118,12 +118,31 @@ export default function EditFormCLETab({
     });
   };
 
+  const isDirty = useMemo(() => {
+    // Basic fields
+    const keys = ['nominal', 'min', 'lifetime', 'restock', 'quantmin', 'quantmax', 'category'] as const;
+    for (const k of keys) {
+      if (form[k] !== initial[k]) return true;
+    }
+    // Flags
+    for (const k in form.flags) {
+      if (form.flags[k] !== initial.flags[k]) return true;
+    }
+    // Arrays (Usage, Value, Tag)
+    for (const g of ['usage', 'value', 'tag'] as const) {
+      for (const k in form[g]) {
+        if (form[g][k] !== initial[g][k]) return true;
+      }
+    }
+    return false;
+  }, [form, initial]);
+
   const canSave = useMemo(() => {
     // Build a representative type to validate; for multi-selection, only validate when fields are set (not null)
     const sample = applyToType(selectedTypes[0], form);
     const issues = validateTypeAgainstDefinitions(sample, definitions);
-    return issues.length === 0;
-  }, [form, selectedTypes, definitions]);
+    return (isDirty || divingConfigDirty) && Object.keys(issues).length === 0;
+  }, [isDirty, divingConfigDirty, form, selectedTypes, definitions]);
 
   useEffect(() => {
     onCanSaveChange?.(canSave);
