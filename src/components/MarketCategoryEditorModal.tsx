@@ -4,17 +4,16 @@ import { Button } from './base/button/button';
 import { Input } from './base/input/input';
 import { Select } from './base/select/select';
 import { 
-    Search as SearchIcon, 
+    SearchMd as SearchIcon, 
     Trash01, 
     Edit01, 
     Check, 
     XClose, 
     Save01, 
-    Filter,
+    FilterLines as Filter,
     ChevronDown,
     ChevronUp,
-    ShoppingBag01,
-    Delete01
+    ShoppingBag01
 } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
 
@@ -504,7 +503,7 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
                                 className="p-1.5 text-gray-400 hover:text-error-700 transition-colors"
                                 title="Delete from Marketplace"
                             >
-                              <Delete01 size={16} />
+                              <Trash01 size={16} />
                             </button>
                           </div>
                         ) : (

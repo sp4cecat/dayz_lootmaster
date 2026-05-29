@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { Select } from './base/select/select';
-import { FileCode, Save01, XClose, AlertCircle, CheckCircle } from '@untitledui/icons';
+import { FileCode01, Save01, XClose, AlertCircle, CheckCircle } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
 
 interface AddonEditorModalProps {
@@ -104,7 +104,7 @@ export default function AddonEditorModal({ addonId, addonName, onClose, selected
             onClose={onClose}
             title={`${addonName} Configuration`}
             description={`Edit and manage configuration files for the ${addonName} addon.`}
-            icon={FileCode}
+            icon={FileCode01}
             maxWidth="max-w-none w-[90vw]"
             className="h-[90vh]"
             footer={

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
-import { FileSearch, CheckCircle, AlertTriangle, XClose } from '@untitledui/icons';
+import { FileSearch01, CheckCircle, AlertTriangle, XClose } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
 
 interface Totals {
@@ -70,7 +70,7 @@ export default function LintFilesModal({ onClose, selectedProfileId }: LintFiles
       onClose={onClose}
       title="Lint Configuration Files"
       description="Check all XML and JSON mission files for syntax errors and structural integrity."
-      icon={FileSearch}
+      icon={FileSearch01}
       maxWidth="max-w-5xl"
       footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
     >
@@ -87,7 +87,7 @@ export default function LintFilesModal({ onClose, selectedProfileId }: LintFiles
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Run Full Integrity Check</h4>
             <p className="text-xs text-gray-500 dark:text-gray-400">This will scan all files in the current mission profile.</p>
           </div>
-          <Button variant="primary" onClick={onRun} disabled={busy} icon={FileSearch}>
+          <Button variant="primary" onClick={onRun} disabled={busy} icon={FileSearch01}>
             {busy ? 'Scanning...' : 'Run Lint Check'}
           </Button>
         </div>

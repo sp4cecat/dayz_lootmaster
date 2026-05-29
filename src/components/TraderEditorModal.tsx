@@ -5,7 +5,7 @@ import { Input } from './base/input/input';
 import { Select } from './base/select/select';
 import { Checkbox } from './base/checkbox/checkbox';
 import { RadioGroup, Radio } from './base/radio-buttons/radio-buttons';
-import { Store, Trash01, Plus, Save01, XClose } from '@untitledui/icons';
+import { ShoppingBag01, Trash01, Plus, Save01, XClose } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
 
 const ENTITY_CLASSES = [
@@ -309,7 +309,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
       onClose={onClose}
       title="Trader Editor"
       description="Configure trader positions, appearances, and categories."
-      icon={Store}
+      icon={ShoppingBag01}
       inline={isPanel}
       maxWidth="max-w-5xl"
       footer={
