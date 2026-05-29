@@ -3,6 +3,7 @@ import { validateTypeAgainstDefinitions } from '@/utils/validation';
 import { formatLifetime } from '@/utils/time';
 import { Badge } from '@/components/base/badges/badges';
 import { Input } from '@/components/base/input/input';
+import { Select } from '@/components/base/select/select';
 import { Button } from '@/components/base/button/button';
 import { Clock, Info, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Checkbox } from '@/components/base/checkbox/checkbox';
@@ -328,15 +329,15 @@ export default function EditFormCLETab({
           />
 
           <div className="col-span-2 sm:col-span-3">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Category</label>
-            <select 
+            <Select 
+              label="Category"
               value={form.category} 
               onChange={e => setForm((f: any) => ({ ...f, category: e.target.value }))}
-              className="w-full h-10 px-3 py-1 bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30 dark:focus:border-primary-500"
-            >
-              <option value="">(None)</option>
-              {definitions.categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+              options={[
+                { label: '(None)', value: '' },
+                ...definitions.categories.map(c => ({ label: c, value: c }))
+              ]}
+            />
           </div>
         </div>
       </section>

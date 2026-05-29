@@ -175,12 +175,14 @@ export default function Filters({
               <Filter size={18} className="text-gray-400" />
               <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Filters</h2>
             </div>
-            <button
+            <Button
+              variant="tertiary"
+              size="xs"
               onClick={clearFilters}
-              className="inline-flex items-center justify-center rounded-lg font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-primary-100 disabled:opacity-50 disabled:cursor-not-allowed bg-transparent text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 py-2 gap-2 h-8 px-2 text-xs"
+              icon={RotateCcw}
             >
-              <RotateCcw size={14} className="mr-1.5" /> Reset
-            </button>
+              Reset
+            </Button>
           </div>
 
           <div className="space-y-4">
@@ -193,22 +195,15 @@ export default function Filters({
               className="h-9"
             />
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">
-                Category
-              </label>
-              <select
-                value={filters.category}
-                onChange={(e) => setField('category', e.target.value)}
-                className="w-full h-10 px-3 py-1 text-sm bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-white dark:focus:ring-primary-900/30 dark:focus:border-primary-500"
-              >
-                {allCategoryOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt === 'all' ? 'All Categories' : opt === 'none' ? 'No Category' : opt}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Category"
+              value={filters.category}
+              onChange={(e) => setField('category', e.target.value)}
+              options={allCategoryOptions.map((opt) => ({
+                label: opt === 'all' ? 'All Categories' : opt === 'none' ? 'No Category' : opt,
+                value: opt
+              }))}
+            />
 
             <Button
               variant={filters.changeFilter !== 'all' ? 'secondary-color' : 'secondary-gray'}
