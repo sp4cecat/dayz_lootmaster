@@ -30,3 +30,4 @@ dist-ssr
 /data/*
 /data/profiles
 /example dayz server directory/
+/server/profiles.json
