@@ -45,7 +45,9 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
     const fetchSnapshots = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots`);
+            const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots`, {
+                headers: { 'x-profile-id': selectedProfileId }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setSnapshots(data);
@@ -71,7 +73,8 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'x-editor-id': localStorage.getItem('dayz-editor:id') || 'unknown'
+                    'x-editor-id': localStorage.getItem('dayz-editor:id') || 'unknown',
+                    'x-profile-id': selectedProfileId
                 },
                 body: JSON.stringify(newSnapshot)
             });
@@ -90,7 +93,8 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         if (!window.confirm('Are you sure you want to delete this snapshot? This cannot be undone.')) return;
         try {
             const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots/${id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: { 'x-profile-id': selectedProfileId }
             });
             if (res.ok) {
                 fetchSnapshots();
@@ -107,7 +111,11 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         setRestoring(id);
         try {
             const res = await fetch(`${apiBase}/api/profiles/${selectedProfileId}/snapshots/${id}/restore`, {
-                method: 'POST'
+                method: 'POST',
+                headers: { 
+                    'x-profile-id': selectedProfileId,
+                    'x-editor-id': localStorage.getItem('dayz-editor:id') || 'unknown'
+                }
             });
             if (res.ok) {
                 window.alert('Snapshot restored successfully! The application will now reload.');
