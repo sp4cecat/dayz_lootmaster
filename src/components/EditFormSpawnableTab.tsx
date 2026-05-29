@@ -53,10 +53,7 @@ export default function EditFormSpawnableTab({
   const entry = result?.entry || {
     name: type.name,
     sections: [],
-    damage: {
-      min: globalsDefaults.LootDamageMin,
-      max: globalsDefaults.LootDamageMax
-    },
+    damage: null,
     attachments: [],
     cargo: []
   };
@@ -73,20 +70,8 @@ export default function EditFormSpawnableTab({
     if (existingIdx === -1) {
       currentEntry = {
         name: type.name,
-        sections: [{
-          kind: XMLNodeKind.DAMAGE,
-          chance: null,
-          preset: '',
-          attrs: {
-            min: String(globalsDefaults.LootDamageMin ?? '0.000'),
-            max: String(globalsDefaults.LootDamageMax ?? '0.000')
-          },
-          items: []
-        }],
-        damage: {
-          min: globalsDefaults.LootDamageMin,
-          max: globalsDefaults.LootDamageMax
-        },
+        sections: [],
+        damage: null,
         attachments: [],
         cargo: []
       };
@@ -214,6 +199,10 @@ export default function EditFormSpawnableTab({
     });
   };
 
+  const handleAddDamage = () => {
+    handleDamageChange('min', (globalsDefaults.LootDamageMin ?? 0) * 100);
+  };
+
   if (isMulti) {
     return (
       <div className="p-12 text-center bg-gray-50 dark:bg-gray-950/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
@@ -244,24 +233,36 @@ export default function EditFormSpawnableTab({
         <div className="flex items-center gap-2 mb-4">
           <Badge color="brand" size="sm" type="modern">Item Condition</Badge>
         </div>
-        <div className="grid grid-cols-2 gap-6 bg-gray-50 dark:bg-gray-950/20 p-6 rounded-xl border border-gray-100 dark:border-gray-800">
-          <Slider 
-            label="Min Damage" 
-            value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
-            maxValue={100} 
-            step={1}
-            onValueChange={(vals) => handleDamageChange('min', vals[0])}
-            helperText="Minimum damage when spawned"
-          />
-          <Slider 
-            label="Max Damage" 
-            value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
-            maxValue={100} 
-            step={1}
-            onValueChange={(vals) => handleDamageChange('max', vals[0])}
-            helperText="Maximum damage when spawned"
-          />
-        </div>
+        {entry.damage ? (
+          <div className="grid grid-cols-2 gap-6 bg-gray-50 dark:bg-gray-950/20 p-6 rounded-xl border border-gray-100 dark:border-gray-800">
+            <Slider 
+              label="Min Damage" 
+              value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
+              maxValue={100} 
+              step={1}
+              onValueChange={(vals) => handleDamageChange('min', vals[0])}
+              helperText="Minimum damage when spawned"
+            />
+            <Slider 
+              label="Max Damage" 
+              value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
+              maxValue={100} 
+              step={1}
+              onValueChange={(vals) => handleDamageChange('max', vals[0])}
+              helperText="Maximum damage when spawned"
+            />
+          </div>
+        ) : (
+          <div className="flex items-center justify-center p-8 bg-gray-50 dark:bg-gray-950/20 border border-dashed border-gray-200 dark:border-gray-800 rounded-xl">
+            <Button 
+              variant="secondary-gray" 
+              icon={Plus} 
+              onClick={handleAddDamage}
+            >
+              Set Spawn Damage
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* Attachments Section */}
