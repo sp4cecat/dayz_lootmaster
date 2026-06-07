@@ -28,9 +28,11 @@ interface Report {
 interface LintFilesModalProps {
   onClose: () => void;
   selectedProfileId: string;
+  getApiBase: () => string;
+  isPanel?: boolean;
 }
 
-export default function LintFilesModal({ onClose, selectedProfileId }: LintFilesModalProps) {
+export default function LintFilesModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: LintFilesModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -41,9 +43,7 @@ export default function LintFilesModal({ onClose, selectedProfileId }: LintFiles
       setError(null);
       setReport(null);
 
-      const savedBase = localStorage.getItem('dayz-editor:apiBase');
-      const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
-      const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
+      const API_BASE = getApiBase();
 
       const res = await fetch(`${API_BASE}/api/lint`, { 
         method: 'GET',
@@ -72,7 +72,8 @@ export default function LintFilesModal({ onClose, selectedProfileId }: LintFiles
       description="Check all XML and JSON mission files for syntax errors and structural integrity."
       icon={FileSearch01}
       maxWidth="max-w-5xl"
-      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
+      inline={isPanel}
+      footer={<Button variant="secondary" onClick={onClose} type="button">Close</Button>}
     >
       <div className="space-y-6">
         {error && (
@@ -87,7 +88,7 @@ export default function LintFilesModal({ onClose, selectedProfileId }: LintFiles
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Run Full Integrity Check</h4>
             <p className="text-xs text-gray-500 dark:text-gray-400">This will scan all files in the current mission profile.</p>
           </div>
-          <Button variant="primary" onClick={onRun} disabled={busy} icon={FileSearch01}>
+          <Button variant="primary" onClick={onRun} disabled={busy} icon={FileSearch01} type="button">
             {busy ? 'Scanning...' : 'Run Lint Check'}
           </Button>
         </div>

@@ -697,7 +697,7 @@ async function generateStashReport(start, end, paths) {
     // Collect all events in time order with positions
     /** @type {{dt: Date, type: 'in'|'out', pid: string, alias?: string, x: number, z: number}[]} */
     const events = [];
-    const posRe = /\{\s*<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>\s*}\s*$/;
+    const posRe = /(?:at position\s+)?(?:\{?\s*)?<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>\s*\}?\s*$/;
 
     // Helper: HH:MM:SS -> seconds of day
     const hmsToSec = (t) => {
@@ -750,7 +750,7 @@ async function generateStashReport(start, end, paths) {
             const pm = posRe.exec(row);
             if (!pm) continue;
             const x = Number(pm[1]);
-            const z = Number(pm[3]);
+            const z = Number(pm[3]); // In <X, Y, Z> format at end of line, Z is 3rd
             if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
 
             // Prime per-player entry and aliases
@@ -885,23 +885,33 @@ function parseAdmStartDate(filePath) {
 }
 
 function tryParseLineTime(line) {
-    const m = /^(\d{1,2}:\d{2}:\d{2})\s+\|\s+Player/i.exec(line);
+    const m = /^\s*(\d{1,2}:\d{2}:\d{2})\s+\|\s+Player/i.exec(line);
     return m ? m[1] : null;
 }
 
 // Extract pos=<x, y, z>; returns {x, z} or null (planar X/Z distance, y is vertical/height)
 function tryParseLinePos(line) {
-    const m = /pos=<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
-    if (!m) return null;
-    const x = Number(m[1]);
-    const z = Number(m[3]);
-    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
-    return {x, z};
+    // 1. pos=<X, Z, Y> (Player status in ADM logs)
+    let m = /pos\s*=?\s*<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
+    if (m) {
+        const x = Number(m[1]);
+        const z = Number(m[2]); // Z is the second coordinate in pos=<X, Z, Y>
+        if (Number.isFinite(x) && Number.isFinite(z)) return { x, z };
+    }
+    // 2. <X, Y, Z> format (Actions, Stashes)
+    // Supports: "at position <X, Y, Z>" and "{<X, Y, Z>}"
+    m = /(?:at position\s+|\{\s*)<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
+    if (m) {
+        const x = Number(m[1]);
+        const z = Number(m[3]); // Z is 3rd in <X, Y, Z>
+        if (Number.isFinite(x) && Number.isFinite(z)) return { x, z };
+    }
+    return null;
 }
 
 // Extract (id=XYZ ...); returns id string or null
 function tryParseLineId(line) {
-    const m = /\(id=([^=]+=)/i.exec(line);
+    const m = /\(id=([^)\s=]+=?)/i.exec(line);
     return m ? m[1] : null;
 }
 

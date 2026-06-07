@@ -17,6 +17,8 @@ import {
 interface ExpansionLogModalProps {
   onClose: () => void;
   selectedProfileId: string;
+  getApiBase: () => string;
+  isPanel?: boolean;
 }
 
 interface Player {
@@ -24,7 +26,7 @@ interface Player {
   aliases: string[];
 }
 
-export default function ExpansionLogModal({ onClose, selectedProfileId }: ExpansionLogModalProps) {
+export default function ExpansionLogModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: ExpansionLogModalProps) {
   const [start, setStart] = useState<CalendarDateTime | null>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -175,9 +177,7 @@ export default function ExpansionLogModal({ onClose, selectedProfileId }: Expans
 
     setBusy(true);
     try {
-      const savedBase = localStorage.getItem('dayz-editor:apiBase');
-      const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
-      const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
+      const API_BASE = getApiBase();
 
       const payload: any = {
         start: sM.clone().utcOffset(600, true).format('YYYY-MM-DD HH:mm:ss'),
@@ -243,6 +243,7 @@ export default function ExpansionLogModal({ onClose, selectedProfileId }: Expans
       description="Fetch and filter Expansion Mod logs by time and location."
       icon={FileText}
       maxWidth="max-w-4xl"
+      inline={isPanel}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -335,6 +336,7 @@ export default function ExpansionLogModal({ onClose, selectedProfileId }: Expans
                 onClick={refineAndDownload} 
                 disabled={selectedIds.size === 0 || !lastText}
                 icon={Download}
+                type="button"
               >
                 Refine and Download
               </Button>
@@ -358,6 +360,7 @@ export default function ExpansionLogModal({ onClose, selectedProfileId }: Expans
             onClick={fetchExpansionLog} 
             disabled={busy}
             className="w-full md:w-auto"
+            type="button"
           >
             {busy ? 'Fetching...' : 'Fetch Logs'}
           </Button>

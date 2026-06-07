@@ -13,7 +13,7 @@ import {
   generateRandomPresetsXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile, clearAllMissionFiles } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -205,6 +205,7 @@ export function useLootData() {
       }
     } catch (e) {
       console.error('Failed to load profiles:', e);
+      setError(`Failed to connect to the backend server at ${getApiBase()}. Please ensure the server is running. (${e.message})`);
     }
   }, [getApiBase, selectedProfileId]);
 
@@ -630,7 +631,7 @@ export function useLootData() {
   useEffect(() => {
     if (!selectedProfileId) {
       setLoading(false);
-      setError(null);
+      setError(prev => (prev && String(prev).includes('backend server')) ? prev : null);
       setDefinitions(null);
       setLootFiles(null);
       setLootGroups(null);

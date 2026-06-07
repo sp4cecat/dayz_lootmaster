@@ -21,9 +21,11 @@ interface PlayerReport {
 interface StashReportModalProps {
   onClose: () => void;
   selectedProfileId: string;
+  getApiBase: () => string;
+  isPanel?: boolean;
 }
 
-export default function StashReportModal({ onClose, selectedProfileId }: StashReportModalProps) {
+export default function StashReportModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: StashReportModalProps) {
   const [start, setStart] = useState<CalendarDateTime | null>(null);
   const [end, setEnd] = useState<CalendarDateTime | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,9 +42,7 @@ export default function StashReportModal({ onClose, selectedProfileId }: StashRe
       if (start) payload.start = start.toDate(getLocalTimeZone()).toISOString();
       if (end) payload.end = end.toDate(getLocalTimeZone()).toISOString();
 
-      const savedBase = localStorage.getItem('dayz-editor:apiBase');
-      const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
-      const API_BASE = (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
+      const API_BASE = getApiBase();
 
       const res = await fetch(`${API_BASE}/api/logs/stash-report`, {
         method: 'POST',
@@ -75,7 +75,8 @@ export default function StashReportModal({ onClose, selectedProfileId }: StashRe
       description="Analyze player stash activity including digging in and digging up stashes."
       icon={Archive}
       maxWidth="max-w-5xl"
-      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
+      inline={isPanel}
+      footer={<Button variant="secondary" onClick={onClose} type="button">Close</Button>}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-800">
@@ -92,7 +93,7 @@ export default function StashReportModal({ onClose, selectedProfileId }: StashRe
             granularity="minute"
           />
           <div className="md:col-span-2 flex justify-end pt-2">
-            <Button variant="primary" onClick={onGenerate} disabled={busy} icon={BarChart01}>
+            <Button variant="primary" onClick={onGenerate} disabled={busy} icon={BarChart01} type="button">
               {busy ? 'Generating...' : 'Generate Report'}
             </Button>
           </div>
