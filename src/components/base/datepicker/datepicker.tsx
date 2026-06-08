@@ -56,22 +56,34 @@ export const DatePicker = <T extends DateValue>({ label, error, hint, ...props }
                 </AriaButton>
               </div>
             </header>
-            <CalendarGrid className="border-separate border-spacing-1">
+            <CalendarGrid className="border-separate border-spacing-1 [&_tr]:flex [&_tr]:flex-row">
               <CalendarGridHeader>
-                {day => <CalendarHeaderCell className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 h-8 flex items-center justify-center">{day}</CalendarHeaderCell>}
+                {day => (
+                  <CalendarHeaderCell className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 h-8">
+                    <div className="flex items-center justify-center w-full h-full">
+                      {day}
+                    </div>
+                  </CalendarHeaderCell>
+                )}
               </CalendarGridHeader>
               <CalendarGridBody>
                 {date => (
                   <CalendarCell 
                     date={date} 
                     className={({ isSelected, isToday, isOutsideMonth, isFocusVisible }) => cx(
-                      "w-8 h-8 flex items-center justify-center text-sm rounded-lg cursor-pointer transition-colors outline-none",
+                      "w-8 h-8 text-sm rounded-lg cursor-pointer transition-colors outline-none p-0",
                       isSelected ? "bg-primary-600 text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
                       isToday && !isSelected && "text-primary-600 font-bold",
                       isOutsideMonth && "text-gray-300 dark:text-gray-600",
                       isFocusVisible && "ring-2 ring-primary-600 ring-offset-2 dark:ring-offset-gray-900"
                     )}
-                  />
+                  >
+                    {({formattedDate}) => (
+                      <div className="flex items-center justify-center w-full h-full">
+                        {formattedDate}
+                      </div>
+                    )}
+                  </CalendarCell>
                 )}
               </CalendarGridBody>
             </CalendarGrid>
