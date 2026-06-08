@@ -57,9 +57,9 @@ export default function EditFormCLETab({
     });
 
     // Calculate tri-state for arrays: on/off/mixed label handling happens in UI via map
-    obj.usage = makeTriState(definitions.usageflags, selectedTypes.map(t => t.usage));
-    obj.value = makeTriState(definitions.valueflags, selectedTypes.map(t => t.value));
-    obj.tag = makeTriState(definitions.tags, selectedTypes.map(t => t.tag));
+    obj.usage = makeTriState(definitions?.usageflags || [], selectedTypes.map(t => t.usage));
+    obj.value = makeTriState(definitions?.valueflags || [], selectedTypes.map(t => t.value));
+    obj.tag = makeTriState(definitions?.tags || [], selectedTypes.map(t => t.tag));
     return obj;
   }, [selectedTypes, definitions, base]);
 
@@ -385,7 +385,7 @@ export default function EditFormCLETab({
               onChange={e => setForm((f: any) => ({ ...f, category: e.target.value }))}
               options={[
                 { label: '(None)', value: '' },
-                ...definitions.categories.map(c => ({ label: c, value: c }))
+                ...(definitions?.categories || []).map(c => ({ label: c, value: c }))
               ]}
             />
           </div>
@@ -403,19 +403,19 @@ export default function EditFormCLETab({
 
         <TriStatePanel 
           title="Usage" 
-          options={definitions.usageflags} 
+          options={definitions?.usageflags || []} 
           state={form.usage} 
           onToggle={key => cycleTri('usage', key)} 
         />
         <TriStatePanel
           title="Value"
-          options={definitions.valueflags}
+          options={definitions?.valueflags || []}
           state={form.value}
           onToggle={key => cycleTri('value', key)}
         />
         <TriStatePanel
           title="Tags"
-          options={definitions.tags}
+          options={definitions?.tags || []}
           state={form.tag}
           onToggle={key => cycleTri('tag', key)}
         />

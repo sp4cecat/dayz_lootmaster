@@ -44,8 +44,8 @@ export default function Filters({
   flagOptions = [],
 }: FiltersProps) {
   const allCategoryOptions = useMemo(
-    () => ['all', 'none', ...definitions.categories],
-    [definitions.categories]
+    () => ['all', 'none', ...(definitions?.categories || [])],
+    [definitions?.categories]
   );
 
   const hasNonVanillaGroups = useMemo(() => groups.some((g) => g !== 'vanilla'), [groups]);
@@ -231,7 +231,7 @@ export default function Filters({
             onManage={() => onManage('usage')}
             badge={filters.usage.length}
           >
-            {['None', ...definitions.usageflags].map((opt) => (
+            {['None', ...(definitions?.usageflags || [])].map((opt) => (
               <Badge
                 key={opt}
                 color={filters.usage.includes(opt) ? 'brand' : 'gray'}
@@ -251,7 +251,7 @@ export default function Filters({
             onManage={() => onManage('value')}
             badge={filters.value.length}
           >
-            {['None', ...definitions.valueflags].map((opt) => (
+            {['None', ...(definitions?.valueflags || [])].map((opt) => (
               <Badge
                 key={opt}
                 color={filters.value.includes(opt) ? 'brand' : 'gray'}
@@ -271,7 +271,7 @@ export default function Filters({
             onManage={() => onManage('tag')}
             badge={filters.tag.length}
           >
-            {definitions.tags.map((opt) => (
+            {(definitions?.tags || []).map((opt) => (
               <Badge
                 key={opt}
                 color={filters.tag.includes(opt) ? 'brand' : 'gray'}

@@ -636,7 +636,9 @@ export function useLootData() {
   }, [setFromMergedTypes]);
 
   useEffect(() => {
-    if (!profilesLoaded || !selectedProfileId) {
+    if (!profilesLoaded) return;
+
+    if (!selectedProfileId) {
       setLoading(false);
       setError(prev => (prev && String(prev).includes('backend server')) ? prev : null);
       setDefinitions(null);
