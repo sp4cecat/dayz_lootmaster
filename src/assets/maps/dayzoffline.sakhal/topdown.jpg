@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 Not Found</title>
+    <style>
+        html, body {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            background-color: #111;
+        }
+        h1, h2 {
+            color: white;
+            text-shadow: 0 0 4px white;
+            margin: 0;
+            padding: 0;
+        }
+        a {
+            text-decoration: none;
+            color: #444;
+            text-shadow: 0 0 4px #444;
+        }
+        a:hover {
+            color: #888;
+            text-shadow: 0 0 4px #888;
+        }
+    </style>
+</head>
+<body>
+    <h1>404 Not Found</h1>
+    <h2><a href="https://dayz.xam.nu/">Return back to dayz.xam.nu</a></h2>
+</body>
+</html>

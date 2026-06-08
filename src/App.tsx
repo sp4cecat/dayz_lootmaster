@@ -416,6 +416,7 @@ export default function App() {
                             <HeatMapModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
+                                missionName={selectedProfile?.missionName}
                                 getApiBase={getApiBase}
                                 isPanel={true}
                             />

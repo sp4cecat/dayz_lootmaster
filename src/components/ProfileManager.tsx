@@ -5,6 +5,8 @@ import { cx } from '@/utils/cx';
 import { Server, Plus, Edit2, Trash2, Check, ExternalLink, Folder, Map as MapIcon, ChevronRight, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
 
+import { getMapMetadata } from '@/consts/maps';
+
 interface Profile {
   id: string;
   name: string;
@@ -177,6 +179,7 @@ export default function ProfileManager({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {profiles.map(p => {
                             const isSelected = p.id === selectedProfileId;
+                            const mapMetadata = getMapMetadata(p.missionName);
                             return (
                                 <div 
                                     key={p.id}
@@ -204,9 +207,9 @@ export default function ProfileManager({
                                             )}
                                         </div>
                                         <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                                            <div className="flex items-center gap-1">
+                                            <div className="flex items-center gap-1" title={p.missionName}>
                                                 <MapIcon size={12} />
-                                                <span className="truncate">{p.missionName}</span>
+                                                <span className="truncate">{mapMetadata.displayName}</span>
                                             </div>
                                         </div>
                                     </div>

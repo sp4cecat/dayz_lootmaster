@@ -16,13 +16,15 @@ import {
 import { cx } from '@/utils/cx';
 import { ThemeToggle } from '../ThemeToggle';
 
+import { useMapMetadata } from '@/hooks/useMapMetadata';
+
 interface SidebarProps {
   className?: string;
   activeTab?: string;
   onTabChange: (tabId: string) => void;
   editorID: string;
   onSignOut: () => void;
-  selectedProfile?: { id: string; name: string };
+  selectedProfile?: { id: string; name: string; missionName?: string };
   onProfileClick: () => void;
   storageDirty: boolean;
   onStorageClick: () => void;
@@ -39,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   storageDirty,
   onStorageClick
 }) => {
+  const mapMetadata = useMapMetadata(selectedProfile?.missionName);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     marketplace: !!activeTab?.startsWith('marketplace'),
     'map-tools': !!activeTab?.startsWith('map-tools'),
@@ -173,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="flex-1 text-left min-w-0">
             <p className="text-sm font-bold text-gray-900 truncate dark:text-white">{selectedProfile?.name || 'Select Server'}</p>
-            <p className="text-xs text-gray-500 truncate dark:text-gray-400">Mission Profile</p>
+            <p className="text-xs text-gray-500 truncate dark:text-gray-400">{mapMetadata.displayName}</p>
           </div>
           <ChevronRight size={16} className="text-gray-400 group-hover:translate-x-0.5 transition-transform" />
         </button>

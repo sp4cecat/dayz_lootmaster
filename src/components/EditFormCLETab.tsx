@@ -162,17 +162,15 @@ export default function EditFormCLETab({
     registerSaveHandler?.(handleSave);
   }, [handleSave, registerSaveHandler]);
 
-  // Deerisle Diving Loot Logic
+  // Addon-specific features (e.g., Deerisle Diving Loot)
   useEffect(() => {
-    const isDeerisle = selectedProfile?.addons?.includes('deerisle') || 
-                      selectedProfileId.toLowerCase().includes('deerisle') ||
-                      selectedProfile?.missionName?.toLowerCase().includes('deerisle');
-    setHasDivingConfig(!!isDeerisle);
+    const hasDiving = selectedProfile?.addons?.includes('deerisle');
+    setHasDivingConfig(!!hasDiving);
 
-    if (isDeerisle) {
+    if (hasDiving) {
       loadDivingConfig();
     }
-  }, [selectedProfileId, selectedProfile]);
+  }, [selectedProfile]);
 
   const loadDivingConfig = async () => {
     try {

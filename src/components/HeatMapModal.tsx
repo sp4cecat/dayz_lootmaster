@@ -6,7 +6,7 @@ import { Slider } from './base/slider/slider';
 import { Modal } from './base/modal/modal';
 import { Map as MapIcon, Calendar, Filter, Maximize2, Zap, AlertCircle } from 'lucide-react';
 import moment from 'moment';
-import deerIsleMap from '../assets/maps/deerisle/DeerIsle.jpg';
+import { useMapMetadata } from '../hooks/useMapMetadata';
 import { cx } from '@/utils/cx';
 import { 
   CalendarDateTime, 
@@ -15,16 +15,17 @@ import {
   getLocalTimeZone 
 } from '@internationalized/date';
 
-const WORLD_SIZE = 16384;
 
 interface HeatMapModalProps {
   onClose: () => void;
   selectedProfileId: string;
+  missionName?: string;
   getApiBase: () => string;
   isPanel?: boolean;
 }
 
-export default function HeatMapModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: HeatMapModalProps) {
+export default function HeatMapModal({ onClose, selectedProfileId, missionName, getApiBase, isPanel = false }: HeatMapModalProps) {
+    const mapMetadata = useMapMetadata(missionName);
     const [start, setStart] = useState<CalendarDateTime | null>(() => {
         const d = new Date();
         d.setHours(0, 0, 0, 0);
@@ -46,10 +47,10 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase, i
     
     const mapPoints = useMemo(() => {
         return coords.map(pos => ({
-            x: (pos.x / WORLD_SIZE) * 2048,
-            y: (1 - (pos.z / WORLD_SIZE)) * 2048
+            x: (pos.x / mapMetadata.worldSize) * 2048,
+            y: (1 - (pos.z / mapMetadata.worldSize)) * 2048
         }));
-    }, [coords]);
+    }, [coords, mapMetadata.worldSize]);
     const [pointRadius, setPointRadius] = useState(20);
     const [opacity, setOpacity] = useState(0.5);
     
@@ -312,8 +313,8 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase, i
         <Modal
             isOpen={true}
             onClose={onClose}
-            title="Deer Isle Heat Map"
-            description="Visualize player activity logs on the Deer Isle map."
+            title={`${mapMetadata.displayName} Heat Map`}
+            description={`Visualize player activity logs on the ${mapMetadata.displayName} map.`}
             icon={MapIcon}
             inline={isPanel}
             className={cx(!isPanel && "h-[90vh] max-w-none w-[90vw]")}
@@ -438,8 +439,8 @@ export default function HeatMapModal({ onClose, selectedProfileId, getApiBase, i
                             }}
                         >
                             <img 
-                                src={deerIsleMap} 
-                                alt="Deer Isle Map" 
+                                src={mapMetadata.imagePath} 
+                                alt={`${mapMetadata.displayName} Map`} 
                                 onLoad={handleImageLoad}
                                 className="w-full h-full block"
                             />
