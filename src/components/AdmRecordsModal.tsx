@@ -132,7 +132,7 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, getApiBase
       if (start && end) {
         baseName = `${formatForFilename(start)}_to_${formatForFilename(end)}`;
       }
-      const filename = `${baseName}__players_${aliasesPart}.log`;
+      const filename = `${baseName}__players_${aliasesPart}.ADM`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -215,7 +215,7 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, getApiBase
         ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_y${String(y).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
         : '';
 
-      const filename = `${formatForFilename(start)}_to_${formatForFilename(end)}${filterPart}.log`;
+      const filename = `${formatForFilename(start)}_to_${formatForFilename(end)}${filterPart}.ADM`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
