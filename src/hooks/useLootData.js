@@ -96,6 +96,7 @@ export function useLootData() {
   }, []);
 
   const [profiles, setProfiles] = useState(/** @type {{id: string, name: string, serverPath: string, missionName: string, addons?: string[]}[]} */([]));
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState(localStorage.getItem('dayz-editor:selectedProfileId') || '');
   const selectedProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
 
@@ -194,12 +195,15 @@ export function useLootData() {
         const data = await res.json();
         setProfiles(data);
         
+        const storedId = localStorage.getItem('dayz-editor:selectedProfileId');
+        
         // If we have a selected ID but it's not in the returned data, reset it
         if (data.length === 0) {
           setSelectedProfileId('');
         } else if (selectedProfileId && !data.find(p => p.id === selectedProfileId)) {
+          // If the currently held ID (from localStorage) is invalid, pick the first one
           setSelectedProfileId(data[0].id);
-        } else if (!selectedProfileId && data.length > 0 && !localStorage.getItem('dayz-editor:selectedProfileId')) {
+        } else if (!selectedProfileId && data.length > 0 && !storedId) {
           // If no profile selected but we have some, select first one if nothing was stored
           setSelectedProfileId(data[0].id);
         }
@@ -207,6 +211,8 @@ export function useLootData() {
     } catch (e) {
       console.error('Failed to load profiles:', e);
       setError(`Failed to connect to the backend server at ${getApiBase()}. Please ensure the server is running. (${e.message})`);
+    } finally {
+      setProfilesLoaded(true);
     }
   }, [getApiBase, selectedProfileId]);
 
@@ -216,7 +222,7 @@ export function useLootData() {
 
   // Refresh baseline (definitions + files) from live API
   const refreshBaselineFromAPI = useCallback(async () => {
-    if (!selectedProfileId) return false;
+    if (!profilesLoaded || !selectedProfileId) return false;
     try {
       const API_BASE = getApiBase();
       // Probe health
@@ -309,7 +315,7 @@ export function useLootData() {
     } catch {
       return false;
     }
-  }, [selectedProfileId, getApiBase, fetchWithProfile, loadMissionFilesFromAPI]);
+  }, [selectedProfileId, getApiBase, fetchWithProfile, loadMissionFilesFromAPI, profilesLoaded]);
 
   // Prefer baseline from live API to compare in storageDiff (initial load)
   useEffect(() => {
@@ -630,7 +636,7 @@ export function useLootData() {
   }, [setFromMergedTypes]);
 
   useEffect(() => {
-    if (!selectedProfileId) {
+    if (!profilesLoaded || !selectedProfileId) {
       setLoading(false);
       setError(prev => (prev && String(prev).includes('backend server')) ? prev : null);
       setDefinitions(null);
@@ -833,8 +839,7 @@ export function useLootData() {
       }
     })();
     return () => { mounted = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadWarnings is intentionally rebuilt during this one-shot load effect.
-  }, [selectedProfileId, fetchWithProfile, loadMissionFilesFromAPI]);
+  }, [selectedProfileId, fetchWithProfile, loadMissionFilesFromAPI, profilesLoaded]);
 
   const pushHistory = useCallback((state) => {
     historyRef.current.push(state);
