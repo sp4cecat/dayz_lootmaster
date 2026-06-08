@@ -12,6 +12,8 @@ interface TypesTableProps {
   types: (Type & { group?: string; file?: string })[];
   selection: Set<string>;
   setSelection: (sel: Set<string>) => void;
+  lastClickedId: string | null;
+  setLastClickedId: (id: string | null) => void;
   unknowns: {
     byType: Record<string, { category?: string[]; usage: string[]; value: string[]; tag: string[] }>;
   };
@@ -27,6 +29,8 @@ export default function TypesTable({
   types,
   selection,
   setSelection,
+  lastClickedId,
+  setLastClickedId,
   unknowns,
   storageDiff,
   showGroupColumn = true,
@@ -42,6 +46,7 @@ export default function TypesTable({
   const [viewportHeight, setViewportHeight] = useState(600);
   const [scrollTop, setScrollTop] = useState(0);
   const overscan = 10;
+  const lastEventWasShift = useRef(false);
 
   const rows = useMemo(() => {
     const arr = types.map((t) => {
@@ -133,11 +138,38 @@ export default function TypesTable({
   };
 
   const handleSelectionChange = (keys: Selection) => {
+    let nextSelection: Set<string>;
     if (keys === 'all') {
-      setSelection(new Set(rows.map((r) => r.name)));
+      nextSelection = new Set(rows.map((r) => r.name));
     } else {
-      setSelection(new Set(Array.from(keys).map(String)));
+      nextSelection = new Set(Array.from(keys).map(String));
     }
+
+    if (lastEventWasShift.current && lastClickedId && keys !== 'all') {
+      // Determine what was just toggled
+      const added = Array.from(nextSelection).find(k => !selection.has(k));
+      const removed = Array.from(selection).find(k => !nextSelection.has(k));
+      const target = added || removed;
+
+      if (target && target !== lastClickedId) {
+        const currentIndex = rows.findIndex((r) => r.name === target);
+        const lastIndex = rows.findIndex((r) => r.name === lastClickedId);
+
+        if (currentIndex !== -1 && lastIndex !== -1) {
+          const start = Math.min(currentIndex, lastIndex);
+          const end = Math.max(currentIndex, lastIndex);
+          for (let i = start; i <= end; i++) {
+            if (added) {
+              nextSelection.add(rows[i].name);
+            } else {
+              nextSelection.delete(rows[i].name);
+            }
+          }
+        }
+      }
+    }
+
+    setSelection(nextSelection);
   };
 
   const isAnySelected = selection.size > 0;
@@ -268,6 +300,13 @@ export default function TypesTable({
               <Table.Row
                 key={row.name}
                 id={row.name}
+                onPointerDown={(e) => {
+                  lastEventWasShift.current = e.shiftKey;
+                  // If not shifting, or if no previous anchor, this becomes the new anchor
+                  if (!e.shiftKey || !lastClickedId) {
+                    setLastClickedId(row.name);
+                  }
+                }}
                 className={cx(
                   'grid items-stretch cursor-pointer transition-colors outline-none focus-visible:bg-primary-50 dark:focus-visible:bg-primary-900/10',
                   isSelected

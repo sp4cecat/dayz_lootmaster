@@ -61,6 +61,7 @@ export function useLootData() {
     groups: /** @type {string[]} */([])
   });
   const [selection, setSelection] = useState(new Set());
+  const [lastClickedId, setLastClickedId] = useState(null);
 
   const historyRef = useRef(createHistory([]));
 
@@ -1322,6 +1323,8 @@ export function useLootData() {
     setFilters,
     selection,
     setSelection,
+    lastClickedId,
+    setLastClickedId,
     pushHistory,
     undo,
     redo,

@@ -53,6 +53,8 @@ export default function App() {
         setFilters,
         selection,
         setSelection,
+        lastClickedId,
+        setLastClickedId,
         pushHistory,
         undo,
         redo,
@@ -357,6 +359,8 @@ export default function App() {
                                                     types={filteredTypes}
                                                     selection={selection}
                                                     setSelection={setSelection}
+                                                    lastClickedId={lastClickedId}
+                                                    setLastClickedId={setLastClickedId}
                                                     unknowns={unknowns}
                                                     storageDiff={storageDiff}
                                                     showGroupColumn={filters.groups.length !== 1}
