@@ -434,7 +434,7 @@ export default function App() {
                                 inline={true}
                             />
                         )}
-                        {view === 'mission-files:loadout-designer' && (
+                        {view === 'loadout-designer' && (
                             <LoadoutDesigner 
                                 onClose={() => setView('cle')}
                                 typeOptions={allTypeNames}
