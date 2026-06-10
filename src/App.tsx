@@ -440,7 +440,7 @@ export default function App() {
                                 inline={true}
                             />
                         )}
-                        {view === 'tools:expansion:adm' && (
+                        {view === 'tools:adm' && (
                             <AdmRecordsModal 
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}

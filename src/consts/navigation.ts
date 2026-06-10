@@ -40,13 +40,13 @@ export const NAV_ITEMS: NavItem[] = [
   ]},
   { id: 'tools', label: 'Tools', icon: Settings, subItems: [
     { id: 'snapshots', label: 'Snapshots' },
+    { id: 'adm', label: 'ADM records' },
     { 
       id: 'expansion', 
       label: 'Expansion', 
       addonRequirement: 'expansion',
       subItems: [
         { id: 'expansion-log', label: 'Log Search' },
-        { id: 'adm', label: 'ADM records' },
       ]
     },
     { id: 'stash-report', label: 'Stash report' },
