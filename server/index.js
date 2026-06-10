@@ -1870,6 +1870,26 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // GET Expansion Airdrop Settings
+        if (pathname === '/api/expansion/airdrop-settings') {
+            const profileId = req.headers['x-profile-id'];
+            const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
+            if (!profile) { notFound(res); return; }
+            const paths = getPaths(profile);
+            if (req.method === 'GET') {
+                try {
+                    const target = join(paths.profilesPath, 'ExpansionMod', 'Settings', 'AirdropSettings.json');
+                    const content = await readFile(target, 'utf8');
+                    send(res, 200, content, {'Content-Type': 'application/json'});
+                } catch {
+                    send(res, 404, JSON.stringify({ error: 'AirdropSettings.json not found' }), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
         // POST logs heatmap-data, returns JSON coordinates array
         if (pathname === '/api/logs/heatmap-data') {
             if (req.method !== 'POST') {

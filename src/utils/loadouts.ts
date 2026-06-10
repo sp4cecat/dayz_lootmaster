@@ -109,3 +109,104 @@ export function loadoutToVanillaXml(loadout: Loadout, allLoadouts: Loadout[]) {
 
   return lines.join('\n');
 }
+
+/**
+ * Import utilities
+ */
+
+export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
+  const rootNode: LoadoutNode = {
+    id: crypto.randomUUID(),
+    type: 'item',
+    name: spawnableType.name,
+    chance: 1.0,
+    attachments: [],
+    cargo: []
+  };
+
+  if (spawnableType.damage) {
+    rootNode.damage = {
+      min: spawnableType.damage.min ?? 0,
+      max: spawnableType.damage.max ?? 0
+    };
+  }
+
+  (spawnableType.sections || []).forEach((section: any) => {
+    const list = section.kind === 'attachments' ? rootNode.attachments : 
+                 section.kind === 'cargo' ? rootNode.cargo : null;
+    
+    if (!list) return;
+
+    if (section.preset) {
+      list.push({
+        id: crypto.randomUUID(),
+        type: 'template',
+        name: section.preset,
+        chance: section.chance ?? 1.0,
+        attachments: [],
+        cargo: []
+      });
+    } else if (section.items) {
+      section.items.forEach((item: any) => {
+        list.push({
+          id: crypto.randomUUID(),
+          type: item.preset ? 'template' : 'item',
+          name: item.preset || item.name,
+          chance: (item.chance ?? 1.0) * (section.chance ?? 1.0), // Flatten chance for designer
+          attachments: [],
+          cargo: []
+        });
+      });
+    }
+  });
+
+  return {
+    id: crypto.randomUUID(),
+    label: `Imported ${spawnableType.name}`,
+    items: [rootNode],
+    updatedAt: Date.now()
+  };
+}
+
+export function vanillaPresetToLoadout(preset: any): Loadout {
+  const rootItems: LoadoutNode[] = (preset.items || []).map((item: any) => ({
+    id: crypto.randomUUID(),
+    type: item.preset ? 'template' : 'item',
+    name: item.preset || item.name,
+    chance: item.chance ?? 1.0,
+    attachments: [],
+    cargo: []
+  }));
+
+  return {
+    id: crypto.randomUUID(),
+    label: `Preset: ${preset.name}`,
+    items: rootItems,
+    updatedAt: Date.now()
+  };
+}
+
+export function expansionAirdropToLoadout(label: string, lootItems: any[]): Loadout {
+  const mapNode = (item: any): LoadoutNode => {
+    return {
+      id: crypto.randomUUID(),
+      type: 'item',
+      name: item.Name,
+      chance: item.Chance ?? 1.0,
+      quantity: item.QuantityPercent !== undefined ? {
+        min: item.Min ?? 0,
+        max: item.Max ?? 0,
+        percent: item.QuantityPercent
+      } : undefined,
+      attachments: (item.Attachments || []).map(mapNode),
+      cargo: (item.Cargo || []).map(mapNode) // Expansion sometimes uses Cargo too
+    };
+  };
+
+  return {
+    id: crypto.randomUUID(),
+    label: label,
+    items: lootItems.map(mapNode),
+    updatedAt: Date.now()
+  };
+}

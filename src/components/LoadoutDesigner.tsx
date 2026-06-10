@@ -8,21 +8,40 @@ import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { LoadoutNodeItem } from './LoadoutNodeItem';
 import { LoadoutItemProperties } from './LoadoutItemProperties';
-import { loadoutToExpansionAirdrop, loadoutToVanillaXml } from '@/utils/loadouts';
+import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { MenuTrigger } from 'react-aria-components';
+import { Modal } from '@/components/base/modal/modal';
 
 interface LoadoutDesignerProps {
   onClose: () => void;
   typeOptions: string[];
+  randomPresets?: { presets: any[] };
+  spawnableTypesByGroup?: Record<string, any>;
+  selectedProfileId?: string;
+  getApiBase?: () => string;
 }
 
-export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ onClose, typeOptions }) => {
+export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ 
+  onClose, 
+  typeOptions,
+  randomPresets,
+  spawnableTypesByGroup,
+  selectedProfileId,
+  getApiBase
+}) => {
   const [loadouts, setLoadouts] = useState<Loadout[]>([]);
   const [selectedLoadoutId, setSelectedLoadoutId] = useState<string | null>(null);
   const [editingLoadout, setEditingLoadout] = useState<Loadout | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  
+  // Import from existing state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importSource, setImportSource] = useState<'spawnable' | 'preset' | 'expansion' | null>(null);
+  const [importSearch, setImportSearch] = useState('');
+  const [expansionAirdrops, setExpansionAirdrops] = useState<any>(null);
+  const [loadingAirdrops, setLoadingAirdrops] = useState(false);
 
   useEffect(() => {
     loadAllLoadouts().then(setLoadouts);
@@ -162,8 +181,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ onClose, typeO
             const imported = { ...data, id: crypto.randomUUID(), updatedAt: Date.now() };
             setEditingLoadout(imported);
           } else if (Array.isArray(data)) { // Probably expansion
-            // TODO: Convert expansion back to LoadoutNode structure
-            alert('Import from Expansion format not yet implemented, but planned!');
+            const imported = expansionAirdropToLoadout('Imported Expansion Airdrop', data);
+            setEditingLoadout(imported);
+          } else if (data.Loot && Array.isArray(data.Loot)) { // Expansion container or similar
+             const imported = expansionAirdropToLoadout(data.Container || 'Imported Expansion Container', data.Loot);
+             setEditingLoadout(imported);
           }
         } catch (err) {
           alert('Failed to parse import file');
@@ -172,6 +194,47 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ onClose, typeO
       reader.readAsText(file);
     };
     input.click();
+  };
+
+  const fetchAirdrops = async () => {
+    if (expansionAirdrops || loadingAirdrops || !getApiBase || !selectedProfileId) return;
+    setLoadingAirdrops(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
+        headers: { 'X-Profile-ID': selectedProfileId }
+      });
+      if (res.ok) {
+        setExpansionAirdrops(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch airdrops', e);
+    } finally {
+      setLoadingAirdrops(false);
+    }
+  };
+
+  const openImportModal = (source: 'spawnable' | 'preset' | 'expansion') => {
+    setImportSource(source);
+    setImportModalOpen(true);
+    setImportSearch('');
+    if (source === 'expansion') fetchAirdrops();
+  };
+
+  const handleImportFromExisting = (data: any) => {
+    let imported: Loadout | null = null;
+    if (importSource === 'spawnable') {
+      imported = vanillaSpawnableToLoadout(data);
+    } else if (importSource === 'preset') {
+      imported = vanillaPresetToLoadout(data);
+    } else if (importSource === 'expansion') {
+      imported = expansionAirdropToLoadout(data.name, data.loot);
+    }
+
+    if (imported) {
+      setEditingLoadout(imported);
+      setSelectedLoadoutId(imported.id);
+      setImportModalOpen(false);
+    }
   };
 
   const selectedNode = editingLoadout ? findNode(editingLoadout.items, selectedNodeId || '') : null;
@@ -212,10 +275,26 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ onClose, typeO
                 onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
-            <Button onClick={handleCreate} className="w-full" variant="secondary" size="sm">
-              <Plus size={16} className="mr-2" />
-              Create New
-            </Button>
+            <Dropdown.Root>
+              <Button className="w-full" variant="secondary" size="sm">
+                <Plus size={16} className="mr-2" />
+                Create New
+                <ChevronDown size={16} className="ml-2" />
+              </Button>
+              <Dropdown.Popover>
+                <Dropdown.Menu onAction={(key) => {
+                  if (key === 'new') handleCreate();
+                  else openImportModal(key as any);
+                }}>
+                  <Dropdown.Item id="new" label="New Empty Loadout" />
+                  <Dropdown.Section title="Create from Existing">
+                    <Dropdown.Item id="spawnable" label="Vanilla Spawnable" />
+                    <Dropdown.Item id="preset" label="Random Preset" />
+                    <Dropdown.Item id="expansion" label="Expansion Airdrop" />
+                  </Dropdown.Section>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown.Root>
           </div>
           <div className="flex-1 overflow-auto p-2 space-y-1">
             {loadouts
@@ -350,6 +429,90 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ onClose, typeO
           )}
         </main>
       </div>
+
+      <Modal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        title={`Import from ${importSource === 'spawnable' ? 'Vanilla Spawnable' : importSource === 'preset' ? 'Random Preset' : 'Expansion Airdrop'}`}
+        icon={Plus}
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <Input 
+              placeholder={`Search ${importSource}s...`} 
+              className="pl-9" 
+              value={importSearch}
+              onChange={e => setImportSearch(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="max-h-[400px] overflow-auto border border-gray-200 dark:border-gray-800 rounded-lg divide-y divide-gray-200 dark:divide-gray-800">
+            {importSource === 'spawnable' && spawnableTypesByGroup && (
+              Object.entries(spawnableTypesByGroup).flatMap(([group, data]) => 
+                (data.types || []).filter((t: any) => t.name.toLowerCase().includes(importSearch.toLowerCase()))
+                  .map((t: any) => (
+                    <div 
+                      key={`${group}:${t.name}`}
+                      onClick={() => handleImportFromExisting(t)}
+                      className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
+                        <div className="text-xs text-gray-500">{group}</div>
+                      </div>
+                      <Badge variant="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
+                    </div>
+                  ))
+              )
+            )}
+
+            {importSource === 'preset' && randomPresets && (
+              (randomPresets.presets || [])
+                .filter((p: any) => p.name.toLowerCase().includes(importSearch.toLowerCase()))
+                .map((p: any) => (
+                  <div 
+                    key={p.name}
+                    onClick={() => handleImportFromExisting(p)}
+                    className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">{p.name}</div>
+                      <div className="text-xs text-gray-500">{p.kind}</div>
+                    </div>
+                    <Badge variant="gray" size="sm">{(p.items?.length || 0)} items</Badge>
+                  </div>
+                ))
+            )}
+
+            {importSource === 'expansion' && (
+              loadingAirdrops ? (
+                <div className="p-8 text-center text-gray-500">Loading airdrop settings...</div>
+              ) : expansionAirdrops?.Containers ? (
+                expansionAirdrops.Containers
+                  .filter((c: any) => c.Container.toLowerCase().includes(importSearch.toLowerCase()))
+                  .map((c: any) => (
+                    <div 
+                      key={c.Container}
+                      onClick={() => handleImportFromExisting({ name: c.Container, loot: c.Loot || [] })}
+                      className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white">{c.Container}</div>
+                        <div className="text-xs text-gray-500">Weight: {c.Weight}</div>
+                      </div>
+                      <Badge variant="gray" size="sm">{(c.Loot?.length || 0)} items</Badge>
+                    </div>
+                  ))
+              ) : (
+                <div className="p-8 text-center text-gray-500">No airdrop settings found or Expansion not active.</div>
+              )
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

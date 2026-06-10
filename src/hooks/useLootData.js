@@ -13,7 +13,7 @@ import {
   generateRandomPresetsXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile, loadAllLoadouts, saveLoadout } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile, loadAllLoadouts } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 

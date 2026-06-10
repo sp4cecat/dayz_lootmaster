@@ -438,6 +438,10 @@ export default function App() {
                             <LoadoutDesigner 
                                 onClose={() => setView('cle')}
                                 typeOptions={allTypeNames}
+                                randomPresets={randomPresets}
+                                spawnableTypesByGroup={spawnableTypesByGroup}
+                                selectedProfileId={selectedProfileId}
+                                getApiBase={getApiBase}
                             />
                         )}
                         {view === 'tools:snapshots' && (
