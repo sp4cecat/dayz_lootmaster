@@ -10,7 +10,7 @@ import { LoadoutNodeItem } from './LoadoutNodeItem';
 import { LoadoutItemProperties } from './LoadoutItemProperties';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
-import { MenuTrigger } from 'react-aria-components';
+import { MenuTrigger, Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
 
 interface LoadoutDesignerProps {
@@ -276,11 +276,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               />
             </div>
             <Dropdown.Root>
-              <Button className="w-full" variant="secondary" size="sm">
-                <Plus size={16} className="mr-2" />
+              <AriaButton className="w-full inline-flex items-center justify-center rounded-lg font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-primary-100 disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700 px-3 py-2 text-sm gap-2">
+                <Plus size={16} />
                 Create New
-                <ChevronDown size={16} className="ml-2" />
-              </Button>
+                <ChevronDown size={16} className="ml-auto" />
+              </AriaButton>
               <Dropdown.Popover>
                 <Dropdown.Menu onAction={(key) => {
                   if (key === 'new') handleCreate();
@@ -341,11 +341,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                   </div>
                   <div className="flex gap-2 self-end">
                     <Dropdown.Root>
-                      <Button variant="secondary" size="sm">
-                        <Download size={16} className="mr-2" />
+                      <AriaButton className="inline-flex items-center justify-center rounded-lg font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-primary-100 disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700 px-3 py-2 text-sm gap-2">
+                        <Download size={16} />
                         Export
-                        <ChevronDown size={16} className="ml-2" />
-                      </Button>
+                        <ChevronDown size={16} />
+                      </AriaButton>
                       <Dropdown.Popover>
                         <Dropdown.Menu onAction={(key) => handleExport(key as any)}>
                           <Dropdown.Item id="json" label="Native JSON (.json)" />
