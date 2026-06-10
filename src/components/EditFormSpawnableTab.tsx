@@ -15,6 +15,8 @@ import {
 import type { Type } from '@/utils/xml';
 import { SpawnableSlotModal } from './SpawnableSlotModal';
 import { XMLNodeKind } from '@/types/xml';
+import { Loadout, LoadoutNode } from '@/types/loadouts';
+import { loadoutNodeToSpawnableSection } from '@/utils/loadouts';
 
 interface EditFormSpawnableTabProps {
   selectedTypes: Type[];
@@ -23,6 +25,7 @@ interface EditFormSpawnableTabProps {
   randomPresets: { presets: any[] };
   globalsDefaults: { LootDamageMin: number | null; LootDamageMax: number | null };
   typeOptions: string[];
+  loadouts: any[];
 }
 
 function chancePercent(value: any) {
@@ -36,10 +39,12 @@ export default function EditFormSpawnableTab({
   setSpawnableTypesByGroup,
   randomPresets,
   globalsDefaults,
-  typeOptions
+  typeOptions,
+  loadouts
 }: EditFormSpawnableTabProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<{ idx: number; kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO } | null>(null);
+  const [selectedLoadoutId, setSelectedLoadoutId] = useState<string>('');
 
   const isMulti = selectedTypes.length > 1;
 
@@ -199,6 +204,27 @@ export default function EditFormSpawnableTab({
     });
   };
 
+  const handleApplyLoadout = () => {
+    const loadout = loadouts.find(l => l.id === selectedLoadoutId);
+    if (!loadout) return;
+
+    updateSpawnableEntry(current => {
+      const nextSections = [...(current.sections || [])];
+      
+      // Map root items of the loadout to attachments/cargo
+      loadout.items.forEach((itemNode: LoadoutNode) => {
+        // We assume top-level items in a loadout are applied as attachments or cargo
+        // If they have attachments/cargo themselves, we'd need to flatten or handle it
+        // For now, let's treat root items with children as slots
+        const kind = itemNode.cargo.length > 0 ? XMLNodeKind.CARGO : XMLNodeKind.ATTACHMENTS;
+        nextSections.push(loadoutNodeToSpawnableSection(itemNode, kind));
+      });
+
+      return { ...current, sections: nextSections };
+    });
+    setSelectedLoadoutId('');
+  };
+
   const handleAddDamage = () => {
     handleDamageChange('min', (globalsDefaults.LootDamageMin ?? 0) * 100);
   };
@@ -228,6 +254,36 @@ export default function EditFormSpawnableTab({
         </div>
         <Badge color={result ? "blue" : "warning"} size="sm">{result ? "Active" : "Virtual"}</Badge>
       </div>
+
+      {/* Loadout Template Section */}
+      {loadouts.length > 0 && (
+        <section className="p-4 bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-xl">
+          <div className="flex items-center gap-2 mb-3">
+            <Package size={16} className="text-primary-600 dark:text-primary-400" />
+            <h4 className="text-sm font-bold text-primary-900 dark:text-primary-100 text-uppercase tracking-wider">Quick Apply Loadout</h4>
+          </div>
+          <div className="flex gap-2">
+            <select 
+              className="flex-1 h-9 px-3 text-sm rounded-lg border border-primary-200 dark:border-primary-800 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-primary-500"
+              value={selectedLoadoutId}
+              onChange={e => setSelectedLoadoutId(e.target.value)}
+            >
+              <option value="">Select a loadout template...</option>
+              {loadouts.map(l => (
+                <option key={l.id} value={l.id}>{l.label}</option>
+              ))}
+            </select>
+            <Button 
+              size="sm" 
+              disabled={!selectedLoadoutId}
+              onClick={handleApplyLoadout}
+            >
+              Apply
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* Damage Section */}
       <section>
         <div className="flex items-center gap-2 mb-4">

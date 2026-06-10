@@ -13,7 +13,7 @@ import {
   generateRandomPresetsXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile, loadAllLoadouts, saveLoadout } from '../utils/idb.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -87,6 +87,7 @@ export function useLootData() {
   const [randomPresets, setRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
   const [baselineRandomPresets, setBaselineRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
   const [globalsDefaults, setGlobalsDefaults] = useState(/** @type {{LootDamageMin: number|null, LootDamageMax: number|null}} */({ LootDamageMin: null, LootDamageMax: null }));
+  const [loadouts, setLoadouts] = useState(/** @type {any[]} */([]));
 
   // Helper to get API base
   const getApiBase = useCallback(() => {
@@ -111,6 +112,10 @@ export function useLootData() {
       void saveMissionFile('randomPresets', randomPresets);
     }
   }, [randomPresets]);
+
+  useEffect(() => {
+    loadAllLoadouts().then(setLoadouts);
+  }, []);
 
   useEffect(() => {
     if (selectedProfileId) {
@@ -1366,6 +1371,8 @@ export function useLootData() {
     setRandomPresets,
     baselineRandomPresets,
     globalsDefaults,
+    loadouts,
+    setLoadouts,
     // Profiles
     profiles,
     selectedProfileId,

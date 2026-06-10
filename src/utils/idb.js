@@ -12,7 +12,7 @@
  */
 export function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('dayz-types-editor', 3);
+    const req = indexedDB.open('dayz-types-editor', 4);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('lootTypes')) {
@@ -25,6 +25,9 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains('missionFiles')) {
         db.createObjectStore('missionFiles', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('loadouts')) {
+        db.createObjectStore('loadouts', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -111,6 +114,50 @@ export function loadAllTypeFiles() {
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
   }));
+}
+
+/**
+ * Load all loadouts.
+ * @returns {Promise<any[]>}
+ */
+export function loadAllLoadouts() {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('loadouts', 'readonly');
+    const store = tx.objectStore('loadouts');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+/**
+ * Save a loadout.
+ * @param {any} loadout
+ */
+export async function saveLoadout(loadout) {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('loadouts', 'readwrite');
+    const store = tx.objectStore('loadouts');
+    store.put(loadout);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Delete a loadout.
+ * @param {string} id
+ */
+export async function deleteLoadout(id) {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('loadouts', 'readwrite');
+    const store = tx.objectStore('loadouts');
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 /**

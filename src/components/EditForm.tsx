@@ -26,6 +26,7 @@ interface EditFormProps {
   setSpawnableTypesByGroup?: (next: any) => void;
   randomPresets?: { presets: any[] };
   globalsDefaults?: { LootDamageMin: number | null; LootDamageMax: number | null };
+  loadouts?: any[];
 }
 
 export default function EditForm({ 
@@ -41,7 +42,8 @@ export default function EditForm({
   spawnableTypesByGroup = {}, 
   setSpawnableTypesByGroup = () => {}, 
   randomPresets = { presets: [] }, 
-  globalsDefaults = { LootDamageMin: null, LootDamageMax: null } 
+  globalsDefaults = { LootDamageMin: null, LootDamageMax: null },
+  loadouts = []
 }: EditFormProps) {
   const [activeTab, setActiveTab] = useState<'CLE' | 'Spawnable' | 'Marketplace'>('CLE');
   const [marketTabOpened, setMarketTabOpened] = useState(false);
@@ -148,6 +150,7 @@ export default function EditForm({
             randomPresets={randomPresets}
             globalsDefaults={globalsDefaults}
             typeOptions={typeOptions}
+            loadouts={loadouts}
           />
         </div>
 

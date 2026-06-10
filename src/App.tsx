@@ -18,6 +18,7 @@ import LintFilesModal from './components/LintFilesModal';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal';
 import ProfileManager from './components/ProfileManager';
 import { SnapshotModal } from './components/SnapshotModal';
+import { LoadoutDesigner } from './components/LoadoutDesigner';
 import AddonEditorModal from './components/AddonEditorModal';
 import HeatMapModal from './components/HeatMapModal';
 import { Sidebar } from './components/layout/Sidebar';
@@ -384,6 +385,7 @@ export default function App() {
                                                         setSpawnableTypesByGroup={setSpawnableTypesByGroup}
                                                         randomPresets={randomPresets}
                                                         globalsDefaults={globalsDefaults}
+                                                        loadouts={loadouts}
                                                     />
                                                 </div>
                                             )}
@@ -430,6 +432,12 @@ export default function App() {
                                 spawnableTypesByGroup={spawnableTypesByGroup}
                                 setSpawnableTypesByGroup={setSpawnableTypesByGroup}
                                 inline={true}
+                            />
+                        )}
+                        {view === 'mission-files:loadout-designer' && (
+                            <LoadoutDesigner 
+                                onClose={() => setView('cle')}
+                                typeOptions={allTypeNames}
                             />
                         )}
                         {view === 'tools:snapshots' && (

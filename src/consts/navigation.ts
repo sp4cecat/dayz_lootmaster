@@ -4,6 +4,7 @@ import {
   LayoutGrid,
   FileCode,
   Settings,
+  Package
 } from 'lucide-react';
 
 export interface NavItem {
@@ -36,7 +37,8 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'heatmap', label: 'Heat map' }
   ]},
   { id: 'mission-files', label: 'Mission Files', icon: FileCode, subItems: [
-    { id: 'random-presets', label: 'Random Presets' }
+    { id: 'random-presets', label: 'Random Presets' },
+    { id: 'loadout-designer', label: 'Loadout Designer' }
   ]},
   { id: 'tools', label: 'Tools', icon: Settings, subItems: [
     { id: 'snapshots', label: 'Snapshots' },
