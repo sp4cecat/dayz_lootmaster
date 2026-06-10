@@ -52,11 +52,11 @@ export default function EditForm({
     setSaveCLE(() => fn);
   }, []);
 
-  const tabs: { id: 'CLE' | 'Spawnable' | 'Marketplace'; label: string }[] = [
+  const tabs = [
     { id: 'CLE', label: 'Loot Economy' },
     { id: 'Spawnable', label: 'Spawnable / Cargo' },
-    { id: 'Marketplace', label: 'Marketplace' },
-  ];
+    ...(selectedProfile?.addons?.includes('expansion') ? [{ id: 'Marketplace', label: 'Marketplace' }] : []),
+  ] as { id: 'CLE' | 'Spawnable' | 'Marketplace'; label: string }[];
 
   const itemsText = selectedTypes.length === 1 ? '1 item' : `${selectedTypes.length} items`;
 

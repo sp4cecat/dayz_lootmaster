@@ -34,25 +34,53 @@ const PROFILES_FILE = resolve(join(__dirname, 'profiles.json'));
 let profiles = [];
 
 const KNOWN_ADDONS = [
-    { id: 'deerisle', folder: 'Deerisle', name: 'Deerisle' }
+    { 
+        id: 'deerisle', 
+        name: 'Deerisle',
+        probes: [
+            { type: 'profile', folder: 'Deerisle' }
+        ]
+    },
+    {
+        id: 'expansion',
+        name: 'Expansion',
+        probes: [
+            { type: 'profile', folder: 'ExpansionMod' },
+            { type: 'mission', folder: 'expansion' }
+        ]
+    }
 ];
 
-async function getDetectedAddons(serverPath) {
+async function getDetectedAddons(serverPath, missionName) {
     if (!serverPath) return [];
-    const addons = [];
-    const profilesPath = join(serverPath, 'profiles');
+    const detected = [];
     for (const addon of KNOWN_ADDONS) {
-        try {
-            const addonPath = join(profilesPath, addon.folder);
-            const s = await stat(addonPath);
-            if (s.isDirectory()) {
-                addons.push(addon.id);
+        let isDetected = false;
+        for (const probe of addon.probes) {
+            try {
+                let checkPath;
+                if (probe.type === 'profile') {
+                    checkPath = join(serverPath, 'profiles', probe.folder);
+                } else if (probe.type === 'mission' && missionName) {
+                    checkPath = join(serverPath, 'mpmissions', missionName, probe.folder);
+                }
+                
+                if (checkPath) {
+                    const s = await stat(checkPath);
+                    if (s.isDirectory()) {
+                        isDetected = true;
+                        break;
+                    }
+                }
+            } catch {
+                // ignore
             }
-        } catch {
-            // ignore
+        }
+        if (isDetected) {
+            detected.push(addon.id);
         }
     }
-    return addons;
+    return detected;
 }
 
 async function loadProfiles() {
@@ -1382,7 +1410,7 @@ const server = http.createServer(async (req, res) => {
                     const profilesWithAddons = await Promise.all(profiles.map(async (p) => {
                         return {
                             ...p,
-                            addons: await getDetectedAddons(p.serverPath)
+                            addons: await getDetectedAddons(p.serverPath, p.missionName)
                         };
                     }));
                     send(res, 200, JSON.stringify(profilesWithAddons), {'Content-Type': 'application/json'});
@@ -1528,7 +1556,7 @@ const server = http.createServer(async (req, res) => {
                 if (index === -1) { notFound(res); return; }
 
                 if (req.method === 'GET') {
-                    const profileWithAddons = { ...profiles[index], addons: await getDetectedAddons(profiles[index].serverPath) };
+                    const profileWithAddons = { ...profiles[index], addons: await getDetectedAddons(profiles[index].serverPath, profiles[index].missionName) };
                     send(res, 200, JSON.stringify(profileWithAddons), {'Content-Type': 'application/json'});
                     return;
                 }

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { 
   Database, 
-  Store, 
   Map as MapIcon, 
   LogOut, 
   User, 
@@ -17,6 +16,7 @@ import { cx } from '@/utils/cx';
 import { ThemeToggle } from '../ThemeToggle';
 
 import { useMapMetadata } from '@/hooks/useMapMetadata';
+import { NAV_ITEMS } from '@/consts/navigation';
 
 interface SidebarProps {
   className?: string;
@@ -24,7 +24,7 @@ interface SidebarProps {
   onTabChange: (tabId: string) => void;
   editorID: string;
   onSignOut: () => void;
-  selectedProfile?: { id: string; name: string; missionName?: string };
+  selectedProfile?: { id: string; name: string; missionName?: string; addons?: string[] };
   onProfileClick: () => void;
   storageDirty: boolean;
   onStorageClick: () => void;
@@ -42,45 +42,86 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onStorageClick
 }) => {
   const mapMetadata = useMapMetadata(selectedProfile?.missionName);
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    marketplace: !!activeTab?.startsWith('marketplace'),
-    'map-tools': !!activeTab?.startsWith('map-tools'),
-    'mission-files': !!activeTab?.startsWith('mission-files'),
-    tools: !!activeTab?.startsWith('tools')
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    if (activeTab) {
+      const parts = activeTab.split(':');
+      let currentId = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        currentId = currentId ? `${currentId}:${parts[i]}` : parts[i];
+        initial[currentId] = true;
+      }
+    }
+    return initial;
   });
 
   const toggleExpand = (id: string) => {
     setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const navItems = [
-    { id: 'cle', label: 'CLE Editor', icon: Database },
-    { id: 'marketplace', label: 'Marketplace', icon: Store, subItems: [
-      { id: 'traders', label: 'Traders' },
-      { id: 'market-categories', label: 'Categories' }
-    ]},
-    { id: 'map-tools', label: 'Map Tools', icon: MapIcon, subItems: [
-      { id: 'heatmap', label: 'Heat map' }
-    ]},
-    { id: 'mission-files', label: 'Mission Files', icon: FileCode, subItems: [
-      { id: 'random-presets', label: 'Random Presets' }
-    ]},
-    { id: 'tools', label: 'Tools', icon: Settings, subItems: [
-      { id: 'snapshots', label: 'Snapshots' },
-      { id: 'adm', label: 'ADM records' },
-      { id: 'expansion-log', label: 'Expansion Log' },
-      { id: 'stash-report', label: 'Stash report' },
-      { id: 'lint', label: 'Lint files' }
-    ]},
-  ];
+  const navItems = NAV_ITEMS;
 
-  const handleItemClick = (item: any) => {
+  const handleItemClick = (item: any, parentId?: string) => {
+    const fullId = parentId ? `${parentId}:${item.id}` : item.id;
     if (item.subItems) {
-      toggleExpand(item.id);
-      onTabChange(item.id);
+      toggleExpand(fullId);
     } else {
-      onTabChange(item.id);
+      onTabChange(fullId);
     }
+  };
+
+  const renderNavItem = (item: any, parentId?: string, depth = 0) => {
+    const fullId = parentId ? `${parentId}:${item.id}` : item.id;
+    
+    // Check addon requirement
+    if (item.addonRequirement && !selectedProfile?.addons?.includes(item.addonRequirement)) {
+      return null;
+    }
+
+    // Special case for subItems visibility
+    if (item.subItems) {
+      const visibleSubItems = item.subItems.filter((sub: any) => 
+        !sub.addonRequirement || selectedProfile?.addons?.includes(sub.addonRequirement)
+      );
+      if (visibleSubItems.length === 0) return null;
+    }
+
+    const isActive = activeTab === fullId || activeTab?.startsWith(`${fullId}:`);
+    const isExpanded = expandedItems[fullId];
+    const Icon = item.icon;
+
+    return (
+      <div key={fullId} className="space-y-1">
+        <button
+          onClick={() => handleItemClick(item, parentId)}
+          className={cx(
+            "flex items-center w-full px-3 py-2 text-sm font-semibold rounded-lg transition-all group",
+            isActive 
+              ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300" 
+              : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white",
+            depth > 0 && "font-medium"
+          )}
+          style={{ paddingLeft: depth === 0 ? '0.75rem' : `${(depth * 1.25) + 0.75}rem` }}
+        >
+          {Icon && (
+            <Icon className={cx("mr-3 shrink-0 transition-colors", isActive ? "text-primary-600 dark:text-primary-400" : "text-gray-400 group-hover:text-gray-500")} size={20} />
+          )}
+          <span className={cx("flex-1 text-left", depth >= 2 && "text-xs font-normal")}>{item.label}</span>
+          {item.subItems && (
+            <ChevronDown 
+              size={16} 
+              className={cx("transition-transform text-gray-400", isExpanded && "rotate-180")} 
+            />
+          )}
+        </button>
+        
+        {item.subItems && isExpanded && (
+          <div className="space-y-1">
+            {item.subItems.map((sub: any) => renderNavItem(sub, fullId, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -109,60 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation */}
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-thin">
-        {navItems.map((item) => {
-          const isActive = activeTab === item.id || activeTab?.startsWith(`${item.id}:`);
-          const isExpanded = expandedItems[item.id];
-          
-          return (
-            <div key={item.id} className="space-y-1">
-              <button
-                onClick={() => handleItemClick(item)}
-                className={cx(
-                  "flex items-center w-full px-3 py-2 text-sm font-semibold rounded-lg transition-all group",
-                  isActive 
-                    ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300" 
-                    : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-                )}
-              >
-                <item.icon className={cx("mr-3 shrink-0 transition-colors", isActive ? "text-primary-600 dark:text-primary-400" : "text-gray-400 group-hover:text-gray-500")} size={20} />
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.subItems && (
-                  <ChevronDown 
-                    size={16} 
-                    className={cx("transition-transform text-gray-400", isExpanded && "rotate-180")} 
-                  />
-                )}
-              </button>
-              
-              {item.subItems && isExpanded && (
-                <div className="ml-9 space-y-1">
-                  {item.subItems.map(sub => {
-                    const subId = `${item.id}:${sub.id}`;
-                    const isSubActive = activeTab === subId;
-                    
-                    return (
-                      <button
-                        key={sub.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTabChange(subId);
-                        }}
-                        className={cx(
-                          "flex items-center w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                          isSubActive
-                            ? "text-primary-700 dark:text-primary-300"
-                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-                        )}
-                      >
-                        {sub.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {navItems.map((item) => renderNavItem(item))}
       </nav>
 
       {/* Footer */}

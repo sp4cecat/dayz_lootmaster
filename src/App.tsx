@@ -21,7 +21,10 @@ import { SnapshotModal } from './components/SnapshotModal';
 import AddonEditorModal from './components/AddonEditorModal';
 import HeatMapModal from './components/HeatMapModal';
 import { Sidebar } from './components/layout/Sidebar';
+import { Breadcrumbs } from './components/layout/Breadcrumbs';
 import { Button } from '@/components/base/button/button';
+import { ADDONS } from './consts/addons';
+import { NAV_ITEMS } from './consts/navigation';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from './utils/cx';
 import { 
@@ -38,9 +41,6 @@ import {
 } from 'lucide-react';
 import type { Type } from './utils/xml';
 
-const KNOWN_ADDONS = [
-    { id: 'deerisle', name: 'Deerisle' }
-];
 
 export default function App() {
     const {
@@ -234,6 +234,7 @@ export default function App() {
             />
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                <Breadcrumbs activeTab={view} navItems={NAV_ITEMS} />
                 {/* Global Warnings Banner */}
                 {loadWarnings.length > 0 && (
                     <div className="flex flex-col shrink-0 gap-px bg-gray-200 dark:bg-gray-800">
@@ -394,7 +395,7 @@ export default function App() {
                     </main>
                 ) : (
                     <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                        {view === 'marketplace:traders' && (
+                        {view === 'addons:expansion:traders' && (
                             <TraderEditorModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
@@ -403,7 +404,7 @@ export default function App() {
                                 isPanel={true}
                             />
                         )}
-                        {view === 'marketplace:market-categories' && (
+                        {view === 'addons:expansion:market-categories' && (
                             <MarketCategoryEditorModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
@@ -439,7 +440,7 @@ export default function App() {
                                 inline={true}
                             />
                         )}
-                        {view === 'tools:adm' && (
+                        {view === 'tools:expansion:adm' && (
                             <AdmRecordsModal 
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
@@ -447,7 +448,7 @@ export default function App() {
                                 isPanel={true}
                             />
                         )}
-                        {view === 'tools:expansion-log' && (
+                        {view === 'tools:expansion:expansion-log' && (
                             <ExpansionLogModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
@@ -475,7 +476,7 @@ export default function App() {
                             <AddonEditorModal
                                 onClose={() => setView('cle')}
                                 selectedProfile={selectedProfile}
-                                knownAddons={KNOWN_ADDONS}
+                                knownAddons={Object.values(ADDONS)}
                                 onSave={(addons: string[]) => {
                                     console.log('Save addons', addons);
                                 }}
