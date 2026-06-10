@@ -14,3 +14,17 @@ All responses for XML return `Content-Type: application/xml`.
 Requests that write XML expect the raw XML string as the request body.
 
 ## Run
+
+### Production
+```bash
+node server/index.js
+```
+
+### Development (Auto-injects test data)
+```bash
+node server/index.js --dev
+```
+or
+```bash
+NODE_ENV=development node server/index.js
+```

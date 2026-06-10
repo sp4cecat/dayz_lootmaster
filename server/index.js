@@ -26,6 +26,10 @@ const __dirname = dirname(__filename);
 // eslint-disable-next-line no-undef
 const PORT = Number(process.env.PORT || 4317);
 
+// eslint-disable-next-line no-undef
+const IS_DEV = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
+const TEST_PROFILE_ID = 'example-dev-data';
+
 const PROFILES_FILE = resolve(join(__dirname, 'profiles.json'));
 let profiles = [];
 
@@ -59,10 +63,30 @@ async function loadProfiles() {
         profiles = [];
         await saveProfiles();
     }
+
+    if (IS_DEV) {
+        const testPath = resolve(join(__dirname, '..', 'example dayz server directory'));
+        try {
+            await stat(testPath);
+            if (!profiles.some(p => p.id === TEST_PROFILE_ID)) {
+                // Prepend to profiles list so it's easily visible
+                profiles.unshift({
+                    id: TEST_PROFILE_ID,
+                    name: 'Example Server (Dev Data)',
+                    serverPath: testPath,
+                    missionName: 'empty.deerisle'
+                });
+                console.log(`[DEV] Injected test profile: ${testPath}`);
+            }
+        } catch {
+            console.warn(`[DEV] Dev mode active but test data directory not found at ${testPath}`);
+        }
+    }
 }
 
 async function saveProfiles() {
-    await writeFile(PROFILES_FILE, JSON.stringify(profiles, null, 2), 'utf8');
+    const toSave = profiles.filter(p => p.id !== TEST_PROFILE_ID);
+    await writeFile(PROFILES_FILE, JSON.stringify(toSave, null, 2), 'utf8');
 }
 
 // Ensure profiles are loaded on start
