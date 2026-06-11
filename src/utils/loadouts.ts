@@ -30,17 +30,57 @@ export function loadoutNodeToSpawnableSection(node: LoadoutNode, kind: XMLNodeKi
 /**
  * Resolves a loadout node, expanding templates if provided.
  */
-export function resolveLoadoutNode(node: LoadoutNode, allLoadouts: Loadout[]): LoadoutNode {
+export function resolveLoadoutNode(
+  node: LoadoutNode, 
+  allLoadouts: Loadout[],
+  randomPresets: any[] = [],
+  expansionAirdrops: any = null
+): LoadoutNode {
   if (node.type === 'template') {
-    const template = allLoadouts.find(l => l.id === node.name);
-    if (template) {
-      // Create a virtual node that combines template's items
-      // Note: This is a simplification. Usually a template might have multiple root items.
-      // We'll take the first one or wrap them.
-      if (template.items.length > 0) {
+    if (node.templateSource === 'loadout' || !node.templateSource) {
+      const template = allLoadouts.find(l => l.id === node.name);
+      if (template && template.items.length > 0) {
         return {
           ...template.items[0],
+          id: node.id,
           chance: node.chance // Override with node's chance
+        };
+      }
+    } else if (node.templateSource === 'preset') {
+      const preset = randomPresets.find(p => p.name === node.name);
+      if (preset) {
+        // Create a virtual container node for the preset items
+        return {
+          ...node,
+          name: node.name,
+          attachments: (preset.items || []).map((item: any) => ({
+             id: crypto.randomUUID(),
+             type: item.preset ? 'template' : 'item',
+             templateSource: item.preset ? 'preset' : undefined,
+             name: item.preset || item.name,
+             chance: item.chance ?? 1.0,
+             attachments: [],
+             cargo: []
+          }))
+        };
+      }
+    } else if (node.templateSource === 'airdrop' && expansionAirdrops) {
+      const containers = expansionAirdrops.Containers || [];
+      const airdrop = containers.find((l: any) => l.Container === node.name);
+      if (airdrop) {
+        const mapAirdropNode = (item: any): LoadoutNode => ({
+           id: crypto.randomUUID(),
+           type: 'item',
+           name: item.Name,
+           chance: item.Chance ?? 1.0,
+           attachments: (item.Attachments || []).map((a: any) => mapAirdropNode(a)),
+           cargo: (item.Cargo || []).map((c: any) => mapAirdropNode(c))
+        });
+        return {
+          ...node,
+          name: airdrop.Container,
+          attachments: (airdrop.Loot || []).map((a: any) => mapAirdropNode(a)),
+          cargo: []
         };
       }
     }
@@ -48,21 +88,27 @@ export function resolveLoadoutNode(node: LoadoutNode, allLoadouts: Loadout[]): L
   
   return {
     ...node,
-    attachments: node.attachments.map(n => resolveLoadoutNode(n, allLoadouts)),
-    cargo: node.cargo.map(n => resolveLoadoutNode(n, allLoadouts))
+    attachments: (node.attachments || []).map(n => resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops)),
+    cargo: (node.cargo || []).map(n => resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops))
   };
 }
 
 /**
  * Converts a full Loadout to Expansion Airdrop Loot format
  */
-export function loadoutToExpansionAirdrop(loadout: Loadout, allLoadouts: Loadout[]) {
+export function loadoutToExpansionAirdrop(
+  loadout: Loadout, 
+  allLoadouts: Loadout[],
+  randomPresets: any[] = [],
+  expansionAirdrops: any = null
+) {
   const mapNode = (node: LoadoutNode): any => {
-    const resolved = resolveLoadoutNode(node, allLoadouts);
+    const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
     return {
       Name: resolved.name,
       Chance: resolved.chance,
-      Attachments: resolved.attachments.map(mapNode),
+      Attachments: (resolved.attachments || []).map(mapNode),
+      Cargo: (resolved.cargo || []).map(mapNode),
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,
@@ -76,32 +122,51 @@ export function loadoutToExpansionAirdrop(loadout: Loadout, allLoadouts: Loadout
 /**
  * Converts a Loadout to Vanilla spawnabletypes XML fragment
  */
-export function loadoutToVanillaXml(loadout: Loadout, allLoadouts: Loadout[]) {
+export function loadoutToVanillaXml(
+  loadout: Loadout, 
+  allLoadouts: Loadout[],
+  randomPresets: any[] = [],
+  expansionAirdrops: any = null
+) {
   const lines: string[] = [];
 
   const mapNode = (node: LoadoutNode, indent: number) => {
-    const resolved = resolveLoadoutNode(node, allLoadouts);
+    const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
     const space = ' '.repeat(indent);
     
     // Vanilla usually has <attachments chance="X"> or <cargo chance="X">
-    // Here we wrap items in these tags if they have children.
     
     if (resolved.attachments.length > 0) {
-      lines.push(`${space}<attachments chance="${resolved.chance.toFixed(2)}">`);
-      resolved.attachments.forEach(child => {
-         lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
-         // Note: Vanilla nesting is limited in spawnabletypes.xml, 
-         // so we don't recurse here for standard vanilla.
-      });
-      lines.push(`${space}</attachments>`);
+      // If the node itself is a template of type preset, vanilla supports <attachments preset="Name"/>
+      if (node.type === 'template' && node.templateSource === 'preset') {
+         lines.push(`${space}<attachments preset="${node.name}" chance="${node.chance.toFixed(2)}" />`);
+      } else {
+        lines.push(`${space}<attachments chance="${resolved.chance.toFixed(2)}">`);
+        resolved.attachments.forEach(child => {
+           if (child.type === 'template' && child.templateSource === 'preset') {
+             lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+           } else {
+             lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+           }
+        });
+        lines.push(`${space}</attachments>`);
+      }
     }
 
     if (resolved.cargo.length > 0) {
-      lines.push(`${space}<cargo chance="${resolved.chance.toFixed(2)}">`);
-      resolved.cargo.forEach(child => {
-         lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
-      });
-      lines.push(`${space}</cargo>`);
+      if (node.type === 'template' && node.templateSource === 'preset') {
+        lines.push(`${space}<cargo preset="${node.name}" chance="${node.chance.toFixed(2)}" />`);
+      } else {
+        lines.push(`${space}<cargo chance="${resolved.chance.toFixed(2)}">`);
+        resolved.cargo.forEach(child => {
+          if (child.type === 'template' && child.templateSource === 'preset') {
+            lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+          } else {
+            lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+          }
+        });
+        lines.push(`${space}</cargo>`);
+      }
     }
   };
 

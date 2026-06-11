@@ -13,6 +13,8 @@ interface LoadoutItemPropertiesProps {
   onClose: () => void;
   typeOptions: string[];
   availableTemplates: Loadout[];
+  randomPresets?: { presets: any[] };
+  expansionAirdrops?: any;
 }
 
 export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
@@ -20,7 +22,9 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
   onUpdate,
   onClose,
   typeOptions,
-  availableTemplates
+  availableTemplates,
+  randomPresets,
+  expansionAirdrops
 }) => {
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-xl w-[400px]">
@@ -78,16 +82,17 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
               {node.type === 'template' ? 'Select Template' : 'Item Classname'}
             </label>
             {node.type === 'template' ? (
-              <select 
-                className="w-full h-10 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
-                value={node.name}
-                onChange={e => onUpdate({ ...node, name: e.target.value })}
-              >
-                <option value="">Select a template...</option>
-                {availableTemplates.map(t => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
+              <div className="space-y-3">
+                <Badge variant="warning" size="md" className="w-full justify-center">
+                  Live Linked: {node.templateSource === 'preset' ? 'Random Preset' : node.templateSource === 'airdrop' ? 'Expansion Airdrop' : 'Saved Loadout'}
+                </Badge>
+                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 font-mono text-xs break-all">
+                  {node.name}
+                </div>
+                <p className="text-[10px] text-gray-500 italic">
+                  This node's children are dynamically loaded from the source template. Changes to the source will reflect here automatically.
+                </p>
+              </div>
             ) : (
               <Input 
                 value={node.name} 

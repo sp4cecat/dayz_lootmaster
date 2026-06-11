@@ -10,8 +10,13 @@ interface LoadoutNodeItemProps {
   onUpdate: (updatedNode: LoadoutNode) => void;
   onDelete: () => void;
   onSelect: (node: LoadoutNode) => void;
+  onAddTemplate: (list: 'attachments' | 'cargo') => void;
   selectedNodeId: string | null;
   depth?: number;
+  // Template resolution data
+  allLoadouts?: Loadout[];
+  randomPresets?: { presets: any[] };
+  expansionAirdrops?: any;
 }
 
 export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
@@ -19,11 +24,63 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
   onUpdate,
   onDelete,
   onSelect,
+  onAddTemplate,
   selectedNodeId,
-  depth = 0
+  depth = 0,
+  allLoadouts = [],
+  randomPresets,
+  expansionAirdrops
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const isSelected = selectedNodeId === node.id;
+
+  const resolvedChildren = React.useMemo(() => {
+    if (node.type !== 'template') return { attachments: node.attachments, cargo: node.cargo };
+
+    if (node.templateSource === 'loadout') {
+      const template = allLoadouts.find(l => l.id === node.name);
+      if (template && template.items.length > 0) {
+        return { 
+          attachments: template.items[0].attachments, 
+          cargo: template.items[0].cargo 
+        };
+      }
+    } else if (node.templateSource === 'preset' && randomPresets) {
+      const preset = randomPresets.presets.find((p: any) => p.name === node.name);
+      if (preset) {
+        return { 
+          attachments: (preset.items || []).map((item: any, idx: number) => ({
+             id: `${node.id}-p-${idx}`,
+             type: item.preset ? 'template' : 'item',
+             templateSource: item.preset ? 'preset' : undefined,
+             name: item.preset || item.name,
+             chance: item.chance ?? 1.0,
+             attachments: [],
+             cargo: []
+          })), 
+          cargo: [] 
+        };
+      }
+    } else if (node.templateSource === 'airdrop' && expansionAirdrops) {
+       const containers = expansionAirdrops.Containers || [];
+       const airdrop = containers.find((l: any) => l.Container === node.name);
+       if (airdrop) {
+         const mapAirdropNode = (item: any, idx: number): LoadoutNode => ({
+            id: `${node.id}-a-${idx}`,
+            type: 'item',
+            name: item.Name,
+            chance: item.Chance ?? 1.0,
+            attachments: (item.Attachments || []).map((a: any, i: number) => mapAirdropNode(a, i)),
+            cargo: (item.Cargo || []).map((c: any, i: number) => mapAirdropNode(c, i))
+         });
+         return {
+           attachments: (airdrop.Loot || []).map((a: any, i: number) => mapAirdropNode(a, i)),
+           cargo: []
+         };
+       }
+    }
+    return { attachments: [], cargo: [] };
+  }, [node, allLoadouts, randomPresets, expansionAirdrops]);
 
   const handleAddChild = (list: 'attachments' | 'cargo') => {
     const newNode: LoadoutNode = {
@@ -112,24 +169,36 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Attachments</span>
-              <button 
-                onClick={() => handleAddChild('attachments')}
-                className="text-xs text-primary-600 hover:underline flex items-center"
-              >
-                <Plus size={12} className="mr-1" /> Add
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => onAddTemplate('attachments')}
+                  className="text-xs text-amber-600 hover:underline flex items-center"
+                >
+                  <Layers size={12} className="mr-1" /> Template
+                </button>
+                <button 
+                  onClick={() => handleAddChild('attachments')}
+                  className="text-xs text-primary-600 hover:underline flex items-center"
+                >
+                  <Plus size={12} className="mr-1" /> Add
+                </button>
+              </div>
             </div>
-            {node.attachments.length > 0 ? (
+            {resolvedChildren.attachments.length > 0 ? (
               <div className="space-y-1">
-                {node.attachments.map((child, idx) => (
+                {resolvedChildren.attachments.map((child, idx) => (
                   <LoadoutNodeItem 
                     key={child.id}
                     node={child}
                     onUpdate={(updated) => updateChild('attachments', idx, updated)}
                     onDelete={() => deleteChild('attachments', idx)}
                     onSelect={onSelect}
+                    onAddTemplate={onAddTemplate}
                     selectedNodeId={selectedNodeId}
                     depth={depth + 1}
+                    allLoadouts={allLoadouts}
+                    randomPresets={randomPresets}
+                    expansionAirdrops={expansionAirdrops}
                   />
                 ))}
               </div>
@@ -142,24 +211,36 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Cargo</span>
-              <button 
-                onClick={() => handleAddChild('cargo')}
-                className="text-xs text-primary-600 hover:underline flex items-center"
-              >
-                <Plus size={12} className="mr-1" /> Add
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => onAddTemplate('cargo')}
+                  className="text-xs text-amber-600 hover:underline flex items-center"
+                >
+                  <Layers size={12} className="mr-1" /> Template
+                </button>
+                <button 
+                  onClick={() => handleAddChild('cargo')}
+                  className="text-xs text-primary-600 hover:underline flex items-center"
+                >
+                  <Plus size={12} className="mr-1" /> Add
+                </button>
+              </div>
             </div>
-            {node.cargo.length > 0 ? (
+            {resolvedChildren.cargo.length > 0 ? (
               <div className="space-y-1">
-                {node.cargo.map((child, idx) => (
+                {resolvedChildren.cargo.map((child, idx) => (
                   <LoadoutNodeItem 
                     key={child.id}
                     node={child}
                     onUpdate={(updated) => updateChild('cargo', idx, updated)}
                     onDelete={() => deleteChild('cargo', idx)}
                     onSelect={onSelect}
+                    onAddTemplate={onAddTemplate}
                     selectedNodeId={selectedNodeId}
                     depth={depth + 1}
+                    allLoadouts={allLoadouts}
+                    randomPresets={randomPresets}
+                    expansionAirdrops={expansionAirdrops}
                   />
                 ))}
               </div>

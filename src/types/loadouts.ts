@@ -1,7 +1,8 @@
 export interface LoadoutNode {
   id: string; // Internal unique ID for the UI/state
   type: 'item' | 'template';
-  name: string; // Item classname or Template ID
+  templateSource?: 'loadout' | 'preset' | 'airdrop';
+  name: string; // Item classname or Template ID/Name
   chance: number; // 0.0 to 1.0
   quantity?: {
     min: number;

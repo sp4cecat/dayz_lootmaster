@@ -38,10 +38,14 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   
   // Import from existing state
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importSource, setImportSource] = useState<'spawnable' | 'preset' | 'expansion' | null>(null);
+  const [importSource, setImportSource] = useState<'spawnable' | 'preset' | 'expansion' | 'loadout' | null>(null);
+  const [importTargetNodeId, setImportTargetNodeId] = useState<string | null>(null);
+  const [importTargetList, setImportTargetList] = useState<'attachments' | 'cargo' | null>(null);
   const [importSearch, setImportSearch] = useState('');
   const [expansionAirdrops, setExpansionAirdrops] = useState<any>(null);
   const [loadingAirdrops, setLoadingAirdrops] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
 
   useEffect(() => {
     loadAllLoadouts().then(setLoadouts);
@@ -139,7 +143,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       content = JSON.stringify(editingLoadout, null, 2);
       filename += '.json';
     } else if (format === 'expansion') {
-      const expansionData = loadoutToExpansionAirdrop(editingLoadout, loadouts);
+      const expansionData = loadoutToExpansionAirdrop(editingLoadout, loadouts, randomPresets?.presets, expansionAirdrops);
       content = JSON.stringify(expansionData, null, 2);
       filename += '_expansion.json';
     } else if (format === 'keycards') {
@@ -152,7 +156,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       content = JSON.stringify({ Loot: keycardsData }, null, 2);
       filename += '_keycards.json';
     } else if (format === 'vanilla') {
-      content = loadoutToVanillaXml(editingLoadout, loadouts);
+      content = loadoutToVanillaXml(editingLoadout, loadouts, randomPresets?.presets, expansionAirdrops);
       filename += '_spawnable.xml';
       type = 'application/xml';
     }
@@ -218,14 +222,43 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     }
   };
 
-  const openImportModal = (source: 'spawnable' | 'preset' | 'expansion') => {
+  const openImportModal = (source: 'spawnable' | 'preset' | 'expansion' | 'loadout', targetNodeId: string | null = null, list: 'attachments' | 'cargo' | null = null) => {
     setImportSource(source);
+    setImportTargetNodeId(targetNodeId);
+    setImportTargetList(list);
     setImportModalOpen(true);
     setImportSearch('');
     if (source === 'expansion') fetchAirdrops();
   };
 
   const handleImportFromExisting = (data: any) => {
+    if (importTargetNodeId && importTargetList) {
+      // Import as template node into existing loadout
+      const newNode: LoadoutNode = {
+        id: crypto.randomUUID(),
+        type: 'template',
+        templateSource: importSource === 'preset' ? 'preset' : importSource === 'expansion' ? 'airdrop' : 'loadout',
+        name: importSource === 'preset' ? data.name : importSource === 'expansion' ? data.name : data.id,
+        chance: 1.0,
+        attachments: [],
+        cargo: []
+      };
+
+      if (editingLoadout) {
+        const targetNode = findNode(editingLoadout.items, importTargetNodeId);
+        if (targetNode) {
+          const updatedNode = {
+            ...targetNode,
+            [importTargetList]: [newNode] // "Replace" logic
+          };
+          handleUpdateNode(updatedNode);
+        }
+      }
+      setImportModalOpen(false);
+      return;
+    }
+
+    // Original logic for creating new loadout from existing
     let imported: Loadout | null = null;
     if (importSource === 'spawnable') {
       imported = vanillaSpawnableToLoadout(data);
@@ -294,8 +327,6 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                   <Dropdown.Item id="new" label="New Empty Loadout" />
                   <Dropdown.Section title="Create from Existing">
                     <Dropdown.Item id="spawnable" label="Vanilla Spawnable" />
-                    <Dropdown.Item id="preset" label="Random Preset" />
-                    <Dropdown.Item id="expansion" label="Expansion Airdrop" />
                   </Dropdown.Section>
                 </Dropdown.Menu>
               </Dropdown.Popover>
@@ -387,7 +418,16 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                             setEditingLoadout({ ...editingLoadout, items: nextItems });
                           }}
                           onSelect={(node) => setSelectedNodeId(node.id)}
+                          onAddTemplate={(list) => {
+                            // Open a mini-menu or just default to something
+                            // For simplicity, let's open a Template Source Modal
+                            setTemplateModalTarget({ nodeId: item.id, list });
+                            setTemplateModalOpen(true);
+                          }}
                           selectedNodeId={selectedNodeId}
+                          allLoadouts={loadouts}
+                          randomPresets={randomPresets}
+                          expansionAirdrops={expansionAirdrops}
                         />
                       ))
                     ) : (
@@ -409,6 +449,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     onClose={() => setSelectedNodeId(null)}
                     typeOptions={typeOptions}
                     availableTemplates={loadouts.filter(l => l.id !== editingLoadout.id)}
+                    randomPresets={randomPresets}
+                    expansionAirdrops={expansionAirdrops}
                   />
                 )}
               </div>
@@ -515,7 +557,82 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 <div className="p-8 text-center text-gray-500">No airdrop settings found or Expansion not active.</div>
               )
             )}
+            {importSource === 'loadout' && (
+              loadouts
+                .filter(l => l.id !== editingLoadout?.id && l.label.toLowerCase().includes(importSearch.toLowerCase()))
+                .map(l => (
+                  <div 
+                    key={l.id}
+                    onClick={() => handleImportFromExisting(l)}
+                    className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">{l.label}</div>
+                      <div className="text-xs text-gray-500">Saved Loadout</div>
+                    </div>
+                    <Badge variant="gray" size="sm">{(l.items?.length || 0)} root items</Badge>
+                  </div>
+                ))
+            )}
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={templateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        title="Select Template Source"
+        icon={Layers}
+        maxWidth="max-w-md"
+      >
+        <div className="grid grid-cols-1 gap-3">
+          <button 
+            onClick={() => {
+              setTemplateModalOpen(false);
+              if (templateModalTarget) openImportModal('preset', templateModalTarget.nodeId, templateModalTarget.list);
+            }}
+            className="flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+          >
+            <div className="p-3 bg-amber-100 text-amber-600 rounded-lg">
+              <FileCode size={24} />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white">Random Presets</div>
+              <div className="text-sm text-gray-500">Vanilla mpmissions/cfgspawnabletypes.xml</div>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => {
+              setTemplateModalOpen(false);
+              if (templateModalTarget) openImportModal('expansion', templateModalTarget.nodeId, templateModalTarget.list);
+            }}
+            className="flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+          >
+            <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+              <Package size={24} />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white">Expansion Airdrops</div>
+              <div className="text-sm text-gray-500">ExpansionMod/Settings/AirdropSettings.json</div>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => {
+              setTemplateModalOpen(false);
+              if (templateModalTarget) openImportModal('loadout', templateModalTarget.nodeId, templateModalTarget.list);
+            }}
+            className="flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+          >
+            <div className="p-3 bg-primary-100 text-primary-600 rounded-lg">
+              <Layers size={24} />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white">Saved Loadouts</div>
+              <div className="text-sm text-gray-500">Other modular loadouts you've created</div>
+            </div>
+          </button>
         </div>
       </Modal>
     </div>
