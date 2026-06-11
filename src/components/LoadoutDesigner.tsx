@@ -452,7 +452,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
           <div className="max-h-[400px] overflow-auto border border-gray-200 dark:border-gray-800 rounded-lg divide-y divide-gray-200 dark:divide-gray-800">
             {importSource === 'spawnable' && spawnableTypesByGroup && (
               Object.entries(spawnableTypesByGroup).flatMap(([group, data]) => 
-                (data.types || []).filter((t: any) => t.name.toLowerCase().includes(importSearch.toLowerCase()))
+                (data.types || [])
+                  .filter((t: any) => 
+                    t.name.toLowerCase().includes(importSearch.toLowerCase()) && 
+                    (t.sections?.length > 1)
+                  )
                   .map((t: any) => (
                     <div 
                       key={`${group}:${t.name}`}
