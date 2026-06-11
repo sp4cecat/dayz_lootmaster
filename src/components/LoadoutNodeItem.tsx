@@ -31,7 +31,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
   randomPresets,
   expansionAirdrops
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const isSelected = selectedNodeId === node.id;
 
   const resolvedChildren = React.useMemo(() => {
@@ -86,7 +86,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
     const newNode: LoadoutNode = {
       id: crypto.randomUUID(),
       type: 'item',
-      name: 'New Item',
+      name: '',
       chance: 1.0,
       attachments: [],
       cargo: []
@@ -96,6 +96,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
       [list]: [...node[list], newNode]
     });
     setIsExpanded(true);
+    onSelect(newNode);
   };
 
   const updateChild = (list: 'attachments' | 'cargo', index: number, updatedChild: LoadoutNode) => {

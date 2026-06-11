@@ -3,7 +3,7 @@ import { Loadout, LoadoutNode } from '@/types/loadouts';
 import { loadAllLoadouts, saveLoadout, deleteLoadout } from '@/utils/idb';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
-import { Plus, Trash2, Save, Download, Upload, ChevronRight, ChevronDown, Package, FileCode, Search, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Upload, ChevronRight, ChevronDown, Package, FileCode, Search, Edit2, Layers } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { LoadoutNodeItem } from './LoadoutNodeItem';
@@ -121,7 +121,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     const newNode: LoadoutNode = {
       id: crypto.randomUUID(),
       type: 'item',
-      name: 'New Item',
+      name: '',
       chance: 1.0,
       attachments: [],
       cargo: []
@@ -130,6 +130,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       ...editingLoadout,
       items: [...editingLoadout.items, newNode]
     });
+    setSelectedNodeId(newNode.id);
   };
 
   const handleExport = (format: 'json' | 'expansion' | 'keycards' | 'vanilla') => {

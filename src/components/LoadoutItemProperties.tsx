@@ -1,6 +1,7 @@
 import React from 'react';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
 import { Input } from '@/components/base/input/input';
+import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Slider } from '@/components/base/slider/slider';
 import { Select } from '@/components/base/select/select';
 import { X, Layers, Package } from 'lucide-react';
@@ -94,11 +95,16 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
                 </p>
               </div>
             ) : (
-              <Input 
-                value={node.name} 
-                onChange={e => onUpdate({ ...node, name: e.target.value })}
-                placeholder="e.g. M4A1"
-              />
+              <ComboBox 
+                items={typeOptions.map(opt => ({ id: opt, name: opt }))}
+                inputValue={node.name}
+                onInputChange={value => onUpdate({ ...node, name: value })}
+                onSelectionChange={key => key && onUpdate({ ...node, name: key as string })}
+                placeholder="Search classname..."
+                aria-label="Item Classname"
+              >
+                {(item) => <ComboBoxItem id={item.id}>{item.name}</ComboBoxItem>}
+              </ComboBox>
             )}
           </div>
         </section>
