@@ -15,6 +15,7 @@ export interface LoadoutNode {
   };
   attachments: LoadoutNode[];
   cargo: LoadoutNode[];
+  isExpanded?: boolean;
 }
 
 export interface Loadout {

@@ -124,11 +124,18 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       name: '',
       chance: 1.0,
       attachments: [],
-      cargo: []
+      cargo: [],
+      isExpanded: true
     };
+
+    const updatedItems = editingLoadout.items.map(child => ({
+      ...child,
+      isExpanded: child.id === selectedNodeId ? false : child.isExpanded
+    }));
+
     setEditingLoadout({
       ...editingLoadout,
-      items: [...editingLoadout.items, newNode]
+      items: [...updatedItems, newNode]
     });
     setSelectedNodeId(newNode.id);
   };
@@ -429,6 +436,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                           allLoadouts={loadouts}
                           randomPresets={randomPresets}
                           expansionAirdrops={expansionAirdrops}
+                          defaultExpanded={true}
                         />
                       ))
                     ) : (

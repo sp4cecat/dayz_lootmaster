@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { LoadoutNode } from '@/types/loadouts';
 import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2 } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
@@ -13,6 +13,7 @@ interface LoadoutNodeItemProps {
   onAddTemplate: (list: 'attachments' | 'cargo') => void;
   selectedNodeId: string | null;
   depth?: number;
+  defaultExpanded?: boolean;
   // Template resolution data
   allLoadouts?: Loadout[];
   randomPresets?: { presets: any[] };
@@ -27,11 +28,12 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
   onAddTemplate,
   selectedNodeId,
   depth = 0,
+  defaultExpanded = false,
   allLoadouts = [],
   randomPresets,
   expansionAirdrops
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const isExpanded = node.isExpanded ?? defaultExpanded;
   const isSelected = selectedNodeId === node.id;
 
   const resolvedChildren = React.useMemo(() => {
@@ -89,13 +91,25 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
       name: '',
       chance: 1.0,
       attachments: [],
-      cargo: []
+      cargo: [],
+      isExpanded: false
     };
+
+    const updatedAttachments = node.attachments.map(child => ({
+      ...child,
+      isExpanded: child.id === selectedNodeId ? false : child.isExpanded
+    }));
+    const updatedCargo = node.cargo.map(child => ({
+      ...child,
+      isExpanded: child.id === selectedNodeId ? false : child.isExpanded
+    }));
+
     onUpdate({
       ...node,
-      [list]: [...node[list], newNode]
+      attachments: list === 'attachments' ? [...updatedAttachments, newNode] : updatedAttachments,
+      cargo: list === 'cargo' ? [...updatedCargo, newNode] : updatedCargo,
+      isExpanded: true
     });
-    setIsExpanded(true);
     onSelect(newNode);
   };
 
@@ -123,7 +137,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
         onClick={() => onSelect(node)}
       >
         <button 
-          onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+          onClick={(e) => { e.stopPropagation(); onUpdate({ ...node, isExpanded: !isExpanded }); }}
           className="mr-2 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400"
         >
           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
