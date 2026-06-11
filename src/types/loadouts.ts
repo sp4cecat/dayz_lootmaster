@@ -21,4 +21,7 @@ export interface Loadout {
   label: string;
   items: LoadoutNode[];
   updatedAt: number;
+  config?: {
+    limitToSingleRoot?: boolean;
+  };
 }

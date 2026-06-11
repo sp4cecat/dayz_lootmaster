@@ -368,10 +368,12 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 <div className="flex-1 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                     <h3 className="font-bold text-gray-900 dark:text-white">Hierarchical Structure</h3>
-                    <Button onClick={handleAddRootItem} variant="secondary" size="sm">
-                      <Plus size={16} className="mr-2" />
-                      Add Root Item
-                    </Button>
+                    {!editingLoadout.config?.limitToSingleRoot && (
+                      <Button onClick={handleAddRootItem} variant="secondary" size="sm">
+                        <Plus size={16} className="mr-2" />
+                        Add Root Item
+                      </Button>
+                    )}
                   </div>
                   <div className="p-6 space-y-4 min-h-[400px]">
                     {editingLoadout.items.length > 0 ? (

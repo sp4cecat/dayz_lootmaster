@@ -164,7 +164,10 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
     id: crypto.randomUUID(),
     label: `Imported ${spawnableType.name}`,
     items: [rootNode],
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    config: {
+      limitToSingleRoot: true
+    }
   };
 }
 
