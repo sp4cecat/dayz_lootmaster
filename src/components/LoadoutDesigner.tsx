@@ -113,7 +113,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   };
 
   const handleAddRootItem = () => {
-    if (!editingLoadout) return;
+    if (!editingLoadout || editingLoadout.items.length > 0) return;
     const newNode: LoadoutNode = {
       id: crypto.randomUUID(),
       type: 'item',
@@ -178,7 +178,12 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         try {
           const data = JSON.parse(e.target.result);
           if (data.id && data.items) { // Native format
-            const imported = { ...data, id: crypto.randomUUID(), updatedAt: Date.now() };
+            const imported = { 
+              ...data, 
+              id: crypto.randomUUID(), 
+              updatedAt: Date.now(),
+              items: data.items.slice(0, 1)
+            };
             setEditingLoadout(imported);
           } else if (Array.isArray(data)) { // Probably expansion
             const imported = expansionAirdropToLoadout('Imported Expansion Airdrop', data);
@@ -368,12 +373,6 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 <div className="flex-1 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                     <h3 className="font-bold text-gray-900 dark:text-white">Hierarchical Structure</h3>
-                    {!editingLoadout.config?.limitToSingleRoot && (
-                      <Button onClick={handleAddRootItem} variant="secondary" size="sm">
-                        <Plus size={16} className="mr-2" />
-                        Add Root Item
-                      </Button>
-                    )}
                   </div>
                   <div className="p-6 space-y-4 min-h-[400px]">
                     {editingLoadout.items.length > 0 ? (
@@ -396,7 +395,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                         <Package size={32} className="opacity-20" />
                         <p>No items in this loadout yet.</p>
                         <Button onClick={handleAddRootItem} variant="secondary" size="sm">
-                          Add your first item
+                          Add root item
                         </Button>
                       </div>
                     )}

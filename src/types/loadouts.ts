@@ -22,6 +22,5 @@ export interface Loadout {
   items: LoadoutNode[];
   updatedAt: number;
   config?: {
-    limitToSingleRoot?: boolean;
   };
 }

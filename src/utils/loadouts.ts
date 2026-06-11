@@ -164,10 +164,7 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
     id: crypto.randomUUID(),
     label: `Imported ${spawnableType.name}`,
     items: [rootNode],
-    updatedAt: Date.now(),
-    config: {
-      limitToSingleRoot: true
-    }
+    updatedAt: Date.now()
   };
 }
 
@@ -184,7 +181,7 @@ export function vanillaPresetToLoadout(preset: any): Loadout {
   return {
     id: crypto.randomUUID(),
     label: `Preset: ${preset.name}`,
-    items: rootItems,
+    items: rootItems.slice(0, 1),
     updatedAt: Date.now()
   };
 }
@@ -209,7 +206,7 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
   return {
     id: crypto.randomUUID(),
     label: label,
-    items: lootItems.map(mapNode),
+    items: lootItems.length > 0 ? [mapNode(lootItems[0])] : [],
     updatedAt: Date.now()
   };
 }

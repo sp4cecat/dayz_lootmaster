@@ -38,7 +38,8 @@ import {
     ExternalLink,
     Search as SearchIcon,
     Filter,
-    X
+    X,
+    Package
 } from 'lucide-react';
 import type { Type } from './utils/xml';
 
@@ -483,6 +484,18 @@ export default function App() {
                                 getApiBase={getApiBase}
                                 isPanel={true}
                             />
+                        )}
+                        {view === 'addons:expansion:airdrops' && (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl m-6 shadow-sm">
+                                <div className="size-16 bg-primary-100 dark:bg-primary-900/30 rounded-2xl flex items-center justify-center text-primary-600 dark:text-primary-400 mb-6">
+                                    <Package size={32} />
+                                </div>
+                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Expansion Air Drops</h2>
+                                <p className="text-gray-500 dark:text-gray-400 max-w-md mb-8">
+                                    The Air Drops editor is coming soon. This tool will allow you to configure complex multi-item drop sets with specific location and frequency settings.
+                                </p>
+                                <Button variant="secondary-gray" onClick={() => setView('cle')}>Return to CLE Editor</Button>
+                            </div>
                         )}
                         {view === 'tools:addons' && (
                             <AddonEditorModal

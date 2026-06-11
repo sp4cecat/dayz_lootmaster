@@ -29,7 +29,8 @@ export const NAV_ITEMS: NavItem[] = [
         addonRequirement: 'expansion',
         subItems: [
           { id: 'traders', label: 'Traders' },
-          { id: 'market-categories', label: 'Categories' }
+          { id: 'market-categories', label: 'Categories' },
+          { id: 'airdrops', label: 'Air Drops' }
         ]
       }
     ] 
