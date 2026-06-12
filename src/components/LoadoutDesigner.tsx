@@ -13,6 +13,27 @@ import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
 
+const formatModName = (name: string) => {
+  if (name === 'all') return 'All Spawnable Types';
+  if (name === 'vanilla') return 'Vanilla (Root)';
+  if (name === 'vanilla_overrides') return 'Vanilla Overrides';
+  if (name === '__root') return 'Root';
+  
+  const lowerCaseParticles = ['and', 'of', 'the', 'in', 'on', 'with', 'by', 'at'];
+  
+  return name
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && lowerCaseParticles.includes(lower)) {
+        return lower;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+};
+
 interface LoadoutDesignerProps {
   onClose: () => void;
   typeOptions: string[];
@@ -495,7 +516,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         onClose={() => setImportModalOpen(false)}
         title={`Import from ${
           importSource === 'spawnable' 
-            ? (importGroup === 'all' ? 'All Spawnables' : importGroup === 'vanilla' ? 'Vanilla Spawnables' : `${importGroup.toLowerCase().endsWith('mod') ? importGroup : `${importGroup} Mod`}`) 
+            ? formatModName(importGroup) 
             : importSource === 'preset' ? 'Random Preset' 
             : importSource === 'expansion' ? 'Expansion Airdrop'
             : 'Saved Loadout'
@@ -538,7 +559,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     >
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
-                        <div className="text-xs text-gray-500">{groupName}</div>
+                        <div className="text-xs text-gray-500">{formatModName(groupName)}</div>
                       </div>
                       <Badge color="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
                     </div>
@@ -756,7 +777,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                       <Package size={18} />
                     </div>
                     <div className="font-medium text-gray-900 dark:text-white">
-                      {group.toLowerCase().endsWith('mod') ? group : `${group} Mod`}
+                      {formatModName(group)}
                     </div>
                   </button>
                 ))
