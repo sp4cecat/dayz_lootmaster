@@ -153,8 +153,8 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold truncate text-sm">{node.name}</span>
-            <Badge variant="gray" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
-            {node.type === 'template' && <Badge variant="warning" size="sm">Template</Badge>}
+            <Badge color="gray" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
+            {node.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
           </div>
         </div>
 

@@ -3,14 +3,14 @@ import { Loadout, LoadoutNode } from '@/types/loadouts';
 import { loadAllLoadouts, saveLoadout, deleteLoadout } from '@/utils/idb';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
-import { Plus, Trash2, Save, Download, Upload, ChevronRight, ChevronDown, Package, FileCode, Search, Edit2, Layers } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Upload, ChevronDown, Package, FileCode, Search, Layers } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { LoadoutNodeItem } from './LoadoutNodeItem';
 import { LoadoutItemProperties } from './LoadoutItemProperties';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
-import { MenuTrigger, Button as AriaButton } from 'react-aria-components';
+import { Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
 
 interface LoadoutDesignerProps {
@@ -342,8 +342,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                   else openImportModal(key as any);
                 }}>
                   <Dropdown.Item id="new" label="New Empty Loadout" />
-                  <Dropdown.Section title="Create from Existing">
-                    <Dropdown.Item id="spawnable" label="Vanilla Spawnable" />
+                  <Dropdown.Section>
+                    <Dropdown.SectionHeader className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Create from Existing
+                    </Dropdown.SectionHeader>
+                    <Dropdown.Item id="spawnable" label="From Vanilla Spawnable" />
                   </Dropdown.Section>
                 </Dropdown.Menu>
               </Dropdown.Popover>
@@ -528,7 +531,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                         <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
                         <div className="text-xs text-gray-500">{group}</div>
                       </div>
-                      <Badge variant="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
+                      <Badge color="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
                     </div>
                   ))
               )
@@ -547,7 +550,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                       <div className="font-medium text-gray-900 dark:text-white">{p.name}</div>
                       <div className="text-xs text-gray-500">{p.kind}</div>
                     </div>
-                    <Badge variant="gray" size="sm">{(p.items?.length || 0)} items</Badge>
+                    <Badge color="gray" size="sm">{(p.items?.length || 0)} items</Badge>
                   </div>
                 ))
             )}
@@ -568,7 +571,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                         <div className="font-medium text-gray-900 dark:text-white">{c.Container}</div>
                         <div className="text-xs text-gray-500">Weight: {c.Weight}</div>
                       </div>
-                      <Badge variant="gray" size="sm">{(c.Loot?.length || 0)} items</Badge>
+                      <Badge color="gray" size="sm">{(c.Loot?.length || 0)} items</Badge>
                     </div>
                   ))
               ) : (
@@ -588,7 +591,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                       <div className="font-medium text-gray-900 dark:text-white">{l.label}</div>
                       <div className="text-xs text-gray-500">Saved Loadout</div>
                     </div>
-                    <Badge variant="gray" size="sm">{(l.items?.length || 0)} root items</Badge>
+                    <Badge color="gray" size="sm">{(l.items?.length || 0)} root items</Badge>
                   </div>
                 ))
             )}

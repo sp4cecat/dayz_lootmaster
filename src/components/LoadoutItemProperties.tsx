@@ -84,7 +84,7 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
             </label>
             {node.type === 'template' ? (
               <div className="space-y-3">
-                <Badge variant="warning" size="md" className="w-full justify-center">
+                <Badge color="warning" size="md" className="w-full justify-center">
                   Live Linked: {node.templateSource === 'preset' ? 'Random Preset' : node.templateSource === 'airdrop' ? 'Expansion Airdrop' : 'Saved Loadout'}
                 </Badge>
                 <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 font-mono text-xs break-all">
@@ -113,7 +113,7 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Spawn Chance</label>
-            <Badge variant="primary" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
+            <Badge color="brand" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
           </div>
           <Slider 
             value={[node.chance * 100]} 
