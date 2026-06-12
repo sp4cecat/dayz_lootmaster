@@ -50,7 +50,7 @@ const TableContext = createContext<{ size: "sm" | "md" }>({ size: "md" });
 const TableCardRoot = ({ children, className, size = "md", ...props }: HTMLAttributes<HTMLDivElement> & { size?: "sm" | "md" }) => {
     return (
         <TableContext.Provider value={{ size }}>
-            <div {...props} className={cx("overflow-hidden rounded-xl bg-primary shadow-xs ring-1 ring-secondary", className)}>
+            <div {...props} className={cx("overflow-hidden rounded-xl bg-white dark:bg-gray-900 shadow-xs ring-1 ring-gray-200 dark:ring-gray-800", className)}>
                 {children}
             </div>
         </TableContext.Provider>
@@ -76,14 +76,14 @@ const TableCardHeader = ({ title, badge, description, contentTrailing, className
     return (
         <div
             className={cx(
-                "relative flex flex-col items-start gap-4 border-b border-secondary bg-primary px-4 md:flex-row",
+                "relative flex flex-col items-start gap-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 md:flex-row",
                 size === "sm" ? "py-4 md:px-5" : "py-5 md:px-6",
                 className,
             )}
         >
             <div className="flex flex-1 flex-col gap-0.5">
                 <div className="flex items-center gap-2">
-                    <h2 className="text-md font-semibold text-primary">{title}</h2>
+                    <h2 className="text-md font-semibold text-gray-900 dark:text-white">{title}</h2>
                     {badge ? (
                         isValidElement(badge) ? (
                             badge
@@ -147,10 +147,10 @@ const TableHeader = <T extends object>({ columns, children, bordered = true, cla
             {...props}
             className={(state) =>
                 cx(
-                    "sticky top-0 z-10 bg-secondary",
+                    "sticky top-0 z-10 bg-gray-50 dark:bg-gray-900/50",
                     // Row border—using an "after" pseudo-element to avoid the border taking up space.
                     bordered &&
-                        "[&>tr>th]:after:pointer-events-none [&>tr>th]:after:absolute [&>tr>th]:after:inset-x-0 [&>tr>th]:after:bottom-0 [&>tr>th]:after:h-px [&>tr>th]:after:bg-border-secondary [&>tr>th]:focus-visible:after:bg-transparent",
+                        "[&>tr>th]:after:pointer-events-none [&>tr>th]:after:absolute [&>tr>th]:after:inset-x-0 [&>tr>th]:after:bottom-0 [&>tr>th]:after:h-px [&>tr>th]:after:bg-gray-200 dark:[&>tr>th]:after:bg-gray-800 [&>tr>th]:focus-visible:after:bg-transparent",
                     typeof className === "function" ? className(state) : className,
                 )
             }
@@ -202,7 +202,7 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
             {(state) => (
                 <AriaGroup className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1 w-full">
-                        {label && <span className="text-xs font-semibold whitespace-nowrap text-quaternary">{label}</span>}
+                        {label && <span className="text-xs font-semibold whitespace-nowrap text-tertiary dark:text-gray-400">{label}</span>}
                         {typeof children === "function" ? children(state) : children}
                     </div>
 
@@ -244,9 +244,9 @@ const TableRow = <T extends object>({ columns, children, className, highlightSel
             {...props}
             className={(state) =>
                 cx(
-                    "relative transition-colors after:pointer-events-none hover:bg-secondary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
+                    "relative transition-colors after:pointer-events-none hover:bg-gray-50 dark:hover:bg-gray-800/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
                     size === "sm" ? "h-14" : "h-18",
-                    highlightSelectedRow && "selected:bg-secondary",
+                    highlightSelectedRow && "selected:bg-primary-50 dark:selected:bg-primary-900/20",
 
                     // Row border—using an "after" pseudo-element to avoid the border taking up space.
                     "[&>td]:after:absolute [&>td]:after:inset-x-0 [&>td]:after:bottom-0 [&>td]:after:h-px [&>td]:after:w-full [&>td]:after:bg-gray-100 dark:[&>td]:after:bg-gray-800/50 last:[&>td]:after:hidden [&>td]:focus-visible:after:opacity-0 focus-visible:[&>td]:after:opacity-0",

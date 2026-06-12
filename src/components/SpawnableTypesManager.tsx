@@ -46,22 +46,23 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
     }, [spawnableFilesByGroup, searchTerm]);
 
     return (
-        <div className="flex flex-col h-full bg-primary overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-secondary bg-primary">
+        <div className="flex flex-col h-full bg-white dark:bg-gray-950 overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
                 <div>
-                    <h1 className="text-display-sm font-semibold text-primary">Spawnable Types</h1>
-                    <p className="text-md text-tertiary">Manage registered spawnable configuration files across CLE groups.</p>
+                    <h1 className="text-display-sm font-semibold text-gray-900 dark:text-white">Spawnable Types</h1>
+                    <p className="text-md text-gray-600 dark:text-gray-400">Manage registered spawnable configuration files across CLE groups.</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Button variant="secondary" onClick={onClose}>Close</Button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 bg-secondary/50">
+            <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900/50">
                 <TableCard>
                     <TableCard.Header 
                         title="Registered Files" 
                         badge={files.length}
+                        description="View and manage spawnabletypes.xml files registered in your mission."
                         contentTrailing={
                             <div className="w-80">
                                 <Input 
@@ -74,7 +75,7 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                         }
                     />
                     <Table aria-label="Spawnable types files">
-                        <Table.Header className="bg-gray-50 dark:bg-gray-900/50">
+                        <Table.Header>
                             <Table.Column isRowHeader>Group</Table.Column>
                             <Table.Column>Filename</Table.Column>
                             <Table.Column>Path</Table.Column>
@@ -83,20 +84,20 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                         </Table.Header>
                         <Table.Body>
                             {files.map((file, idx) => (
-                                <Table.Row key={`${file.group}-${file.path}-${idx}`} className="bg-primary hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                <Table.Row key={`${file.group}-${file.path}-${idx}`}>
                                     <Table.Cell>
-                                        <span className={cx("font-medium", file.isRoot ? "text-primary italic" : "text-primary")}>
+                                        <span className={cx("font-medium", file.isRoot ? "text-gray-900 dark:text-white italic" : "text-gray-900 dark:text-white")}>
                                             {file.group}
                                         </span>
                                     </Table.Cell>
                                     <Table.Cell>
                                         <div className="flex items-center gap-2">
-                                            <FileCode className="size-4 text-tertiary" />
-                                            <span className="text-secondary">{file.fileName}</span>
+                                            <FileCode className="size-4 text-gray-400" />
+                                            <span className="text-gray-700 dark:text-gray-300">{file.fileName}</span>
                                         </div>
                                     </Table.Cell>
                                     <Table.Cell>
-                                        <span className="text-tertiary text-xs font-mono">{file.path}</span>
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs font-mono">{file.path}</span>
                                     </Table.Cell>
                                     <Table.Cell>
                                         <div className="flex justify-center">
@@ -123,7 +124,7 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                     </Table>
                     {files.length === 0 && (
                         <div className="p-12 text-center">
-                            <p className="text-tertiary">No matching spawnable files found.</p>
+                            <p className="text-gray-500 dark:text-gray-400">No matching spawnable files found.</p>
                         </div>
                     )}
                 </TableCard>
