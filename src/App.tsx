@@ -82,6 +82,8 @@ export default function App() {
         setSpawnableTypesByGroup,
         randomPresets,
         setRandomPresets,
+        loadouts,
+        setLoadouts,
         globalsDefaults,
         loadWarnings,
         // Profiles
@@ -443,6 +445,8 @@ export default function App() {
                                 spawnableTypesByGroup={spawnableTypesByGroup}
                                 selectedProfileId={selectedProfileId}
                                 getApiBase={getApiBase}
+                                loadouts={loadouts}
+                                setLoadouts={setLoadouts}
                             />
                         )}
                         {view === 'tools:snapshots' && (

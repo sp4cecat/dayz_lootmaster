@@ -76,6 +76,10 @@ export default function EditFormCLETab({
   const [showLifetimePicker, setShowLifetimePicker] = useState(false);
   const [lp, setLp] = useState({ weeks: 0, days: 0, hours: 0, minutes: 0, seconds: 0 });
 
+  // Restock popover state
+  const [showRestockPicker, setShowRestockPicker] = useState(false);
+  const [rp, setRp] = useState({ weeks: 0, days: 0, hours: 0, minutes: 0, seconds: 0 });
+
   // Initialize picker values from current lifetime when opening
   useEffect(() => {
     if (showLifetimePicker) {
@@ -85,23 +89,41 @@ export default function EditFormCLETab({
     }
   }, [showLifetimePicker, form.lifetime]);
 
+  // Initialize picker values from current restock when opening
+  useEffect(() => {
+    if (showRestockPicker) {
+      const secs = Number(form.restock || 0);
+      const u = splitSecondsToUnits(isFinite(secs) ? secs : 0);
+      setRp(u);
+    }
+  }, [showRestockPicker, form.restock]);
+
   // Refs for outside-click handling
   const lifetimeRef = useRef<HTMLDivElement>(null);
+  const restockRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const restockPopoverRef = useRef<HTMLDivElement>(null);
 
   // Close the popover on outside click
   useEffect(() => {
-    if (!showLifetimePicker) return;
+    if (!showLifetimePicker && !showRestockPicker) return;
     const onDown = (e: MouseEvent) => {
-      const pop = popoverRef.current;
-      const trigger = lifetimeRef.current;
-      if (pop && pop.contains(e.target as Node)) return;
-      if (trigger && trigger.contains(e.target as Node)) return;
+      const popL = popoverRef.current;
+      const popR = restockPopoverRef.current;
+      const triggerL = lifetimeRef.current;
+      const triggerR = restockRef.current;
+
+      if (popL && popL.contains(e.target as Node)) return;
+      if (popR && popR.contains(e.target as Node)) return;
+      if (triggerL && triggerL.contains(e.target as Node)) return;
+      if (triggerR && triggerR.contains(e.target as Node)) return;
+
       setShowLifetimePicker(false);
+      setShowRestockPicker(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [showLifetimePicker]);
+  }, [showLifetimePicker, showRestockPicker]);
 
   const setNum = (key: string, strVal: string) => {
     const v = strVal === '' ? '' : Number(strVal);
@@ -253,6 +275,12 @@ export default function EditFormCLETab({
     setShowLifetimePicker(false);
   };
 
+  const applyRestock = () => {
+    const total = (rp.weeks * 604800) + (rp.days * 86400) + (rp.hours * 3600) + (rp.minutes * 60) + rp.seconds;
+    setForm((f: any) => ({ ...f, restock: total }));
+    setShowRestockPicker(false);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="columns-1 sm:columns-2 gap-8">
@@ -353,13 +381,81 @@ export default function EditFormCLETab({
             )}
           </div>
 
-          <Input 
-            label="Restock" 
-            type="number" 
-            value={form.restock ?? ''} 
-            placeholder={form.restock === null ? 'Mixed' : '0'}
-            onChange={e => setNum('restock', e.target.value)} 
-          />
+          <div className="relative" ref={restockRef}>
+            <Input 
+              label="Restock" 
+              type="text" 
+              readOnly
+              value={form.restock === null ? 'Mixed' : formatLifetime(form.restock)} 
+              onClick={() => setShowRestockPicker(!showRestockPicker)}
+              icon={Clock}
+              className="cursor-pointer"
+            />
+            
+            {showRestockPicker && (
+              <div ref={restockPopoverRef} className="absolute z-50 top-full mt-2 left-0 w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-4 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-bold text-sm text-gray-900 dark:text-white">Restock Picker</h4>
+                  <button onClick={() => setShowRestockPicker(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <Info size={16} />
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Weeks</label>
+                    <input 
+                      type="number" 
+                      value={rp.weeks} 
+                      onChange={e => setRp({...rp, weeks: Math.max(0, parseInt(e.target.value)||0)})}
+                      className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-md p-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Days</label>
+                    <input 
+                      type="number" 
+                      value={rp.days} 
+                      onChange={e => setRp({...rp, days: Math.max(0, parseInt(e.target.value)||0)})}
+                      className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-md p-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Hours</label>
+                    <input 
+                      type="number" 
+                      value={rp.hours} 
+                      onChange={e => setRp({...rp, hours: Math.max(0, parseInt(e.target.value)||0)})}
+                      className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-md p-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Mins</label>
+                    <input 
+                      type="number" 
+                      value={rp.minutes} 
+                      onChange={e => setRp({...rp, minutes: Math.max(0, parseInt(e.target.value)||0)})}
+                      className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-md p-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Secs</label>
+                    <input 
+                      type="number" 
+                      value={rp.seconds} 
+                      onChange={e => setRp({...rp, seconds: Math.max(0, parseInt(e.target.value)||0)})}
+                      className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-md p-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1" onClick={applyRestock}>Apply</Button>
+                  <Button size="sm" variant="secondary-gray" onClick={() => setShowRestockPicker(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </div>
           
           <Input 
             label="Quant Min" 

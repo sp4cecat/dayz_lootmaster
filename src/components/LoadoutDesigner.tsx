@@ -20,6 +20,8 @@ interface LoadoutDesignerProps {
   spawnableTypesByGroup?: Record<string, any>;
   selectedProfileId?: string;
   getApiBase?: () => string;
+  loadouts?: Loadout[];
+  setLoadouts?: (l: Loadout[]) => void;
 }
 
 export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ 
@@ -28,9 +30,14 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   randomPresets,
   spawnableTypesByGroup,
   selectedProfileId,
-  getApiBase
+  getApiBase,
+  loadouts: propLoadouts,
+  setLoadouts: propSetLoadouts
 }) => {
-  const [loadouts, setLoadouts] = useState<Loadout[]>([]);
+  const [internalLoadouts, setInternalLoadouts] = useState<Loadout[]>([]);
+  
+  const loadouts = propLoadouts || internalLoadouts;
+  const setLoadouts = propSetLoadouts || setInternalLoadouts;
   const [selectedLoadoutId, setSelectedLoadoutId] = useState<string | null>(null);
   const [editingLoadout, setEditingLoadout] = useState<Loadout | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,8 +55,10 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
 
   useEffect(() => {
-    loadAllLoadouts().then(setLoadouts);
-  }, []);
+    if (!propLoadouts) {
+      loadAllLoadouts().then(setInternalLoadouts);
+    }
+  }, [propLoadouts]);
 
   const handleCreate = () => {
     const newLoadout: Loadout = {
