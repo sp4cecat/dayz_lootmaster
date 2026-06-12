@@ -33,6 +33,11 @@ function chancePercent(value: any) {
   return Number.isFinite(n) ? Math.round(Math.min(1, Math.max(0, n)) * 1000) / 10 : 0;
 }
 
+import { HierarchicalTree } from './hierarchical/HierarchicalTree';
+import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
+import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
+import { updateNodeInList, findNode } from '@/utils/tree';
+
 export default function EditFormSpawnableTab({ 
   selectedTypes, 
   spawnableTypesByGroup, 
@@ -40,11 +45,37 @@ export default function EditFormSpawnableTab({
   randomPresets,
   globalsDefaults,
   typeOptions,
-  loadouts
+  loadouts = []
 }: EditFormSpawnableTabProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<{ idx: number; kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO } | null>(null);
   const [selectedLoadoutId, setSelectedLoadoutId] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'tiles' | 'tree'>('tree');
+
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
+
+  const handleUpdateNode = (updatedNode: LoadoutNode) => {
+    const currentLoadout = vanillaSpawnableToLoadout(entry);
+    const updatedLoadout = {
+      ...currentLoadout,
+      items: updateNodeInList(currentLoadout.items, updatedNode)
+    };
+    
+    const nextEntry = loadoutToSpawnableEntry(updatedLoadout);
+    if (nextEntry) {
+      updateSpawnableEntry(() => ({
+        ...nextEntry,
+        damage: entry.damage // Preserve damage if it wasn't in the loadout root (it should be)
+      }));
+    }
+    
+    if (selectedNodeId === updatedNode.id) {
+      setEditingNode(updatedNode);
+    }
+  };
 
   const isMulti = selectedTypes.length > 1;
 
@@ -321,7 +352,173 @@ export default function EditFormSpawnableTab({
         )}
       </section>
 
-      {/* Attachments Section */}
+      {/* View Toggle */}
+      <div className="flex justify-end gap-2 mb-4">
+        <Button 
+          size="xs" 
+          variant={viewMode === 'tiles' ? 'primary' : 'secondary-gray'}
+          onClick={() => setViewMode('tiles')}
+        >
+          Tiles View
+        </Button>
+        <Button 
+          size="xs" 
+          variant={viewMode === 'tree' ? 'primary' : 'secondary-gray'}
+          onClick={() => setViewMode('tree')}
+        >
+          Hierarchical View
+        </Button>
+      </div>
+
+      {viewMode === 'tree' ? (
+        <section className="space-y-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Badge color="brand" size="sm" type="modern">Hierarchical Config</Badge>
+          </div>
+          
+          <div className="p-4 bg-gray-50 dark:bg-gray-950/20 rounded-xl border border-gray-100 dark:border-gray-800 relative">
+            <HierarchicalTree 
+              items={vanillaSpawnableToLoadout(entry).items}
+              onUpdate={(newNodes) => {
+                const nextEntry = loadoutToSpawnableEntry({
+                  id: crypto.randomUUID(),
+                  label: entry.name,
+                  items: newNodes,
+                  updatedAt: Date.now()
+                });
+                if (nextEntry) {
+                  updateSpawnableEntry(() => ({
+                    ...nextEntry,
+                    damage: entry.damage
+                  }));
+                }
+              }}
+              onSelect={(node) => {
+                setSelectedNodeId(node.id);
+                setEditingNode(node);
+              }}
+              onAddTemplate={(nodeId, list) => {
+                setTemplateModalTarget({ nodeId, list });
+                setTemplateModalOpen(true);
+              }}
+              selectedNodeId={selectedNodeId}
+              typeOptions={typeOptions}
+              randomPresets={randomPresets}
+              allLoadouts={loadouts}
+              spawnableTypesByGroup={spawnableTypesByGroup}
+            />
+          </div>
+
+          {selectedNodeId && editingNode && (
+            <div className="fixed top-0 right-0 bottom-0 z-[100] animate-in slide-in-from-right duration-300">
+              <HierarchicalProperties 
+                node={editingNode}
+                onUpdate={handleUpdateNode}
+                onClose={() => setSelectedNodeId(null)}
+                typeOptions={typeOptions}
+                availableTemplates={loadouts}
+                randomPresets={randomPresets}
+                config={{
+                  title: 'Spawnable Item Properties',
+                  showQuantity: false,
+                  showDamage: true,
+                  showVariants: false
+                }}
+              />
+            </div>
+          )}
+
+          {templateModalOpen && templateModalTarget && (
+            <Modal
+              isOpen={templateModalOpen}
+              onClose={() => setTemplateModalOpen(false)}
+              title="Select Template"
+              maxWidth="max-w-md"
+            >
+              <div className="space-y-4">
+                <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Available Presets</label>
+                    <div className="grid grid-cols-1 gap-2 max-h-64 overflow-auto p-1">
+                      {randomPresets.presets.map((p: any, i: number) => (
+                        <Button 
+                          key={i} 
+                          variant="secondary-gray" 
+                          className="justify-start font-mono text-xs" 
+                          onClick={() => {
+                            const newNode: LoadoutNode = {
+                              id: crypto.randomUUID(),
+                              type: 'template',
+                              templateSource: 'preset',
+                              name: p.name,
+                              chance: 1.0,
+                              attachments: [],
+                              cargo: []
+                            };
+                            
+                            const loadout = vanillaSpawnableToLoadout(entry);
+                            const targetNode = findNode(loadout.items, nodeId);
+                            
+                            if (targetNode) {
+                              const updatedNode = {
+                                ...targetNode,
+                                [templateModalTarget.list]: [...(targetNode[templateModalTarget.list] || []), newNode]
+                              };
+                              handleUpdateNode(updatedNode);
+                            }
+                            setTemplateModalOpen(false);
+                          }}
+                        >
+                          <Layers size={14} className="mr-2 text-amber-500" /> {p.name}
+                        </Button>
+                      ))}
+                    </div>
+                </div>
+                {loadouts.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Saved Loadouts</label>
+                      <div className="grid grid-cols-1 gap-2 max-h-64 overflow-auto p-1">
+                        {loadouts.map((l: any, i: number) => (
+                          <Button 
+                            key={i} 
+                            variant="secondary-gray" 
+                            className="justify-start font-mono text-xs" 
+                            onClick={() => {
+                              const newNode: LoadoutNode = {
+                                id: crypto.randomUUID(),
+                                type: 'template',
+                                templateSource: 'loadout',
+                                name: l.id,
+                                chance: 1.0,
+                                attachments: [],
+                                cargo: []
+                              };
+                              
+                              const loadout = vanillaSpawnableToLoadout(entry);
+                              const targetNode = findNode(loadout.items, templateModalTarget.nodeId);
+                              
+                              if (targetNode) {
+                                const updatedNode = {
+                                  ...targetNode,
+                                  [templateModalTarget.list]: [...(targetNode[templateModalTarget.list] || []), newNode]
+                                };
+                                handleUpdateNode(updatedNode);
+                              }
+                              setTemplateModalOpen(false);
+                            }}
+                          >
+                            <Package size={14} className="mr-2 text-blue-500" /> {l.label}
+                          </Button>
+                        ))}
+                      </div>
+                  </div>
+                )}
+              </div>
+            </Modal>
+          )}
+        </section>
+      ) : (
+        <>
+          {/* Attachments Section */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -431,6 +628,8 @@ export default function EditFormSpawnableTab({
           typeOptions={typeOptions}
           kind={editingSlot.kind}
         />
+      )}
+        </>
       )}
     </div>
   );

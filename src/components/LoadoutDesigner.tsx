@@ -6,8 +6,9 @@ import { Input } from '@/components/base/input/input';
 import { Plus, Trash2, Save, Download, Upload, ChevronDown, Package, FileCode, Search, Layers } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
-import { LoadoutNodeItem } from './LoadoutNodeItem';
-import { LoadoutItemProperties } from './LoadoutItemProperties';
+import { HierarchicalTree } from './hierarchical/HierarchicalTree';
+import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
+import { updateNodeInList, findNode } from '@/utils/tree';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { Button as AriaButton } from 'react-aria-components';
@@ -120,31 +121,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     setSelectedNodeId(null);
   };
 
-  const findAndReplaceNode = (nodes: LoadoutNode[], targetId: string, updated: LoadoutNode): LoadoutNode[] => {
-    return nodes.map(node => {
-      if (node.id === targetId) return updated;
-      return {
-        ...node,
-        attachments: findAndReplaceNode(node.attachments, targetId, updated),
-        cargo: findAndReplaceNode(node.cargo, targetId, updated)
-      };
-    });
-  };
-
-  const findNode = (nodes: LoadoutNode[], targetId: string): LoadoutNode | null => {
-    for (const node of nodes) {
-      if (node.id === targetId) return node;
-      const found = findNode([...node.attachments, ...node.cargo], targetId);
-      if (found) return found;
-    }
-    return null;
-  };
-
   const handleUpdateNode = (updated: LoadoutNode) => {
     if (!editingLoadout) return;
     setEditingLoadout({
       ...editingLoadout,
-      items: findAndReplaceNode(editingLoadout.items, updated.id, updated)
+      items: updateNodeInList(editingLoadout.items, updated)
     });
   };
 
@@ -442,33 +423,22 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     <h3 className="font-bold text-gray-900 dark:text-white">Hierarchical Structure</h3>
                   </div>
                   <div className="p-6 space-y-4 min-h-[400px]">
-                    {editingLoadout.items.length > 0 ? (
-                      editingLoadout.items.map((item, idx) => (
-                        <LoadoutNodeItem 
-                          key={item.id}
-                          node={item}
-                          onUpdate={(updated) => handleUpdateNode(updated)}
-                          onDelete={() => {
-                            const nextItems = [...editingLoadout.items];
-                            nextItems.splice(idx, 1);
-                            setEditingLoadout({ ...editingLoadout, items: nextItems });
-                          }}
-                          onSelect={(node) => setSelectedNodeId(node.id)}
-                          onAddTemplate={(list) => {
-                            // Open a mini-menu or just default to something
-                            // For simplicity, let's open a Template Source Modal
-                            setTemplateModalTarget({ nodeId: item.id, list });
-                            setTemplateModalOpen(true);
-                          }}
-                          selectedNodeId={selectedNodeId}
-                          allLoadouts={loadouts}
-                          randomPresets={randomPresets}
-                          expansionAirdrops={expansionAirdrops}
-                          spawnableTypesByGroup={spawnableTypesByGroup}
-                          defaultExpanded={true}
-                        />
-                      ))
-                    ) : (
+                    <HierarchicalTree 
+                      items={editingLoadout.items}
+                      onUpdate={(newNodes) => setEditingLoadout({ ...editingLoadout, items: newNodes })}
+                      onSelect={(node) => setSelectedNodeId(node.id)}
+                      onAddTemplate={(nodeId, list) => {
+                        setTemplateModalTarget({ nodeId, list });
+                        setTemplateModalOpen(true);
+                      }}
+                      selectedNodeId={selectedNodeId}
+                      typeOptions={typeOptions}
+                      randomPresets={randomPresets}
+                      allLoadouts={loadouts}
+                      spawnableTypesByGroup={spawnableTypesByGroup}
+                    />
+
+                    {editingLoadout.items.length === 0 && (
                       <div className="text-center text-gray-500 py-12 flex flex-col items-center gap-4">
                         <Package size={32} className="opacity-20" />
                         <p>No items in this loadout yet.</p>
@@ -480,9 +450,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                   </div>
                 </div>
 
-                {selectedNode && (
-                  <LoadoutItemProperties 
-                    node={selectedNode}
+                {selectedNodeId && findNode(editingLoadout.items, selectedNodeId) && (
+                  <HierarchicalProperties 
+                    node={findNode(editingLoadout.items, selectedNodeId)!}
                     onUpdate={handleUpdateNode}
                     onClose={() => setSelectedNodeId(null)}
                     typeOptions={typeOptions}

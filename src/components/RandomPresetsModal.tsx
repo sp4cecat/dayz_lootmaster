@@ -15,6 +15,8 @@ interface PresetItem {
   name: string;
   chance: number | null;
   attrs: Record<string, string>;
+  attachments?: LoadoutNode[];
+  cargo?: LoadoutNode[];
 }
 
 interface Preset {
@@ -32,6 +34,8 @@ interface RandomPresetsModalProps {
   spawnableTypesByGroup?: Record<string, any>;
   setSpawnableTypesByGroup?: (next: any) => void;
   inline?: boolean;
+  typeOptions?: string[];
+  loadouts?: any[];
 }
 
 function chancePercent(value: any) {
@@ -44,13 +48,21 @@ function fromPercent(value: any) {
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n / 100)) : 0;
 }
 
+import { HierarchicalTree } from './hierarchical/HierarchicalTree';
+import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
+import { LoadoutNode } from '@/types/loadouts';
+
+import { updateNodeInList } from '@/utils/tree';
+
 export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   onClose,
   randomPresets,
   setRandomPresets,
   spawnableTypesByGroup = {},
   setSpawnableTypesByGroup = () => {},
-  inline = false
+  inline = false,
+  typeOptions = [],
+  loadouts = []
 }) => {
   const presets = randomPresets?.presets || [];
   const presetNames = new Set(presets.map(p => p.name).filter(Boolean));
@@ -61,6 +73,22 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [localName, setLocalName] = useState<{ index: number; name: string } | null>(null);
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set());
+  
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
+  const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateModalTarget, setTemplateModalTarget] = useState<{index: number, nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
+
+  const handleUpdateNode = (updatedNode: LoadoutNode, presetIndex: number) => {
+    updatePreset(presetIndex, p => ({
+      ...p,
+      items: nodesToItems(updateNodeInList(itemsToNodes(p.items), updatedNode))
+    }));
+    if (selectedNodeId === updatedNode.id) {
+      setEditingNode(updatedNode);
+    }
+  };
 
   const toggleExpand = (name: string) => {
     setExpandedNames(prev => {
@@ -69,6 +97,34 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       else next.add(name);
       return next;
     });
+  };
+
+  const itemsToNodes = (items: PresetItem[]): LoadoutNode[] => {
+    return (items || []).map(item => ({
+      id: crypto.randomUUID(),
+      type: item.preset ? 'template' : 'item',
+      templateSource: item.preset ? 'preset' : undefined,
+      name: item.preset || item.name,
+      chance: item.chance ?? 1.0,
+      attachments: item.attachments || [],
+      cargo: item.cargo || [],
+      isExpanded: false
+    }));
+  };
+
+  const nodesToItems = (nodes: LoadoutNode[]): PresetItem[] => {
+    return nodes.map(node => ({
+      kind: 'item',
+      name: node.type === 'item' ? node.name : '',
+      preset: node.type === 'template' ? node.name : '',
+      chance: node.chance,
+      attrs: {
+        ...(node.type === 'item' ? { name: node.name } : { preset: node.name }),
+        chance: node.chance.toFixed(2)
+      },
+      attachments: node.attachments,
+      cargo: node.cargo
+    } as any));
   };
 
   const updatePreset = (index: number, apply: (p: Preset) => Preset) => {
@@ -292,7 +348,26 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       footer={<Button variant="primary" onClick={onClose}>Done</Button>}
       inline={inline}
     >
-      <div className="space-y-6">
+      <div className="space-y-6 relative">
+        {selectedNodeId && editingNode && editingPresetIndex !== null && (
+          <div className="fixed top-0 right-0 bottom-0 z-[100] animate-in slide-in-from-right duration-300">
+            <HierarchicalProperties 
+              node={editingNode}
+              onUpdate={(updated) => handleUpdateNode(updated, editingPresetIndex)}
+              onClose={() => setSelectedNodeId(null)}
+              typeOptions={typeOptions}
+              availableTemplates={loadouts}
+              randomPresets={randomPresets}
+              config={{
+                title: 'Preset Item Properties',
+                showQuantity: false,
+                showDamage: false,
+                showVariants: false
+              }}
+            />
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 max-w-sm">
             <Input
@@ -458,69 +533,49 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                     <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-950/20 rounded-xl border border-gray-100 dark:border-gray-800">
                       <div className="flex items-center justify-between mb-2">
                         <h5 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Preset Items</h5>
-                        <Button variant="secondary-gray" size="xs" icon={Plus} onClick={() => updatePreset(index, p => ({ 
-                          ...p, 
-                          items: [...(p.items || []), { kind: XMLNodeKind.ITEM, name: '', chance: 1, attrs: { chance: '1' } }] 
-                        }))}>
+                        <Button variant="secondary-gray" size="xs" icon={Plus} onClick={() => {
+                          const newNode: LoadoutNode = {
+                            id: crypto.randomUUID(),
+                            type: 'item',
+                            name: '',
+                            chance: 1.0,
+                            attachments: [],
+                            cargo: []
+                          };
+                          updatePreset(index, p => ({
+                            ...p,
+                            items: nodesToItems([...itemsToNodes(p.items), newNode])
+                          }));
+                          setSelectedNodeId(newNode.id);
+                          setEditingNode(newNode);
+                          setEditingPresetIndex(index);
+                        }}>
                           Add Item
                         </Button>
                       </div>
                       
-                      <div className="space-y-2">
-                        {preset.items.map((item, itemIndex) => (
-                          <div key={itemIndex} className="flex items-center gap-3">
-                            <Select
-                              className="w-32"
-                              size="sm"
-                              value={item.kind || XMLNodeKind.ITEM}
-                              onChange={e => updatePreset(index, p => ({ 
-                                ...p, 
-                                items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, kind: e.target.value as XMLNodeKind } : it) 
-                              }))}
-                              options={[
-                                { label: 'Item', value: XMLNodeKind.ITEM },
-                                { label: 'Attachments', value: XMLNodeKind.ATTACHMENTS },
-                                { label: 'Cargo', value: XMLNodeKind.CARGO }
-                              ]}
-                            />
-                            <Input
-                              className="flex-1"
-                              size="sm"
-                              value={item.name}
-                              placeholder="Item name..."
-                              onChange={e => updatePreset(index, p => ({ 
-                                ...p, 
-                                items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, name: e.target.value, attrs: { ...(it.attrs || {}), name: e.target.value } } : it) 
-                              }))}
-                            />
-                            <Slider
-                              className="w-24"
-                              labelPosition="hidden"
-                              value={chancePercent(item.chance)}
-                              onChange={v => updatePreset(index, p => ({ 
-                                ...p, 
-                                items: (p.items || []).map((it, i) => i === itemIndex ? { ...it, chance: fromPercent(v), attrs: { ...(it.attrs || {}), chance: String(fromPercent(v)) } } : it) 
-                              }))}
-                              minValue={0}
-                              maxValue={100}
-                            />
-                            <span className="w-10 text-[10px] font-medium text-gray-500 text-right">{chancePercent(item.chance)}%</span>
-                            <Button 
-                              variant="tertiary" 
-                              size="sm" 
-                              icon={Trash2} 
-                              className="p-1 text-gray-400 hover:text-error-600" 
-                              onClick={() => updatePreset(index, p => ({ 
-                                ...p, 
-                                items: (p.items || []).filter((_, i) => i !== itemIndex) 
-                              }))}
-                            />
-                          </div>
-                        ))}
-                        {preset.items.length === 0 && (
-                          <div className="py-4 text-center text-xs text-gray-400 italic">No items in this preset.</div>
-                        )}
-                      </div>
+                      <HierarchicalTree 
+                        items={itemsToNodes(preset.items)}
+                        onUpdate={(newNodes) => {
+                          updatePreset(index, p => ({
+                            ...p,
+                            items: nodesToItems(newNodes)
+                          }));
+                        }}
+                        onSelect={(node) => {
+                          setSelectedNodeId(node.id);
+                          setEditingNode(node);
+                          setEditingPresetIndex(index);
+                        }}
+                        onAddTemplate={(nodeId, list) => {
+                          setTemplateModalTarget({ index, nodeId, list });
+                          setTemplateModalOpen(true);
+                        }}
+                        selectedNodeId={selectedNodeId}
+                        typeOptions={typeOptions}
+                        randomPresets={randomPresets}
+                        allLoadouts={loadouts}
+                      />
                     </div>
                   </div>
                 )}
@@ -535,6 +590,96 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
           )}
         </div>
       </div>
+
+      {templateModalOpen && templateModalTarget && (
+        <Modal
+          isOpen={templateModalOpen}
+          onClose={() => setTemplateModalOpen(false)}
+          title="Select Template"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4">
+             <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Available Presets</label>
+                <div className="grid grid-cols-1 gap-2 max-h-64 overflow-auto p-1">
+                   {presets.map((p, i) => (
+                     <Button 
+                       key={i} 
+                       variant="secondary-gray" 
+                       className="justify-start font-mono text-xs" 
+                       onClick={() => {
+                         const newNode: LoadoutNode = {
+                           id: crypto.randomUUID(),
+                           type: 'template',
+                           templateSource: 'preset',
+                           name: p.name,
+                           chance: 1.0,
+                           attachments: [],
+                           cargo: []
+                         };
+                         
+                         const currentPreset = presets[templateModalTarget.index];
+                         const nodes = itemsToNodes(currentPreset.items);
+                         const targetNode = findNode(nodes, templateModalTarget.nodeId);
+                         
+                         if (targetNode) {
+                           const updatedNode = {
+                             ...targetNode,
+                             [templateModalTarget.list]: [...(targetNode[templateModalTarget.list] || []), newNode]
+                           };
+                           handleUpdateNode(updatedNode, templateModalTarget.index);
+                         }
+                         setTemplateModalOpen(false);
+                       }}
+                     >
+                       <Layers size={14} className="mr-2 text-amber-500" /> {p.name}
+                     </Button>
+                   ))}
+                </div>
+             </div>
+             {loadouts.length > 0 && (
+               <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Saved Loadouts</label>
+                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-auto p-1">
+                    {loadouts.map((l, i) => (
+                      <Button 
+                        key={i} 
+                        variant="secondary-gray" 
+                        className="justify-start font-mono text-xs" 
+                        onClick={() => {
+                          const newNode: LoadoutNode = {
+                            id: crypto.randomUUID(),
+                            type: 'template',
+                            templateSource: 'loadout',
+                            name: l.id,
+                            chance: 1.0,
+                            attachments: [],
+                            cargo: []
+                          };
+                          
+                          const currentPreset = presets[templateModalTarget.index];
+                          const nodes = itemsToNodes(currentPreset.items);
+                          const targetNode = findNode(nodes, templateModalTarget.nodeId);
+                          
+                          if (targetNode) {
+                            const updatedNode = {
+                              ...targetNode,
+                              [templateModalTarget.list]: [...(targetNode[templateModalTarget.list] || []), newNode]
+                            };
+                            handleUpdateNode(updatedNode, templateModalTarget.index);
+                          }
+                          setTemplateModalOpen(false);
+                        }}
+                      >
+                        <Package size={14} className="mr-2 text-blue-500" /> {l.label}
+                      </Button>
+                    ))}
+                  </div>
+               </div>
+             )}
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 };

@@ -15,6 +15,8 @@ export interface LoadoutNode {
   };
   attachments: LoadoutNode[];
   cargo: LoadoutNode[];
+  variants?: string[]; // Expansion support
+  attributes?: Record<string, string>; // XML attribute compatibility
   isExpanded?: boolean;
 }
 

@@ -131,7 +131,7 @@ export function loadoutToExpansionAirdrop(
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,
-      Variants: [] // Not supported in the designer yet
+      Variants: resolved.variants || []
     };
   };
 
@@ -284,6 +284,7 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
         max: item.Max ?? 0,
         percent: item.QuantityPercent
       } : undefined,
+      variants: item.Variants || [],
       attachments: (item.Attachments || []).map(mapNode),
       cargo: (item.Cargo || []).map(mapNode) // Expansion sometimes uses Cargo too
     };
@@ -292,7 +293,68 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
   return {
     id: crypto.randomUUID(),
     label: label,
-    items: lootItems.length > 0 ? [mapNode(lootItems[0])] : [],
+    items: lootItems.map(mapNode),
     updatedAt: Date.now()
+  };
+}
+
+/**
+ * Converts a Loadout to a Random Preset structure for cfgrandompresets.xml
+ */
+export function loadoutToRandomPreset(loadout: Loadout): any {
+  return {
+    kind: 'attachments', // Default
+    name: loadout.label,
+    chance: 1.0,
+    items: loadout.items.map(node => ({
+      kind: 'item',
+      name: node.type === 'item' ? node.name : undefined,
+      preset: node.type === 'template' ? node.name : undefined,
+      chance: node.chance,
+      attrs: {
+        ...(node.type === 'item' ? { name: node.name } : { preset: node.name }),
+        chance: node.chance.toFixed(2)
+      }
+    }))
+  };
+}
+
+/**
+ * Converts a Loadout to a full Spawnable Type entry
+ */
+export function loadoutToSpawnableEntry(loadout: Loadout): any {
+  if (loadout.items.length === 0) return null;
+  const root = loadout.items[0];
+  
+  const sections: any[] = [];
+  
+  if (root.damage) {
+    sections.push({
+      kind: XMLNodeKind.DAMAGE,
+      attrs: {
+        min: root.damage.min.toFixed(2),
+        max: root.damage.max.toFixed(2)
+      }
+    });
+  }
+
+  const mapToSection = (nodes: LoadoutNode[], kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO) => {
+     if (nodes.length === 0) return;
+     
+     // Group items by chance if they were originally in the same section, 
+     // but since Loadout flattens them, we might just create one section per item or group them.
+     // Vanilla often has multiple <attachments> sections.
+     
+     nodes.forEach(node => {
+        sections.push(loadoutNodeToSpawnableSection(node, kind));
+     });
+  };
+
+  mapToSection(root.attachments, XMLNodeKind.ATTACHMENTS);
+  mapToSection(root.cargo, XMLNodeKind.CARGO);
+
+  return {
+    name: root.name,
+    sections
   };
 }

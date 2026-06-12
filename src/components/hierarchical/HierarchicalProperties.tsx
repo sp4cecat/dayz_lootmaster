@@ -4,29 +4,62 @@ import { Input } from '@/components/base/input/input';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Slider } from '@/components/base/slider/slider';
 import { Select } from '@/components/base/select/select';
-import { X, Layers, Package } from 'lucide-react';
+import { X, Layers, Package, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
+import { Button } from '@/components/base/button/button';
 import { cx } from '@/utils/cx';
 
-interface LoadoutItemPropertiesProps {
+export interface HierarchicalPropertiesConfig {
+  showQuantity?: boolean;
+  showDamage?: boolean;
+  showVariants?: boolean;
+  showAttributes?: boolean;
+  title?: string;
+}
+
+interface HierarchicalPropertiesProps {
   node: LoadoutNode;
   onUpdate: (updated: LoadoutNode) => void;
   onClose: () => void;
   typeOptions: string[];
   availableTemplates: Loadout[];
+  config?: HierarchicalPropertiesConfig;
+  
+  // For template resolution context (optional)
   randomPresets?: { presets: any[] };
   expansionAirdrops?: any;
 }
 
-export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
+export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   node,
   onUpdate,
   onClose,
   typeOptions,
   availableTemplates,
+  config = {
+    showQuantity: true,
+    showDamage: true,
+    showVariants: false,
+    showAttributes: false,
+  },
   randomPresets,
   expansionAirdrops
 }) => {
+  const [newVariant, setNewVariant] = React.useState('');
+
+  const addVariant = () => {
+    if (!newVariant) return;
+    const variants = [...(node.variants || []), newVariant];
+    onUpdate({ ...node, variants });
+    setNewVariant('');
+  };
+
+  const removeVariant = (index: number) => {
+    const variants = [...(node.variants || [])];
+    variants.splice(index, 1);
+    onUpdate({ ...node, variants });
+  };
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-xl w-[400px]">
       <header className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
@@ -38,7 +71,7 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
             {node.type === 'template' ? <Layers size={18} /> : <Package size={18} />}
           </div>
           <div>
-            <h3 className="font-bold text-gray-900 dark:text-white">Item Properties</h3>
+            <h3 className="font-bold text-gray-900 dark:text-white">{config.title || 'Item Properties'}</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">Configure spawn settings</p>
           </div>
         </div>
@@ -124,71 +157,100 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
           />
         </section>
 
-        {/* Optional Configs (only for items) */}
-        {node.type === 'item' && (
-          <>
-            <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quantity (Optional)</label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] text-gray-500">Min</span>
-                  <Input 
-                    type="number" 
-                    size="sm" 
-                    value={node.quantity?.min ?? ''} 
-                    onChange={e => onUpdate({ ...node, quantity: { ...node.quantity, min: parseInt(e.target.value) || 0, max: node.quantity?.max ?? 0, percent: node.quantity?.percent ?? -1 } })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] text-gray-500">Max</span>
-                  <Input 
-                    type="number" 
-                    size="sm" 
-                    value={node.quantity?.max ?? ''} 
-                    onChange={e => onUpdate({ ...node, quantity: { ...node.quantity, max: parseInt(e.target.value) || 0, min: node.quantity?.min ?? 0, percent: node.quantity?.percent ?? -1 } })}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <span className="text-[10px] text-gray-500">Quantity Percent (-1 to disable)</span>
+        {/* Quantity Section */}
+        {config.showQuantity && node.type === 'item' && (
+          <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quantity (Optional)</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <span className="text-[10px] text-gray-500">Min</span>
                 <Input 
                   type="number" 
                   size="sm" 
-                  value={node.quantity?.percent ?? -1} 
-                  onChange={e => onUpdate({ ...node, quantity: { ...node.quantity, percent: parseFloat(e.target.value) || -1, min: node.quantity?.min ?? 0, max: node.quantity?.max ?? 0 } })}
+                  value={node.quantity?.min ?? ''} 
+                  onChange={e => onUpdate({ ...node, quantity: { ...node.quantity, min: parseInt(e.target.value) || 0, max: node.quantity?.max ?? 0, percent: node.quantity?.percent ?? -1 } })}
                 />
               </div>
-            </section>
-
-            <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Damage (Optional)</label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] text-gray-500">Min Damage (0.0 - 1.0)</span>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    size="sm" 
-                    value={node.damage?.min ?? ''} 
-                    onChange={e => onUpdate({ ...node, damage: { ...node.damage, min: parseFloat(e.target.value) || 0, max: node.damage?.max ?? 0 } })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] text-gray-500">Max Damage (0.0 - 1.0)</span>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    size="sm" 
-                    value={node.damage?.max ?? ''} 
-                    onChange={e => onUpdate({ ...node, damage: { ...node.damage, max: parseFloat(e.target.value) || 0, min: node.damage?.min ?? 0 } })}
-                  />
-                </div>
+              <div className="space-y-1">
+                <span className="text-[10px] text-gray-500">Max</span>
+                <Input 
+                  type="number" 
+                  size="sm" 
+                  value={node.quantity?.max ?? ''} 
+                  onChange={e => onUpdate({ ...node, quantity: { ...node.quantity, max: parseInt(e.target.value) || 0, min: node.quantity?.min ?? 0, percent: node.quantity?.percent ?? -1 } })}
+                />
               </div>
-            </section>
-          </>
+            </div>
+            <div className="space-y-2">
+              <span className="text-[10px] text-gray-500">Quantity Percent (-1 to disable)</span>
+              <Input 
+                type="number" 
+                size="sm" 
+                value={node.quantity?.percent ?? -1} 
+                onChange={e => onUpdate({ ...node, quantity: { ...node.quantity, percent: parseFloat(e.target.value) || -1, min: node.quantity?.min ?? 0, max: node.quantity?.max ?? 0 } })}
+              />
+            </div>
+          </section>
+        )}
+
+        {/* Damage Section */}
+        {config.showDamage && node.type === 'item' && (
+          <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Damage (Optional)</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <span className="text-[10px] text-gray-500">Min Damage (0.0 - 1.0)</span>
+                <Input 
+                  type="number" 
+                  step="0.1" 
+                  size="sm" 
+                  value={node.damage?.min ?? ''} 
+                  onChange={e => onUpdate({ ...node, damage: { ...node.damage, min: parseFloat(e.target.value) || 0, max: node.damage?.max ?? 0 } })}
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] text-gray-500">Max Damage (0.0 - 1.0)</span>
+                <Input 
+                  type="number" 
+                  step="0.1" 
+                  size="sm" 
+                  value={node.damage?.max ?? ''} 
+                  onChange={e => onUpdate({ ...node, damage: { ...node.damage, max: parseFloat(e.target.value) || 0, min: node.damage?.min ?? 0 } })}
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Variants Section (Expansion) */}
+        {config.showVariants && node.type === 'item' && (
+          <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Variants (Expansion)</label>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input 
+                  size="sm" 
+                  placeholder="Variant classname..." 
+                  value={newVariant}
+                  onChange={e => setNewVariant(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addVariant()}
+                />
+                <Button size="sm" onClick={addVariant}><Plus size={16} /></Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(node.variants || []).map((v, i) => (
+                  <Badge key={i} color="gray" className="pr-1 py-1">
+                    {v}
+                    <button onClick={() => removeVariant(i)} className="ml-1 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500">
+                      <Trash2 size={10} />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </section>
         )}
       </div>
     </div>
   );
 };
-
