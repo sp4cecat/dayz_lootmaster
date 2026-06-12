@@ -475,18 +475,28 @@ async function firstExistingPath(paths) {
     return paths[0] || null;
 }
 
-async function spawnableTypesFilePath(profile, paths, group) {
+async function spawnableTypesFilePath(profile, paths, group, fileName = null) {
     if (group === '__root' || group === 'vanilla' || group === 'vanilla_overrides') {
+        if (fileName) {
+            return join(paths.missionPath, fileName);
+        }
         return firstExistingPath([
             join(paths.missionPath, 'cfgspawnabletypes.xml'),
             join(paths.missionPath, 'cfgspawnabletype.xml')
         ]);
     }
 
+    const folder = await getDeclaredGroupFolder(profile, paths, group);
+
+    if (fileName) {
+        if (folder) {
+            return join(paths.missionPath, folder, fileName);
+        }
+    }
+
     const spawnableFilesMap = await getGroupSpawnableFilesMap(profile, paths);
     const declaredSpawnable = spawnableFilesMap[group] || [];
     if (declaredSpawnable.length > 0) {
-        const folder = await getDeclaredGroupFolder(profile, paths, group);
         if (folder) {
             return join(paths.missionPath, folder, declaredSpawnable[0]);
         }
@@ -1962,15 +1972,16 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        const matchSpawnableTypes = pathname.match(/^\/api\/spawnabletypes\/([^/]+)$/);
+        const matchSpawnableTypes = pathname.match(/^\/api\/spawnabletypes\/([^/]+)(?:\/(.+))?$/);
         if (matchSpawnableTypes) {
-            const [, groupRaw] = matchSpawnableTypes;
+            const [, groupRaw, fileNameRaw] = matchSpawnableTypes;
             const group = decodeURIComponent(groupRaw);
+            const fileName = fileNameRaw ? decodeURIComponent(fileNameRaw) : null;
             if (!isSafeName(group)) {
                 badRequest(res, 'Invalid group');
                 return;
             }
-            const target = await spawnableTypesFilePath(profile, paths, group);
+            const target = await spawnableTypesFilePath(profile, paths, group, fileName);
             if (!target) {
                 notFound(res);
                 return;

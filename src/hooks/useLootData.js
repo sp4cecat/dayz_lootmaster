@@ -83,8 +83,8 @@ export function useLootData() {
   const [baselineFiles, setBaselineFiles] = useState(/** @type {TypeFiles|null} */(null));
   const [baselineDefinitions, setBaselineDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
   const [spawnableFilesByGroup, setSpawnableFilesByGroup] = useState(/** @type {Record<string, string[]>} */({}));
-  const [spawnableTypesByGroup, setSpawnableTypesByGroup] = useState(/** @type {Record<string, any>} */({}));
-  const [baselineSpawnableTypesByGroup, setBaselineSpawnableTypesByGroup] = useState(/** @type {Record<string, any>} */({}));
+  const [spawnableTypesByGroup, setSpawnableTypesByGroup] = useState(/** @type {Record<string, Record<string, any>>} */({}));
+  const [baselineSpawnableTypesByGroup, setBaselineSpawnableTypesByGroup] = useState(/** @type {Record<string, Record<string, any>>} */({}));
   const [randomPresets, setRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
   const [baselineRandomPresets, setBaselineRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
   const [globalsDefaults, setGlobalsDefaults] = useState(/** @type {{LootDamageMin: number|null, LootDamageMax: number|null}} */({ LootDamageMin: null, LootDamageMax: null }));
@@ -135,9 +135,7 @@ export function useLootData() {
     return fetch(url, opts);
   }, [selectedProfileId]);
 
-  const loadMissionFilesFromAPI = useCallback(async (API_BASE, files, warnings = []) => {
-    const groups = Object.keys(files || {});
-    
+  const loadMissionFilesFromAPI = useCallback(async (API_BASE, filesByGroup, warnings = []) => {
     // Try to load from IndexedDB first
     const idbSpawnable = await loadMissionFile('spawnableTypesByGroup');
     const idbRandomPresets = await loadMissionFile('randomPresets');
@@ -145,25 +143,63 @@ export function useLootData() {
     let nextSpawnable = idbSpawnable || {};
     let nextRandomPresets = idbRandomPresets || { presets: [] };
 
+    // Migration: Handle old non-nested spawnable types structure in IndexedDB
+    if (idbSpawnable) {
+      let needsMigration = false;
+      for (const group in idbSpawnable) {
+        // Old structure was Record<string, { types: [] }>
+        if (idbSpawnable[group] && Array.isArray(idbSpawnable[group].types)) {
+          needsMigration = true;
+          break;
+        }
+      }
+
+      if (needsMigration) {
+        const migrated = {};
+        for (const group in idbSpawnable) {
+          if (idbSpawnable[group] && Array.isArray(idbSpawnable[group].types)) {
+            // Find first filename for this group from filesByGroup
+            const files = filesByGroup[group] || [];
+            const fileName = files.length > 0 ? files[0].split('/').pop() : 'spawnabletypes.xml';
+            migrated[group] = { [fileName]: idbSpawnable[group] };
+          } else {
+            migrated[group] = idbSpawnable[group];
+          }
+        }
+        nextSpawnable = migrated;
+      }
+    }
+
     // If IDB is empty for spawnable, load from API
     if (!idbSpawnable) {
+      // 1. Mission Root
       try {
-        const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}`);
-        if (res.ok) {
-          const text = await res.text();
-          nextSpawnable[ROOT_SPAWNABLE_GROUP] = parseSpawnableTypesXml(text);
+        const rootFiles = ['cfgspawnabletypes.xml', 'cfgspawnabletype.xml'];
+        nextSpawnable[ROOT_SPAWNABLE_GROUP] = {};
+        for (const f of rootFiles) {
+          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}/${encodeURIComponent(f)}`);
+          if (res.ok) {
+            const text = await res.text();
+            nextSpawnable[ROOT_SPAWNABLE_GROUP][f] = parseSpawnableTypesXml(text);
+          }
         }
       } catch (e) {
-        warnings.push(`Mission root cfgspawnabletypes.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+        warnings.push(`Mission root spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
       }
-      for (const group of groups) {
-        try {
-          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`);
-          if (!res.ok) continue;
-          const text = await res.text();
-          nextSpawnable[group] = parseSpawnableTypesXml(text);
-        } catch (e) {
-          warnings.push(`Group "${group}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+
+      // 2. Groups
+      for (const [group, files] of Object.entries(filesByGroup || {})) {
+        nextSpawnable[group] = {};
+        for (const f of files) {
+          try {
+            const fileName = f.split('/').pop();
+            const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(fileName)}`);
+            if (!res.ok) continue;
+            const text = await res.text();
+            nextSpawnable[group][fileName] = parseSpawnableTypesXml(text);
+          } catch (e) {
+            warnings.push(`Group "${group}" file "${f}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+          }
         }
       }
     }
@@ -271,6 +307,8 @@ export function useLootData() {
         }
       } catch { /* ignore vanilla baseline failures */ }
 
+      /** @type {Record<string, string[]>} */
+      let sFilesWithRoot = {};
       // Additional groups via economycore
       try {
         const er = await fetchWithProfile(`${API_BASE}/api/economycore`);
@@ -279,7 +317,7 @@ export function useLootData() {
           const { order, filesByGroup, spawnableFilesByGroup: sFiles } = parseEconomyCoreXml(eText);
           
           // Ensure mission root spawnable types file is included in the map
-          const sFilesWithRoot = { ...sFiles };
+          sFilesWithRoot = { ...sFiles };
           if (!sFilesWithRoot[ROOT_SPAWNABLE_GROUP]) {
             sFilesWithRoot[ROOT_SPAWNABLE_GROUP] = ['cfgspawnabletypes.xml'];
           }
@@ -319,9 +357,9 @@ export function useLootData() {
         }
       } catch { /* no overrides present */ }
 
-      if (Object.keys(baseline).length > 0) {
+      if (Object.keys(baseline).length > 0 || Object.keys(spawnableFilesByGroup).length > 0) {
         setBaselineFiles(baseline);
-        await loadMissionFilesFromAPI(API_BASE, baseline, []);
+        await loadMissionFilesFromAPI(API_BASE, sFilesWithRoot, []);
         return true;
       }
       return false;
@@ -415,7 +453,14 @@ export function useLootData() {
     }
     const allSpawnableGroups = new Set([...Object.keys(baselineSpawnableTypesByGroup), ...Object.keys(spawnableTypesByGroup)]);
     for (const group of allSpawnableGroups) {
-      diff.mission.spawnableGroups[group] = JSON.stringify(baselineSpawnableTypesByGroup[group] || { types: [] }) !== JSON.stringify(spawnableTypesByGroup[group] || { types: [] });
+      diff.mission.spawnableGroups[group] = {};
+      const groupFiles = new Set([
+        ...Object.keys(baselineSpawnableTypesByGroup[group] || {}),
+        ...Object.keys(spawnableTypesByGroup[group] || {})
+      ]);
+      for (const file of groupFiles) {
+        diff.mission.spawnableGroups[group][file] = JSON.stringify(baselineSpawnableTypesByGroup[group]?.[file] || { types: [] }) !== JSON.stringify(spawnableTypesByGroup[group]?.[file] || { types: [] });
+      }
     }
     diff.mission.randomPresets = JSON.stringify(baselineRandomPresets || { presets: [] }) !== JSON.stringify(randomPresets || { presets: [] });
     return diff;
@@ -431,8 +476,10 @@ export function useLootData() {
       }
     }
     if (d.mission?.randomPresets) return true;
-    for (const changed of Object.values(d.mission?.spawnableGroups || {})) {
-      if (changed) return true;
+    for (const files of Object.values(d.mission?.spawnableGroups || {})) {
+      for (const changed of Object.values(files)) {
+        if (changed) return true;
+      }
     }
     return false;
   }, [storageDiff]);
@@ -475,16 +522,18 @@ export function useLootData() {
       }
 
       // 3. Spawnable Types
-      for (const [group, changed] of Object.entries(d.mission.spawnableGroups)) {
-        if (changed) {
-          const data = spawnableTypesByGroup[group] || { types: [] };
-          const xml = generateSpawnableTypesXml(data);
-          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
-            body: xml
-          });
-          if (!res.ok) throw new Error(`Failed to save spawnable types ${group}: ${res.statusText}`);
+      for (const [group, files] of Object.entries(d.mission.spawnableGroups)) {
+        for (const [file, changed] of Object.entries(files)) {
+          if (changed) {
+            const data = spawnableTypesByGroup[group]?.[file] || { types: [] };
+            const xml = generateSpawnableTypesXml(data);
+            const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(file)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
+              body: xml
+            });
+            if (!res.ok) throw new Error(`Failed to save spawnable types ${group}/${file}: ${res.statusText}`);
+          }
         }
       }
 

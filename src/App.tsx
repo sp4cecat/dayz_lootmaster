@@ -445,6 +445,12 @@ export default function App() {
                         {view === 'mission-files:spawnable-types' && (
                             <SpawnableTypesManager 
                                 spawnableFilesByGroup={spawnableFilesByGroup}
+                                spawnableTypesByGroup={spawnableTypesByGroup}
+                                setSpawnableTypesByGroup={setSpawnableTypesByGroup}
+                                randomPresets={randomPresets}
+                                globalsDefaults={globalsDefaults}
+                                typeOptions={allTypeNames}
+                                loadouts={loadouts}
                                 onClose={() => setView('cle')}
                                 onViewCle={(group) => {
                                     setFilters(prev => ({

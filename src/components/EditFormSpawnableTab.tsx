@@ -20,7 +20,7 @@ import { loadoutNodeToSpawnableSection } from '@/utils/loadouts';
 
 interface EditFormSpawnableTabProps {
   selectedTypes: Type[];
-  spawnableTypesByGroup: Record<string, any>;
+  spawnableTypesByGroup: Record<string, Record<string, any>>;
   setSpawnableTypesByGroup: (next: any) => void;
   randomPresets: { presets: any[] };
   globalsDefaults: { LootDamageMin: number | null; LootDamageMax: number | null };
@@ -86,6 +86,10 @@ export default function EditFormSpawnableTab({
     (type.group === 'vanilla' || type.group === 'vanilla_overrides') ? ROOT_SPAWNABLE_GROUP : type.group
   );
 
+  const effectiveFile = result?.file || (
+    effectiveGroup === ROOT_SPAWNABLE_GROUP ? 'cfgspawnabletypes.xml' : 'spawnabletypes.xml'
+  );
+
   const entry = result?.entry || {
     name: type.name,
     sections: [],
@@ -97,10 +101,14 @@ export default function EditFormSpawnableTab({
   const updateSpawnableEntry = (updater: (entry: any) => any) => {
     const nextGroups = { ...spawnableTypesByGroup };
     if (!nextGroups[effectiveGroup]) {
-      nextGroups[effectiveGroup] = { types: [] };
+      nextGroups[effectiveGroup] = {};
     }
-    const groupData = { ...nextGroups[effectiveGroup] };
-    const existingIdx = groupData.types.findIndex((t: any) => t.name.toLowerCase() === type.name.toLowerCase());
+    const groupFiles = { ...nextGroups[effectiveGroup] };
+    if (!groupFiles[effectiveFile]) {
+      groupFiles[effectiveFile] = { types: [] };
+    }
+    const fileData = { ...groupFiles[effectiveFile] };
+    const existingIdx = fileData.types.findIndex((t: any) => t.name.toLowerCase() === type.name.toLowerCase());
     
     let currentEntry;
     if (existingIdx === -1) {
@@ -112,7 +120,7 @@ export default function EditFormSpawnableTab({
         cargo: []
       };
     } else {
-      currentEntry = { ...groupData.types[existingIdx] };
+      currentEntry = { ...fileData.types[existingIdx] };
     }
     
     const nextEntry = updater(currentEntry);
@@ -127,12 +135,13 @@ export default function EditFormSpawnableTab({
     nextEntry.cargo = nextEntry.sections?.filter((s: any) => s.kind === XMLNodeKind.CARGO) || [];
 
     if (existingIdx === -1) {
-      groupData.types = [...groupData.types, nextEntry];
+      fileData.types = [...fileData.types, nextEntry];
     } else {
-      groupData.types = groupData.types.map((t: any, i: number) => i === existingIdx ? nextEntry : t);
+      fileData.types = fileData.types.map((t: any, i: number) => i === existingIdx ? nextEntry : t);
     }
     
-    nextGroups[effectiveGroup] = groupData;
+    groupFiles[effectiveFile] = fileData;
+    nextGroups[effectiveGroup] = groupFiles;
     setSpawnableTypesByGroup(nextGroups);
   };
 

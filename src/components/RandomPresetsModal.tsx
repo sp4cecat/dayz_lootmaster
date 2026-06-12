@@ -31,7 +31,7 @@ interface RandomPresetsModalProps {
   onClose: () => void;
   randomPresets: { presets: Preset[] };
   setRandomPresets: (next: any) => void;
-  spawnableTypesByGroup?: Record<string, any>;
+  spawnableTypesByGroup?: Record<string, Record<string, any>>;
   setSpawnableTypesByGroup?: (next: any) => void;
   inline?: boolean;
   typeOptions?: string[];
@@ -144,16 +144,18 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
     setSpawnableTypesByGroup((prev: any) => {
       const next = { ...prev };
       for (const group in next) {
-        if (next[group]?.types) {
-          next[group] = {
-            ...next[group],
-            types: next[group].types.map((type: any) => ({
-              ...type,
-              sections: (type.sections || []).map((section: any) => section.preset === oldName
-                ? { ...section, preset: newName, attrs: { ...(section.attrs || {}), preset: newName } }
-                : section)
-            }))
-          };
+        for (const file in next[group]) {
+          if (next[group][file]?.types) {
+            next[group][file] = {
+              ...next[group][file],
+              types: next[group][file].types.map((type: any) => ({
+                ...type,
+                sections: (type.sections || []).map((section: any) => section.preset === oldName
+                  ? { ...section, preset: newName, attrs: { ...(section.attrs || {}), preset: newName } }
+                  : section)
+              }))
+            };
+          }
         }
       }
       return next;
@@ -233,22 +235,24 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
     setSpawnableTypesByGroup((prev: any) => {
       const next = { ...prev };
       for (const group in next) {
-        if (next[group]?.types) {
-          next[group] = {
-            ...next[group],
-            types: next[group].types.map((type: any) => ({
-              ...type,
-              sections: (type.sections || []).map((section: any) => section.preset === preset.name
-                ? {
-                  ...section,
-                  preset: '',
-                  chance: preset.chance ?? section.chance,
-                  attrs: { ...(section.attrs || {}), preset: '', chance: String(preset.chance ?? section.chance ?? '') },
-                  items: (preset.items || []).map(item => ({ ...item, attrs: { ...(item.attrs || {}) } }))
-                }
-                : section)
-            }))
-          };
+        for (const file in next[group]) {
+          if (next[group][file]?.types) {
+            next[group][file] = {
+              ...next[group][file],
+              types: next[group][file].types.map((type: any) => ({
+                ...type,
+                sections: (type.sections || []).map((section: any) => section.preset === preset.name
+                  ? {
+                    ...section,
+                    preset: '',
+                    chance: preset.chance ?? section.chance,
+                    attrs: { ...(section.attrs || {}), preset: '', chance: String(preset.chance ?? section.chance ?? '') },
+                    items: (preset.items || []).map(item => ({ ...item, attrs: { ...(item.attrs || {}) } }))
+                  }
+                  : section)
+              }))
+            };
+          }
         }
       }
       return next;
@@ -259,11 +263,13 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
     let total = 0;
     // References in spawnable types
     for (const group in spawnableTypesByGroup) {
-      const data = spawnableTypesByGroup[group];
-      if (data?.types) {
-        for (const type of data.types) {
-          if (type.sections) {
-            total += type.sections.filter((s: any) => s.preset === name).length;
+      for (const file in spawnableTypesByGroup[group]) {
+        const data = spawnableTypesByGroup[group][file];
+        if (data?.types) {
+          for (const type of data.types) {
+            if (type.sections) {
+              total += type.sections.filter((s: any) => s.preset === name).length;
+            }
           }
         }
       }

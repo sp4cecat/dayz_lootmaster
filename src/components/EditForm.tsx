@@ -22,7 +22,7 @@ interface EditFormProps {
   selectedProfileId: string;
   selectedProfile?: { id: string; addons?: string[] };
   getApiBase: () => string;
-  spawnableTypesByGroup?: Record<string, any>;
+  spawnableTypesByGroup?: Record<string, Record<string, any>>;
   setSpawnableTypesByGroup?: (next: any) => void;
   randomPresets?: { presets: any[] };
   globalsDefaults?: { LootDamageMin: number | null; LootDamageMax: number | null };

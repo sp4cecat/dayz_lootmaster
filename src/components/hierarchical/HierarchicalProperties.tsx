@@ -3,7 +3,6 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 import { Input } from '@/components/base/input/input';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Slider } from '@/components/base/slider/slider';
-import { Select } from '@/components/base/select/select';
 import { X, Layers, Package, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';

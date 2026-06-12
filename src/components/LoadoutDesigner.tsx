@@ -20,7 +20,7 @@ interface LoadoutDesignerProps {
   onClose: () => void;
   typeOptions: string[];
   randomPresets?: { presets: any[] };
-  spawnableTypesByGroup?: Record<string, any>;
+  spawnableTypesByGroup?: Record<string, Record<string, any>>;
   selectedProfileId?: string;
   getApiBase?: () => string;
   loadouts?: Loadout[];
@@ -496,25 +496,27 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                   if (importGroup === 'vanilla') return groupName === 'vanilla' || groupName === 'vanilla_overrides';
                   return groupName === importGroup;
                 })
-                .flatMap(([groupName, data]) => 
-                  (data.types || [])
-                  .filter((t: any) => 
-                    t.name.toLowerCase().includes(importSearch.toLowerCase()) && 
-                    (t.sections?.length > 1)
-                  )
-                  .map((t: any) => (
-                    <div 
-                      key={`${groupName}:${t.name}`}
-                      onClick={() => handleImportFromExisting(t)}
-                      className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
-                        <div className="text-xs text-gray-500">{formatModName(groupName)}</div>
+                .flatMap(([groupName, files]) => 
+                  Object.entries(files).flatMap(([fileName, data]) => 
+                    (data.types || [])
+                    .filter((t: any) => 
+                      t.name.toLowerCase().includes(importSearch.toLowerCase()) && 
+                      (t.sections?.length > 1)
+                    )
+                    .map((t: any) => (
+                      <div 
+                        key={`${groupName}:${fileName}:${t.name}`}
+                        onClick={() => handleImportFromExisting(t)}
+                        className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
+                          <div className="text-xs text-gray-500">{formatModName(groupName)} ({fileName})</div>
+                        </div>
+                        <Badge color="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
                       </div>
-                      <Badge color="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
-                    </div>
-                  ))
+                    ))
+                  )
               )
             )}
 
@@ -711,8 +713,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               {spawnableTypesByGroup && Object.keys(spawnableTypesByGroup)
                 .filter(group => {
                   if (group === 'vanilla' || group === 'vanilla_overrides' || group === '__root') return false;
-                  const groupData = spawnableTypesByGroup[group];
-                  return groupData?.types?.some((t: any) => t.sections?.length > 1);
+                  const groupFiles = spawnableTypesByGroup[group];
+                  return Object.values(groupFiles).some((data: any) => data?.types?.some((t: any) => t.sections?.length > 1));
                 })
                 .sort()
                 .map(group => (

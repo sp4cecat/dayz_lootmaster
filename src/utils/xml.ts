@@ -310,9 +310,12 @@ export function findSpawnableEntryForType(spawnableTypesByGroup, group, typeName
   const target = String(typeName || '').toLowerCase();
   if (!target) return null;
   const findInGroup = (groupKey) => {
-    const groupData = spawnableTypesByGroup?.[groupKey];
-    const entry = (groupData?.types || []).find(t => String(t.name || '').toLowerCase() === target);
-    return entry ? { entry, group: groupKey } : null;
+    const groupFiles = spawnableTypesByGroup?.[groupKey] || {};
+    for (const [fileName, fileData] of Object.entries(groupFiles)) {
+      const entry = ((fileData as any)?.types || []).find(t => String(t.name || '').toLowerCase() === target);
+      if (entry) return { entry, group: groupKey, file: fileName };
+    }
+    return null;
   };
   return findInGroup(group) || findInGroup(ROOT_SPAWNABLE_GROUP);
 }
