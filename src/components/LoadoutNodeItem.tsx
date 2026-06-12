@@ -20,6 +20,7 @@ interface LoadoutNodeItemProps {
   randomPresets?: { presets: any[] };
   expansionAirdrops?: any;
   spawnableTypesByGroup?: any;
+  isReadOnly?: boolean;
 }
 
 export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
@@ -34,9 +35,11 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
   allLoadouts = [],
   randomPresets,
   expansionAirdrops,
-  spawnableTypesByGroup
+  spawnableTypesByGroup,
+  isReadOnly = false
 }) => {
-  const isExpanded = node.isExpanded ?? defaultExpanded;
+  const [localExpanded, setLocalExpanded] = React.useState(defaultExpanded);
+  const isExpanded = isReadOnly ? localExpanded : (node.isExpanded ?? defaultExpanded);
   const isSelected = selectedNodeId === node.id;
 
   const resolvedChildren = React.useMemo(() => {
@@ -152,12 +155,20 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
           "flex items-center group px-3 py-2 rounded-lg cursor-pointer border transition-all",
           isSelected 
             ? "bg-primary-50 border-primary-200 dark:bg-primary-900/20 dark:border-primary-800" 
-            : "bg-white border-gray-200 dark:bg-gray-900 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+            : "bg-white border-gray-200 dark:bg-gray-900 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700",
+          isReadOnly && "opacity-60 grayscale-[0.5] cursor-default"
         )}
-        onClick={() => onSelect(node)}
+        onClick={() => !isReadOnly && onSelect(node)}
       >
         <button 
-          onClick={(e) => { e.stopPropagation(); onUpdate({ ...node, isExpanded: !isExpanded }); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            if (isReadOnly) {
+              setLocalExpanded(!isExpanded);
+            } else {
+              onUpdate({ ...node, isExpanded: !isExpanded }); 
+            }
+          }}
           className="mr-2 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400"
         >
           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -175,26 +186,31 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
             <span className="font-semibold truncate text-sm">{node.name}</span>
             <Badge color="gray" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
             {node.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
+            {isReadOnly && <Badge color="gray" size="sm">Linked</Badge>}
           </div>
         </div>
 
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button 
-            variant="secondary" 
-            size="sm" 
-            className="h-8 w-8 p-0"
-            onClick={(e) => { e.stopPropagation(); onSelect(node); }}
-          >
-            <Settings2 size={14} />
-          </Button>
-          <Button 
-            variant="secondary" 
-            size="sm" 
-            className="h-8 w-8 p-0 text-error-600"
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          >
-            <Trash2 size={14} />
-          </Button>
+          {!isReadOnly && (
+            <>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                className="h-8 w-8 p-0"
+                onClick={(e) => { e.stopPropagation(); onSelect(node); }}
+              >
+                <Settings2 size={14} />
+              </Button>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                className="h-8 w-8 p-0 text-error-600"
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -204,20 +220,22 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Attachments</span>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => onAddTemplate('attachments')}
-                  className="text-xs text-amber-600 hover:underline flex items-center"
-                >
-                  <Layers size={12} className="mr-1" /> Template
-                </button>
-                <button 
-                  onClick={() => handleAddChild('attachments')}
-                  className="text-xs text-primary-600 hover:underline flex items-center"
-                >
-                  <Plus size={12} className="mr-1" /> Add
-                </button>
-              </div>
+              {!isReadOnly && (
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => onAddTemplate('attachments')}
+                    className="text-xs text-amber-600 hover:underline flex items-center"
+                  >
+                    <Layers size={12} className="mr-1" /> Template
+                  </button>
+                  <button 
+                    onClick={() => handleAddChild('attachments')}
+                    className="text-xs text-primary-600 hover:underline flex items-center"
+                  >
+                    <Plus size={12} className="mr-1" /> Add
+                  </button>
+                </div>
+              )}
             </div>
             {resolvedChildren.attachments.length > 0 ? (
               <div className="space-y-1">
@@ -235,6 +253,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
                     spawnableTypesByGroup={spawnableTypesByGroup}
+                    isReadOnly={isReadOnly || node.type === 'template'}
                   />
                 ))}
               </div>
@@ -247,20 +266,22 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Cargo</span>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => onAddTemplate('cargo')}
-                  className="text-xs text-amber-600 hover:underline flex items-center"
-                >
-                  <Layers size={12} className="mr-1" /> Template
-                </button>
-                <button 
-                  onClick={() => handleAddChild('cargo')}
-                  className="text-xs text-primary-600 hover:underline flex items-center"
-                >
-                  <Plus size={12} className="mr-1" /> Add
-                </button>
-              </div>
+              {!isReadOnly && (
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => onAddTemplate('cargo')}
+                    className="text-xs text-amber-600 hover:underline flex items-center"
+                  >
+                    <Layers size={12} className="mr-1" /> Template
+                  </button>
+                  <button 
+                    onClick={() => handleAddChild('cargo')}
+                    className="text-xs text-primary-600 hover:underline flex items-center"
+                  >
+                    <Plus size={12} className="mr-1" /> Add
+                  </button>
+                </div>
+              )}
             </div>
             {resolvedChildren.cargo.length > 0 ? (
               <div className="space-y-1">
@@ -278,6 +299,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
                     spawnableTypesByGroup={spawnableTypesByGroup}
+                    isReadOnly={isReadOnly || node.type === 'template'}
                   />
                 ))}
               </div>

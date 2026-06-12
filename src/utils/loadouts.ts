@@ -225,6 +225,7 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
       list.push({
         id: crypto.randomUUID(),
         type: 'template',
+        templateSource: 'preset',
         name: section.preset,
         chance: section.chance ?? 1.0,
         attachments: [],
@@ -235,6 +236,7 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
         list.push({
           id: crypto.randomUUID(),
           type: item.preset ? 'template' : 'item',
+          templateSource: item.preset ? 'preset' : undefined,
           name: item.preset || item.name,
           chance: (item.chance ?? 1.0) * (section.chance ?? 1.0), // Flatten chance for designer
           attachments: [],
