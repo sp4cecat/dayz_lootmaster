@@ -75,21 +75,39 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                             </div>
                         }
                     />
-                    <Table aria-label="Spawnable types files">
+                    <Table 
+                        aria-label="Spawnable types files"
+                        onAction={(key) => {
+                            const file = files.find(f => `${f.group}-${f.path}` === key);
+                            if (file) onViewCle?.(file.isRoot ? '' : file.group);
+                        }}
+                    >
                         <Table.Header>
                             <Table.Column isRowHeader>Group</Table.Column>
                             <Table.Column>Filename</Table.Column>
                             <Table.Column>Path</Table.Column>
                             <Table.Column className="w-0 text-center">Status</Table.Column>
-                            <Table.Column className="w-0">Actions</Table.Column>
+                            <Table.Column className="w-0 text-right pr-6">Actions</Table.Column>
                         </Table.Header>
                         <Table.Body>
                             {files.map((file, idx) => (
-                                <Table.Row key={`${file.group}-${file.path}-${idx}`}>
+                                <Table.Row 
+                                    key={`${file.group}-${file.path}-${idx}`}
+                                    id={`${file.group}-${file.path}`}
+                                    className="cursor-pointer group/row"
+                                >
                                     <Table.Cell>
-                                        <span className={cx("font-medium", file.isRoot ? "text-gray-900 dark:text-white italic" : "text-gray-900 dark:text-white")}>
-                                            {formatModName(file.group)}
-                                        </span>
+                                        <div className="flex flex-col">
+                                            <span className={cx(
+                                                "font-medium transition-colors group-hover/row:text-primary-700 dark:group-hover/row:text-primary-400", 
+                                                file.isRoot ? "text-gray-900 dark:text-white italic" : "text-gray-900 dark:text-white"
+                                            )}>
+                                                {formatModName(file.group)}
+                                            </span>
+                                            {file.isRoot && (
+                                                <span className="text-[10px] text-gray-400 font-normal non-italic">Mission Root</span>
+                                            )}
+                                        </div>
                                     </Table.Cell>
                                     <Table.Cell>
                                         <div className="flex items-center gap-2">
@@ -108,12 +126,16 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                                         </div>
                                     </Table.Cell>
                                     <Table.Cell>
-                                        <div className="flex justify-end">
+                                        <div className="flex justify-end pr-2">
                                             <Button 
                                                 variant="tertiary" 
                                                 size="sm" 
                                                 icon={ExternalLink}
-                                                onClick={() => onViewCle?.(file.isRoot ? '' : file.group)}
+                                                className="opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onViewCle?.(file.isRoot ? '' : file.group);
+                                                }}
                                             >
                                                 View in CLE
                                             </Button>
