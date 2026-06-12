@@ -362,7 +362,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     <Dropdown.Item id="spawnable:all" label="All Spawnable Types" />
                     <Dropdown.Item id="spawnable:vanilla" label="Vanilla (Root)" />
                     {spawnableTypesByGroup && Object.keys(spawnableTypesByGroup)
-                      .filter(g => g !== 'vanilla' && g !== 'vanilla_overrides')
+                      .filter(group => {
+                        if (group === 'vanilla' || group === 'vanilla_overrides' || group === '__root') return false;
+                        const groupData = spawnableTypesByGroup[group];
+                        return groupData?.types?.some((t: any) => t.sections?.length > 1);
+                      })
                       .sort()
                       .map(group => (
                         <Dropdown.Item key={group} id={`spawnable:${group}`} label={group.toLowerCase().endsWith('mod') ? group : `${group} Mod`} />
@@ -545,6 +549,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
             {importSource === 'spawnable' && spawnableTypesByGroup && (
               Object.entries(spawnableTypesByGroup)
                 .filter(([groupName]) => {
+                  if (groupName === '__root') return false;
                   if (importGroup === 'all') return true;
                   if (importGroup === 'vanilla') return groupName === 'vanilla' || groupName === 'vanilla_overrides';
                   return groupName === importGroup;
