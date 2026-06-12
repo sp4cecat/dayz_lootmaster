@@ -39,7 +39,8 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'heatmap', label: 'Heat map' }
   ]},
   { id: 'mission-files', label: 'Mission Files', icon: FileCode, subItems: [
-    { id: 'random-presets', label: 'Random Presets' }
+    { id: 'random-presets', label: 'Random Presets' },
+    { id: 'spawnable-types', label: 'Spawnable Types' }
   ]},
   { id: 'tools', label: 'Tools', icon: Settings, subItems: [
     { id: 'snapshots', label: 'Snapshots' },

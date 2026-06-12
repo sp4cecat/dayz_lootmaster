@@ -20,6 +20,7 @@ import { ExpansionAirdropEditor } from './components/ExpansionAirdropEditor';
 import ProfileManager from './components/ProfileManager';
 import { SnapshotModal } from './components/SnapshotModal';
 import { LoadoutDesigner } from './components/LoadoutDesigner';
+import { SpawnableTypesManager } from './components/SpawnableTypesManager';
 import AddonEditorModal from './components/AddonEditorModal';
 import HeatMapModal from './components/HeatMapModal';
 import { Sidebar } from './components/layout/Sidebar';
@@ -79,6 +80,7 @@ export default function App() {
         getBaselineFileTypes,
         persistChangesToServer,
         refreshBaselineFromAPI,
+        spawnableFilesByGroup,
         spawnableTypesByGroup,
         setSpawnableTypesByGroup,
         randomPresets,
@@ -438,6 +440,19 @@ export default function App() {
                                 inline={true}
                                 typeOptions={allTypeNames}
                                 loadouts={loadouts}
+                            />
+                        )}
+                        {view === 'mission-files:spawnable-types' && (
+                            <SpawnableTypesManager 
+                                spawnableFilesByGroup={spawnableFilesByGroup}
+                                onClose={() => setView('cle')}
+                                onViewCle={(group) => {
+                                    setFilters(prev => ({
+                                        ...prev,
+                                        groups: group ? [group] : []
+                                    }));
+                                    setView('cle');
+                                }}
                             />
                         )}
                         {view === 'loadout-designer' && (

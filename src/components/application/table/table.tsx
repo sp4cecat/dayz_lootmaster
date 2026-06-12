@@ -157,9 +157,9 @@ const TableHeader = <T extends object>({ columns, children, bordered = true, cla
         >
             <AriaCollection items={columns}>
                 {selectionBehavior === "toggle" && (
-                    <AriaColumn className={cx("relative py-2 pr-0 pl-4 flex items-center", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
+                    <AriaColumn className={cx("relative py-2 pr-0 pl-4", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
                         {selectionMode === "multiple" && (
-                            <div className="flex items-center">
+                            <div className="flex items-center h-full">
                                 <Checkbox slot="selection" size="md" />
                             </div>
                         )}
@@ -193,7 +193,6 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
             className={(state) =>
                 cx(
                     "relative p-0 px-6 py-2 outline-hidden focus-visible:z-1 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-bg-primary focus-visible:ring-inset",
-                    "flex items-center",
                     selectionBehavior === "toggle" && "nth-2:pl-3",
                     state.allowsSorting && "cursor-pointer",
                     typeof className === "function" ? className(state) : className,
@@ -258,8 +257,8 @@ const TableRow = <T extends object>({ columns, children, className, highlightSel
         >
             <AriaCollection items={columns}>
                 {selectionBehavior === "toggle" && (
-                    <AriaCell className={cx("relative py-2 pr-0 pl-4 flex items-center", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
-                        <div className="flex items-center">
+                    <AriaCell className={cx("relative py-2 pr-0 pl-4", size === "sm" ? "w-9 md:pl-5" : "w-11 md:pl-6")}>
+                        <div className="flex items-center h-full">
                             <Checkbox slot="selection" size="md" />
                         </div>
                     </AriaCell>

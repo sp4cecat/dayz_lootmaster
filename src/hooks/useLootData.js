@@ -82,6 +82,7 @@ export function useLootData() {
   // Baseline parsed from samples (read-only reference to compare against edits)
   const [baselineFiles, setBaselineFiles] = useState(/** @type {TypeFiles|null} */(null));
   const [baselineDefinitions, setBaselineDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
+  const [spawnableFilesByGroup, setSpawnableFilesByGroup] = useState(/** @type {Record<string, string[]>} */({}));
   const [spawnableTypesByGroup, setSpawnableTypesByGroup] = useState(/** @type {Record<string, any>} */({}));
   const [baselineSpawnableTypesByGroup, setBaselineSpawnableTypesByGroup] = useState(/** @type {Record<string, any>} */({}));
   const [randomPresets, setRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
@@ -275,7 +276,8 @@ export function useLootData() {
         const er = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (er.ok) {
           const eText = await er.text();
-          const { order, filesByGroup, spawnableFilesByGroup } = parseEconomyCoreXml(eText);
+          const { order, filesByGroup, spawnableFilesByGroup: sFiles } = parseEconomyCoreXml(eText);
+          setSpawnableFilesByGroup(sFiles);
           for (const group of order) {
             const filesList = filesByGroup[group] || [];
             if (filesList.length > 0) {
@@ -1364,6 +1366,7 @@ export function useLootData() {
     getBaselineFileTypes,
     persistChangesToServer,
     refreshBaselineFromAPI,
+    spawnableFilesByGroup,
     spawnableTypesByGroup,
     setSpawnableTypesByGroup,
     baselineSpawnableTypesByGroup,
