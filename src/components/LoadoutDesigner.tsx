@@ -46,6 +46,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   // Import from existing state
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importSource, setImportSource] = useState<'spawnable' | 'preset' | 'expansion' | 'loadout' | null>(null);
+  const [importGroup, setImportGroup] = useState<string | 'all' | 'vanilla'>('all');
   const [importTargetNodeId, setImportTargetNodeId] = useState<string | null>(null);
   const [importTargetList, setImportTargetList] = useState<'attachments' | 'cargo' | null>(null);
   const [importSearch, setImportSearch] = useState('');
@@ -239,8 +240,14 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     }
   };
 
-  const openImportModal = (source: 'spawnable' | 'preset' | 'expansion' | 'loadout', targetNodeId: string | null = null, list: 'attachments' | 'cargo' | null = null) => {
+  const openImportModal = (
+    source: 'spawnable' | 'preset' | 'expansion' | 'loadout', 
+    targetNodeId: string | null = null, 
+    list: 'attachments' | 'cargo' | null = null,
+    group: string | 'all' | 'vanilla' = 'all'
+  ) => {
     setImportSource(source);
+    setImportGroup(group);
     setImportTargetNodeId(targetNodeId);
     setImportTargetList(list);
     setImportModalOpen(true);
@@ -254,8 +261,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       const newNode: LoadoutNode = {
         id: crypto.randomUUID(),
         type: 'template',
-        templateSource: importSource === 'preset' ? 'preset' : importSource === 'expansion' ? 'airdrop' : 'loadout',
-        name: importSource === 'preset' ? data.name : importSource === 'expansion' ? data.name : data.id,
+        templateSource: importSource === 'preset' ? 'preset' : importSource === 'expansion' ? 'airdrop' : importSource === 'spawnable' ? 'spawnable' : 'loadout',
+        name: (importSource === 'preset' || importSource === 'expansion' || importSource === 'spawnable') ? data.name : data.id,
         chance: 1.0,
         attachments: [],
         cargo: []
@@ -338,15 +345,29 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               </AriaButton>
               <Dropdown.Popover>
                 <Dropdown.Menu onAction={(key) => {
-                  if (key === 'new') handleCreate();
-                  else openImportModal(key as any);
+                  if (key === 'new') {
+                    handleCreate();
+                  } else if (typeof key === 'string' && key.startsWith('spawnable:')) {
+                    const groupName = key.substring('spawnable:'.length);
+                    openImportModal('spawnable', null, null, groupName);
+                  } else {
+                    openImportModal(key as any);
+                  }
                 }}>
                   <Dropdown.Item id="new" label="New Empty Loadout" />
                   <Dropdown.Section>
                     <Dropdown.SectionHeader className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Create from Existing
                     </Dropdown.SectionHeader>
-                    <Dropdown.Item id="spawnable" label="From Vanilla Spawnable" />
+                    <Dropdown.Item id="spawnable:all" label="All Spawnable Types" />
+                    <Dropdown.Item id="spawnable:vanilla" label="Vanilla (Root)" />
+                    {spawnableTypesByGroup && Object.keys(spawnableTypesByGroup)
+                      .filter(g => g !== 'vanilla' && g !== 'vanilla_overrides')
+                      .sort()
+                      .map(group => (
+                        <Dropdown.Item key={group} id={`spawnable:${group}`} label={group.toLowerCase().endsWith('mod') ? group : `${group} Mod`} />
+                      ))
+                    }
                   </Dropdown.Section>
                 </Dropdown.Menu>
               </Dropdown.Popover>
@@ -448,6 +469,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                           allLoadouts={loadouts}
                           randomPresets={randomPresets}
                           expansionAirdrops={expansionAirdrops}
+                          spawnableTypesByGroup={spawnableTypesByGroup}
                           defaultExpanded={true}
                         />
                       ))
@@ -497,7 +519,13 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       <Modal
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
-        title={`Import from ${importSource === 'spawnable' ? 'Vanilla Spawnable' : importSource === 'preset' ? 'Random Preset' : 'Expansion Airdrop'}`}
+        title={`Import from ${
+          importSource === 'spawnable' 
+            ? (importGroup === 'all' ? 'All Spawnables' : importGroup === 'vanilla' ? 'Vanilla Spawnables' : `${importGroup.toLowerCase().endsWith('mod') ? importGroup : `${importGroup} Mod`}`) 
+            : importSource === 'preset' ? 'Random Preset' 
+            : importSource === 'expansion' ? 'Expansion Airdrop'
+            : 'Saved Loadout'
+        }`}
         icon={Plus}
         maxWidth="max-w-2xl"
       >
@@ -515,21 +543,27 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
 
           <div className="max-h-[400px] overflow-auto border border-gray-200 dark:border-gray-800 rounded-lg divide-y divide-gray-200 dark:divide-gray-800">
             {importSource === 'spawnable' && spawnableTypesByGroup && (
-              Object.entries(spawnableTypesByGroup).flatMap(([group, data]) => 
-                (data.types || [])
+              Object.entries(spawnableTypesByGroup)
+                .filter(([groupName]) => {
+                  if (importGroup === 'all') return true;
+                  if (importGroup === 'vanilla') return groupName === 'vanilla' || groupName === 'vanilla_overrides';
+                  return groupName === importGroup;
+                })
+                .flatMap(([groupName, data]) => 
+                  (data.types || [])
                   .filter((t: any) => 
                     t.name.toLowerCase().includes(importSearch.toLowerCase()) && 
                     (t.sections?.length > 1)
                   )
                   .map((t: any) => (
                     <div 
-                      key={`${group}:${t.name}`}
+                      key={`${groupName}:${t.name}`}
                       onClick={() => handleImportFromExisting(t)}
                       className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between"
                     >
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
-                        <div className="text-xs text-gray-500">{group}</div>
+                        <div className="text-xs text-gray-500">{groupName}</div>
                       </div>
                       <Badge color="gray" size="sm">{(t.sections?.length || 0)} sections</Badge>
                     </div>
@@ -607,6 +641,21 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         maxWidth="max-w-md"
       >
         <div className="grid grid-cols-1 gap-3">
+          <button 
+            onClick={() => {
+              setTemplateModalOpen(false);
+              if (templateModalTarget) openImportModal('spawnable', templateModalTarget.nodeId, templateModalTarget.list);
+            }}
+            className="flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+          >
+            <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+              <Package size={24} />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white">Spawnable Type</div>
+              <div className="text-sm text-gray-500">Inject another item's hierarchy as a template</div>
+            </div>
+          </button>
           <button 
             onClick={() => {
               setTemplateModalOpen(false);

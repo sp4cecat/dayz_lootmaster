@@ -85,7 +85,7 @@ export const LoadoutItemProperties: React.FC<LoadoutItemPropertiesProps> = ({
             {node.type === 'template' ? (
               <div className="space-y-3">
                 <Badge color="warning" size="md" className="w-full justify-center">
-                  Live Linked: {node.templateSource === 'preset' ? 'Random Preset' : node.templateSource === 'airdrop' ? 'Expansion Airdrop' : 'Saved Loadout'}
+                  Live Linked: {node.templateSource === 'preset' ? 'Random Preset' : node.templateSource === 'airdrop' ? 'Expansion Airdrop' : node.templateSource === 'spawnable' ? 'Spawnable Type' : 'Saved Loadout'}
                 </Badge>
                 <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 font-mono text-xs break-all">
                   {node.name}

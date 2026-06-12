@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2 } f
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
+import { vanillaSpawnableToLoadout } from '@/utils/loadouts';
 
 interface LoadoutNodeItemProps {
   node: LoadoutNode;
@@ -18,6 +19,7 @@ interface LoadoutNodeItemProps {
   allLoadouts?: Loadout[];
   randomPresets?: { presets: any[] };
   expansionAirdrops?: any;
+  spawnableTypesByGroup?: any;
 }
 
 export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
@@ -31,7 +33,8 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
   defaultExpanded = false,
   allLoadouts = [],
   randomPresets,
-  expansionAirdrops
+  expansionAirdrops,
+  spawnableTypesByGroup
 }) => {
   const isExpanded = node.isExpanded ?? defaultExpanded;
   const isSelected = selectedNodeId === node.id;
@@ -80,9 +83,26 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
            cargo: []
          };
        }
+    } else if (node.templateSource === 'spawnable' && spawnableTypesByGroup) {
+      // Search for the type in all groups
+      let foundType = null;
+      for (const group of Object.values(spawnableTypesByGroup)) {
+        foundType = (group as any).types?.find((t: any) => t.name === node.name);
+        if (foundType) break;
+      }
+
+      if (foundType) {
+        const imported = vanillaSpawnableToLoadout(foundType);
+        if (imported.items.length > 0) {
+          return {
+            attachments: imported.items[0].attachments,
+            cargo: imported.items[0].cargo
+          };
+        }
+      }
     }
     return { attachments: [], cargo: [] };
-  }, [node, allLoadouts, randomPresets, expansionAirdrops]);
+  }, [node, allLoadouts, randomPresets, expansionAirdrops, spawnableTypesByGroup]);
 
   const handleAddChild = (list: 'attachments' | 'cargo') => {
     const newNode: LoadoutNode = {
@@ -214,6 +234,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
                     allLoadouts={allLoadouts}
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
+                    spawnableTypesByGroup={spawnableTypesByGroup}
                   />
                 ))}
               </div>
@@ -256,6 +277,7 @@ export const LoadoutNodeItem: React.FC<LoadoutNodeItemProps> = ({
                     allLoadouts={allLoadouts}
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
+                    spawnableTypesByGroup={spawnableTypesByGroup}
                   />
                 ))}
               </div>

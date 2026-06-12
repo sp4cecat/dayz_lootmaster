@@ -34,7 +34,8 @@ export function resolveLoadoutNode(
   node: LoadoutNode, 
   allLoadouts: Loadout[],
   randomPresets: any[] = [],
-  expansionAirdrops: any = null
+  expansionAirdrops: any = null,
+  spawnableTypesByGroup: any = null
 ): LoadoutNode {
   if (node.type === 'template') {
     if (node.templateSource === 'loadout' || !node.templateSource) {
@@ -83,13 +84,31 @@ export function resolveLoadoutNode(
           cargo: []
         };
       }
+    } else if (node.templateSource === 'spawnable' && spawnableTypesByGroup) {
+      // Search for the type in all groups
+      let foundType = null;
+      for (const group of Object.values(spawnableTypesByGroup)) {
+        foundType = (group as any).types?.find((t: any) => t.name === node.name);
+        if (foundType) break;
+      }
+
+      if (foundType) {
+        const imported = vanillaSpawnableToLoadout(foundType);
+        if (imported.items.length > 0) {
+          return {
+            ...imported.items[0],
+            id: node.id,
+            chance: node.chance
+          };
+        }
+      }
     }
   }
   
   return {
     ...node,
-    attachments: (node.attachments || []).map(n => resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops)),
-    cargo: (node.cargo || []).map(n => resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops))
+    attachments: (node.attachments || []).map(n => resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops, spawnableTypesByGroup)),
+    cargo: (node.cargo || []).map(n => resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops, spawnableTypesByGroup))
   };
 }
 
