@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type UIEvent, type CSSProperties } from 'react';
 import { Selection } from 'react-aria-components';
+import { formatModName } from '@/utils/format';
 import { formatLifetime } from '@/utils/time';
 import { Table, TableCard } from '@/components/application/table/table';
 import { Badge } from '@/components/base/badges/badges';
@@ -342,7 +343,7 @@ export default function TypesTable({
                 </Table.Cell>
                 {showGroupColumn && !isAnySelected && (
                   <Table.Cell className="px-3 py-2 flex items-center text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {row.group || '-'}
+                    {formatModName(row.group || '-')}
                   </Table.Cell>
                 )}
                 <Table.Cell className="px-3 py-2 flex items-center justify-end text-sm font-bold text-gray-900 dark:text-white">

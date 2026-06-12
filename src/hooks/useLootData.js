@@ -277,7 +277,13 @@ export function useLootData() {
         if (er.ok) {
           const eText = await er.text();
           const { order, filesByGroup, spawnableFilesByGroup: sFiles } = parseEconomyCoreXml(eText);
-          setSpawnableFilesByGroup(sFiles);
+          
+          // Ensure mission root spawnable types file is included in the map
+          const sFilesWithRoot = { ...sFiles };
+          if (!sFilesWithRoot[ROOT_SPAWNABLE_GROUP]) {
+            sFilesWithRoot[ROOT_SPAWNABLE_GROUP] = ['cfgspawnabletypes.xml'];
+          }
+          setSpawnableFilesByGroup(sFilesWithRoot);
           for (const group of order) {
             const filesList = filesByGroup[group] || [];
             if (filesList.length > 0) {
@@ -1154,7 +1160,14 @@ export function useLootData() {
         const econRes = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (econRes.ok) {
           const econText = await econRes.text();
-          const { order, filesByGroup } = parseEconomyCoreXml(econText);
+          const { order, filesByGroup, spawnableFilesByGroup: sFiles } = parseEconomyCoreXml(econText);
+
+          // Ensure mission root spawnable types file is included in the map
+          const sFilesWithRoot = { ...sFiles };
+          if (!sFilesWithRoot[ROOT_SPAWNABLE_GROUP]) {
+            sFilesWithRoot[ROOT_SPAWNABLE_GROUP] = ['cfgspawnabletypes.xml'];
+          }
+          setSpawnableFilesByGroup(sFilesWithRoot);
 
 
           for (const group of order) {

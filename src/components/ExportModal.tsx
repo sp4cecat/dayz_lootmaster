@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { formatModName } from '@/utils/format';
 import { generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
 import { createZip } from '../utils/zip.js';
 import { Modal } from '@/components/base/modal/modal';
@@ -117,7 +118,7 @@ export default function ExportModal({ onClose, groups, getGroupTypes, getGroupFi
                     : "bg-white border-gray-200 text-gray-600 hover:border-primary-200 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:text-gray-400"
                 )}
               >
-                <span className="truncate">{g}</span>
+                <span className="truncate">{formatModName(g)}</span>
                 {selectedGroup === g && <div className="size-1.5 rounded-full bg-primary-600 dark:bg-primary-400 shrink-0 ml-2" />}
               </button>
             ))}

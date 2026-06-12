@@ -6,6 +6,7 @@ import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { cx } from '@/utils/cx';
 import { ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
+import { formatModName } from '@/utils/format';
 
 interface SpawnableTypesManagerProps {
     spawnableFilesByGroup: Record<string, string[]>;
@@ -26,7 +27,7 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                 const isRoot = group === ROOT_SPAWNABLE_GROUP;
                 
                 result.push({
-                    group: isRoot ? 'Mission Root' : group,
+                    group: isRoot ? ROOT_SPAWNABLE_GROUP : group,
                     path,
                     fileName,
                     isRoot
@@ -87,7 +88,7 @@ export function SpawnableTypesManager({ spawnableFilesByGroup, onClose, onViewCl
                                 <Table.Row key={`${file.group}-${file.path}-${idx}`}>
                                     <Table.Cell>
                                         <span className={cx("font-medium", file.isRoot ? "text-gray-900 dark:text-white italic" : "text-gray-900 dark:text-white")}>
-                                            {file.group}
+                                            {formatModName(file.group)}
                                         </span>
                                     </Table.Cell>
                                     <Table.Cell>

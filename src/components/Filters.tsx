@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { formatModName } from '@/utils/format';
 import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { Input } from '@/components/base/input/input';
@@ -322,7 +323,7 @@ export default function Filters({
                   className="cursor-pointer py-1.5 px-3 transition-colors"
                   onClick={() => toggleGroup(g)}
                 >
-                  {g}
+                  {formatModName(g)}
                 </Badge>
               ))}
             </AccordionItem>

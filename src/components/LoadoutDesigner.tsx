@@ -8,32 +8,12 @@ import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
-import { updateNodeInList, findNode } from '@/utils/tree';
+import { formatModName } from '@/utils/format';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
 
-const formatModName = (name: string) => {
-  if (name === 'all') return 'All Spawnable Types';
-  if (name === 'vanilla') return 'Vanilla (Root)';
-  if (name === 'vanilla_overrides') return 'Vanilla Overrides';
-  if (name === '__root') return 'Root';
-  
-  const lowerCaseParticles = ['and', 'of', 'the', 'in', 'on', 'with', 'by', 'at'];
-  
-  return name
-    .replace(/_/g, ' ')
-    .split(' ')
-    .map((word, index) => {
-      const lower = word.toLowerCase();
-      if (index > 0 && lowerCaseParticles.includes(lower)) {
-        return lower;
-      }
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(' ');
-};
 
 interface LoadoutDesignerProps {
   onClose: () => void;
@@ -711,12 +691,12 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 <div className="p-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md">
                   <Package size={18} />
                 </div>
-                <div className="font-medium text-gray-900 dark:text-white">All Spawnable Types</div>
+                <div className="font-medium text-gray-900 dark:text-white">{formatModName('all')}</div>
               </button>
 
               <button 
                 onClick={() => {
-                  openImportModal('spawnable', null, null, 'vanilla');
+                  openImportModal('spawnable', null, null, '__root');
                   setCreateModalOpen(false);
                 }}
                 className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
@@ -724,7 +704,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 <div className="p-2 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-md">
                   <FileCode size={18} />
                 </div>
-                <div className="font-medium text-gray-900 dark:text-white">Vanilla (Root)</div>
+                <div className="font-medium text-gray-900 dark:text-white">{formatModName('__root')}</div>
               </button>
 
               {spawnableTypesByGroup && Object.keys(spawnableTypesByGroup)
