@@ -54,6 +54,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const [loadingAirdrops, setLoadingAirdrops] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   useEffect(() => {
     if (!propLoadouts) {
@@ -337,45 +338,14 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
-            <Dropdown.Root>
-              <AriaButton className="w-full inline-flex items-center justify-center rounded-lg font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-primary-100 disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700 px-3 py-2 text-sm gap-2">
-                <Plus size={16} />
-                Create New
-                <ChevronDown size={16} className="ml-auto" />
-              </AriaButton>
-              <Dropdown.Popover>
-                <Dropdown.Menu onAction={(key) => {
-                  if (key === 'new') {
-                    handleCreate();
-                  } else if (typeof key === 'string' && key.startsWith('spawnable:')) {
-                    const groupName = key.substring('spawnable:'.length);
-                    openImportModal('spawnable', null, null, groupName);
-                  } else {
-                    openImportModal(key as any);
-                  }
-                }}>
-                  <Dropdown.Item id="new" label="New Empty Loadout" />
-                  <Dropdown.Section>
-                    <Dropdown.SectionHeader className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Create from Existing
-                    </Dropdown.SectionHeader>
-                    <Dropdown.Item id="spawnable:all" label="All Spawnable Types" />
-                    <Dropdown.Item id="spawnable:vanilla" label="Vanilla (Root)" />
-                    {spawnableTypesByGroup && Object.keys(spawnableTypesByGroup)
-                      .filter(group => {
-                        if (group === 'vanilla' || group === 'vanilla_overrides' || group === '__root') return false;
-                        const groupData = spawnableTypesByGroup[group];
-                        return groupData?.types?.some((t: any) => t.sections?.length > 1);
-                      })
-                      .sort()
-                      .map(group => (
-                        <Dropdown.Item key={group} id={`spawnable:${group}`} label={group.toLowerCase().endsWith('mod') ? group : `${group} Mod`} />
-                      ))
-                    }
-                  </Dropdown.Section>
-                </Dropdown.Menu>
-              </Dropdown.Popover>
-            </Dropdown.Root>
+            <Button 
+              onClick={() => setCreateModalOpen(true)}
+              variant="secondary" 
+              className="w-full"
+            >
+              <Plus size={16} className="mr-2" />
+              Create New
+            </Button>
           </div>
           <div className="flex-1 overflow-auto p-2 space-y-1">
             {loadouts
@@ -708,6 +678,91 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               <div className="text-sm text-gray-500">Other modular loadouts you've created</div>
             </div>
           </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title="Create New Loadout"
+        icon={Plus}
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-6">
+          <button 
+            onClick={() => {
+              handleCreate();
+              setCreateModalOpen(false);
+            }}
+            className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-800 hover:border-primary-500 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-all text-left"
+          >
+            <div className="p-3 bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 rounded-lg">
+              <Plus size={24} />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white text-lg">New Empty Loadout</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Start from scratch and build your own hierarchy</div>
+            </div>
+          </button>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-1">
+              Create from Existing Spawnable Type
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button 
+                onClick={() => {
+                  openImportModal('spawnable', null, null, 'all');
+                  setCreateModalOpen(false);
+                }}
+                className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+              >
+                <div className="p-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md">
+                  <Package size={18} />
+                </div>
+                <div className="font-medium text-gray-900 dark:text-white">All Spawnable Types</div>
+              </button>
+
+              <button 
+                onClick={() => {
+                  openImportModal('spawnable', null, null, 'vanilla');
+                  setCreateModalOpen(false);
+                }}
+                className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+              >
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-md">
+                  <FileCode size={18} />
+                </div>
+                <div className="font-medium text-gray-900 dark:text-white">Vanilla (Root)</div>
+              </button>
+
+              {spawnableTypesByGroup && Object.keys(spawnableTypesByGroup)
+                .filter(group => {
+                  if (group === 'vanilla' || group === 'vanilla_overrides' || group === '__root') return false;
+                  const groupData = spawnableTypesByGroup[group];
+                  return groupData?.types?.some((t: any) => t.sections?.length > 1);
+                })
+                .sort()
+                .map(group => (
+                  <button 
+                    key={group}
+                    onClick={() => {
+                      openImportModal('spawnable', null, null, group);
+                      setCreateModalOpen(false);
+                    }}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                  >
+                    <div className="p-2 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-md">
+                      <Package size={18} />
+                    </div>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {group.toLowerCase().endsWith('mod') ? group : `${group} Mod`}
+                    </div>
+                  </button>
+                ))
+              }
+            </div>
+          </div>
         </div>
       </Modal>
     </div>
