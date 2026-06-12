@@ -52,7 +52,7 @@ import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { LoadoutNode } from '@/types/loadouts';
 
-import { updateNodeInList } from '@/utils/tree';
+import { updateNodeInList, findNode } from '@/utils/tree';
 
 export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   onClose,
