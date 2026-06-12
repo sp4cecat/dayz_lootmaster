@@ -60,6 +60,7 @@ export function SpawnableTypesManager({
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [nodeToDelete, setNodeToDelete] = useState<string | null>(null);
     const [newTypeName, setNewTypeName] = useState('');
+    const lastSavedDataRef = React.useRef<any>(null);
 
     const availableGroups = useMemo(() => {
         return Object.keys(spawnableFilesByGroup).sort((a, b) => {
@@ -78,6 +79,12 @@ export function SpawnableTypesManager({
     React.useEffect(() => {
         if (selectedGroup && selectedFile) {
             const groupData = spawnableTypesByGroup[selectedGroup]?.[selectedFile];
+            
+            // Avoid re-initializing if the data hasn't changed from what we just saved
+            if (groupData === lastSavedDataRef.current && nodes.length > 0) {
+                return;
+            }
+
             if (groupData?.types) {
                 // Stabilize IDs if possible, but vanillaSpawnableToLoadout will create new ones
                 setNodes(groupData.types.map((t: any) => {
@@ -102,10 +109,35 @@ export function SpawnableTypesManager({
     const handleUpdateNode = (updated: LoadoutNode) => {
         const nextNodes = updateNodeInList(nodes, updated);
         setNodes(nextNodes);
-        saveNodes(nextNodes);
+        
+        // Only save if it's more than just an expansion toggle
+        const originalNode = findNode(nodes, updated.id);
+        const isOnlyExpansion = originalNode && 
+            JSON.stringify({ ...originalNode, isExpanded: undefined }) === 
+            JSON.stringify({ ...updated, isExpanded: undefined });
+
+        if (!isOnlyExpansion) {
+            saveNodes(nextNodes);
+        }
     };
 
-    const handleUpdateAllNodes = (nextNodes: LoadoutNode[]) => {
+    const handleUpdateAllNodes = (nextFilteredNodes: LoadoutNode[]) => {
+        let nextNodes = nextFilteredNodes;
+        
+        if (searchTerm) {
+            // Merge updated filtered nodes back into full list
+            nextNodes = nodes.map(node => {
+                const updated = nextFilteredNodes.find(n => n.id === node.id);
+                if (updated) return updated;
+                
+                // If it matches search but is not in nextFilteredNodes, it was deleted
+                if (node.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    return null;
+                }
+                return node;
+            }).filter(Boolean) as LoadoutNode[];
+        }
+
         setNodes(nextNodes);
         saveNodes(nextNodes);
     };
@@ -113,13 +145,19 @@ export function SpawnableTypesManager({
     const saveNodes = (nextNodes: LoadoutNode[]) => {
         if (!selectedGroup || !selectedFile) return;
         const nextGroups = { ...spawnableTypesByGroup };
+        const types = nextNodes.map(node => loadoutToSpawnableEntry({ items: [node] } as any));
+        
+        const nextFileData = {
+            ...nextGroups[selectedGroup]?.[selectedFile],
+            types
+        };
+
         nextGroups[selectedGroup] = { 
             ...(nextGroups[selectedGroup] || {}),
-            [selectedFile]: {
-                ...nextGroups[selectedGroup]?.[selectedFile],
-                types: nextNodes.map(node => loadoutToSpawnableEntry({ items: [node] } as any))
-            }
+            [selectedFile]: nextFileData
         };
+        
+        lastSavedDataRef.current = nextFileData;
         setSpawnableTypesByGroup(nextGroups);
     };
 
