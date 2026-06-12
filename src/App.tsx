@@ -252,7 +252,7 @@ export default function App() {
                             <div className="flex-1">
                                 <p className="text-sm font-bold text-error-900 dark:text-error-300">Configuration Issues</p>
                                 <p className="text-sm text-error-700 dark:text-error-400">
-                                    {loadWarnings.length === 1 ? loadWarnings[0] : `${loadWarnings[0]} (+${loadWarnings.length - 1} more)`}
+                                    {loadWarnings.length === 1 ? String(loadWarnings[0]) : `${loadWarnings[0]} (+${loadWarnings.length - 1} more)`}
                                 </p>
                             </div>
                             <Button variant="link-gray" className="text-error-600 hover:text-error-800 dark:text-error-400 dark:hover:text-error-300">
@@ -294,7 +294,7 @@ export default function App() {
                                     <AlertTriangle size={32} />
                                 </div>
                                 <h2 className="text-2xl font-bold text-gray-900 mb-2 dark:text-white">Failed to load data</h2>
-                                <p className="text-gray-500 max-w-md mb-8 dark:text-gray-400">{error}</p>
+                                <p className="text-gray-500 max-w-md mb-8 dark:text-gray-400">{error instanceof Error ? error.message : String(error)}</p>
                                 <Button onClick={() => window.location.reload()}>Retry Connection</Button>
                             </div>
                         ) : (

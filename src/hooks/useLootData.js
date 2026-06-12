@@ -135,7 +135,9 @@ export function useLootData() {
     return fetch(url, opts);
   }, [selectedProfileId]);
 
-  const loadMissionFilesFromAPI = useCallback(async (API_BASE, filesByGroup, warnings = []) => {
+  const loadMissionFilesFromAPI = useCallback(async (API_BASE, filesInput, warnings = []) => {
+    const filesByGroup = filesInput?.filesByGroup || filesInput;
+
     // Try to load from IndexedDB first
     const idbSpawnable = await loadMissionFile('spawnableTypesByGroup');
     const idbRandomPresets = await loadMissionFile('randomPresets');
@@ -159,9 +161,19 @@ export function useLootData() {
         for (const group in idbSpawnable) {
           if (idbSpawnable[group] && Array.isArray(idbSpawnable[group].types)) {
             // Find first filename for this group from filesByGroup
-            const files = filesByGroup[group] || [];
-            const fileName = files.length > 0 ? files[0].split('/').pop() : 'spawnabletypes.xml';
-            migrated[group] = { [fileName]: idbSpawnable[group] };
+            const groupFiles = filesByGroup?.[group] || [];
+            let fileName = 'spawnabletypes.xml';
+            if (Array.isArray(groupFiles) && groupFiles.length > 0) {
+              fileName = groupFiles[0].split('/').pop();
+            } else if (groupFiles && typeof groupFiles === 'object' && Object.keys(groupFiles).length > 0) {
+              fileName = Object.keys(groupFiles)[0];
+            }
+            
+            if (fileName && !fileName.toLowerCase().endsWith('.xml')) {
+              fileName += '.xml';
+            }
+            
+            migrated[group] = { [fileName || 'spawnabletypes.xml']: idbSpawnable[group] };
           } else {
             migrated[group] = idbSpawnable[group];
           }
@@ -170,36 +182,46 @@ export function useLootData() {
       }
     }
 
-    // If IDB is empty for spawnable, load from API
-    if (!idbSpawnable) {
-      // 1. Mission Root
+    // Ensure mission root spawnable types files are loaded if not in IDB
+    if (!nextSpawnable[ROOT_SPAWNABLE_GROUP] || Object.keys(nextSpawnable[ROOT_SPAWNABLE_GROUP]).length === 0) {
       try {
         const rootFiles = ['cfgspawnabletypes.xml', 'cfgspawnabletype.xml'];
-        nextSpawnable[ROOT_SPAWNABLE_GROUP] = {};
+        if (!nextSpawnable[ROOT_SPAWNABLE_GROUP]) nextSpawnable[ROOT_SPAWNABLE_GROUP] = {};
         for (const f of rootFiles) {
-          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}/${encodeURIComponent(f)}`);
-          if (res.ok) {
-            const text = await res.text();
-            nextSpawnable[ROOT_SPAWNABLE_GROUP][f] = parseSpawnableTypesXml(text);
+          if (!nextSpawnable[ROOT_SPAWNABLE_GROUP][f]) {
+            const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}/${encodeURIComponent(f)}`);
+            if (res.ok) {
+              const text = await res.text();
+              nextSpawnable[ROOT_SPAWNABLE_GROUP][f] = parseSpawnableTypesXml(text);
+            }
           }
         }
       } catch (e) {
         warnings.push(`Mission root spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
       }
+    }
 
-      // 2. Groups
-      for (const [group, files] of Object.entries(filesByGroup || {})) {
-        nextSpawnable[group] = {};
-        for (const f of files) {
-          try {
-            const fileName = f.split('/').pop();
+    // Ensure all other groups and files from economycore are loaded if missing from IDB
+    for (const [group, files] of Object.entries(filesByGroup || {})) {
+      if (group === 'files' || group === 'lootTypes' || group === 'filesByGroup') continue;
+      if (!nextSpawnable[group]) nextSpawnable[group] = {};
+      
+      const filesToProcess = Array.isArray(files) ? files : Object.keys(files);
+
+      for (const f of filesToProcess) {
+        try {
+          let fileName = f.split('/').pop();
+          if (!fileName.toLowerCase().endsWith('.xml')) fileName += '.xml';
+
+          if (!nextSpawnable[group][fileName]) {
             const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(fileName)}`);
-            if (!res.ok) continue;
-            const text = await res.text();
-            nextSpawnable[group][fileName] = parseSpawnableTypesXml(text);
-          } catch (e) {
-            warnings.push(`Group "${group}" file "${f}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+            if (res.ok) {
+              const text = await res.text();
+              nextSpawnable[group][fileName] = parseSpawnableTypesXml(text);
+            }
           }
+        } catch (e) {
+          warnings.push(`Group "${group}" file "${f}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
         }
       }
     }
@@ -864,7 +886,11 @@ export function useLootData() {
         setDefinitions(defs);
         setBaselineDefinitions(defs);
         setLootFiles(files);
-        await loadMissionFilesFromAPI(API_BASE, files, loadWarnings);
+        const missionWarnings = [];
+        await loadMissionFilesFromAPI(API_BASE, files, missionWarnings);
+        if (missionWarnings.length > 0) {
+          setLoadWarnings(prev => [...prev, ...missionWarnings]);
+        }
 
         // Derive grouped and merged views
         const groups = combineFilesToGroups(files);
@@ -898,7 +924,7 @@ export function useLootData() {
         setLoading(false);
       } catch (e) {
         if (!mounted) return;
-        setError(e);
+        setError(e instanceof Error ? e.message : String(e));
         setLoading(false);
       }
     })();
@@ -1300,7 +1326,7 @@ export function useLootData() {
 
       setLoading(false);
     } catch (e) {
-      setError(e);
+      setError(e instanceof Error ? e.message : String(e));
       setLoading(false);
     }
   }, [fetchWithProfile, loadMissionFilesFromAPI]);
