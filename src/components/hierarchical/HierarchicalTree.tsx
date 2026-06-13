@@ -6,6 +6,7 @@ import {
   closestCorners,
   KeyboardSensor,
   PointerSensor,
+  MouseSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -14,18 +15,32 @@ import {
   defaultDropAnimationSideEffects,
 } from '@dnd-kit/core';
 
+class SmartMouseSensor extends MouseSensor {
+  static activator = [
+    {
+      eventName: 'onMouseDown' as const,
+      handler: ({ nativeEvent: event }: { nativeEvent: MouseEvent }) => {
+        const target = event.target as HTMLElement;
+        const isHandle = !!target.closest('[data-drag-handle]');
+        
+        // Right click or Ctrl+Click on handle triggers copy drag
+        if (event.button === 2 || event.ctrlKey) {
+          return isHandle;
+        }
+        
+        // Left click only starts drag if on handle
+        return event.button === 0 && isHandle;
+      },
+    },
+  ];
+}
+
 class SmartPointerSensor extends PointerSensor {
   static activator = [
     {
       eventName: 'onPointerDown' as const,
       handler: ({ nativeEvent: event }: { nativeEvent: PointerEvent }) => {
-        // If it's a right click (button 2) or ctrl+click, we want to allow it only on the handle
-        if (event.button === 2 || event.ctrlKey) {
-          const target = event.target as HTMLElement;
-          return !!target.closest('[data-drag-handle]');
-        }
-        // Left click is allowed anywhere (but will be restricted by listeners on handle in NodeItem)
-        return event.button === 0;
+        return event.pointerType === 'touch';
       },
     },
   ];
@@ -72,6 +87,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
 
   const activeIdRef = React.useRef<string | null>(null);
   const isCopyDragRef = React.useRef(false);
+  const isPotentialCopyDragRef = React.useRef(false);
 
   React.useEffect(() => {
     activeIdRef.current = activeId;
@@ -79,13 +95,11 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   }, [activeId, isCopyDrag]);
 
   React.useEffect(() => {
-    let isPotentialCopyDrag = false;
-
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button === 2) {
         const target = e.target as HTMLElement;
         if (target.closest('[data-drag-handle]')) {
-          isPotentialCopyDrag = true;
+          isPotentialCopyDragRef.current = true;
         }
       }
     };
@@ -93,12 +107,12 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
     const handlePointerUp = () => {
       // Small delay to allow contextmenu to fire and be blocked
       setTimeout(() => {
-        isPotentialCopyDrag = false;
+        isPotentialCopyDragRef.current = false;
       }, 50);
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      if (isPotentialCopyDrag || activeIdRef.current) {
+      if (isPotentialCopyDragRef.current || activeIdRef.current) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -116,9 +130,15 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   }, []);
 
   const sensors = useSensors(
+    useSensor(SmartMouseSensor, {
+      activationConstraint: {
+        distance: 5, 
+      },
+    }),
     useSensor(SmartPointerSensor, {
       activationConstraint: {
-        distance: 5, // Reduced distance for faster activation
+        delay: 250,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -144,12 +164,12 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
     const nativeEvent = event.activatorEvent as any;
     
     // Determine if this is a copy operation
-    const isCopy = nativeEvent && (
+    const isCopy = isPotentialCopyDragRef.current || (nativeEvent && (
       (nativeEvent.button === 2) || 
       (nativeEvent.buttons & 2) || // For move events, button is often -1, use buttons bitmask
       (nativeEvent.ctrlKey === true) ||
       (nativeEvent.key === 'Control') // For keyboard sensor
-    );
+    ));
     
     setIsCopyDrag(!!isCopy);
   };
@@ -315,6 +335,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
               onAddTemplate={() => {}}
               selectedNodeId={null}
               isReadOnly={true}
+              childLists={childLists}
               allLoadouts={allLoadouts}
               randomPresets={randomPresets}
               expansionAirdrops={expansionAirdrops}
