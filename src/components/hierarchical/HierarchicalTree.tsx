@@ -3,7 +3,7 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 import { HierarchicalNodeItem, ChildListConfig } from './HierarchicalNodeItem';
 import {
   DndContext,
-  closestCenter,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -19,7 +19,13 @@ class SmartPointerSensor extends PointerSensor {
     {
       eventName: 'onPointerDown' as const,
       handler: ({ nativeEvent: event }: { nativeEvent: PointerEvent }) => {
-        return [0, 2].includes(event.button);
+        // If it's a right click (button 2) or ctrl+click, we want to allow it only on the handle
+        if (event.button === 2 || event.ctrlKey) {
+          const target = event.target as HTMLElement;
+          return !!target.closest('[data-drag-handle]');
+        }
+        // Left click is allowed anywhere (but will be restricted by listeners on handle in NodeItem)
+        return event.button === 0;
       },
     },
   ];
@@ -112,7 +118,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   const sensors = useSensors(
     useSensor(SmartPointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5, // Reduced distance for faster activation
       },
     }),
     useSensor(KeyboardSensor, {
@@ -135,10 +141,17 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     setActiveId(active.id as string);
-    const nativeEvent = event.activatorEvent as MouseEvent;
-    // Standard sensors might only give us button 0. 
-    // If it's a right click, we need to ensure the sensor allowed it.
-    setIsCopyDrag(nativeEvent.button === 2 || nativeEvent.ctrlKey); // Added ctrlKey as fallback
+    const nativeEvent = event.activatorEvent as any;
+    
+    // Determine if this is a copy operation
+    const isCopy = nativeEvent && (
+      (nativeEvent.button === 2) || 
+      (nativeEvent.buttons & 2) || // For move events, button is often -1, use buttons bitmask
+      (nativeEvent.ctrlKey === true) ||
+      (nativeEvent.key === 'Control') // For keyboard sensor
+    );
+    
+    setIsCopyDrag(!!isCopy);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -254,7 +267,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={closestCorners}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
@@ -293,7 +306,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
         }}
       >
         {activeId && activeNode ? (
-          <div className="opacity-80 pointer-events-none scale-105 transition-transform">
+          <div className="opacity-80 pointer-events-none scale-105">
             <HierarchicalNodeItem
               node={activeNode}
               onUpdate={() => {}}
@@ -302,6 +315,10 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
               onAddTemplate={() => {}}
               selectedNodeId={null}
               isReadOnly={true}
+              allLoadouts={allLoadouts}
+              randomPresets={randomPresets}
+              expansionAirdrops={expansionAirdrops}
+              spawnableTypesByGroup={spawnableTypesByGroup}
             />
             {isCopyDrag && (
               <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-lg font-bold uppercase">

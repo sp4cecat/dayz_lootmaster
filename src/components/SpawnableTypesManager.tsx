@@ -122,21 +122,23 @@ export function SpawnableTypesManager({
     };
 
     const handleUpdateAllNodes = (nextFilteredNodes: LoadoutNode[]) => {
-        let nextNodes = nextFilteredNodes;
-        
-        if (searchTerm) {
-            // Merge updated filtered nodes back into full list
-            nextNodes = nodes.map(node => {
-                const updated = nextFilteredNodes.find(n => n.id === node.id);
-                if (updated) return updated;
-                
-                // If it matches search but is not in nextFilteredNodes, it was deleted
-                if (node.name.toLowerCase().includes(searchTerm.toLowerCase())) {
-                    return null;
-                }
-                return node;
-            }).filter(Boolean) as LoadoutNode[];
+        if (!searchTerm) {
+            setNodes(nextFilteredNodes);
+            saveNodes(nextFilteredNodes);
+            return;
         }
+
+        // When a search term is active, we need to merge the updated filtered nodes 
+        // back into the full nodes list while preserving non-matching items.
+        // We find the position of the first matching item to use as an insertion point.
+        const firstMatchIdx = nodes.findIndex(n => n.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        const nonMatchingNodes = nodes.filter(n => !n.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        
+        const nextNodes = [...nonMatchingNodes];
+        const insertIdx = firstMatchIdx === -1 ? nextNodes.length : firstMatchIdx;
+        
+        // Insert the entire updated filtered list at the insertion point
+        nextNodes.splice(insertIdx, 0, ...nextFilteredNodes);
 
         setNodes(nextNodes);
         saveNodes(nextNodes);

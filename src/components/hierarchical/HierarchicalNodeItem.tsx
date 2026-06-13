@@ -161,8 +161,9 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
               // Prevent context menu on the handle to allow right-click drag-and-copy
               e.preventDefault();
             }}
+            onDragStart={(e) => e.preventDefault()}
           >
-            <GripVertical size={16} />
+            <GripVertical size={16} pointerEvents="none" />
           </div>
         )}
 
