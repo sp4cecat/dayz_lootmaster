@@ -151,6 +151,8 @@ function getPaths(profile) {
         traderZonesDirPath: join(missionPath, 'expansion', 'traderzones'),
         tradersDirPath: join(missionPath, 'expansion', 'traders'),
         traderProfilesDirPath: join(profilesPath, 'ExpansionMod', 'Traders'),
+        airdropSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'AirdropSettings.json'),
+        airdropMissionsDirPath: join(missionPath, 'expansion', 'missions'),
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
         expansionLogsDirPath: join(profilesPath, 'ExpansionMod', 'Logs'),
@@ -1880,15 +1882,15 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // GET Expansion Airdrop Settings
+        // GET/PUT Expansion Airdrop Settings (core settings + containers)
         if (pathname === '/api/expansion/airdrop-settings') {
             const profileId = req.headers['x-profile-id'];
             const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
             if (!profile) { notFound(res); return; }
             const paths = getPaths(profile);
+            const target = paths.airdropSettingsPath;
             if (req.method === 'GET') {
                 try {
-                    const target = join(paths.profilesPath, 'ExpansionMod', 'Settings', 'AirdropSettings.json');
                     const content = await readFile(target, 'utf8');
                     send(res, 200, content, {'Content-Type': 'application/json'});
                 } catch {
@@ -1896,6 +1898,91 @@ const server = http.createServer(async (req, res) => {
                 }
                 return;
             }
+            if (req.method === 'PUT') {
+                try {
+                    const body = await readBody(req);
+                    // Validate JSON before writing to disk
+                    const parsed = JSON.parse(body || '{}');
+                    await mkdir(dirname(target), { recursive: true });
+                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid AirdropSettings payload: ${e.message}`);
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // Expansion Airdrop Missions (per-drop Airdrop_*.json files)
+        //  - GET                       -> list all missions [{ file, data }]
+        //  - PUT  ?file=Airdrop_X.json  -> write a single mission file
+        //  - DELETE ?file=Airdrop_X.json-> remove a single mission file
+        if (pathname === '/api/expansion/airdrop-missions') {
+            const profileId = req.headers['x-profile-id'];
+            const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
+            if (!profile) { notFound(res); return; }
+            const paths = getPaths(profile);
+            const dir = paths.airdropMissionsDirPath;
+
+            const isAirdropFile = (name) => isSafeName(name) && /^Airdrop_.+\.json$/i.test(name);
+
+            if (req.method === 'GET') {
+                try {
+                    const entries = await readdir(dir, { withFileTypes: true });
+                    const missions = [];
+                    for (const entry of entries) {
+                        if (!entry.isFile() || !/^Airdrop_.+\.json$/i.test(entry.name)) continue;
+                        try {
+                            const raw = await readFile(join(dir, entry.name), 'utf8');
+                            missions.push({ file: entry.name, data: JSON.parse(raw) });
+                        } catch {
+                            missions.push({ file: entry.name, data: null, error: 'Failed to parse' });
+                        }
+                    }
+                    missions.sort((a, b) => a.file.localeCompare(b.file));
+                    send(res, 200, JSON.stringify(missions), {'Content-Type': 'application/json'});
+                } catch {
+                    // Directory may not exist yet -> empty list
+                    send(res, 200, JSON.stringify([]), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+
+            if (req.method === 'PUT') {
+                const fileName = url.searchParams.get('file');
+                if (!isAirdropFile(fileName)) {
+                    badRequest(res, 'Mission file name must match Airdrop_*.json and contain only safe characters.');
+                    return;
+                }
+                try {
+                    const body = await readBody(req);
+                    const parsed = JSON.parse(body || '{}');
+                    await mkdir(dir, { recursive: true });
+                    await writeFile(join(dir, fileName), JSON.stringify(parsed, null, 4), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true, file: fileName }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid mission payload: ${e.message}`);
+                }
+                return;
+            }
+
+            if (req.method === 'DELETE') {
+                const fileName = url.searchParams.get('file');
+                if (!isAirdropFile(fileName)) {
+                    badRequest(res, 'Mission file name must match Airdrop_*.json and contain only safe characters.');
+                    return;
+                }
+                try {
+                    await rm(join(dir, fileName), { force: true });
+                    send(res, 200, JSON.stringify({ ok: true, file: fileName }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    send(res, 500, JSON.stringify({ error: e.message }), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+
             methodNotAllowed(res);
             return;
         }

@@ -520,6 +520,7 @@ export default function App() {
                                 typeOptions={allTypeNames}
                                 randomPresets={randomPresets}
                                 loadouts={loadouts}
+                                missionName={selectedProfile?.missionName}
                             />
                         )}
                         {view === 'tools:addons' && (

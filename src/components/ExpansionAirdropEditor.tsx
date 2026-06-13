@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
-import { Plus, Save, Package, RefreshCw, Layers } from 'lucide-react';
-import { HierarchicalTree } from './hierarchical/HierarchicalTree';
-import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
-import { expansionAirdropToLoadout, loadoutToExpansionAirdrop } from '@/utils/loadouts';
-import { updateNodeInList, findNode } from '@/utils/tree';
-import { LoadoutNode, Loadout } from '@/types/loadouts';
+import { Toggle } from '@/components/base/toggle/toggle';
+import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
+import {
+  Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
+  Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04,
+} from '@untitledui/icons';
+import { Loadout } from '@/types/loadouts';
 import { cx } from '@/utils/cx';
-import { Modal } from '@/components/base/modal/modal';
+import { useMapMetadata } from '@/hooks/useMapMetadata';
+import { MapMetadata } from '@/consts/maps';
+import { AirdropLootEditor } from './airdrop/AirdropLootEditor';
+import { AirdropDropLocationMap, DropLocation } from './AirdropDropLocationMap';
 
 interface ExpansionAirdropEditorProps {
   selectedProfileId: string;
@@ -17,289 +21,583 @@ interface ExpansionAirdropEditorProps {
   typeOptions: string[];
   randomPresets: any;
   loadouts: Loadout[];
+  missionName?: string;
 }
+
+type SaveState = { kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string };
+type TabId = 'core' | 'missions';
+
+const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string }[] = [
+  { key: 'Frequency', label: 'Frequency', suffix: 'sec' },
+  { key: 'ItemCount', label: 'Default Item Count' },
+  { key: 'InfectedCount', label: 'Default Infected Count' },
+];
+
+const BOOL_CORE_FIELDS: { key: string; label: string }[] = [
+  { key: 'Enabled', label: 'Airdrops Enabled' },
+  { key: 'EnableMapMarker', label: 'Map Marker' },
+  { key: 'EnableServerMarker', label: 'Server Marker' },
+  { key: 'ShowNotificationServerWide', label: 'Server-wide Notification' },
+];
 
 export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   selectedProfileId,
   getApiBase,
   typeOptions,
   randomPresets,
-  loadouts
+  loadouts,
+  missionName,
 }) => {
-  const [settings, setSettings] = useState<any>(null);
+  const [tab, setTab] = useState<TabId>('core');
   const [loading, setLoading] = useState(false);
-  const [selectedContainerIdx, setSelectedContainerIdx] = useState<number | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
-  const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' });
+  const map = useMapMetadata(missionName);
 
-  const fetchSettings = async () => {
+  // Core settings
+  const [settings, setSettings] = useState<any>(null);
+  const [selectedContainerIdx, setSelectedContainerIdx] = useState<number | null>(null);
+
+  // Missions
+  const [missions, setMissions] = useState<{ file: string; data: any }[]>([]);
+  const [selectedMissionIdx, setSelectedMissionIdx] = useState<number | null>(null);
+  const [selectedDropIdx, setSelectedDropIdx] = useState<number | null>(null);
+
+  const headers = useMemo(() => ({ 'X-Profile-ID': selectedProfileId }), [selectedProfileId]);
+
+  const load = async () => {
     if (!getApiBase || !selectedProfileId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
-        headers: { 'X-Profile-ID': selectedProfileId }
-      });
-      if (res.ok) {
-        setSettings(await res.json());
-      }
+      const [sRes, mRes] = await Promise.all([
+        fetch(`${getApiBase()}/api/expansion/airdrop-settings`, { headers }),
+        fetch(`${getApiBase()}/api/expansion/airdrop-missions`, { headers }),
+      ]);
+      if (sRes.ok) setSettings(await sRes.json());
+      else setSettings({ Enabled: 1, Containers: [] });
+      if (mRes.ok) setMissions(await mRes.json());
     } catch (e) {
-      console.error('Failed to fetch airdrop settings', e);
+      console.error('Failed to load airdrop data', e);
+      setSaveState({ kind: 'error', message: 'Failed to load airdrop data' });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSettings();
+    load();
+    setSelectedContainerIdx(null);
+    setSelectedMissionIdx(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProfileId]);
 
-  const handleSave = async () => {
-    if (!settings || !getApiBase || !selectedProfileId) return;
-    setLoading(true);
+  const containerNames: string[] = useMemo(
+    () => (settings?.Containers || []).map((c: any) => c.Container).filter(Boolean),
+    [settings]
+  );
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-gray-950">
+      <header className="px-6 pt-5 border-b border-gray-200 dark:border-gray-800 shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">Air Drops</h1>
+            <p className="text-xs text-gray-500">Configure Expansion airdrop containers and missions</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {saveState.kind === 'ok' && (
+              <span className="flex items-center gap-1.5 text-sm text-success-600"><CheckCircle size={16} /> Saved</span>
+            )}
+            {saveState.kind === 'error' && (
+              <span className="flex items-center gap-1.5 text-sm text-error-600"><AlertCircle size={16} /> {saveState.message}</span>
+            )}
+            <Button size="sm" variant="secondary-gray" icon={RefreshCcw01} onClick={load} disabled={loading}>Reload</Button>
+          </div>
+        </div>
+        <nav className="flex gap-1 mt-4">
+          {([['core', 'Core Settings', Settings01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={cx(
+                'flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors',
+                tab === id
+                  ? 'border-primary-600 text-primary-700 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+              )}
+            >
+              <Icon size={16} /> {label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      {loading && !settings ? (
+        <div className="flex-1 flex items-center justify-center">
+          <RefreshCcw01 className="animate-spin text-primary-600" size={32} />
+        </div>
+      ) : tab === 'core' ? (
+        <CoreSettingsTab
+          settings={settings}
+          setSettings={setSettings}
+          selectedContainerIdx={selectedContainerIdx}
+          setSelectedContainerIdx={setSelectedContainerIdx}
+          typeOptions={typeOptions}
+          randomPresets={randomPresets}
+          loadouts={loadouts}
+          getApiBase={getApiBase}
+          headers={headers}
+          setSaveState={setSaveState}
+        />
+      ) : (
+        <MissionsTab
+          missions={missions}
+          setMissions={setMissions}
+          selectedMissionIdx={selectedMissionIdx}
+          setSelectedMissionIdx={setSelectedMissionIdx}
+          selectedDropIdx={selectedDropIdx}
+          setSelectedDropIdx={setSelectedDropIdx}
+          containerNames={containerNames}
+          map={map}
+          typeOptions={typeOptions}
+          randomPresets={randomPresets}
+          loadouts={loadouts}
+          getApiBase={getApiBase}
+          headers={headers}
+          setSaveState={setSaveState}
+        />
+      )}
+    </div>
+  );
+};
+
+interface CoreTabProps {
+  settings: any;
+  setSettings: (s: any) => void;
+  selectedContainerIdx: number | null;
+  setSelectedContainerIdx: (i: number | null) => void;
+  typeOptions: string[];
+  randomPresets: any;
+  loadouts: Loadout[];
+  getApiBase: () => string;
+  headers: Record<string, string>;
+  setSaveState: (s: SaveState) => void;
+}
+
+const CoreSettingsTab: React.FC<CoreTabProps> = ({
+  settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
+  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
+}) => {
+  const containers = settings?.Containers || [];
+
+  const updateField = (key: string, value: any) => setSettings({ ...settings, [key]: value });
+
+  const updateContainer = (idx: number, patch: any) => {
+    const next = { ...settings, Containers: containers.map((c: any, i: number) => (i === idx ? { ...c, ...patch } : c)) };
+    setSettings(next);
+  };
+
+  const save = async () => {
+    setSaveState({ kind: 'saving' });
     try {
       const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
         method: 'PUT',
-        headers: { 
-          'X-Profile-ID': selectedProfileId,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(settings)
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
       });
-      if (res.ok) {
-        alert('Saved successfully');
-      }
-    } catch (e) {
-      console.error('Failed to save airdrop settings', e);
-    } finally {
-      setLoading(false);
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
     }
   };
 
-  const updateContainerLoot = (index: number, newNodes: LoadoutNode[]) => {
-    const nextSettings = { ...settings };
-    const container = nextSettings.Containers[index];
-    
-    // Create a temporary loadout to use the converter
-    const tempLoadout: Loadout = {
-      id: 'temp',
-      label: container.Container,
-      items: newNodes,
-      updatedAt: Date.now()
-    };
-    
-    container.Loot = loadoutToExpansionAirdrop(tempLoadout, loadouts, randomPresets?.presets);
-    setSettings(nextSettings);
-  };
-
-  const handleUpdateNode = (updatedNode: LoadoutNode) => {
-    if (selectedContainerIdx === null) return;
-    const currentNodes = expansionAirdropToLoadout(settings.Containers[selectedContainerIdx].Container, settings.Containers[selectedContainerIdx].Loot).items;
-    const nextNodes = updateNodeInList(currentNodes, updatedNode);
-    updateContainerLoot(selectedContainerIdx, nextNodes);
-    
-    if (selectedNodeId === updatedNode.id) {
-      setEditingNode(updatedNode);
-    }
-  };
-
-  if (loading && !settings) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <RefreshCw className="animate-spin text-primary-600" size={32} />
-      </div>
-    );
-  }
-
-  const containers = settings?.Containers || [];
+  const selected = selectedContainerIdx !== null ? containers[selectedContainerIdx] : null;
 
   return (
-    <div className="flex-1 flex overflow-hidden h-full">
-      <div className="w-80 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto">
-        <header className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between sticky top-0 bg-gray-50 dark:bg-gray-900 z-10">
-          <h2 className="font-bold text-gray-900 dark:text-white">Airdrop Containers</h2>
-          <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => {
-             const next = { ...settings, Containers: [...containers, { Container: 'NewContainer', Loot: [] }] };
-             setSettings(next);
-          }} />
-        </header>
-        <div className="p-2 space-y-1">
-          {containers.map((c: any, i: number) => (
-            <div 
-              key={i}
-              onClick={() => setSelectedContainerIdx(i)}
-              className={cx(
-                "p-3 rounded-lg cursor-pointer transition-all border",
-                selectedContainerIdx === i 
-                  ? "bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm" 
-                  : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50"
-              )}
-            >
-               <div className="flex items-center justify-between">
-                 <span className="text-sm font-semibold truncate">{c.Container}</span>
-                 <Badge size="sm" color="gray">{c.Loot?.length || 0} items</Badge>
-               </div>
-            </div>
+    <div className="flex-1 flex overflow-hidden">
+      <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
+        <div className="p-4 space-y-3 border-b border-gray-200 dark:border-gray-800">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Global Settings</span>
+          {BOOL_CORE_FIELDS.map(({ key, label }) => (
+            <Toggle key={key} label={label} isSelected={!!settings?.[key]} onChange={(v) => updateField(key, v ? 1 : 0)} />
+          ))}
+          {NUMERIC_CORE_FIELDS.map(({ key, label, suffix }) => (
+            <Input key={key} size="sm" label={label} type="number" suffix={suffix}
+              value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
           ))}
         </div>
-      </div>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Containers</span>
+            <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => {
+              setSettings({ ...settings, Containers: [...containers, { Container: 'NewContainer', Loot: [], Infected: [] }] });
+              setSelectedContainerIdx(containers.length);
+            }} />
+          </div>
+          <div className="space-y-1">
+            {containers.map((c: any, i: number) => (
+              <button key={i} onClick={() => setSelectedContainerIdx(i)}
+                className={cx('w-full text-left p-3 rounded-lg border transition-all',
+                  selectedContainerIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                    : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold truncate">{c.Container}</span>
+                  <Badge size="sm" color="gray">{c.Loot?.length || 0}</Badge>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-gray-950 relative overflow-hidden">
-        {selectedContainerIdx !== null ? (
-          <>
-            <header className="p-6 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
-              <div>
-                <Input 
-                  value={containers[selectedContainerIdx].Container}
-                  onChange={e => {
-                    const next = { ...settings };
-                    next.Containers[selectedContainerIdx].Container = e.target.value;
-                    setSettings(next);
-                  }}
-                  className="font-bold text-lg border-none bg-transparent p-0 focus:ring-0 w-80 shadow-none"
-                />
-                <p className="text-xs text-gray-500">Recursive loot configuration</p>
+      <div className="flex-1 overflow-auto p-6">
+        <div className="flex items-center justify-end mb-4">
+          <Button variant="primary" icon={Save01} onClick={save}>Save Core Settings</Button>
+        </div>
+        {selected ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Container Class" value={selected.Container || ''}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { Container: e.target.value })} />
+              <div className="flex items-end pb-2">
+                <Toggle label="Spawn Smoke" isSelected={!!selected.SpawnSmoke}
+                  onChange={(v) => updateContainer(selectedContainerIdx!, { SpawnSmoke: v ? 1 : 0 })} />
               </div>
-              <Button variant="primary" icon={Save} onClick={handleSave} disabled={loading}>
-                Save Changes
-              </Button>
-            </header>
-            
-            <div className={cx("flex-1 overflow-auto p-6 transition-all pb-24", selectedNodeId && "mr-[400px]")}>
-               <HierarchicalTree 
-                 items={expansionAirdropToLoadout(containers[selectedContainerIdx].Container, containers[selectedContainerIdx].Loot).items}
-                 onUpdate={(newNodes) => updateContainerLoot(selectedContainerIdx, newNodes)}
-                 onSelect={(node) => {
-                   setSelectedNodeId(node.id);
-                   setEditingNode(node);
-                 }}
-                 onAddTemplate={(nodeId, list) => {
-                    setTemplateModalTarget({ nodeId, list });
-                    setTemplateModalOpen(true);
-                 }}
-                 selectedNodeId={selectedNodeId}
-                 typeOptions={typeOptions}
-                 randomPresets={randomPresets}
-                 allLoadouts={loadouts}
-               />
+              <Input label="Item Count" type="number" value={selected.ItemCount ?? ''}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { ItemCount: Number(e.target.value) })} />
+              <Input label="Infected Count" type="number" value={selected.InfectedCount ?? ''}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { InfectedCount: Number(e.target.value) })} />
             </div>
 
-            {selectedNodeId && editingNode && (
-               <div className="fixed top-0 right-0 bottom-0 z-[100] animate-in slide-in-from-right duration-300">
-                  <HierarchicalProperties 
-                    node={editingNode}
-                    onUpdate={handleUpdateNode}
-                    onClose={() => setSelectedNodeId(null)}
-                    typeOptions={typeOptions}
-                    availableTemplates={loadouts}
-                    randomPresets={randomPresets}
-                    config={{
-                      title: 'Airdrop Item Properties',
-                      showQuantity: true,
-                      showDamage: false,
-                      showVariants: true
-                    }}
-                  />
-               </div>
-            )}
-          </>
+            <InfectedList values={selected.Infected || []} onChange={(v) => updateContainer(selectedContainerIdx!, { Infected: v })} />
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
+              <AirdropLootEditor
+                key={`container-${selectedContainerIdx}`}
+                initialLoot={selected.Loot || []}
+                onChange={(loot) => updateContainer(selectedContainerIdx!, { Loot: loot })}
+                typeOptions={typeOptions}
+                randomPresets={randomPresets}
+                loadouts={loadouts}
+              />
+            </div>
+          </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+          <div className="h-full flex flex-col items-center justify-center text-center">
             <Package size={48} className="text-gray-200 mb-4" />
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">Select a container</h3>
-            <p className="text-sm text-gray-500 max-w-xs">Choose an airdrop container from the left to configure its loot contents.</p>
+            <p className="text-sm text-gray-500 max-w-xs">Choose an airdrop container to configure its loot and settings.</p>
           </div>
         )}
       </div>
+    </div>
+  );
+};
 
-      {templateModalOpen && templateModalTarget && (
-        <Modal
-          isOpen={templateModalOpen}
-          onClose={() => setTemplateModalOpen(false)}
-          title="Select Template"
-          maxWidth="max-w-md"
-        >
-          <div className="space-y-4">
-             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Available Presets</label>
-                <div className="grid grid-cols-1 gap-2 max-h-64 overflow-auto p-1">
-                   {(randomPresets?.presets || []).map((p: any, i: number) => (
-                     <Button 
-                       key={i} 
-                       variant="secondary-gray" 
-                       className="justify-start font-mono text-xs" 
-                       onClick={() => {
-                         const newNode: LoadoutNode = {
-                           id: crypto.randomUUID(),
-                           type: 'template',
-                           templateSource: 'preset',
-                           name: p.name,
-                           chance: 1.0,
-                           attachments: [],
-                           cargo: []
-                         };
-                         
-                         const loadout = expansionAirdropToLoadout(containers[selectedContainerIdx!].Container, containers[selectedContainerIdx!].Loot);
-                         const targetNode = findNode(loadout.items, templateModalTarget.nodeId);
-                         
-                         if (targetNode) {
-                           const updatedNode = {
-                             ...targetNode,
-                             [templateModalTarget.list]: [...(targetNode[templateModalTarget.list] || []), newNode]
-                           };
-                           handleUpdateNode(updatedNode);
-                         }
-                         setTemplateModalOpen(false);
-                       }}
-                     >
-                       <Layers size={14} className="mr-2 text-amber-500" /> {p.name}
-                     </Button>
-                   ))}
+const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void }> = ({ values, onChange }) => {
+  const [draft, setDraft] = useState('');
+  return (
+    <div className="space-y-2">
+      <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Infected / AI</span>
+      <div className="flex gap-2">
+        <Input size="sm" placeholder="ZmbM_... or eAI_...|faction:..." value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { onChange([...values, draft.trim()]); setDraft(''); } }} />
+        <Button size="sm" variant="secondary-gray" icon={Plus} onClick={() => { if (draft.trim()) { onChange([...values, draft.trim()]); setDraft(''); } }} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {values.map((v, i) => (
+          <span key={i} className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono">
+            {v}
+            <button onClick={() => onChange(values.filter((_, j) => j !== i))} className="text-gray-400 hover:text-error-600">
+              <Trash01 size={12} />
+            </button>
+          </span>
+        ))}
+        {values.length === 0 && <span className="text-xs text-gray-400">None configured.</span>}
+      </div>
+    </div>
+  );
+};
+
+interface Mission { file: string; data: any; isNew?: boolean; }
+
+interface MissionsTabProps {
+  missions: Mission[];
+  setMissions: React.Dispatch<React.SetStateAction<Mission[]>>;
+  selectedMissionIdx: number | null;
+  setSelectedMissionIdx: (i: number | null) => void;
+  selectedDropIdx: number | null;
+  setSelectedDropIdx: (i: number | null) => void;
+  containerNames: string[];
+  map: MapMetadata;
+  typeOptions: string[];
+  randomPresets: any;
+  loadouts: Loadout[];
+  getApiBase: () => string;
+  headers: Record<string, string>;
+  setSaveState: (s: SaveState) => void;
+}
+
+const DEFAULT_MISSION = (worldSize: number) => ({
+  Weight: 100,
+  MissionMaxTime: 1200.0,
+  MissionName: 'Random',
+  Difficulty: 0,
+  Objective: 0,
+  Reward: '',
+  ShowNotification: 1,
+  Height: 600.0,
+  Speed: 100.0,
+  Container: 'Random',
+  DropLocation: [{ Name: 'New Drop', x: Math.round(worldSize / 2), z: Math.round(worldSize / 2), Radius: 500.0 }],
+  ItemCount: 25,
+  InfectedCount: 15,
+  Infected: [],
+  Loot: [],
+});
+
+const MISSION_NUMERIC: { key: string; label: string; suffix?: string }[] = [
+  { key: 'Weight', label: 'Weight' },
+  { key: 'MissionMaxTime', label: 'Max Time', suffix: 'sec' },
+  { key: 'Height', label: 'Plane Height', suffix: 'm' },
+  { key: 'Speed', label: 'Plane Speed' },
+  { key: 'ItemCount', label: 'Item Count' },
+  { key: 'InfectedCount', label: 'Infected Count' },
+];
+
+const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.test(name);
+
+const MissionsTab: React.FC<MissionsTabProps> = ({
+  missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
+  selectedDropIdx, setSelectedDropIdx, containerNames, map,
+  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
+}) => {
+  const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
+
+  const patchData = (patch: any) => {
+    if (selectedMissionIdx === null) return;
+    setMissions((prev) => prev.map((m, i) => (i === selectedMissionIdx ? { ...m, data: { ...m.data, ...patch } } : m)));
+  };
+
+  const patchMission = (patch: Partial<Mission>) => {
+    if (selectedMissionIdx === null) return;
+    setMissions((prev) => prev.map((m, i) => (i === selectedMissionIdx ? { ...m, ...patch } : m)));
+  };
+
+  const addMission = () => {
+    const base = 'Airdrop_NewDrop';
+    let name = `${base}.json`;
+    let n = 1;
+    const existing = new Set(missions.map((m) => m.file.toLowerCase()));
+    while (existing.has(name.toLowerCase())) { name = `${base}${n++}.json`; }
+    setMissions((prev) => [...prev, { file: name, data: DEFAULT_MISSION(map.worldSize), isNew: true }]);
+    setSelectedMissionIdx(missions.length);
+    setSelectedDropIdx(0);
+  };
+
+  const duplicateMission = (idx: number) => {
+    const src = missions[idx];
+    let name = src.file.replace(/\.json$/i, '_Copy.json');
+    const existing = new Set(missions.map((m) => m.file.toLowerCase()));
+    let n = 1;
+    while (existing.has(name.toLowerCase())) { name = src.file.replace(/\.json$/i, `_Copy${n++}.json`); }
+    setMissions((prev) => [...prev, { file: name, data: JSON.parse(JSON.stringify(src.data)), isNew: true }]);
+    setSelectedMissionIdx(missions.length);
+  };
+
+  const saveMission = async () => {
+    if (!mission) return;
+    if (!isValidMissionFile(mission.file)) {
+      setSaveState({ kind: 'error', message: 'File must match Airdrop_*.json' });
+      return;
+    }
+    setSaveState({ kind: 'saving' });
+    try {
+      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(mission.data),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      patchMission({ isNew: false });
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
+    }
+  };
+
+  const deleteMission = async (idx: number) => {
+    const m = missions[idx];
+    if (!m.isNew) {
+      try {
+        await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(m.file)}`, { method: 'DELETE', headers });
+      } catch (e) {
+        console.error('Failed to delete mission', e);
+      }
+    }
+    setMissions((prev) => prev.filter((_, i) => i !== idx));
+    setSelectedMissionIdx(null);
+  };
+
+  const isUnique = mission ? (mission.data.Container !== 'Random' || (mission.data.Loot || []).length > 0) : false;
+
+  const setMode = (unique: boolean) => {
+    if (unique) {
+      patchData({ Container: containerNames[0] || mission?.data.Container || 'Container_Base' });
+    } else {
+      patchData({ Container: 'Random', Loot: [] });
+    }
+  };
+
+  const drops: DropLocation[] = mission?.data.DropLocation || [];
+
+  const updateDrops = (next: DropLocation[]) => patchData({ DropLocation: next });
+
+  const containerOptions = useMemo(() => {
+    const set = new Set<string>(['Random', ...containerNames]);
+    if (mission?.data.Container) set.add(mission.data.Container);
+    return Array.from(set).map((c) => ({ id: c }));
+  }, [containerNames, mission?.data.Container]);
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
+        <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Missions</span>
+          <Button size="xs" variant="secondary-gray" icon={Plus} onClick={addMission} />
+        </div>
+        <div className="p-2 space-y-1">
+          {missions.length === 0 && (
+            <p className="p-3 text-xs text-gray-400">No mission files. Click + to create one.</p>
+          )}
+          {missions.map((m, i) => (
+            <button key={i} onClick={() => { setSelectedMissionIdx(i); setSelectedDropIdx(0); }}
+              className={cx('w-full text-left p-3 rounded-lg border transition-all',
+                selectedMissionIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                  : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold truncate">{m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}</span>
+                {m.isNew && <Badge size="sm" color="warning">New</Badge>}
+              </div>
+              <span className="text-xs text-gray-400 truncate block">{m.data?.Container || '—'}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="flex-1 overflow-auto p-6">
+        {mission ? (
+          <div className="space-y-6 max-w-5xl">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <Input label="File Name" value={mission.file} disabled={!mission.isNew}
+                  error={mission.isNew && !isValidMissionFile(mission.file) ? 'Must match Airdrop_*.json' : undefined}
+                  onChange={(e) => patchMission({ file: e.target.value })} />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateMission(selectedMissionIdx!)}>Duplicate</Button>
+                <Button variant="error-secondary" icon={Trash01} onClick={() => deleteMission(selectedMissionIdx!)}>Delete</Button>
+                <Button variant="primary" icon={Save01} onClick={saveMission}>Save</Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <Input label="Mission Name" value={mission.data.MissionName ?? ''} onChange={(e) => patchData({ MissionName: e.target.value })} />
+              {MISSION_NUMERIC.map(({ key, label, suffix }) => (
+                <Input key={key} label={label} type="number" suffix={suffix}
+                  value={mission.data[key] ?? ''} onChange={(e) => patchData({ [key]: Number(e.target.value) })} />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-6">
+              <Toggle label="Show Notification" isSelected={!!mission.data.ShowNotification}
+                onChange={(v) => patchData({ ShowNotification: v ? 1 : 0 })} />
+              <Toggle label="Unique loot (override container)" isSelected={isUnique} onChange={setMode} />
+            </div>
+
+            {isUnique && (
+              <div className="max-w-sm">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Container</label>
+                <ComboBox aria-label="Container" allowsCustomValue items={containerOptions}
+                  selectedKey={mission.data.Container}
+                  inputValue={mission.data.Container}
+                  onInputChange={(v) => patchData({ Container: v })}
+                  onSelectionChange={(k) => k && patchData({ Container: String(k) })}>
+                  {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
+                </ComboBox>
+              </div>
+            )}
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                  <Target04 size={14} /> Drop Locations
+                </span>
+                <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => {
+                  const next = [...drops, { Name: `Drop ${drops.length + 1}`, x: Math.round(map.worldSize / 2), z: Math.round(map.worldSize / 2), Radius: 500 }];
+                  updateDrops(next);
+                  setSelectedDropIdx(next.length - 1);
+                }}>Add Location</Button>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <AirdropDropLocationMap map={map} locations={drops} selectedIndex={selectedDropIdx}
+                  onSelect={setSelectedDropIdx} onChange={updateDrops} />
+                <div className="space-y-2">
+                  {drops.map((d, i) => (
+                    <div key={i} onClick={() => setSelectedDropIdx(i)}
+                      className={cx('p-3 rounded-lg border cursor-pointer',
+                        selectedDropIdx === i ? 'border-primary-300 bg-primary-50/50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-800')}>
+                      <div className="flex items-center justify-between mb-2">
+                        <Input size="sm" className="w-40" value={d.Name || ''} placeholder="Location name"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, Name: e.target.value } : x)))} />
+                        <button onClick={(e) => { e.stopPropagation(); updateDrops(drops.filter((_, j) => j !== i)); setSelectedDropIdx(null); }}
+                          className="text-gray-400 hover:text-error-600"><Trash01 size={14} /></button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input size="sm" type="number" suffix="X" value={Math.round(d.x)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, x: Number(e.target.value) } : x)))} />
+                        <Input size="sm" type="number" suffix="Z" value={Math.round(d.z)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, z: Number(e.target.value) } : x)))} />
+                        <Input size="sm" type="number" suffix="R" value={Math.round(d.Radius || 0)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, Radius: Number(e.target.value) } : x)))} />
+                      </div>
+                    </div>
+                  ))}
+                  {drops.length === 0 && <p className="text-xs text-gray-400">No drop locations. Add one and drag it on the map.</p>}
                 </div>
-             </div>
-             {loadouts.length > 0 && (
-               <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Saved Loadouts</label>
-                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-auto p-1">
-                    {loadouts.map((l: any, i: number) => (
-                      <Button 
-                        key={i} 
-                        variant="secondary-gray" 
-                        className="justify-start font-mono text-xs" 
-                        onClick={() => {
-                          const newNode: LoadoutNode = {
-                            id: crypto.randomUUID(),
-                            type: 'template',
-                            templateSource: 'loadout',
-                            name: l.id,
-                            chance: 1.0,
-                            attachments: [],
-                            cargo: []
-                          };
-                          
-                          const loadout = expansionAirdropToLoadout(containers[selectedContainerIdx!].Container, containers[selectedContainerIdx!].Loot);
-                          const targetNode = findNode(loadout.items, templateModalTarget.nodeId);
-                          
-                          if (targetNode) {
-                            const updatedNode = {
-                              ...targetNode,
-                              [templateModalTarget.list]: [...(targetNode[templateModalTarget.list] || []), newNode]
-                            };
-                            handleUpdateNode(updatedNode);
-                          }
-                          setTemplateModalOpen(false);
-                        }}
-                      >
-                        <Package size={14} className="mr-2 text-blue-500" /> {l.label}
-                      </Button>
-                    ))}
-                  </div>
-               </div>
-             )}
+              </div>
+            </section>
+
+            <InfectedList values={mission.data.Infected || []} onChange={(v) => patchData({ Infected: v })} />
+
+            {isUnique && (
+              <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
+                <AirdropLootEditor
+                  key={`mission-${selectedMissionIdx}`}
+                  initialLoot={mission.data.Loot || []}
+                  onChange={(loot) => patchData({ Loot: loot })}
+                  typeOptions={typeOptions}
+                  randomPresets={randomPresets}
+                  loadouts={loadouts}
+                />
+              </div>
+            )}
           </div>
-        </Modal>
-      )}
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-center">
+            <MarkerPin01 size={48} className="text-gray-200 mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Select a mission</h3>
+            <p className="text-sm text-gray-500 max-w-xs">Choose an airdrop mission file, or create a new one to place drop zones on the map.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
