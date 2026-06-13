@@ -155,10 +155,11 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
           <div 
             {...attributes} 
             {...listeners}
+            data-drag-handle="true"
             className="mr-2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing"
             onContextMenu={(e) => {
-              // Only prevent context menu if we are dragging with right click
-              // This is a bit tricky to detect here, so we might just let it be or handle it in dnd-kit
+              // Prevent context menu on the handle to allow right-click drag-and-copy
+              e.preventDefault();
             }}
           >
             <GripVertical size={16} />

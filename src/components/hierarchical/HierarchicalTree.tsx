@@ -64,15 +64,50 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isCopyDrag, setIsCopyDrag] = useState(false);
 
+  const activeIdRef = React.useRef<string | null>(null);
+  const isCopyDragRef = React.useRef(false);
+
   React.useEffect(() => {
-    const handleContextMenu = (e: MouseEvent) => {
-      if (activeId && isCopyDrag) {
-        e.preventDefault();
+    activeIdRef.current = activeId;
+    isCopyDragRef.current = isCopyDrag;
+  }, [activeId, isCopyDrag]);
+
+  React.useEffect(() => {
+    let isPotentialCopyDrag = false;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.button === 2) {
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-drag-handle]')) {
+          isPotentialCopyDrag = true;
+        }
       }
     };
-    window.addEventListener('contextmenu', handleContextMenu);
-    return () => window.removeEventListener('contextmenu', handleContextMenu);
-  }, [activeId, isCopyDrag]);
+
+    const handlePointerUp = () => {
+      // Small delay to allow contextmenu to fire and be blocked
+      setTimeout(() => {
+        isPotentialCopyDrag = false;
+      }, 50);
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if (isPotentialCopyDrag || activeIdRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('pointerup', handlePointerUp, true);
+    window.addEventListener('contextmenu', handleContextMenu, true);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('pointerup', handlePointerUp, true);
+      window.removeEventListener('contextmenu', handleContextMenu, true);
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(SmartPointerSensor, {
@@ -245,15 +280,18 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
         </SortableContext>
       </div>
 
-      <DragOverlay dropAnimation={{
-        sideEffects: defaultDropAnimationSideEffects({
-          styles: {
-            active: {
-              opacity: '0.5',
+      <DragOverlay 
+        onContextMenu={(e) => e.preventDefault()}
+        dropAnimation={{
+          sideEffects: defaultDropAnimationSideEffects({
+            styles: {
+              active: {
+                opacity: '0.5',
+              },
             },
-          },
-        }),
-      }}>
+          }),
+        }}
+      >
         {activeId && activeNode ? (
           <div className="opacity-80 pointer-events-none scale-105 transition-transform">
             <HierarchicalNodeItem
