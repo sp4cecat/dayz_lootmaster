@@ -45,3 +45,44 @@ export function updateNodeInList<T extends { id: string, attachments?: T[], carg
     return changed ? nextNode : node;
   });
 }
+
+export function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
+  const result = Array.from(list);
+  const [removed] = result.splice(startIndex, 1);
+  result.splice(endIndex, 0, removed);
+  return result;
+}
+
+export function findParent<T extends { id: string, attachments?: T[], cargo?: T[] }>(
+  nodes: T[], 
+  id: string
+): { parent: T | null, list: 'attachments' | 'cargo' | 'root', index: number } | null {
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].id === id) {
+      return { parent: null, list: 'root', index: i };
+    }
+    
+    if (nodes[i].attachments) {
+      const children = nodes[i].attachments!;
+      for (let j = 0; j < children.length; j++) {
+        if (children[j].id === id) {
+          return { parent: nodes[i], list: 'attachments', index: j };
+        }
+        const found = findParent(children, id);
+        if (found) return found;
+      }
+    }
+    
+    if (nodes[i].cargo) {
+      const children = nodes[i].cargo!;
+      for (let j = 0; j < children.length; j++) {
+        if (children[j].id === id) {
+          return { parent: nodes[i], list: 'cargo', index: j };
+        }
+        const found = findParent(children, id);
+        if (found) return found;
+      }
+    }
+  }
+  return null;
+}

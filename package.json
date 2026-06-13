@@ -13,6 +13,10 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@untitledui/icons": "^0.0.22",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
@@ -33,6 +37,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.5.0",
     "baseline-browser-mapping": "^2.9.9",
+    "concurrently": "^9.1.2",
     "eslint": "^9.33.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -42,7 +47,6 @@
     "tailwindcss": "^3.4.19",
     "typescript": "^6.0.3",
     "vite": "7.1.5",
-    "vitest": "^2.1.8",
-    "concurrently": "^9.1.2"
+    "vitest": "^2.1.8"
   }
 }

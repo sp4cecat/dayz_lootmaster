@@ -1,10 +1,13 @@
 import React from 'react';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
-import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
 import { useResolvedNode } from '@/hooks/useResolvedNode';
+import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useDroppable } from '@dnd-kit/core';
 
 export interface ChildListConfig {
   key: 'attachments' | 'cargo';
@@ -31,6 +34,21 @@ interface HierarchicalNodeItemProps {
   isReadOnly?: boolean;
 }
 
+const DroppablePlaceholder: React.FC<{ id: string, label: string }> = ({ id, label }) => {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div 
+      ref={setNodeRef}
+      className={cx(
+        "text-[10px] text-gray-400 italic p-2 rounded border border-dashed transition-colors",
+        isOver ? "bg-primary-50 border-primary-300 text-primary-600" : "border-transparent"
+      )}
+    >
+      No {label.toLowerCase()}
+    </div>
+  );
+};
+
 export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   node,
   onUpdate,
@@ -53,6 +71,24 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   const [localExpanded, setLocalExpanded] = React.useState(defaultExpanded);
   const isExpanded = isReadOnly ? localExpanded : (node.isExpanded ?? defaultExpanded);
   const isSelected = selectedNodeId === node.id;
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id: node.id,
+    disabled: isReadOnly 
+  });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
 
   const resolvedChildren = useResolvedNode(
     node, 
@@ -104,7 +140,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   };
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" ref={setNodeRef} style={style}>
       <div 
         className={cx(
           "flex items-center group px-3 py-2 rounded-lg cursor-pointer border transition-all",
@@ -115,6 +151,20 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
         )}
         onClick={() => !isReadOnly && onSelect(node)}
       >
+        {!isReadOnly && (
+          <div 
+            {...attributes} 
+            {...listeners}
+            className="mr-2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing"
+            onContextMenu={(e) => {
+              // Only prevent context menu if we are dragging with right click
+              // This is a bit tricky to detect here, so we might just let it be or handle it in dnd-kit
+            }}
+          >
+            <GripVertical size={16} />
+          </div>
+        )}
+
         <button 
           onClick={(e) => { 
             e.stopPropagation(); 
@@ -196,27 +246,32 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                 </div>
                 {children.length > 0 ? (
                   <div className="space-y-1">
-                    {children.map((child, idx) => (
-                      <HierarchicalNodeItem 
-                        key={child.id}
-                        node={child}
-                        onUpdate={(updated) => updateChild(listConfig.key, idx, updated)}
-                        onDelete={() => deleteChild(listConfig.key, idx)}
-                        onSelect={onSelect}
-                        onAddTemplate={onAddTemplate}
-                        selectedNodeId={selectedNodeId}
-                        depth={depth + 1}
-                        childLists={childLists}
-                        allLoadouts={allLoadouts}
-                        randomPresets={randomPresets}
-                        expansionAirdrops={expansionAirdrops}
-                        spawnableTypesByGroup={spawnableTypesByGroup}
-                        isReadOnly={isReadOnly || node.type === 'template'}
-                      />
-                    ))}
+                    <SortableContext items={children.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                      {children.map((child, idx) => (
+                        <HierarchicalNodeItem 
+                          key={child.id}
+                          node={child}
+                          onUpdate={(updated) => updateChild(listConfig.key, idx, updated)}
+                          onDelete={() => deleteChild(listConfig.key, idx)}
+                          onSelect={onSelect}
+                          onAddTemplate={onAddTemplate}
+                          selectedNodeId={selectedNodeId}
+                          depth={depth + 1}
+                          childLists={childLists}
+                          allLoadouts={allLoadouts}
+                          randomPresets={randomPresets}
+                          expansionAirdrops={expansionAirdrops}
+                          spawnableTypesByGroup={spawnableTypesByGroup}
+                          isReadOnly={isReadOnly || node.type === 'template'}
+                        />
+                      ))}
+                    </SortableContext>
                   </div>
                 ) : (
-                  <div className="text-[10px] text-gray-400 italic">No {listConfig.label.toLowerCase()}</div>
+                  <DroppablePlaceholder 
+                    id={`droppable:${node.id}:${listConfig.key}`} 
+                    label={listConfig.label} 
+                  />
                 )}
               </div>
              );
