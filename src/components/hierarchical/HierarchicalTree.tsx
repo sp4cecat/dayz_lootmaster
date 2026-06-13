@@ -6,7 +6,6 @@ import {
   closestCorners,
   KeyboardSensor,
   PointerSensor,
-  MouseSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -15,32 +14,19 @@ import {
   defaultDropAnimationSideEffects,
 } from '@dnd-kit/core';
 
-class SmartMouseSensor extends MouseSensor {
-  static activator = [
-    {
-      eventName: 'onMouseDown' as const,
-      handler: ({ nativeEvent: event }: { nativeEvent: MouseEvent }) => {
-        const target = event.target as HTMLElement;
-        const isHandle = !!target.closest('[data-drag-handle]');
-        
-        // Right click or Ctrl+Click on handle triggers copy drag
-        if (event.button === 2 || event.ctrlKey) {
-          return isHandle;
-        }
-        
-        // Left click only starts drag if on handle
-        return event.button === 0 && isHandle;
-      },
-    },
-  ];
-}
-
 class SmartPointerSensor extends PointerSensor {
-  static activator = [
+  // NOTE: dnd-kit reads the static `activators` property (plural). Using the
+  // singular `activator` silently falls back to the default PointerSensor
+  // activator, which only allows the primary (left) button.
+  static activators = [
     {
       eventName: 'onPointerDown' as const,
       handler: ({ nativeEvent: event }: { nativeEvent: PointerEvent }) => {
-        return event.pointerType === 'touch';
+        const target = event.target as HTMLElement;
+        const isHandle = !!target.closest('[data-drag-handle]');
+
+        // Allow both left (0, reorder) and right (2, copy) clicks on the handle.
+        return isHandle && (event.button === 0 || event.button === 2);
       },
     },
   ];
@@ -95,7 +81,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   }, [activeId, isCopyDrag]);
 
   React.useEffect(() => {
-    const handlePointerDown = (e: PointerEvent) => {
+    const handleDown = (e: MouseEvent | PointerEvent) => {
       if (e.button === 2) {
         const target = e.target as HTMLElement;
         if (target.closest('[data-drag-handle]')) {
@@ -104,7 +90,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
       }
     };
 
-    const handlePointerUp = () => {
+    const handleUp = () => {
       // Small delay to allow contextmenu to fire and be blocked
       setTimeout(() => {
         isPotentialCopyDragRef.current = false;
@@ -118,27 +104,25 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
       }
     };
 
-    window.addEventListener('pointerdown', handlePointerDown, true);
-    window.addEventListener('pointerup', handlePointerUp, true);
+    window.addEventListener('pointerdown', handleDown, true);
+    window.addEventListener('mousedown', handleDown, true);
+    window.addEventListener('pointerup', handleUp, true);
+    window.addEventListener('mouseup', handleUp, true);
     window.addEventListener('contextmenu', handleContextMenu, true);
 
     return () => {
-      window.removeEventListener('pointerdown', handlePointerDown, true);
-      window.removeEventListener('pointerup', handlePointerUp, true);
+      window.removeEventListener('pointerdown', handleDown, true);
+      window.removeEventListener('mousedown', handleDown, true);
+      window.removeEventListener('pointerup', handleUp, true);
+      window.removeEventListener('mouseup', handleUp, true);
       window.removeEventListener('contextmenu', handleContextMenu, true);
     };
   }, []);
 
   const sensors = useSensors(
-    useSensor(SmartMouseSensor, {
-      activationConstraint: {
-        distance: 5, 
-      },
-    }),
     useSensor(SmartPointerSensor, {
       activationConstraint: {
-        delay: 250,
-        tolerance: 5,
+        distance: 5, 
       },
     }),
     useSensor(KeyboardSensor, {
