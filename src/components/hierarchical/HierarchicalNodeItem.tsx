@@ -1,6 +1,6 @@
 import React from 'react';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
-import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical, Boxes } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
@@ -98,6 +98,14 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     spawnableTypesByGroup
   );
 
+  // A group node renders a single members list (its `attachments`) instead of the
+  // default Attachments + Cargo lists. Its kind (attachments vs cargo) is implied by
+  // which parent list it lives in.
+  const isGroup = node.type === 'group';
+  const effectiveChildLists: ChildListConfig[] = isGroup
+    ? [{ key: 'attachments', label: 'Items', icon: Package }]
+    : childLists;
+
   const handleAddChild = (list: 'attachments' | 'cargo') => {
     const newNode: LoadoutNode = {
       id: crypto.randomUUID(),
@@ -137,6 +145,25 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     const newList = [...node[list]];
     newList.splice(index, 1);
     onUpdate({ ...node, [list]: newList });
+  };
+
+  // Adds an inline group (one <attachments>/<cargo> block) to the given list.
+  const handleAddGroup = (list: 'attachments' | 'cargo') => {
+    const newGroup: LoadoutNode = {
+      id: crypto.randomUUID(),
+      type: 'group',
+      name: '',
+      chance: 1.0,
+      attachments: [],
+      cargo: [],
+      isExpanded: true
+    };
+    onUpdate({
+      ...node,
+      [list]: [...node[list], newGroup],
+      isExpanded: true
+    });
+    onSelect(newGroup);
   };
 
   return (
@@ -183,16 +210,19 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
 
         <div className={cx(
           "p-1.5 rounded mr-3",
-          node.type === 'template' ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"
+          node.type === 'template' ? "bg-amber-100 text-amber-600"
+            : isGroup ? "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
+            : "bg-blue-100 text-blue-600"
         )}>
-          {node.type === 'template' ? <Layers size={14} /> : <Package size={14} />}
+          {node.type === 'template' ? <Layers size={14} /> : isGroup ? <Boxes size={14} /> : <Package size={14} />}
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold truncate text-sm">{node.name || (node.type === 'item' ? 'Unnamed Item' : 'Unnamed Template')}</span>
+            <span className="font-semibold truncate text-sm">{node.name || (node.type === 'item' ? 'Unnamed Item' : isGroup ? 'Group' : 'Unnamed Template')}</span>
             <Badge color="gray" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
             {node.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
+            {isGroup && <Badge color="purple" size="sm">Group · one of {(node.attachments || []).length}</Badge>}
             {isReadOnly && <Badge color="gray" size="sm">Linked</Badge>}
           </div>
         </div>
@@ -223,7 +253,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
 
       {isExpanded && (
         <div className="ml-6 pl-4 border-l-2 border-gray-100 dark:border-gray-800 space-y-4 py-2">
-          {childLists.map((listConfig) => {
+          {effectiveChildLists.map((listConfig) => {
              const children = resolvedChildren[listConfig.key] || [];
              return (
               <div key={listConfig.key} className="space-y-2">
@@ -231,6 +261,14 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{listConfig.label}</span>
                   {!isReadOnly && (
                     <div className="flex gap-2">
+                      {!isGroup && (
+                        <button 
+                          onClick={() => handleAddGroup(listConfig.key)}
+                          className="text-xs text-purple-600 hover:underline flex items-center"
+                        >
+                          <Boxes size={12} className="mr-1" /> Group
+                        </button>
+                      )}
                       <button 
                         onClick={() => onAddTemplate(listConfig.key)}
                         className="text-xs text-amber-600 hover:underline flex items-center"

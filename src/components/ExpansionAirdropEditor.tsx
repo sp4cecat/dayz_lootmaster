@@ -33,6 +33,53 @@ const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string }[] = [
   { key: 'InfectedCount', label: 'Default Infected Count' },
 ];
 
+const CONTAINER_CLASS_OPTIONS: string[] = [
+  'ExpansionAirdropContainer_Military',
+  'ExpansionAirdropContainer_Basebuilding',
+  'ExpansionAirdropContainer_Medical',
+  'ExpansionAirdropContainer',
+];
+
+const INFECTED_CLASSNAMES = [
+  "ZmbF_BlueCollarFat_Blue", "ZmbF_BlueCollarFat_Green", "ZmbF_BlueCollarFat_Red", "ZmbF_BlueCollarFat_White",
+  "ZmbF_CitizenANormal_Beige", "ZmbF_CitizenANormal_Blue", "ZmbF_CitizenANormal_Brown", "ZmbF_CitizenBSkinny",
+  "ZmbF_Clerk_Normal_Blue", "ZmbF_Clerk_Normal_Green", "ZmbF_Clerk_Normal_Red", "ZmbF_Clerk_Normal_White",
+  "ZmbF_DoctorSkinny", "ZmbF_HikerSkinny_Blue", "ZmbF_HikerSkinny_Green", "ZmbF_HikerSkinny_Grey", "ZmbF_HikerSkinny_Red",
+  "ZmbF_JoggerSkinny_Blue", "ZmbF_JoggerSkinny_Brown", "ZmbF_JoggerSkinny_Green", "ZmbF_JoggerSkinny_Red",
+  "ZmbF_JournalistNormal_Blue", "ZmbF_JournalistNormal_Green", "ZmbF_JournalistNormal_Red", "ZmbF_JournalistNormal_White",
+  "ZmbF_MechanicNormal_Beige", "ZmbF_MechanicNormal_Green", "ZmbF_MechanicNormal_Grey", "ZmbF_MechanicNormal_Orange",
+  "ZmbF_MilkMaidOld_Beige", "ZmbF_MilkMaidOld_Black", "ZmbF_MilkMaidOld_Green", "ZmbF_MilkMaidOld_Grey",
+  "ZmbF_NurseFat", "ZmbF_ParamedicNormal_Blue", "ZmbF_ParamedicNormal_Green", "ZmbF_ParamedicNormal_Red",
+  "ZmbF_PatientOld", "ZmbF_PoliceWomanNormal", "ZmbM_CitizenASkinny_Blue", "ZmbM_CitizenASkinny_Brown",
+  "ZmbM_CitizenASkinny_Grey", "ZmbM_CitizenASkinny_Red", "ZmbM_CitizenBFat_Blue", "ZmbM_CitizenBFat_Green",
+  "ZmbM_CitizenBFat_Red", "ZmbM_ClerkFat_Brown", "ZmbM_ClerkFat_Grey", "ZmbM_ClerkFat_Khaki", "ZmbM_ClerkFat_White",
+  "ZmbM_CommercialPilotOld_Blue", "ZmbM_CommercialPilotOld_Brown", "ZmbM_CommercialPilotOld_Grey",
+  "ZmbM_CommercialPilotOld_Olive", "ZmbM_ConstrWorkerNormal_Beige", "ZmbM_ConstrWorkerNormal_Black",
+  "ZmbM_ConstrWorkerNormal_Green", "ZmbM_ConstrWorkerNormal_Grey", "ZmbM_DoctorFat", "ZmbM_FarmerFat_Beige",
+  "ZmbM_FarmerFat_Blue", "ZmbM_FarmerFat_Brown", "ZmbM_FarmerFat_Green", "ZmbM_FirefighterNormal",
+  "ZmbM_FishermanOld_Blue", "ZmbM_FishermanOld_Green", "ZmbM_FishermanOld_Grey", "ZmbM_FishermanOld_Red",
+  "ZmbM_HandymanNormal_Beige", "ZmbM_HandymanNormal_Blue", "ZmbM_HandymanNormal_Green", "ZmbM_HandymanNormal_Grey",
+  "ZmbM_HandymanNormal_White", "ZmbM_HeavyIndustryWorker", "ZmbM_HermitSkinny_Beige", "ZmbM_HermitSkinny_Black",
+  "ZmbM_HermitSkinny_Green", "ZmbM_HermitSkinny_Red", "ZmbM_HikerSkinny_Blue", "ZmbM_HikerSkinny_Green",
+  "ZmbM_HikerSkinny_Yellow", "ZmbM_HunterOld_Autumn", "ZmbM_HunterOld_Spring", "ZmbM_HunterOld_Summer",
+  "ZmbM_HunterOld_Winter", "ZmbM_Jacket_beige", "ZmbM_Jacket_black", "ZmbM_Jacket_blue", "ZmbM_Jacket_bluechecks",
+  "ZmbM_PolicemanFat", "ZmbM_PolicemanSpecForce", "ZmbM_PolicemanSpecForce_Heavy",
+  "ZmbM_usSoldier_AirForce_Spacecat", "ZmbM_usSoldier_Heavy_Woodland", "ZmbM_usSoldier_normal_Desert",
+  "ZmbM_usSoldier_normal_Woodland", "ZmbM_usSoldier_Officer_Desert", "ZmbM_usSoldier_Woodland_Bitterroot",
+  "ZmbM_usSoldier_Woodland2_Bitterroot"
+];
+
+const EAI_CLASSNAMES = [
+  "eAI_SurvivorF_Eva", "eAI_SurvivorF_Frida", "eAI_SurvivorF_Gabi", "eAI_SurvivorF_Helga",
+  "eAI_SurvivorF_Irena", "eAI_SurvivorF_Judy", "eAI_SurvivorF_Keiko", "eAI_SurvivorF_Linda",
+  "eAI_SurvivorF_Maria", "eAI_SurvivorF_Naomi", "eAI_SurvivorF_Baty", "eAI_SurvivorM_Boris",
+  "eAI_SurvivorM_Cyril", "eAI_SurvivorM_Denis", "eAI_SurvivorM_Elias", "eAI_SurvivorM_Francis",
+  "eAI_SurvivorM_Guo", "eAI_SurvivorM_Hassan", "eAI_SurvivorM_Indar", "eAI_SurvivorM_Jose",
+  "eAI_SurvivorM_Kaito", "eAI_SurvivorM_Lewis", "eAI_SurvivorM_Manua", "eAI_SurvivorM_Mirek",
+  "eAI_SurvivorM_Niki", "eAI_SurvivorM_Oliver", "eAI_SurvivorM_Peter", "eAI_SurvivorM_Quinn",
+  "eAI_SurvivorM_Rolf", "eAI_SurvivorM_Seth", "eAI_SurvivorM_Taiki"
+];
+
 const BOOL_CORE_FIELDS: { key: string; label: string }[] = [
   { key: 'Enabled', label: 'Airdrops Enabled' },
   { key: 'EnableMapMarker', label: 'Map Marker' },
@@ -147,6 +194,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           getApiBase={getApiBase}
           headers={headers}
           setSaveState={setSaveState}
+          customInfected={map.customInfected}
         />
       ) : (
         <MissionsTab
@@ -181,11 +229,12 @@ interface CoreTabProps {
   getApiBase: () => string;
   headers: Record<string, string>;
   setSaveState: (s: SaveState) => void;
+  customInfected?: string[];
 }
 
 const CoreSettingsTab: React.FC<CoreTabProps> = ({
   settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
-  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
+  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState, customInfected,
 }) => {
   const containers = settings?.Containers || [];
 
@@ -258,8 +307,17 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
         {selected ? (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Container Class" value={selected.Container || ''}
-                onChange={(e) => updateContainer(selectedContainerIdx!, { Container: e.target.value })} />
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Container Class</label>
+                <ComboBox aria-label="Container Class" allowsCustomValue
+                  items={CONTAINER_CLASS_OPTIONS.map((id) => ({ id }))}
+                  selectedKey={selected.Container || ''}
+                  inputValue={selected.Container || ''}
+                  onInputChange={(v) => updateContainer(selectedContainerIdx!, { Container: v })}
+                  onSelectionChange={(k) => k && updateContainer(selectedContainerIdx!, { Container: String(k) })}>
+                  {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
+                </ComboBox>
+              </div>
               <div className="flex items-end pb-2">
                 <Toggle label="Spawn Smoke" isSelected={!!selected.SpawnSmoke}
                   onChange={(v) => updateContainer(selectedContainerIdx!, { SpawnSmoke: v ? 1 : 0 })} />
@@ -270,7 +328,7 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
                 onChange={(e) => updateContainer(selectedContainerIdx!, { InfectedCount: Number(e.target.value) })} />
             </div>
 
-            <InfectedList values={selected.Infected || []} onChange={(v) => updateContainer(selectedContainerIdx!, { Infected: v })} />
+            <InfectedList values={selected.Infected || []} customInfected={customInfected} onChange={(v) => updateContainer(selectedContainerIdx!, { Infected: v })} />
 
             <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
               <AirdropLootEditor
@@ -295,27 +353,64 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
   );
 };
 
-const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void }> = ({ values, onChange }) => {
+const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void; customInfected?: string[] }> = ({ values, onChange, customInfected = [] }) => {
   const [draft, setDraft] = useState('');
+
+  const suggestions = useMemo(() => {
+    const d = draft.toLowerCase();
+    if (!d) return [];
+    const custom = customInfected.filter((n) => n.toLowerCase().includes(d));
+    const infected = INFECTED_CLASSNAMES.filter((n) => n.toLowerCase().includes(d));
+    const eai = EAI_CLASSNAMES.filter((n) => n.toLowerCase().includes(d));
+    return [...custom, ...infected, ...eai].map((id) => ({ id }));
+  }, [draft, customInfected]);
+
+  const addItem = (item: string) => {
+    const trimmed = item.trim();
+    if (trimmed && !values.includes(trimmed)) {
+      onChange([...values, trimmed]);
+    }
+    setDraft('');
+  };
+
   return (
     <div className="space-y-2">
       <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Infected / AI</span>
       <div className="flex gap-2">
-        <Input size="sm" placeholder="ZmbM_... or eAI_...|faction:..." value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { onChange([...values, draft.trim()]); setDraft(''); } }} />
-        <Button size="sm" variant="secondary-gray" icon={Plus} onClick={() => { if (draft.trim()) { onChange([...values, draft.trim()]); setDraft(''); } }} />
+        <div className="flex-1">
+          <ComboBox
+            placeholder="ZmbM_... or eAI_...|faction:..."
+            items={suggestions}
+            inputValue={draft}
+            onInputChange={setDraft}
+            allowsCustomValue
+            menuTrigger="focus"
+            onSelectionChange={(key) => {
+              if (key) {
+                setDraft(String(key));
+              }
+            }}
+          >
+            {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
+          </ComboBox>
+        </div>
+        <Button
+          variant="secondary-gray"
+          icon={Plus}
+          onClick={() => addItem(draft)}
+          className="h-10 shrink-0"
+        />
       </div>
       <div className="flex flex-wrap gap-2">
         {values.map((v, i) => (
-          <span key={i} className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono">
+          <span key={i} className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono text-gray-700 dark:text-gray-300">
             {v}
             <button onClick={() => onChange(values.filter((_, j) => j !== i))} className="text-gray-400 hover:text-error-600">
               <Trash01 size={12} />
             </button>
           </span>
         ))}
-        {values.length === 0 && <span className="text-xs text-gray-400">None configured.</span>}
+        {values.length === 0 && <span className="text-xs text-gray-400 italic">None configured.</span>}
       </div>
     </div>
   );
@@ -575,7 +670,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
               </div>
             </section>
 
-            <InfectedList values={mission.data.Infected || []} onChange={(v) => patchData({ Infected: v })} />
+            <InfectedList values={mission.data.Infected || []} customInfected={map.customInfected} onChange={(v) => patchData({ Infected: v })} />
 
             {isUnique && (
               <div className="border-t border-gray-100 dark:border-gray-800 pt-6">

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Loadout, LoadoutNode } from '@/types/loadouts';
 import { loadAllLoadouts, saveLoadout, deleteLoadout } from '@/utils/idb';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
-import { Plus, Trash2, Save, Download, Upload, ChevronDown, Package, FileCode, Search, Layers } from 'lucide-react';
+import { Checkbox } from '@/components/base/checkbox/checkbox';
+import { Plus, Trash2, Save, Download, Upload, ChevronDown, Package, FileCode, Search, Layers, Boxes } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
@@ -58,6 +59,13 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Bulk import of all top-level spawnable types as individual loadouts
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkAllGroups, setBulkAllGroups] = useState(false);
+  const [bulkSelectedGroups, setBulkSelectedGroups] = useState<Set<string>>(new Set());
+  const [bulkSelectedFiles, setBulkSelectedFiles] = useState<Set<string>>(new Set());
+  const [bulkImporting, setBulkImporting] = useState(false);
 
   useEffect(() => {
     if (!propLoadouts) {
@@ -283,6 +291,127 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     }
   };
 
+  // Only true `spawnabletypes` files qualify for import. The mission root `cfgspawnabletypes.xml`
+  // (and other `cfg`-prefixed root files) are excluded so we only import from dedicated
+  // spawnabletypes files registered via cfgeconomycore.
+  const isSpawnableTypesFile = (fileName: string): boolean => {
+    const lower = fileName.toLowerCase();
+    return lower.endsWith('spawnabletypes.xml') && !lower.startsWith('cfg');
+  };
+
+  // Groups that contain at least one importable top-level type (has attachments/cargo sections)
+  // within a dedicated spawnabletypes file. Vanilla overrides and `cfg`-prefixed root files are
+  // excluded as they are not standalone spawnabletypes files.
+  const bulkGroups = useMemo(() => {
+    if (!spawnableTypesByGroup) return [];
+    return Object.keys(spawnableTypesByGroup)
+      .filter(group => {
+        if (group === 'vanilla' || group === 'vanilla_overrides') return false;
+        const files = spawnableTypesByGroup[group];
+        return Object.entries(files).some(([fileName, data]: [string, any]) =>
+          isSpawnableTypesFile(fileName) && data?.types?.some((t: any) => t.sections?.length > 1));
+      })
+      .sort();
+  }, [spawnableTypesByGroup]);
+
+  // The single selected group (used to expose per-file selection).
+  const bulkSingleGroup = useMemo(() => {
+    if (bulkAllGroups) return null;
+    const selected = bulkGroups.filter(g => bulkSelectedGroups.has(g));
+    return selected.length === 1 ? selected[0] : null;
+  }, [bulkAllGroups, bulkGroups, bulkSelectedGroups]);
+
+  const bulkSingleGroupFiles = useMemo(() => {
+    if (!bulkSingleGroup || !spawnableTypesByGroup) return [];
+    return Object.keys(spawnableTypesByGroup[bulkSingleGroup] || {})
+      .filter(fileName => isSpawnableTypesFile(fileName)
+        && (spawnableTypesByGroup[bulkSingleGroup][fileName]?.types || [])
+          .some((t: any) => t.sections?.length > 1))
+      .sort();
+  }, [bulkSingleGroup, spawnableTypesByGroup]);
+
+  // Collects every importable top-level type matching the current bulk selection.
+  const collectBulkTypes = (): { group: string; file: string; type: any }[] => {
+    if (!spawnableTypesByGroup) return [];
+    const groups = bulkAllGroups ? bulkGroups : bulkGroups.filter(g => bulkSelectedGroups.has(g));
+    const result: { group: string; file: string; type: any }[] = [];
+    for (const group of groups) {
+      const files = spawnableTypesByGroup[group];
+      if (!files) continue;
+      const fileNames = (bulkSingleGroup === group && bulkSelectedFiles.size > 0)
+        ? Object.keys(files).filter(f => isSpawnableTypesFile(f) && bulkSelectedFiles.has(f))
+        : Object.keys(files).filter(f => isSpawnableTypesFile(f));
+      for (const fileName of fileNames) {
+        const data = files[fileName];
+        (data?.types || [])
+          .filter((t: any) => t.sections?.length > 1)
+          .forEach((t: any) => result.push({ group, file: fileName, type: t }));
+      }
+    }
+    return result;
+  };
+
+  const bulkTypeCount = useMemo(
+    () => collectBulkTypes().length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bulkAllGroups, bulkSelectedGroups, bulkSelectedFiles, bulkSingleGroup, spawnableTypesByGroup]
+  );
+
+  const openBulkModal = () => {
+    setBulkAllGroups(false);
+    setBulkSelectedGroups(new Set());
+    setBulkSelectedFiles(new Set());
+    setBulkModalOpen(true);
+  };
+
+  const toggleBulkGroup = (group: string, selected: boolean) => {
+    setBulkSelectedGroups(prev => {
+      const next = new Set(prev);
+      if (selected) next.add(group); else next.delete(group);
+      return next;
+    });
+    // Reset file selection whenever the group set changes, since it only applies to a single group.
+    setBulkSelectedFiles(new Set());
+  };
+
+  const toggleBulkFile = (fileName: string, selected: boolean) => {
+    setBulkSelectedFiles(prev => {
+      const next = new Set(prev);
+      if (selected) next.add(fileName); else next.delete(fileName);
+      return next;
+    });
+  };
+
+  const handleBulkImport = async () => {
+    const collected = collectBulkTypes();
+    if (collected.length === 0) return;
+    setBulkImporting(true);
+    try {
+      // Pre-existing labels are skipped; in-batch collisions get a numeric suffix.
+      const existingLabels = new Set(loadouts.map(l => l.label));
+      const usedLabels = new Set(existingLabels);
+      let created = 0;
+      let skipped = 0;
+      for (const { type } of collected) {
+        if (existingLabels.has(type.name)) { skipped++; continue; }
+        let label = type.name;
+        let n = 2;
+        while (usedLabels.has(label)) { label = `${type.name} (${n++})`; }
+        usedLabels.add(label);
+        const loadout = vanillaSpawnableToLoadout(type);
+        loadout.label = label;
+        await saveLoadout(loadout);
+        created++;
+      }
+      const all = await loadAllLoadouts();
+      setLoadouts(all);
+      setBulkModalOpen(false);
+      alert(`Imported ${created} loadout${created === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} already existing` : ''}.`);
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
   const selectedNode = editingLoadout ? findNode(editingLoadout.items, selectedNodeId || '') : null;
 
   return (
@@ -497,7 +626,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                   return groupName === importGroup;
                 })
                 .flatMap(([groupName, files]) => 
-                  Object.entries(files).flatMap(([fileName, data]) => 
+                  Object.entries(files)
+                    .filter(([fileName]) => isSpawnableTypesFile(fileName))
+                    .flatMap(([fileName, data]) => 
                     (data.types || [])
                     .filter((t: any) => 
                       t.name.toLowerCase().includes(importSearch.toLowerCase()) && 
@@ -679,6 +810,22 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
             </div>
           </button>
 
+          <button
+            onClick={() => {
+              setCreateModalOpen(false);
+              openBulkModal();
+            }}
+            className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+          >
+            <div className="p-3 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-lg">
+              <Boxes size={24} />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white text-lg">Bulk Import Top-Level Types</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Create a standalone loadout for every top-level type across selected spawnable files</div>
+            </div>
+          </button>
+
           <div>
             <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-1">
               Create from Existing Spawnable Type
@@ -737,6 +884,88 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               }
             </div>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={bulkModalOpen}
+        onClose={() => setBulkModalOpen(false)}
+        title="Bulk Import Top-Level Types"
+        description="Each selected top-level type becomes its own standalone loadout (preset references are preserved). Existing loadouts with the same name are skipped."
+        icon={Boxes}
+        maxWidth="max-w-2xl"
+        footer={(
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setBulkModalOpen(false)} disabled={bulkImporting}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleBulkImport} disabled={bulkTypeCount === 0 || bulkImporting}>
+              {bulkImporting ? 'Importing...' : `Import ${bulkTypeCount} type${bulkTypeCount === 1 ? '' : 's'}`}
+            </Button>
+          </>
+        )}
+      >
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <Checkbox
+              isSelected={bulkAllGroups}
+              onChange={(selected) => {
+                setBulkAllGroups(selected);
+                setBulkSelectedGroups(new Set());
+                setBulkSelectedFiles(new Set());
+              }}
+              label="All groups"
+            />
+            <Badge color="gray" size="sm">{bulkTypeCount} importable</Badge>
+          </div>
+
+          {bulkGroups.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">No spawnable groups with importable top-level types found.</div>
+          ) : (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Groups</h4>
+              <div className="max-h-[220px] overflow-auto border border-gray-200 dark:border-gray-800 rounded-lg divide-y divide-gray-200 dark:divide-gray-800">
+                {bulkGroups.map(group => (
+                  <div
+                    key={group}
+                    className={cx(
+                      "flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800",
+                      bulkAllGroups && "opacity-50"
+                    )}
+                  >
+                    <Checkbox
+                      isSelected={bulkAllGroups || bulkSelectedGroups.has(group)}
+                      isDisabled={bulkAllGroups}
+                      onChange={(selected) => toggleBulkGroup(group, selected)}
+                      label={<span className="font-medium text-gray-900 dark:text-white">{formatModName(group)}</span>}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {bulkSingleGroup && bulkSingleGroupFiles.length > 1 && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                Files in {formatModName(bulkSingleGroup)} <span className="normal-case font-normal text-gray-400">(leave empty to include all)</span>
+              </h4>
+              <div className="max-h-[180px] overflow-auto border border-gray-200 dark:border-gray-800 rounded-lg divide-y divide-gray-200 dark:divide-gray-800">
+                {bulkSingleGroupFiles.map(fileName => (
+                  <div
+                    key={fileName}
+                    className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  >
+                    <Checkbox
+                      isSelected={bulkSelectedFiles.has(fileName)}
+                      onChange={(selected) => toggleBulkFile(fileName, selected)}
+                      label={<span className="font-medium text-gray-900 dark:text-white">{fileName}</span>}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

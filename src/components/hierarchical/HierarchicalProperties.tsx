@@ -3,7 +3,7 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 import { Input } from '@/components/base/input/input';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Slider } from '@/components/base/slider/slider';
-import { X, Layers, Package, Plus, Trash2 } from 'lucide-react';
+import { X, Layers, Package, Plus, Trash2, Boxes } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
 import { cx } from '@/utils/cx';
@@ -65,9 +65,11 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
         <div className="flex items-center gap-3">
           <div className={cx(
             "p-2 rounded-lg",
-            node.type === 'template' ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"
+            node.type === 'template' ? "bg-amber-100 text-amber-600"
+              : node.type === 'group' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
+              : "bg-blue-100 text-blue-600"
           )}>
-            {node.type === 'template' ? <Layers size={18} /> : <Package size={18} />}
+            {node.type === 'template' ? <Layers size={18} /> : node.type === 'group' ? <Boxes size={18} /> : <Package size={18} />}
           </div>
           <div>
             <h3 className="font-bold text-gray-900 dark:text-white">{config.title || 'Item Properties'}</h3>
@@ -97,6 +99,17 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
                 Item
               </button>
               <button 
+                onClick={() => onUpdate({ ...node, type: 'group' })}
+                className={cx(
+                  "flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all",
+                  node.type === 'group' 
+                    ? "bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300"
+                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:text-gray-400"
+                )}
+              >
+                Group
+              </button>
+              <button 
                 onClick={() => onUpdate({ ...node, type: 'template' })}
                 className={cx(
                   "flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all",
@@ -112,9 +125,18 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
 
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              {node.type === 'template' ? 'Select Template' : 'Item Classname'}
+              {node.type === 'template' ? 'Select Template' : node.type === 'group' ? 'Group' : 'Item Classname'}
             </label>
-            {node.type === 'template' ? (
+            {node.type === 'group' ? (
+              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-900/40 text-xs text-purple-800 dark:text-purple-200 space-y-1">
+                <p className="font-semibold">Attachment / Cargo Group</p>
+                <p className="text-purple-700/80 dark:text-purple-300/80">
+                  The Spawn Chance below is the probability this group is rolled. When it is, one
+                  member item is selected using the members' individual chances. Add members in the
+                  tree's "Items" list.
+                </p>
+              </div>
+            ) : node.type === 'template' ? (
               <div className="space-y-3">
                 <Badge color="warning" size="md" className="w-full justify-center">
                   Live Linked: {node.templateSource === 'preset' ? 'Random Preset' : node.templateSource === 'airdrop' ? 'Expansion Airdrop' : node.templateSource === 'spawnable' ? 'Spawnable Type' : 'Saved Loadout'}

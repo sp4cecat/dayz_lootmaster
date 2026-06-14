@@ -7,15 +7,53 @@ import { XMLNodeKind } from '@/types/xml';
  * we might need to handle it or warn. For now, we'll try to map it as best as possible.
  */
 export function loadoutNodeToSpawnableSection(node: LoadoutNode, kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO) {
+  // Maps a single child of a root item's attachments/cargo list to one
+  // <attachments>/<cargo> block (a "section").
+  const itemFromNode = (child: LoadoutNode) => ({
+    kind: XMLNodeKind.ITEM,
+    name: child.type === 'template' ? '' : child.name,
+    preset: child.type === 'template' ? child.name : '',
+    chance: child.chance,
+    attrs: {
+      ...(child.type === 'template' ? { preset: child.name } : { name: child.name }),
+      chance: child.chance.toFixed(2)
+    }
+  });
+
+  // Inline group: one block with its members as items (chances kept verbatim).
+  if (node.type === 'group') {
+    return {
+      kind,
+      chance: node.chance,
+      preset: '',
+      attrs: { chance: node.chance.toFixed(2) },
+      items: (node.attachments || []).map(itemFromNode)
+    };
+  }
+
+  // Named group reference (random preset / template): <attachments preset="..." />.
+  if (node.type === 'template') {
+    return {
+      kind,
+      chance: node.chance,
+      preset: node.name,
+      attrs: {
+        chance: node.chance.toFixed(2),
+        preset: node.name
+      },
+      items: []
+    };
+  }
+
+  // Legacy bare item: wrap it in its own single-item block.
   return {
     kind,
     chance: node.chance,
-    preset: node.type === 'template' ? node.name : '',
+    preset: '',
     attrs: {
-      chance: node.chance.toFixed(2),
-      ...(node.type === 'template' ? { preset: node.name } : {})
+      chance: node.chance.toFixed(2)
     },
-    items: node.type === 'item' ? [{
+    items: [{
       kind: XMLNodeKind.ITEM,
       name: node.name,
       chance: 1.0,
@@ -23,7 +61,7 @@ export function loadoutNodeToSpawnableSection(node: LoadoutNode, kind: XMLNodeKi
         name: node.name,
         chance: '1.00'
       }
-    }] : []
+    }]
   };
 }
 
@@ -121,13 +159,30 @@ export function loadoutToExpansionAirdrop(
   randomPresets: any[] = [],
   expansionAirdrops: any = null
 ) {
+  // Expansion airdrop JSON has no concept of an anonymous chance-bearing group, so
+  // inline group nodes are flattened into individual entries: each member's chance is
+  // multiplied by its group's chance.
+  const expandGroups = (nodes: LoadoutNode[]): LoadoutNode[] => {
+    const out: LoadoutNode[] = [];
+    for (const n of (nodes || [])) {
+      if (n.type === 'group') {
+        for (const m of (n.attachments || [])) {
+          out.push({ ...m, chance: (n.chance ?? 1) * (m.chance ?? 1) });
+        }
+      } else {
+        out.push(n);
+      }
+    }
+    return out;
+  };
+
   const mapNode = (node: LoadoutNode): any => {
     const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
     return {
       Name: resolved.name,
       Chance: resolved.chance,
-      Attachments: (resolved.attachments || []).map(mapNode),
-      Cargo: (resolved.cargo || []).map(mapNode),
+      Attachments: expandGroups(resolved.attachments || []).map(mapNode),
+      Cargo: expandGroups(resolved.cargo || []).map(mapNode),
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,
@@ -149,47 +204,64 @@ export function loadoutToVanillaXml(
 ) {
   const lines: string[] = [];
 
-  const mapNode = (node: LoadoutNode, indent: number) => {
-    const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
-    const space = ' '.repeat(indent);
-    
-    // Vanilla usually has <attachments chance="X"> or <cargo chance="X">
-    
-    if (resolved.attachments.length > 0) {
-      // If the node itself is a template of type preset, vanilla supports <attachments preset="Name"/>
-      if (node.type === 'template' && node.templateSource === 'preset') {
-         lines.push(`${space}<attachments preset="${node.name}" chance="${node.chance.toFixed(2)}" />`);
-      } else {
-        lines.push(`${space}<attachments chance="${resolved.chance.toFixed(2)}">`);
-        resolved.attachments.forEach(child => {
-           if (child.type === 'template' && child.templateSource === 'preset') {
-             lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
-           } else {
-             lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
-           }
-        });
-        lines.push(`${space}</attachments>`);
-      }
+  // Renders one child of a root item's attachments/cargo list as a single
+  // <attachments>/<cargo> block. A child can be a group (inline block), a preset
+  // template (named reference), or a legacy bare item (wrapped in its own block).
+  const renderBlock = (tag: 'attachments' | 'cargo', node: LoadoutNode, space: string) => {
+    // Named group reference, e.g. <attachments preset="MyPreset" chance="0.5" />
+    if (node.type === 'template' && node.templateSource === 'preset') {
+      lines.push(`${space}<${tag} preset="${node.name}" chance="${node.chance.toFixed(2)}" />`);
+      return;
     }
 
-    if (resolved.cargo.length > 0) {
-      if (node.type === 'template' && node.templateSource === 'preset') {
-        lines.push(`${space}<cargo preset="${node.name}" chance="${node.chance.toFixed(2)}" />`);
-      } else {
-        lines.push(`${space}<cargo chance="${resolved.chance.toFixed(2)}">`);
-        resolved.cargo.forEach(child => {
-          if (child.type === 'template' && child.templateSource === 'preset') {
-            lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
-          } else {
-            lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
-          }
-        });
-        lines.push(`${space}</cargo>`);
-      }
+    // Inline group -> one block with its members as items (verbatim chances).
+    if (node.type === 'group') {
+      lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
+      (node.attachments || []).forEach(child => {
+        if (child.type === 'template' && child.templateSource === 'preset') {
+          lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+        } else {
+          lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+        }
+      });
+      lines.push(`${space}</${tag}>`);
+      return;
     }
+
+    // Other template (loadout/airdrop/spawnable) -> resolve and emit its members.
+    if (node.type === 'template') {
+      const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
+      const members = tag === 'attachments' ? (resolved.attachments || []) : (resolved.cargo || []);
+      lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
+      members.forEach(child => {
+        if (child.type === 'template' && child.templateSource === 'preset') {
+          lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+        } else {
+          lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+        }
+      });
+      lines.push(`${space}</${tag}>`);
+      return;
+    }
+
+    // Legacy bare item -> its own single-item block.
+    lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
+    lines.push(`${space}  <item name="${node.name}" chance="1.00"/>`);
+    lines.push(`${space}</${tag}>`);
   };
 
-  loadout.items.forEach(item => mapNode(item, 0));
+  const mapRoot = (node: LoadoutNode, indent: number) => {
+    const space = ' '.repeat(indent);
+    lines.push(`${space}<type name="${node.name}">`);
+    if (node.damage) {
+      lines.push(`${space}  <damage min="${node.damage.min.toFixed(2)}" max="${node.damage.max.toFixed(2)}"/>`);
+    }
+    (node.attachments || []).forEach(child => renderBlock('attachments', child, `${space}  `));
+    (node.cargo || []).forEach(child => renderBlock('cargo', child, `${space}  `));
+    lines.push(`${space}</type>`);
+  };
+
+  loadout.items.forEach(item => mapRoot(item, 0));
 
   return lines.join('\n');
 }
@@ -222,6 +294,7 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
     if (!list) return;
 
     if (section.preset) {
+      // <attachments preset="X" chance="Y"/> -> kept as a live preset reference.
       list.push({
         id: crypto.randomUUID(),
         type: 'template',
@@ -231,17 +304,26 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
         attachments: [],
         cargo: []
       });
-    } else if (section.items) {
-      section.items.forEach((item: any) => {
-        list.push({
-          id: crypto.randomUUID(),
-          type: item.preset ? 'template' : 'item',
-          templateSource: item.preset ? 'preset' : undefined,
-          name: item.preset || item.name,
-          chance: (item.chance ?? 1.0) * (section.chance ?? 1.0), // Flatten chance for designer
-          attachments: [],
-          cargo: []
-        });
+    } else {
+      // <attachments chance="Y"> ...items... </attachments> -> one group node whose
+      // members carry their original chances verbatim (no flattening). One member is
+      // selected by weighted chance when the group (chance Y) is rolled.
+      const members: LoadoutNode[] = (section.items || []).map((item: any) => ({
+        id: crypto.randomUUID(),
+        type: item.preset ? 'template' : 'item',
+        templateSource: item.preset ? 'preset' : undefined,
+        name: item.preset || item.name,
+        chance: item.chance ?? 1.0,
+        attachments: [],
+        cargo: []
+      }));
+      list.push({
+        id: crypto.randomUUID(),
+        type: 'group',
+        name: '',
+        chance: section.chance ?? 1.0,
+        attachments: members,
+        cargo: []
       });
     }
   });
@@ -340,11 +422,10 @@ export function loadoutToSpawnableEntry(loadout: Loadout): any {
 
   const mapToSection = (nodes: LoadoutNode[], kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO) => {
      if (nodes.length === 0) return;
-     
-     // Group items by chance if they were originally in the same section, 
-     // but since Loadout flattens them, we might just create one section per item or group them.
-     // Vanilla often has multiple <attachments> sections.
-     
+
+     // Each direct child of the root item maps to one <attachments>/<cargo> block:
+     // a group node -> a block with its members; a preset template -> a preset reference;
+     // a legacy bare item -> a single-item block.
      nodes.forEach(node => {
         sections.push(loadoutNodeToSpawnableSection(node, kind));
      });
