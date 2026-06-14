@@ -102,6 +102,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
 
   // Core settings
   const [settings, setSettings] = useState<any>(null);
+  const [savedSettings, setSavedSettings] = useState<any>(null);
   const [selectedContainerIdx, setSelectedContainerIdx] = useState<number | null>(null);
 
   // Missions
@@ -119,8 +120,15 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         fetch(`${getApiBase()}/api/expansion/airdrop-settings`, { headers }),
         fetch(`${getApiBase()}/api/expansion/airdrop-missions`, { headers }),
       ]);
-      if (sRes.ok) setSettings(await sRes.json());
-      else setSettings({ Enabled: 1, Containers: [] });
+      if (sRes.ok) {
+        const data = await sRes.json();
+        setSettings(data);
+        setSavedSettings(data);
+      } else {
+        const fallback = { Enabled: 1, Containers: [] };
+        setSettings(fallback);
+        setSavedSettings(fallback);
+      }
       if (mRes.ok) setMissions(await mRes.json());
     } catch (e) {
       console.error('Failed to load airdrop data', e);
@@ -194,6 +202,8 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           getApiBase={getApiBase}
           headers={headers}
           setSaveState={setSaveState}
+          savedSettings={savedSettings}
+          setSavedSettings={setSavedSettings}
           customInfected={map.customInfected}
         />
       ) : (
@@ -229,12 +239,15 @@ interface CoreTabProps {
   getApiBase: () => string;
   headers: Record<string, string>;
   setSaveState: (s: SaveState) => void;
+  savedSettings: any;
+  setSavedSettings: (s: any) => void;
   customInfected?: string[];
 }
 
 const CoreSettingsTab: React.FC<CoreTabProps> = ({
   settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
-  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState, customInfected,
+  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
+  savedSettings, setSavedSettings, customInfected,
 }) => {
   const containers = settings?.Containers || [];
 
@@ -254,12 +267,18 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
         body: JSON.stringify(settings),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      setSavedSettings(settings);
       setSaveState({ kind: 'ok' });
       setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
     } catch (e: any) {
       setSaveState({ kind: 'error', message: e.message });
     }
   };
+
+  const isDirty = useMemo(
+    () => JSON.stringify(settings) !== JSON.stringify(savedSettings),
+    [settings, savedSettings]
+  );
 
   const selected = selectedContainerIdx !== null ? containers[selectedContainerIdx] : null;
 
@@ -302,7 +321,7 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
 
       <div className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-end mb-4">
-          <Button variant="primary" icon={Save01} onClick={save}>Save Core Settings</Button>
+          <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Core Settings</Button>
         </div>
         {selected ? (
           <div className="space-y-6">
