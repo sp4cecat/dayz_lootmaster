@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from '@/components/base/badges/badges';
@@ -59,21 +59,33 @@ export default function EditFormSpawnableTab({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
 
-  const handleUpdateNode = (updatedNode: LoadoutNode) => {
-    const currentLoadout = vanillaSpawnableToLoadout(entry);
-    const updatedLoadout = {
-      ...currentLoadout,
-      items: updateNodeInList(currentLoadout.items, updatedNode)
-    };
-    
-    const nextEntry = loadoutToSpawnableEntry(updatedLoadout);
+  // The hierarchical tree is held in state (not regenerated from the entry each render) so
+  // UI-only state — node ids, isExpanded, selection — survives edits. vanillaSpawnableToLoadout
+  // mints fresh random ids and collapses everything, so deriving it inline would drop the
+  // expansion/selection on every keystroke. We persist tree edits back to the XML store but
+  // only reseed from the store when the edited type/file changes or we re-enter tree view.
+  const [treeItems, setTreeItems] = useState<LoadoutNode[]>([]);
+
+  // Push a new tree state and mirror it into the XML store (single place so every tree
+  // mutation stays in sync).
+  const commitTreeItems = (nextItems: LoadoutNode[]) => {
+    setTreeItems(nextItems);
+    const nextEntry = loadoutToSpawnableEntry({
+      id: crypto.randomUUID(),
+      label: entry.name,
+      items: nextItems,
+      updatedAt: Date.now()
+    });
     if (nextEntry) {
       updateSpawnableEntry(() => ({
         ...nextEntry,
         damage: entry.damage // Preserve damage if it wasn't in the loadout root (it should be)
       }));
     }
-    
+  };
+
+  const handleUpdateNode = (updatedNode: LoadoutNode) => {
+    commitTreeItems(updateNodeInList(treeItems, updatedNode));
     if (selectedNodeId === updatedNode.id) {
       setEditingNode(updatedNode);
     }
@@ -100,8 +112,19 @@ export default function EditFormSpawnableTab({
     cargo: []
   };
 
+  // Reseed the stateful tree only when the edited type/file identity changes or we (re)enter
+  // tree view — NOT on every entry change, so our own tree edits don't collapse/re-id the tree.
+  // entryRef keeps the seed reading the freshest entry (reflecting tiles-view / Quick Apply edits).
+  const entryRef = useRef(entry);
+  entryRef.current = entry;
+  const seedKey = `${effectiveGroup}::${effectiveFile}::${type.name}`;
+  useEffect(() => {
+    if (viewMode !== 'tree') return;
+    setTreeItems(vanillaSpawnableToLoadout(entryRef.current).items);
+  }, [seedKey, viewMode]);
+
   // Restrict the item picker to compatible attachments when an attachment-slot node is selected.
-  const spawnableParentInfo = selectedNodeId ? findParent(vanillaSpawnableToLoadout(entry).items, selectedNodeId) : null;
+  const spawnableParentInfo = selectedNodeId ? findParent(treeItems, selectedNodeId) : null;
   const treeAttachmentParent = spawnableParentInfo?.list === 'attachments' ? spawnableParentInfo.parent?.name : undefined;
   // Tiles-view slot modal: the parent is always the root spawnable type.
   const slotAttachmentParent = (editingSlot?.kind === XMLNodeKind.ATTACHMENTS) ? type.name : undefined;
@@ -407,22 +430,9 @@ export default function EditFormSpawnableTab({
           </div>
           
           <div className="p-4 bg-gray-50 dark:bg-gray-950/20 rounded-xl border border-gray-100 dark:border-gray-800 relative">
-            <HierarchicalTree 
-              items={vanillaSpawnableToLoadout(entry).items}
-              onUpdate={(newNodes) => {
-                const nextEntry = loadoutToSpawnableEntry({
-                  id: crypto.randomUUID(),
-                  label: entry.name,
-                  items: newNodes,
-                  updatedAt: Date.now()
-                });
-                if (nextEntry) {
-                  updateSpawnableEntry(() => ({
-                    ...nextEntry,
-                    damage: entry.damage
-                  }));
-                }
-              }}
+            <HierarchicalTree
+              items={treeItems}
+              onUpdate={(newNodes) => commitTreeItems(newNodes)}
               onSelect={(node) => {
                 setSelectedNodeId(node.id);
                 setEditingNode(node);
@@ -486,9 +496,8 @@ export default function EditFormSpawnableTab({
                               cargo: []
                             };
                             
-                            const loadout = vanillaSpawnableToLoadout(entry);
-                            const targetNode = findNode(loadout.items, nodeId);
-                            
+                            const targetNode = findNode(treeItems, templateModalTarget.nodeId);
+
                             if (targetNode) {
                               const updatedNode = {
                                 ...targetNode,
@@ -524,9 +533,8 @@ export default function EditFormSpawnableTab({
                                 cargo: []
                               };
                               
-                              const loadout = vanillaSpawnableToLoadout(entry);
-                              const targetNode = findNode(loadout.items, templateModalTarget.nodeId);
-                              
+                              const targetNode = findNode(treeItems, templateModalTarget.nodeId);
+
                               if (targetNode) {
                                 const updatedNode = {
                                   ...targetNode,
