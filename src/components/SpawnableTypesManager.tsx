@@ -26,7 +26,8 @@ import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
 import { LoadoutNode } from '@/types/loadouts';
-import { updateNodeInList, findNode } from '@/utils/tree';
+import { updateNodeInList, findNode, findParent } from '@/utils/tree';
+import { useCompatibleAttachments } from '@/contexts/CatalogContext';
 
 interface SpawnableTypesManagerProps {
     spawnableFilesByGroup: Record<string, string[]>;
@@ -105,6 +106,11 @@ export function SpawnableTypesManager({
         if (!searchTerm) return nodes;
         return nodes.filter(n => n.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [nodes, searchTerm]);
+
+    // When an attachment-slot node is selected, restrict its picker to compatible attachments.
+    const selectedParentInfo = selectedNodeId ? findParent(nodes, selectedNodeId) : null;
+    const attachmentParentName = selectedParentInfo?.list === 'attachments' ? selectedParentInfo.parent?.name : undefined;
+    const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
 
     const handleUpdateNode = (updated: LoadoutNode) => {
         const nextNodes = updateNodeInList(nodes, updated);
@@ -346,6 +352,7 @@ export function SpawnableTypesManager({
                             onUpdate={handleUpdateNode}
                             onClose={() => setSelectedNodeId(null)}
                             typeOptions={typeOptions}
+                            compatibleClasses={compatibleClasses}
                             randomPresets={randomPresets}
                             availableTemplates={loadouts}
                         />

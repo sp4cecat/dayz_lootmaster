@@ -19,6 +19,7 @@ import {dirname, join, resolve} from 'node:path';
 import {mkdir, readFile, writeFile, stat, appendFile, readdir, cp, rm} from 'node:fs/promises';
 import crypto from 'node:crypto';
 import moment from 'moment';
+import { normalizeTypeDetail } from '../src/utils/catalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1273,6 +1274,93 @@ function badRequest(res, message) {
     send(res, 400, JSON.stringify({error: message || 'Bad request'}), {'Content-Type': 'application/json'});
 }
 
+// ---- DayZ Server API (companion mod) catalog proxy ----
+// The companion mod exposes a localhost-only API with type metadata (displayName,
+// description) and both-directions attachment graphs. We proxy it server-side to
+// dodge browser CORS and to cache. Everything degrades gracefully: any upstream
+// failure yields an empty/disconnected shape (never a 5xx) so the client can fall back.
+// eslint-disable-next-line no-undef
+const CATALOG_URL = (process.env.DAYZ_CATALOG_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
+const CATALOG_TTL_MS = 5 * 60 * 1000;
+const catalogCache = new Map(); // key -> { at: number, data: any }
+
+async function catalogFetch(path) {
+    // Returns parsed JSON, or null on any failure (unreachable, non-2xx, bad JSON).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+        // eslint-disable-next-line no-undef
+        const resp = await fetch(`${CATALOG_URL}${path}`, { signal: controller.signal });
+        if (!resp.ok) return null;
+        return await resp.json();
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function catalogCacheGet(key) {
+    const hit = catalogCache.get(key);
+    if (hit && (Date.now() - hit.at) < CATALOG_TTL_MS) return hit.data;
+    return null;
+}
+
+function catalogCacheSet(key, data) {
+    catalogCache.set(key, { at: Date.now(), data });
+}
+
+// normalizeTypeDetail is shared with the client (see src/utils/catalog.js).
+
+// Handles any /api/catalog/* route. Returns true if it took the request.
+async function handleCatalogRoute(pathname, req, res) {
+    const parts = pathname.split('/').filter(Boolean); // ['api','catalog',...]
+    if (parts[0] !== 'api' || parts[1] !== 'catalog') return false;
+    if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+
+    // /api/catalog/health
+    if (parts.length === 3 && parts[2] === 'health') {
+        const health = await catalogFetch('/health');
+        const body = health
+            ? { ok: !!health.ok, modConnected: !!health.modConnected }
+            : { ok: false, modConnected: false };
+        send(res, 200, JSON.stringify(body), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // /api/catalog/types  (bulk summaries for the displayName lookup)
+    if (parts.length === 3 && parts[2] === 'types') {
+        const cached = catalogCacheGet('types');
+        if (cached) { send(res, 200, JSON.stringify(cached), { 'Content-Type': 'application/json' }); return true; }
+        const list = await catalogFetch('/types');
+        const types = (list && Array.isArray(list.types)) ? list.types : [];
+        const out = { count: types.length, types };
+        if (types.length) catalogCacheSet('types', out); // don't cache an empty (disconnected) result
+        send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // /api/catalog/types/:name  (normalized detail + attachment graph)
+    if (parts.length === 4 && parts[2] === 'types') {
+        const name = decodeURIComponent(parts[3]);
+        const key = `type:${name.toLowerCase()}`;
+        const cached = catalogCacheGet(key);
+        if (cached) { send(res, 200, JSON.stringify(cached), { 'Content-Type': 'application/json' }); return true; }
+        const enc = encodeURIComponent(name);
+        const [detail, attachments] = await Promise.all([
+            catalogFetch(`/types/${enc}`),
+            catalogFetch(`/types/${enc}/attachments`),
+        ]);
+        const normalized = normalizeTypeDetail(name, detail, attachments);
+        if (detail || attachments) catalogCacheSet(key, normalized);
+        send(res, 200, JSON.stringify(normalized), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    notFound(res);
+    return true;
+}
+
 /**
  * Recursively walk a directory and collect files accepted by the predicate.
  * @param {string} base
@@ -1411,6 +1499,11 @@ const server = http.createServer(async (req, res) => {
 
         const url = new URL(req.url || '/', `http://${req.headers.host}`);
         const {pathname} = url;
+
+        // Companion-mod catalog proxy (profile-independent; handled before the profile check)
+        if (pathname.startsWith('/api/catalog')) {
+            if (await handleCatalogRoute(pathname, req, res)) return;
+        }
 
         // Profile & Snapshot Management
         if (pathname === '/api/profiles' || pathname.startsWith('/api/profiles/')) {

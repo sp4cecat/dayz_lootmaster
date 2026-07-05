@@ -9,7 +9,8 @@ import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
-import { updateNodeInList, findNode } from '@/utils/tree';
+import { updateNodeInList, findNode, findParent } from '@/utils/tree';
+import { useCompatibleAttachments } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
@@ -413,6 +414,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   };
 
   const selectedNode = editingLoadout ? findNode(editingLoadout.items, selectedNodeId || '') : null;
+  const parentInfo = editingLoadout && selectedNodeId ? findParent(editingLoadout.items, selectedNodeId) : null;
+  const attachmentParentName = parentInfo?.list === 'attachments' ? parentInfo.parent?.name : undefined;
+  const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
@@ -567,6 +571,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     onClose={() => setSelectedNodeId(null)}
                     typeOptions={typeOptions}
                     availableTemplates={loadouts.filter(l => l.id !== editingLoadout.id)}
+                    compatibleClasses={compatibleClasses}
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
                   />

@@ -8,6 +8,7 @@ import { Toggle } from '@/components/base/toggle/toggle';
 import { Plus, Trash2, Package, Layers, Settings2, Search } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { XMLNodeKind } from '@/types/xml';
+import { useCatalog } from '@/contexts/CatalogContext';
 
 interface SpawnableSlotModalProps {
   isOpen: boolean;
@@ -16,6 +17,8 @@ interface SpawnableSlotModalProps {
   onSave: (nextSlot: any) => void;
   presets: any[];
   typeOptions: string[];
+  /** When editing an attachments slot, restrict the picker to these compatible classes. */
+  compatibleClasses?: string[] | null;
   kind: XMLNodeKind.ATTACHMENTS | XMLNodeKind.CARGO;
   title?: string;
 }
@@ -27,9 +30,11 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
   onSave,
   presets,
   typeOptions,
+  compatibleClasses,
   kind,
   title
 }) => {
+  const { displayNameFor } = useCatalog();
   const [editedSlot, setEditedSlot] = useState(JSON.parse(JSON.stringify(slot || {
     kind,
     chance: 1.0,
@@ -41,11 +46,19 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
   const [usePreset, setUsePreset] = useState(!!editedSlot.preset);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Attachments: restrict to compatible classes when the catalog can answer; cargo is unrestricted.
+  const restricted = kind === XMLNodeKind.ATTACHMENTS && !!(compatibleClasses && compatibleClasses.length > 0);
+  const searchPool = restricted ? compatibleClasses! : typeOptions;
+
   const filteredTypeOptions = useMemo(() => {
-    if (!searchTerm || searchTerm.length < 2) return [];
+    // Restricted lists are short, so surface them as soon as the user starts typing.
+    const minLen = restricted ? 1 : 2;
+    if (searchTerm.length < minLen) return [];
     const lower = searchTerm.toLowerCase();
-    return typeOptions.filter(opt => opt.toLowerCase().includes(lower)).slice(0, 50);
-  }, [searchTerm, typeOptions]);
+    return searchPool
+      .filter(opt => opt.toLowerCase().includes(lower) || (displayNameFor(opt) || '').toLowerCase().includes(lower))
+      .slice(0, 50);
+  }, [searchTerm, searchPool, restricted, displayNameFor]);
 
   const handleChanceChange = (val: number) => {
     const chance = val / 100;
@@ -171,22 +184,31 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
               <div className="relative">
                 <Input
                   label="Add Item to List"
-                  placeholder="Search item name..."
+                  placeholder={restricted ? 'Search compatible attachments...' : 'Search item name...'}
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   icon={Search}
                 />
+                {restricted && (
+                  <p className="mt-1 text-[11px] text-primary-600 dark:text-primary-400">
+                    Restricted to {compatibleClasses!.length} compatible attachment{compatibleClasses!.length === 1 ? '' : 's'}.
+                  </p>
+                )}
                 {filteredTypeOptions.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg max-h-60 overflow-y-auto scrollbar-thin">
-                    {filteredTypeOptions.map(opt => (
+                    {filteredTypeOptions.map(opt => {
+                      const dn = displayNameFor(opt);
+                      return (
                       <button
                         key={opt}
                         onClick={() => addItem(opt)}
                         className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
                       >
-                        {opt}
+                        <span className="block">{opt}</span>
+                        {dn && <span className="block text-xs text-gray-400">{dn}</span>}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -198,6 +220,9 @@ export const SpawnableSlotModal: React.FC<SpawnableSlotModalProps> = ({
                     <div key={idx} className="flex items-center gap-4 p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{item.name}</p>
+                        {displayNameFor(item.name) && (
+                          <p className="text-xs text-gray-400 truncate">{displayNameFor(item.name)}</p>
+                        )}
                       </div>
                       <Slider
                         className="w-48 px-4 border-l border-gray-100 dark:border-gray-800"

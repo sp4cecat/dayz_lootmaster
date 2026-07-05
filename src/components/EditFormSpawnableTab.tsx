@@ -36,7 +36,8 @@ function chancePercent(value: any) {
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
-import { updateNodeInList, findNode } from '@/utils/tree';
+import { updateNodeInList, findNode, findParent } from '@/utils/tree';
+import { useCompatibleAttachments } from '@/contexts/CatalogContext';
 
 export default function EditFormSpawnableTab({ 
   selectedTypes, 
@@ -97,6 +98,14 @@ export default function EditFormSpawnableTab({
     attachments: [],
     cargo: []
   };
+
+  // Restrict the item picker to compatible attachments when an attachment-slot node is selected.
+  const spawnableParentInfo = selectedNodeId ? findParent(vanillaSpawnableToLoadout(entry).items, selectedNodeId) : null;
+  const treeAttachmentParent = spawnableParentInfo?.list === 'attachments' ? spawnableParentInfo.parent?.name : undefined;
+  // Tiles-view slot modal: the parent is always the root spawnable type.
+  const slotAttachmentParent = (editingSlot?.kind === XMLNodeKind.ATTACHMENTS) ? type.name : undefined;
+  const attachmentParentName = treeAttachmentParent || slotAttachmentParent;
+  const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
 
   const updateSpawnableEntry = (updater: (entry: any) => any) => {
     const nextGroups = { ...spawnableTypesByGroup };
@@ -420,12 +429,13 @@ export default function EditFormSpawnableTab({
 
           {selectedNodeId && editingNode && (
             <div className="fixed top-0 right-0 bottom-0 z-[100] animate-in slide-in-from-right duration-300">
-              <HierarchicalProperties 
+              <HierarchicalProperties
                 node={editingNode}
                 onUpdate={handleUpdateNode}
                 onClose={() => setSelectedNodeId(null)}
                 typeOptions={typeOptions}
                 availableTemplates={loadouts}
+                compatibleClasses={compatibleClasses}
                 randomPresets={randomPresets}
                 config={{
                   title: 'Spawnable Item Properties',
@@ -635,6 +645,7 @@ export default function EditFormSpawnableTab({
           onSave={handleSaveSlot}
           presets={randomPresets.presets?.filter((p: any) => p.kind === editingSlot.kind) || []}
           typeOptions={typeOptions}
+          compatibleClasses={compatibleClasses}
           kind={editingSlot.kind}
         />
       )}

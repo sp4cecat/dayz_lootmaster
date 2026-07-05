@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLootData } from './hooks/useLootData.js';
+import { CatalogProvider } from './contexts/CatalogContext';
 import Filters from './components/Filters';
 import TypesTable from './components/TypesTable';
 import EditForm from './components/EditForm';
@@ -225,8 +226,9 @@ export default function App() {
     }
 
     return (
+        <CatalogProvider selectedProfileId={selectedProfileId}>
         <div className="flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-            <Sidebar 
+            <Sidebar
                 activeTab={view}
                 onTabChange={(id) => {
                     setView(id);
@@ -593,6 +595,7 @@ export default function App() {
                 />
             )}
         </div>
+        </CatalogProvider>
     );
 }
 

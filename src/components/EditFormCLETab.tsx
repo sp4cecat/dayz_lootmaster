@@ -9,6 +9,7 @@ import { Clock, Info, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Checkbox } from '@/components/base/checkbox/checkbox';
 import { cx } from '@/utils/cx';
 import type { Type } from '@/utils/xml';
+import { TypeMetaPanel } from '@/components/catalog/TypeMetaPanel';
 
 interface EditFormCLETabProps {
   definitions: {
@@ -283,6 +284,9 @@ export default function EditFormCLETab({
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      {selectedTypes.length === 1 && (
+        <TypeMetaPanel name={selectedTypes[0].name} />
+      )}
       <div className="columns-1 sm:columns-2 gap-8">
         {/* Basics Section */}
         <section className="min-w-[200px] break-inside-avoid mb-8">

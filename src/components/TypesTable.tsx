@@ -8,6 +8,7 @@ import { cx } from '@/utils/cx';
 import { AlertCircle, Milk } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import type { Type } from '@/utils/xml';
+import { useCatalog } from '@/contexts/CatalogContext';
 
 interface TypesTableProps {
   types: (Type & { group?: string; file?: string })[];
@@ -36,6 +37,7 @@ export default function TypesTable({
   storageDiff,
   showGroupColumn = true,
 }: TypesTableProps) {
+  const { displayNameFor } = useCatalog();
   const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({
     key: 'name',
     dir: 'asc',
@@ -320,16 +322,23 @@ export default function TypesTable({
                 }}
               >
                 <Table.Cell className="px-3 py-2 flex items-center">
-                  <div className="flex items-center gap-3 flex-1">
-                    <span
-                      className={cx(
-                        'text-sm font-semibold truncate',
-                        isSelected ? 'text-primary-700 dark:text-primary-300' : 'text-gray-900 dark:text-gray-100',
-                        isModified && 'text-warning-600 dark:text-warning-400'
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="flex flex-col min-w-0">
+                      <span
+                        className={cx(
+                          'text-sm font-semibold truncate',
+                          isSelected ? 'text-primary-700 dark:text-primary-300' : 'text-gray-900 dark:text-gray-100',
+                          isModified && 'text-warning-600 dark:text-warning-400'
+                        )}
+                        title={row.name}
+                      >
+                        {row.name}
+                      </span>
+                      {displayNameFor(row.name) && (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 truncate" title={displayNameFor(row.name)}>
+                          {displayNameFor(row.name)}
+                        </span>
                       )}
-                      title={row.name}
-                    >
-                      {row.name}
                     </span>
                     {row.hasUnknown && (
                       <Badge color="error" size="sm" type="modern">

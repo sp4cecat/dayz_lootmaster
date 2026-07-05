@@ -7,6 +7,7 @@ import { X, Layers, Package, Plus, Trash2, Boxes } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
 import { cx } from '@/utils/cx';
+import { useCatalog } from '@/contexts/CatalogContext';
 
 export interface HierarchicalPropertiesConfig {
   showQuantity?: boolean;
@@ -23,7 +24,14 @@ interface HierarchicalPropertiesProps {
   typeOptions: string[];
   availableTemplates: Loadout[];
   config?: HierarchicalPropertiesConfig;
-  
+
+  /**
+   * When this node sits in an attachments slot, the classes that can attach onto its
+   * parent. Non-null + non-empty restricts the item picker to compatible attachments;
+   * null/empty leaves the full typeOptions available (fallback when catalog can't answer).
+   */
+  compatibleClasses?: string[] | null;
+
   // For template resolution context (optional)
   randomPresets?: { presets: any[] };
   expansionAirdrops?: any;
@@ -41,10 +49,18 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
     showVariants: false,
     showAttributes: false,
   },
+  compatibleClasses,
   randomPresets,
   expansionAirdrops
 }) => {
+  const { displayNameFor } = useCatalog();
   const [newVariant, setNewVariant] = React.useState('');
+
+  const restricted = !!(compatibleClasses && compatibleClasses.length > 0);
+  const itemOptions = React.useMemo(() => {
+    const names = restricted ? compatibleClasses! : typeOptions;
+    return names.map(n => ({ id: n, name: n, displayName: displayNameFor(n) || '' }));
+  }, [restricted, compatibleClasses, typeOptions, displayNameFor]);
 
   const addVariant = () => {
     if (!newVariant) return;
@@ -149,16 +165,35 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
                 </p>
               </div>
             ) : (
-              <ComboBox 
-                items={typeOptions.map(opt => ({ id: opt, name: opt }))}
-                inputValue={node.name}
-                onInputChange={value => onUpdate({ ...node, name: value })}
-                onSelectionChange={key => key && onUpdate({ ...node, name: key as string })}
-                placeholder="Search classname..."
-                aria-label="Item Classname"
-              >
-                {(item) => <ComboBoxItem id={item.id}>{item.name}</ComboBoxItem>}
-              </ComboBox>
+              <div className="space-y-1.5">
+                <ComboBox
+                  items={itemOptions}
+                  inputValue={node.name}
+                  onInputChange={value => onUpdate({ ...node, name: value })}
+                  onSelectionChange={key => key && onUpdate({ ...node, name: key as string })}
+                  placeholder="Search classname..."
+                  aria-label="Item Classname"
+                >
+                  {(item) => (
+                    <ComboBoxItem id={item.id} textValue={`${item.name} ${item.displayName}`}>
+                      <span className="flex flex-col">
+                        <span>{item.name}</span>
+                        {item.displayName && (
+                          <span className="text-xs text-gray-400">{item.displayName}</span>
+                        )}
+                      </span>
+                    </ComboBoxItem>
+                  )}
+                </ComboBox>
+                {restricted && (
+                  <p className="text-[11px] text-primary-600 dark:text-primary-400">
+                    Showing {compatibleClasses!.length} compatible attachment{compatibleClasses!.length === 1 ? '' : 's'}.
+                  </p>
+                )}
+                {displayNameFor(node.name) && (
+                  <p className="text-[11px] text-gray-400">{displayNameFor(node.name)}</p>
+                )}
+              </div>
             )}
           </div>
         </section>
