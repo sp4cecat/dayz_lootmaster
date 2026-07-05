@@ -31,3 +31,4 @@ dist-ssr
 /data/profiles
 /example dayz server directory/
 /server/profiles.json
+/server/.cache/

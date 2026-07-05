@@ -1281,8 +1281,20 @@ function badRequest(res, message) {
 // failure yields an empty/disconnected shape (never a 5xx) so the client can fall back.
 // eslint-disable-next-line no-undef
 const CATALOG_URL = (process.env.DAYZ_CATALOG_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
-const CATALOG_TTL_MS = 5 * 60 * 1000;
-const catalogCache = new Map(); // key -> { at: number, data: any }
+// Static metadata (displayName, description, slots, attachment graph) only changes when
+// the mod is rebuilt, so we cache it aggressively and persist it to disk. It never expires
+// on a timer — instead we invalidate it when the companion mod reconnects (a false->true
+// modConnected transition seen on /health), since that's the moment a rebuilt catalog comes
+// back. Live CLE economy fields (nominal/min/lifetime/restock/value/spawnedCount) are
+// deliberately NOT cached here — types.xml is the source of truth for those — so we strip them.
+const CATALOG_CACHE_FILE = resolve(join(__dirname, '.cache', 'catalog-static.json'));
+
+// Disk-backed static store, held in memory once loaded:
+//   { url, types: { at, list } | null, details: { [nameLower]: { at, data } } }
+let catalogStatic = null;
+let catalogStaticLoaded = false;
+// Last modConnected value observed on /health; used to detect a reconnect transition.
+let lastModConnected = null;
 
 async function catalogFetch(path) {
     // Returns parsed JSON, or null on any failure (unreachable, non-2xx, bad JSON).
@@ -1300,14 +1312,44 @@ async function catalogFetch(path) {
     }
 }
 
-function catalogCacheGet(key) {
-    const hit = catalogCache.get(key);
-    if (hit && (Date.now() - hit.at) < CATALOG_TTL_MS) return hit.data;
-    return null;
+// Keep only fields that are constant for a given mod build (drop live CLE economy state).
+function pickStaticSummary(t) {
+    return { name: t.name, displayName: (t.displayName ?? null) };
 }
 
-function catalogCacheSet(key, data) {
-    catalogCache.set(key, { at: Date.now(), data });
+async function loadCatalogStatic() {
+    if (catalogStaticLoaded) return catalogStatic;
+    catalogStaticLoaded = true;
+    try {
+        const parsed = JSON.parse(await readFile(CATALOG_CACHE_FILE, 'utf8'));
+        // Ignore a cache written against a different upstream (e.g. env changed).
+        if (parsed && parsed.url === CATALOG_URL) {
+            catalogStatic = { url: CATALOG_URL, types: parsed.types || null, details: parsed.details || {} };
+        }
+    } catch { /* no cache on disk yet */ }
+    if (!catalogStatic) catalogStatic = { url: CATALOG_URL, types: null, details: {} };
+    return catalogStatic;
+}
+
+let catalogSaveTimer = null;
+function persistCatalogStatic() {
+    // Debounce: a burst of detail fetches collapses into a single disk write.
+    if (catalogSaveTimer) return;
+    catalogSaveTimer = setTimeout(async () => {
+        catalogSaveTimer = null;
+        try {
+            await ensureDirFor(CATALOG_CACHE_FILE);
+            await writeFile(CATALOG_CACHE_FILE, JSON.stringify(catalogStatic), 'utf8');
+        } catch { /* best-effort cache; failures are non-fatal */ }
+    }, 250);
+}
+
+// Drop everything and remove the disk file so the next request re-fetches from upstream.
+async function invalidateCatalogStatic() {
+    catalogStatic = { url: CATALOG_URL, types: null, details: {} };
+    catalogStaticLoaded = true;
+    if (catalogSaveTimer) { clearTimeout(catalogSaveTimer); catalogSaveTimer = null; }
+    try { await rm(CATALOG_CACHE_FILE, { force: true }); } catch { /* nothing to remove */ }
 }
 
 // normalizeTypeDetail is shared with the client (see src/utils/catalog.js).
@@ -1321,38 +1363,60 @@ async function handleCatalogRoute(pathname, req, res) {
     // /api/catalog/health
     if (parts.length === 3 && parts[2] === 'health') {
         const health = await catalogFetch('/health');
+        const modConnected = !!(health && health.modConnected);
+        // A false->true transition means the mod (re)loaded, so a rebuilt catalog may be live:
+        // drop the static cache so the next request re-fetches. First observation isn't a
+        // transition, so a valid on-disk cache survives a server restart while the mod is up.
+        if (lastModConnected === false && modConnected === true) {
+            await invalidateCatalogStatic();
+        }
+        lastModConnected = modConnected;
         const body = health
-            ? { ok: !!health.ok, modConnected: !!health.modConnected }
+            ? { ok: !!health.ok, modConnected }
             : { ok: false, modConnected: false };
         send(res, 200, JSON.stringify(body), { 'Content-Type': 'application/json' });
         return true;
     }
 
-    // /api/catalog/types  (bulk summaries for the displayName lookup)
+    // /api/catalog/types  (bulk static summaries for the displayName lookup)
     if (parts.length === 3 && parts[2] === 'types') {
-        const cached = catalogCacheGet('types');
-        if (cached) { send(res, 200, JSON.stringify(cached), { 'Content-Type': 'application/json' }); return true; }
+        const store = await loadCatalogStatic();
+        // Cached until a mod reconnect invalidates it (see /health).
+        if (store.types) {
+            send(res, 200, JSON.stringify({ count: store.types.list.length, types: store.types.list, cached: true }), { 'Content-Type': 'application/json' });
+            return true;
+        }
         const list = await catalogFetch('/types');
         const types = (list && Array.isArray(list.types)) ? list.types : [];
-        const out = { count: types.length, types };
-        if (types.length) catalogCacheSet('types', out); // don't cache an empty (disconnected) result
-        send(res, 200, JSON.stringify(out), { 'Content-Type': 'application/json' });
+        const staticTypes = types.map(pickStaticSummary);
+        if (staticTypes.length) {
+            store.types = { at: Date.now(), list: staticTypes };
+            persistCatalogStatic();
+        }
+        send(res, 200, JSON.stringify({ count: staticTypes.length, types: staticTypes }), { 'Content-Type': 'application/json' });
         return true;
     }
 
-    // /api/catalog/types/:name  (normalized detail + attachment graph)
+    // /api/catalog/types/:name  (normalized static detail + attachment graph)
     if (parts.length === 4 && parts[2] === 'types') {
         const name = decodeURIComponent(parts[3]);
-        const key = `type:${name.toLowerCase()}`;
-        const cached = catalogCacheGet(key);
-        if (cached) { send(res, 200, JSON.stringify(cached), { 'Content-Type': 'application/json' }); return true; }
+        const key = name.toLowerCase();
+        const store = await loadCatalogStatic();
+        // Cached until a mod reconnect invalidates it (see /health).
+        if (store.details[key]) {
+            send(res, 200, JSON.stringify(store.details[key].data), { 'Content-Type': 'application/json' });
+            return true;
+        }
         const enc = encodeURIComponent(name);
         const [detail, attachments] = await Promise.all([
             catalogFetch(`/types/${enc}`),
             catalogFetch(`/types/${enc}/attachments`),
         ]);
         const normalized = normalizeTypeDetail(name, detail, attachments);
-        if (detail || attachments) catalogCacheSet(key, normalized);
+        if (detail || attachments) {
+            store.details[key] = { at: Date.now(), data: normalized };
+            persistCatalogStatic();
+        }
         send(res, 200, JSON.stringify(normalized), { 'Content-Type': 'application/json' });
         return true;
     }

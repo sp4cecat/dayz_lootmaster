@@ -38,6 +38,7 @@ import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
 import { useCompatibleAttachments } from '@/contexts/CatalogContext';
+import { TypeMetaPanel } from '@/components/catalog/TypeMetaPanel';
 
 export default function EditFormSpawnableTab({ 
   selectedTypes, 
@@ -106,6 +107,13 @@ export default function EditFormSpawnableTab({
   const slotAttachmentParent = (editingSlot?.kind === XMLNodeKind.ATTACHMENTS) ? type.name : undefined;
   const attachmentParentName = treeAttachmentParent || slotAttachmentParent;
   const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
+
+  // Whether the spawnable type itself can accept any attachments. null = catalog can't
+  // answer (mod down / unknown) -> we don't hide UI in that case. An empty array means the
+  // mod answered and nothing attaches onto this item (e.g. ACOGOptic), so loadout-application
+  // is meaningless and we hide the Quick Apply component.
+  const rootCompatible = useCompatibleAttachments(type.name);
+  const acceptsAttachments = rootCompatible === null || rootCompatible.length > 0;
 
   const updateSpawnableEntry = (updater: (entry: any) => any) => {
     const nextGroups = { ...spawnableTypesByGroup };
@@ -304,8 +312,11 @@ export default function EditFormSpawnableTab({
         <Badge color={result ? "blue" : "warning"} size="sm">{result ? "Active" : "Virtual"}</Badge>
       </div>
 
-      {/* Loadout Template Section */}
-      {loadouts.length > 0 && (
+      {/* Catalog metadata: what attaches onto this item, and what it attaches onto */}
+      <TypeMetaPanel name={type.name} graphs={['accepts', 'fitsInto']} />
+
+      {/* Loadout Template Section — only when this item can actually accept attachments */}
+      {loadouts.length > 0 && acceptsAttachments && (
         <section className="p-4 bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-xl">
           <div className="flex items-center gap-2 mb-3">
             <Package size={16} className="text-primary-600 dark:text-primary-400" />
