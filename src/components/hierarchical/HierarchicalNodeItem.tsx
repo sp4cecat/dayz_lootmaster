@@ -119,6 +119,16 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   const emptyNote = (key: 'attachments' | 'cargo'): string =>
     key === 'cargo' ? 'This item has no cargo capacity' : 'This item exposes no attachment slots';
 
+  // An item that the catalog says can hold neither attachments nor cargo has no child
+  // options to open — so hide the expand chevron entirely. We still allow expansion when
+  // the catalog can't answer (null) or when the node already has children to show, so no
+  // existing config becomes unreachable.
+  const noChildCapacity = !isGroup && node.type === 'item'
+    && acceptsAttachments === false && holdsCargo === false;
+  const hasChildren = (resolvedChildren.attachments?.length || 0) > 0
+    || (resolvedChildren.cargo?.length || 0) > 0;
+  const canExpand = !noChildCapacity || hasChildren;
+
   const handleAddChild = (list: 'attachments' | 'cargo') => {
     const newNode: LoadoutNode = {
       id: crypto.randomUUID(),
@@ -207,19 +217,24 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
           </div>
         )}
 
-        <button 
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            if (isReadOnly) {
-              setLocalExpanded(!isExpanded);
-            } else {
-              onUpdate({ ...node, isExpanded: !isExpanded }); 
-            }
-          }}
-          className="mr-2 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400"
-        >
-          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </button>
+        {canExpand ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isReadOnly) {
+                setLocalExpanded(!isExpanded);
+              } else {
+                onUpdate({ ...node, isExpanded: !isExpanded });
+              }
+            }}
+            className="mr-2 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400"
+          >
+            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+        ) : (
+          // Spacer keeps the icon/label aligned with expandable siblings.
+          <div className="mr-2 p-1" aria-hidden><div className="size-4" /></div>
+        )}
 
         <div className={cx(
           "p-1.5 rounded mr-3",
@@ -264,7 +279,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
         </div>
       </div>
 
-      {isExpanded && (
+      {canExpand && isExpanded && (
         <div className="ml-6 pl-4 border-l-2 border-gray-100 dark:border-gray-800 space-y-4 py-2">
           {effectiveChildLists.map((listConfig) => {
              const children = resolvedChildren[listConfig.key] || [];
