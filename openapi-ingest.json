@@ -1,0 +1,243 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "spacecat DayZ mod → receiver ingest contract",
+    "version": "1.0.0",
+    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:8787`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick)."
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:8787", "description": "Your service, at whatever host:port you set as the mod's baseUrl" }
+  ],
+  "tags": [
+    { "name": "push", "description": "The mod POSTs live state to you" },
+    { "name": "poll", "description": "The mod pulls commands from you and reports results" }
+  ],
+  "paths": {
+    "/ingest/snapshot": {
+      "post": {
+        "tags": ["push"],
+        "summary": "Receive a live snapshot (players + heartbeat + map)",
+        "description": "Sent every snapshotInterval seconds. Contains the full current state; there is no delta — just replace your latest snapshot. MUST return 2xx (this is the mod's reachability probe that gates the catalog send).",
+        "operationId": "ingestSnapshot",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Snapshot" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Body is ignored by the mod; any 2xx works.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } }
+        }
+      }
+    },
+    "/ingest/catalog": {
+      "post": {
+        "tags": ["push"],
+        "summary": "Receive a catalog chunk (config-derived type metadata)",
+        "description": "Sent in chunks after the first successful snapshot. The first chunk of a fresh export has `reset: true` — clear your catalog then; subsequent chunks (`reset: false`) merge by `name`. Covers CfgVehicles/CfgWeapons/CfgMagazines. Return 2xx; a non-2xx un-latches delivery and the whole catalog is re-sent after the next snapshot (bounded to 5 attempts).",
+        "operationId": "ingestCatalog",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CatalogChunk" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } }
+        }
+      }
+    },
+    "/ingest/commands": {
+      "get": {
+        "tags": ["poll"],
+        "summary": "Return pending commands for the mod to execute",
+        "description": "Polled every commandPollInterval seconds. Return the commands you want the server to run since the last poll; return an empty array if none. Each command you return should be executed once — the mod does not de-dupe, so only return a command until it has been picked up. Command types: broadcast (in-game notification), kick (disconnect a player), scanItems (enumerate spawned items in a region; results come back via /ingest/commands/ack).",
+        "operationId": "ingestCommands",
+        "responses": {
+          "200": { "description": "The pending command list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommandList" } } } }
+        }
+      }
+    },
+    "/ingest/commands/ack": {
+      "post": {
+        "tags": ["poll"],
+        "summary": "Receive a command result",
+        "description": "The mod calls this after executing a command. broadcast/kick send a string `result`; scanItems sends an `items` array (the region scan). Match on `id` to the command you issued. Return 2xx.",
+        "operationId": "ingestAck",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  { "$ref": "#/components/schemas/ResultAck" },
+                  { "$ref": "#/components/schemas/ScanAck" }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Recorded.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Ok": {
+        "type": "object",
+        "description": "Any 2xx is fine; the mod ignores the response body of push/ack calls.",
+        "properties": { "ok": { "type": "boolean", "example": true } }
+      },
+      "Position": {
+        "type": "array",
+        "description": "World position [x, y, z].",
+        "items": { "type": "number" },
+        "minItems": 3,
+        "maxItems": 3,
+        "example": [8056.22, 3.21, 2820.32]
+      },
+      "PlayerInfo": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "id": { "type": "string", "description": "BI plain id (stable per account)." },
+          "steamId": { "type": "string", "description": "Same value as id." },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "health": { "type": "number" },
+          "blood": { "type": "number" },
+          "shock": { "type": "number" },
+          "energy": { "type": "number" },
+          "water": { "type": "number" },
+          "heatComfort": { "type": "number" },
+          "alive": { "type": "integer", "enum": [0, 1] }
+        }
+      },
+      "Weather": {
+        "type": "object",
+        "description": "Present only when weather is available; each 0..1.",
+        "properties": {
+          "overcast": { "type": "number" },
+          "rain": { "type": "number" },
+          "fog": { "type": "number" }
+        }
+      },
+      "ServerInfo": {
+        "type": "object",
+        "description": "Heartbeat. fps is present only when a frame timeslice is known; weather only when available.",
+        "properties": {
+          "online": { "type": "integer" },
+          "uptime": { "type": "integer", "description": "Seconds since mod init." },
+          "fps": { "type": "number" },
+          "year": { "type": "integer" },
+          "month": { "type": "integer" },
+          "day": { "type": "integer" },
+          "hour": { "type": "integer" },
+          "minute": { "type": "integer" },
+          "weather": { "$ref": "#/components/schemas/Weather" }
+        }
+      },
+      "MapEnt": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "type": { "type": "string", "enum": ["player", "vehicle", "event"] },
+          "pos": { "$ref": "#/components/schemas/Position" }
+        }
+      },
+      "WorldMap": {
+        "type": "object",
+        "description": "Live positions. vehicles/events are empty arrays in v1; players populate.",
+        "properties": {
+          "players": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
+          "vehicles": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } }
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "description": "Full current live state; sent whole each tick (no deltas).",
+        "properties": {
+          "players": { "type": "array", "items": { "$ref": "#/components/schemas/PlayerInfo" } },
+          "server": { "$ref": "#/components/schemas/ServerInfo" },
+          "worldMap": { "$ref": "#/components/schemas/WorldMap" }
+        }
+      },
+      "TypeDetail": {
+        "type": "object",
+        "description": "One catalog entry. inventorySlot = slots this item occupies; attachments = slots this object exposes.",
+        "properties": {
+          "name": { "type": "string", "description": "Config class name." },
+          "displayName": { "type": "string", "description": "Localized English name ($UNT$ / untranslated entries are excluded by the mod)." },
+          "description": { "type": "string" },
+          "inventorySlot": { "type": "array", "items": { "type": "string" } },
+          "attachments": { "type": "array", "items": { "type": "string" } },
+          "cargoSize": { "type": "array", "items": { "type": "integer" } },
+          "weight": { "type": "number" }
+        }
+      },
+      "CatalogChunk": {
+        "type": "object",
+        "properties": {
+          "reset": { "type": "boolean", "description": "true on the first chunk of a fresh export — clear your catalog before merging." },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/TypeDetail" } }
+        }
+      },
+      "CommandArgs": {
+        "type": "object",
+        "description": "Only the fields relevant to the command type are meaningful.",
+        "properties": {
+          "message": { "type": "string", "description": "broadcast: text to show in-game." },
+          "playerId": { "type": "string", "description": "kick: target plain id." },
+          "reason": { "type": "string", "description": "kick: reason." },
+          "x": { "type": "number", "description": "scanItems: world X of sweep centre." },
+          "z": { "type": "number", "description": "scanItems: world Z of sweep centre." },
+          "radius": { "type": "number", "description": "scanItems: sphere radius (m); mod caps at 200." }
+        }
+      },
+      "Command": {
+        "type": "object",
+        "required": ["id", "type"],
+        "properties": {
+          "id": { "type": "integer", "description": "Your correlation id; echoed back in the ack." },
+          "type": { "type": "string", "enum": ["broadcast", "kick", "scanItems"] },
+          "args": { "$ref": "#/components/schemas/CommandArgs" }
+        }
+      },
+      "CommandList": {
+        "type": "object",
+        "required": ["commands"],
+        "properties": {
+          "commands": { "type": "array", "items": { "$ref": "#/components/schemas/Command" } }
+        }
+      },
+      "ResultAck": {
+        "type": "object",
+        "description": "Ack for broadcast/kick.",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "integer" },
+          "result": { "type": "string", "description": "e.g. \"ok\", \"player_not_found\"." }
+        }
+      },
+      "ItemInfo": {
+        "type": "object",
+        "description": "A spawned world item from a scanItems sweep.",
+        "properties": {
+          "cls": { "type": "string" },
+          "displayName": { "type": "string" },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "healthLevel": { "type": "integer", "enum": [0, 1, 2, 3, 4] },
+          "damageState": { "type": "string", "enum": ["pristine", "worn", "damaged", "badly_damaged", "ruined", "unknown"] },
+          "lifetimeMax": { "type": "number", "description": "Configured CE lifetime (s); live remaining TTL is not exposed by the engine." }
+        }
+      },
+      "ScanAck": {
+        "type": "object",
+        "description": "Ack for scanItems — the region scan result.",
+        "required": ["id", "items"],
+        "properties": {
+          "id": { "type": "integer" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ItemInfo" } }
+        }
+      }
+    }
+  }
+}

@@ -3,8 +3,9 @@ import { flattenCompatibleAttachments } from '../utils/catalog.js';
 
 /**
  * Resolve the app's own backend base URL (same rule as useLootData). The client
- * only ever talks to the 4317 backend; the upstream 8787 companion API is reached
- * server-side via /api/catalog/*.
+ * only ever talks to the 4317 backend and reads type metadata from /api/catalog/*.
+ * The companion mod pushes that catalog directly into the 4317 backend's /ingest/*
+ * routes (see server/ingest-store.js) — there is no separate upstream API.
  */
 function getApiBase() {
   const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;

@@ -19,7 +19,7 @@ import {dirname, join, resolve} from 'node:path';
 import {mkdir, readFile, writeFile, stat, appendFile, readdir, cp, rm} from 'node:fs/promises';
 import crypto from 'node:crypto';
 import moment from 'moment';
-import { normalizeTypeDetail } from '../src/utils/catalog.js';
+import * as ingest from './ingest-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1274,154 +1274,107 @@ function badRequest(res, message) {
     send(res, 400, JSON.stringify({error: message || 'Bad request'}), {'Content-Type': 'application/json'});
 }
 
-// ---- DayZ Server API (companion mod) catalog proxy ----
-// The companion mod exposes a localhost-only API with type metadata (displayName,
-// description) and both-directions attachment graphs. We proxy it server-side to
-// dodge browser CORS and to cache. Everything degrades gracefully: any upstream
-// failure yields an empty/disconnected shape (never a 5xx) so the client can fall back.
-// eslint-disable-next-line no-undef
-const CATALOG_URL = (process.env.DAYZ_CATALOG_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
-// Static metadata (displayName, description, slots, attachment graph) only changes when
-// the mod is rebuilt, so we cache it aggressively and persist it to disk. It never expires
-// on a timer — instead we invalidate it when the companion mod reconnects (a false->true
-// modConnected transition seen on /health), since that's the moment a rebuilt catalog comes
-// back. Live CLE economy fields (nominal/min/lifetime/restock/value/spawnedCount) are
-// deliberately NOT cached here — types.xml is the source of truth for those — so we strip them.
-const CATALOG_CACHE_FILE = resolve(join(__dirname, '.cache', 'catalog-static.json'));
+// ---- DayZ Server API (companion mod) catalog + ingest ----
+// The companion mod pushes its live state and config catalog directly to this
+// backend's /ingest/* routes (see server/ingest-store.js and openapi-ingest.json);
+// there is no separate service to proxy to. The /api/catalog/* routes below are
+// the read side, serving type metadata (displayName, description) and the
+// both-directions attachment graph out of that in-memory store. Everything
+// degrades gracefully: an unpopulated store yields an empty/disconnected shape
+// (never a 5xx) so the client can fall back to bare class names.
 
-// Disk-backed static store, held in memory once loaded:
-//   { url, types: { at, list } | null, details: { [nameLower]: { at, data } } }
-let catalogStatic = null;
-let catalogStaticLoaded = false;
-// Last modConnected value observed on /health; used to detect a reconnect transition.
-let lastModConnected = null;
-
-async function catalogFetch(path) {
-    // Returns parsed JSON, or null on any failure (unreachable, non-2xx, bad JSON).
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    try {
-        // eslint-disable-next-line no-undef
-        const resp = await fetch(`${CATALOG_URL}${path}`, { signal: controller.signal });
-        if (!resp.ok) return null;
-        return await resp.json();
-    } catch {
-        return null;
-    } finally {
-        clearTimeout(timer);
-    }
+// Client-facing /api/catalog/types/:name shape, built from the ingest store.
+// Mirrors normalizeTypeDetail's output (src/utils/catalog.js) so the client hook
+// and TypeMetaPanel keep the same contract they had against the old proxy.
+function buildCatalogDetail(name) {
+    const detail = ingest.getTypeDetail(name);
+    return {
+        name,
+        displayName: (detail && detail.displayName) || null,
+        description: (detail && detail.description) || null,
+        // accepts: items that attach ONTO this object; fitsInto: objects this attaches onto.
+        accepts: ingest.getCompatibleAttachments(name),
+        fitsInto: ingest.getObjectsAcceptingItem(name),
+        exposesSlots: detail && Array.isArray(detail.attachments) ? detail.attachments : null,
+        occupiesSlots: detail && Array.isArray(detail.inventorySlot) ? detail.inventorySlot : null,
+    };
 }
 
-// Keep only fields that are constant for a given mod build (drop live CLE economy state).
-function pickStaticSummary(t) {
-    return { name: t.name, displayName: (t.displayName ?? null) };
-}
-
-async function loadCatalogStatic() {
-    if (catalogStaticLoaded) return catalogStatic;
-    catalogStaticLoaded = true;
-    try {
-        const parsed = JSON.parse(await readFile(CATALOG_CACHE_FILE, 'utf8'));
-        // Ignore a cache written against a different upstream (e.g. env changed).
-        if (parsed && parsed.url === CATALOG_URL) {
-            catalogStatic = { url: CATALOG_URL, types: parsed.types || null, details: parsed.details || {} };
-        }
-    } catch { /* no cache on disk yet */ }
-    if (!catalogStatic) catalogStatic = { url: CATALOG_URL, types: null, details: {} };
-    return catalogStatic;
-}
-
-let catalogSaveTimer = null;
-function persistCatalogStatic() {
-    // Debounce: a burst of detail fetches collapses into a single disk write.
-    if (catalogSaveTimer) return;
-    catalogSaveTimer = setTimeout(async () => {
-        catalogSaveTimer = null;
-        try {
-            await ensureDirFor(CATALOG_CACHE_FILE);
-            await writeFile(CATALOG_CACHE_FILE, JSON.stringify(catalogStatic), 'utf8');
-        } catch { /* best-effort cache; failures are non-fatal */ }
-    }, 250);
-}
-
-// Drop everything and remove the disk file so the next request re-fetches from upstream.
-async function invalidateCatalogStatic() {
-    catalogStatic = { url: CATALOG_URL, types: null, details: {} };
-    catalogStaticLoaded = true;
-    if (catalogSaveTimer) { clearTimeout(catalogSaveTimer); catalogSaveTimer = null; }
-    try { await rm(CATALOG_CACHE_FILE, { force: true }); } catch { /* nothing to remove */ }
-}
-
-// normalizeTypeDetail is shared with the client (see src/utils/catalog.js).
-
-// Handles any /api/catalog/* route. Returns true if it took the request.
+// Handles any /api/catalog/* route (read side). Returns true if it took the request.
 async function handleCatalogRoute(pathname, req, res) {
     const parts = pathname.split('/').filter(Boolean); // ['api','catalog',...]
     if (parts[0] !== 'api' || parts[1] !== 'catalog') return false;
     if (req.method !== 'GET') { methodNotAllowed(res); return true; }
 
-    // /api/catalog/health
+    // /api/catalog/health — is the mod actively pushing?
     if (parts.length === 3 && parts[2] === 'health') {
-        const health = await catalogFetch('/health');
-        const modConnected = !!(health && health.modConnected);
-        // A false->true transition means the mod (re)loaded, so a rebuilt catalog may be live:
-        // drop the static cache so the next request re-fetches. First observation isn't a
-        // transition, so a valid on-disk cache survives a server restart while the mod is up.
-        if (lastModConnected === false && modConnected === true) {
-            await invalidateCatalogStatic();
-        }
-        lastModConnected = modConnected;
-        const body = health
-            ? { ok: !!health.ok, modConnected }
-            : { ok: false, modConnected: false };
-        send(res, 200, JSON.stringify(body), { 'Content-Type': 'application/json' });
+        const modConnected = ingest.modConnected();
+        send(res, 200, JSON.stringify({ ok: true, modConnected }), { 'Content-Type': 'application/json' });
         return true;
     }
 
-    // /api/catalog/types  (bulk static summaries for the displayName lookup)
+    // /api/catalog/types — bulk summaries for the displayName lookup.
     if (parts.length === 3 && parts[2] === 'types') {
-        const store = await loadCatalogStatic();
-        // Cached until a mod reconnect invalidates it (see /health).
-        if (store.types) {
-            send(res, 200, JSON.stringify({ count: store.types.list.length, types: store.types.list, cached: true }), { 'Content-Type': 'application/json' });
-            return true;
-        }
-        const list = await catalogFetch('/types');
-        const types = (list && Array.isArray(list.types)) ? list.types : [];
-        const staticTypes = types.map(pickStaticSummary);
-        if (staticTypes.length) {
-            store.types = { at: Date.now(), list: staticTypes };
-            persistCatalogStatic();
-        }
-        send(res, 200, JSON.stringify({ count: staticTypes.length, types: staticTypes }), { 'Content-Type': 'application/json' });
+        const { types } = ingest.getCatalog();
+        const list = Object.keys(types).map(name => ({ name, displayName: types[name].displayName || null }));
+        send(res, 200, JSON.stringify({ count: list.length, types: list }), { 'Content-Type': 'application/json' });
         return true;
     }
 
-    // /api/catalog/types/:name  (normalized static detail + attachment graph)
+    // /api/catalog/types/:name — normalized detail + attachment graph.
     if (parts.length === 4 && parts[2] === 'types') {
         const name = decodeURIComponent(parts[3]);
-        const key = name.toLowerCase();
-        const store = await loadCatalogStatic();
-        // Cached until a mod reconnect invalidates it (see /health).
-        if (store.details[key]) {
-            send(res, 200, JSON.stringify(store.details[key].data), { 'Content-Type': 'application/json' });
-            return true;
-        }
-        const enc = encodeURIComponent(name);
-        const [detail, attachments] = await Promise.all([
-            catalogFetch(`/types/${enc}`),
-            catalogFetch(`/types/${enc}/attachments`),
-        ]);
-        const normalized = normalizeTypeDetail(name, detail, attachments);
-        if (detail || attachments) {
-            store.details[key] = { at: Date.now(), data: normalized };
-            persistCatalogStatic();
-        }
-        send(res, 200, JSON.stringify(normalized), { 'Content-Type': 'application/json' });
+        send(res, 200, JSON.stringify(buildCatalogDetail(name)), { 'Content-Type': 'application/json' });
         return true;
     }
 
     notFound(res);
+    return true;
+}
+
+// Handles the mod-facing /ingest/* routes (write side; no X-Profile-ID). The mod
+// PUSHES snapshots/catalog and POLLS the command queue. Every push MUST get a 2xx
+// (the mod treats non-2xx as an error and retries). Returns true if it took the request.
+async function handleIngestRoute(pathname, req, res) {
+    const parts = pathname.split('/').filter(Boolean); // ['ingest',...]
+    if (parts[0] !== 'ingest') return false;
+
+    const parseBody = async () => {
+        const raw = await readBody(req);
+        return raw ? JSON.parse(raw) : {};
+    };
+
+    // POST /ingest/snapshot — full live state each tick (no deltas).
+    if (parts.length === 2 && parts[1] === 'snapshot' && req.method === 'POST') {
+        ingest.setSnapshot(await parseBody());
+        send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // POST /ingest/catalog — config-derived type metadata, chunked (reset->clear, else merge).
+    if (parts.length === 2 && parts[1] === 'catalog' && req.method === 'POST') {
+        ingest.setCatalog(await parseBody());
+        send(res, 200, JSON.stringify({ ok: true, types: Object.keys(ingest.getCatalog().types).length }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // POST /ingest/commands/ack — a command result (broadcast/kick: result; scanItems: items).
+    if (parts.length === 3 && parts[1] === 'commands' && parts[2] === 'ack' && req.method === 'POST') {
+        const body = await parseBody();
+        if (body.id === undefined) { badRequest(res, 'id required'); return true; }
+        const payload = body.items !== undefined ? body.items : body.result;
+        const ok = ingest.ackCommand(body.id, payload);
+        send(res, ok ? 200 : 404, JSON.stringify({ ok }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // GET /ingest/commands — pending commands for the mod to run (empty when idle).
+    if (parts.length === 2 && parts[1] === 'commands' && req.method === 'GET') {
+        send(res, 200, JSON.stringify({ commands: ingest.takePendingCommands() }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    methodNotAllowed(res);
     return true;
 }
 
@@ -1564,9 +1517,14 @@ const server = http.createServer(async (req, res) => {
         const url = new URL(req.url || '/', `http://${req.headers.host}`);
         const {pathname} = url;
 
-        // Companion-mod catalog proxy (profile-independent; handled before the profile check)
+        // Companion-mod catalog read side (profile-independent; handled before the profile check)
         if (pathname.startsWith('/api/catalog')) {
             if (await handleCatalogRoute(pathname, req, res)) return;
+        }
+
+        // Companion-mod ingest write side (mod-facing push/poll; no X-Profile-ID)
+        if (pathname.startsWith('/ingest')) {
+            if (await handleIngestRoute(pathname, req, res)) return;
         }
 
         // Profile & Snapshot Management
@@ -2893,5 +2851,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, async () => {
+    // Restore the persisted mod catalog (displayName/attachment graph) so a
+    // restart keeps it until the mod's next catalog push. The mod latches
+    // catalog delivery after one success, so it won't resend just for our bounce.
+    await ingest.loadPersistedCatalog();
     console.log(`XML persistence server listening on http://localhost:${PORT}`);
 });
