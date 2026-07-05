@@ -24,6 +24,7 @@ function getApiBase() {
  * @property {{slots:string[], objectCount:number, bySlot:Record<string,{name:string,displayName?:string|null}[]>}|null} fitsInto
  * @property {string[]|null} exposesSlots
  * @property {string[]|null} occupiesSlots
+ * @property {number[]|null} cargoSize
  */
 
 /**

@@ -1297,6 +1297,8 @@ function buildCatalogDetail(name) {
         fitsInto: ingest.getObjectsAcceptingItem(name),
         exposesSlots: detail && Array.isArray(detail.attachments) ? detail.attachments : null,
         occupiesSlots: detail && Array.isArray(detail.inventorySlot) ? detail.inventorySlot : null,
+        // cargoSize: [rows, cols] capacity; present/non-zero product ⇒ the item is a container.
+        cargoSize: detail && Array.isArray(detail.cargoSize) ? detail.cargoSize : null,
     };
 }
 

@@ -37,7 +37,7 @@ import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
-import { useCompatibleAttachments } from '@/contexts/CatalogContext';
+import { useCompatibleAttachments, useItemCapabilities } from '@/contexts/CatalogContext';
 import { TypeMetaPanel } from '@/components/catalog/TypeMetaPanel';
 
 export default function EditFormSpawnableTab({ 
@@ -108,12 +108,13 @@ export default function EditFormSpawnableTab({
   const attachmentParentName = treeAttachmentParent || slotAttachmentParent;
   const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
 
-  // Whether the spawnable type itself can accept any attachments. null = catalog can't
-  // answer (mod down / unknown) -> we don't hide UI in that case. An empty array means the
-  // mod answered and nothing attaches onto this item (e.g. ACOGOptic), so loadout-application
-  // is meaningless and we hide the Quick Apply component.
-  const rootCompatible = useCompatibleAttachments(type.name);
-  const acceptsAttachments = rootCompatible === null || rootCompatible.length > 0;
+  // Whether the spawnable type itself can hold cargo / accept attachments, per the
+  // companion-mod catalog. Each capability is null when the catalog can't answer (mod
+  // down / unknown), in which case we keep offering the option (never hide on null).
+  // false means the mod answered and the item is not a container / exposes no slots.
+  const { acceptsAttachments: rootAcceptsAttachments, holdsCargo: rootHoldsCargo } = useItemCapabilities(type.name);
+  const acceptsAttachments = rootAcceptsAttachments !== false;
+  const holdsCargo = rootHoldsCargo !== false;
 
   const updateSpawnableEntry = (updater: (entry: any) => any) => {
     const nextGroups = { ...spawnableTypesByGroup };
@@ -555,7 +556,9 @@ export default function EditFormSpawnableTab({
             <Badge color="brand" size="sm" type="modern">Attachments</Badge>
             <span className="text-xs text-gray-400 font-medium">({entry.attachments?.length || 0} slots)</span>
           </div>
-          <Button size="sm" variant="secondary-gray" icon={Plus} onClick={handleAddAttachmentSlot}>Add Slot</Button>
+          {acceptsAttachments && (
+            <Button size="sm" variant="secondary-gray" icon={Plus} onClick={handleAddAttachmentSlot}>Add Slot</Button>
+          )}
         </div>
         
         <div className="space-y-3">
@@ -591,7 +594,7 @@ export default function EditFormSpawnableTab({
           ))}
           {!entry.attachments?.length && (
             <div className="py-8 text-center text-gray-400 italic bg-gray-50/50 dark:bg-gray-950/10 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
-              No attachment slots configured
+              {acceptsAttachments ? 'No attachment slots configured' : 'This item exposes no attachment slots'}
             </div>
           )}
         </div>
@@ -604,7 +607,9 @@ export default function EditFormSpawnableTab({
             <Badge color="brand" size="sm" type="modern">Cargo</Badge>
             <span className="text-xs text-gray-400 font-medium">({entry.cargo?.length || 0} items)</span>
           </div>
-          <Button size="sm" variant="secondary-gray" icon={Plus} onClick={handleAddCargo}>Add Cargo</Button>
+          {holdsCargo && (
+            <Button size="sm" variant="secondary-gray" icon={Plus} onClick={handleAddCargo}>Add Cargo</Button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -642,7 +647,7 @@ export default function EditFormSpawnableTab({
           ))}
           {!entry.cargo?.length && (
             <div className="col-span-2 py-8 text-center text-gray-400 italic bg-gray-50/50 dark:bg-gray-950/10 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
-              No cargo configured
+              {holdsCargo ? 'No cargo configured' : 'This item has no cargo capacity'}
             </div>
           )}
         </div>

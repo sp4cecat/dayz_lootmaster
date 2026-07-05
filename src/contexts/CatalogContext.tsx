@@ -21,6 +21,7 @@ export interface TypeDetail {
   fitsInto: AttachmentGraph | null;
   exposesSlots: string[] | null;
   occupiesSlots: string[] | null;
+  cargoSize: number[] | null;
 }
 
 export interface CatalogValue {
@@ -81,4 +82,50 @@ export function useCompatibleAttachments(parentName?: string, enabled = true): s
     return () => { cancelled = true; };
   }, [parentName, enabled, getTypeDetail, getCompatibleAttachments]);
   return list;
+}
+
+export interface ItemCapabilities {
+  /** true = exposes attachment slots; false = exposes none; null = catalog can't answer. */
+  acceptsAttachments: boolean | null;
+  /** true = has cargo capacity; false = not a container; null = catalog can't answer. */
+  holdsCargo: boolean | null;
+}
+
+/**
+ * Resolve whether `name` can take attachments and/or hold cargo, loading its detail on
+ * demand. Each capability is null when the catalog can't answer (disabled, disconnected,
+ * unknown, or not yet loaded), so callers keep offering the option in that case
+ * (the `null = unknown → don't hide` convention).
+ *
+ * Unlike useCompatibleAttachments (which restricts the item picker), this hook only
+ * decides whether the attachment/cargo *sections* are offered at all.
+ */
+export function useItemCapabilities(name?: string, enabled = true): ItemCapabilities {
+  const { getTypeDetail, peekTypeDetail } = useCatalog();
+  const [caps, setCaps] = useState<ItemCapabilities>({ acceptsAttachments: null, holdsCargo: null });
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !name) { setCaps({ acceptsAttachments: null, holdsCargo: null }); return; }
+    getTypeDetail(name).then(() => {
+      if (cancelled) return;
+      const detail = peekTypeDetail(name);
+      setCaps(deriveItemCapabilities(detail));
+    });
+    return () => { cancelled = true; };
+  }, [name, enabled, getTypeDetail, peekTypeDetail]);
+  return caps;
+}
+
+/** Pure capability derivation from a (possibly missing) TypeDetail. Exported for reuse. */
+export function deriveItemCapabilities(detail?: TypeDetail): ItemCapabilities {
+  if (!detail) return { acceptsAttachments: null, holdsCargo: null };
+  // exposesSlots is the item's own attachments[] — the direct answer to "can anything attach?".
+  const exposes = detail.exposesSlots;
+  const acceptsAttachments = Array.isArray(exposes) ? exposes.length > 0 : null;
+  // cargoSize is [rows, cols]; a positive product means real container capacity.
+  const cargo = detail.cargoSize;
+  const holdsCargo = Array.isArray(cargo)
+    ? cargo.length > 0 && cargo.reduce((a, b) => a * (Number(b) || 0), 1) > 0
+    : null;
+  return { acceptsAttachments, holdsCargo };
 }

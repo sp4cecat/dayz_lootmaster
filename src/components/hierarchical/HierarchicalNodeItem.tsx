@@ -5,6 +5,7 @@ import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
 import { useResolvedNode } from '@/hooks/useResolvedNode';
+import { useItemCapabilities } from '@/contexts/CatalogContext';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
@@ -105,6 +106,18 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   const effectiveChildLists: ChildListConfig[] = isGroup
     ? [{ key: 'attachments', label: 'Items', icon: Package }]
     : childLists;
+
+  // Companion-mod catalog capabilities for this class. Only item nodes map to a real
+  // class; group/template nodes are structural, so we skip them. null capability means
+  // the catalog can't answer (mod down / unknown) -> keep offering the option.
+  const gateName = (!isGroup && node.type === 'item') ? node.name : undefined;
+  const { acceptsAttachments, holdsCargo } = useItemCapabilities(gateName);
+  const listOffered = (key: 'attachments' | 'cargo'): boolean => {
+    if (isGroup) return true; // group members list is not catalog-gated
+    return key === 'cargo' ? holdsCargo !== false : acceptsAttachments !== false;
+  };
+  const emptyNote = (key: 'attachments' | 'cargo'): string =>
+    key === 'cargo' ? 'This item has no cargo capacity' : 'This item exposes no attachment slots';
 
   const handleAddChild = (list: 'attachments' | 'cargo') => {
     const newNode: LoadoutNode = {
@@ -255,11 +268,12 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
         <div className="ml-6 pl-4 border-l-2 border-gray-100 dark:border-gray-800 space-y-4 py-2">
           {effectiveChildLists.map((listConfig) => {
              const children = resolvedChildren[listConfig.key] || [];
+             const offered = listOffered(listConfig.key);
              return (
               <div key={listConfig.key} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{listConfig.label}</span>
-                  {!isReadOnly && (
+                  {!isReadOnly && offered && (
                     <div className="flex gap-2">
                       {!isGroup && (
                         <button 
@@ -307,11 +321,15 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                       ))}
                     </SortableContext>
                   </div>
-                ) : (
-                  <DroppablePlaceholder 
-                    id={`droppable:${node.id}:${listConfig.key}`} 
-                    label={listConfig.label} 
+                ) : offered ? (
+                  <DroppablePlaceholder
+                    id={`droppable:${node.id}:${listConfig.key}`}
+                    label={listConfig.label}
                   />
+                ) : (
+                  <div className="text-[10px] text-gray-400 italic p-2">
+                    {emptyNote(listConfig.key)}
+                  </div>
                 )}
               </div>
              );
