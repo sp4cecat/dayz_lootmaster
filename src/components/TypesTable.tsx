@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type UIEvent, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent, type CSSProperties } from 'react';
 import { Selection } from 'react-aria-components';
 import { formatModName } from '@/utils/format';
 import { formatLifetime } from '@/utils/time';
@@ -23,6 +23,9 @@ interface TypesTableProps {
     files: Record<string, Record<string, { changedNames?: string[] }>>;
   };
   showGroupColumn?: boolean;
+  nameQuery?: string;
+  searchIn?: ('className' | 'displayName')[];
+  onFilteredCountChange?: (count: number) => void;
 }
 
 type SortKey = 'name' | 'group' | 'nominal' | 'lifetime' | 'restock' | 'usage' | 'value';
@@ -36,6 +39,9 @@ export default function TypesTable({
   unknowns,
   storageDiff,
   showGroupColumn = true,
+  nameQuery,
+  searchIn,
+  onFilteredCountChange,
 }: TypesTableProps) {
   const { displayNameFor } = useCatalog();
   const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({
@@ -51,8 +57,24 @@ export default function TypesTable({
   const overscan = 10;
   const lastEventWasShift = useRef(false);
 
+  const nameFilteredTypes = useMemo(() => {
+    if (!nameQuery) return types;
+    const q = nameQuery.toLowerCase();
+    const byClass = !searchIn?.length || searchIn.includes('className');
+    const byDisplay = !searchIn?.length || searchIn.includes('displayName');
+    return types.filter(t => {
+      if (byClass && t.name.toLowerCase().includes(q)) return true;
+      if (byDisplay && displayNameFor(t.name)?.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [types, nameQuery, searchIn, displayNameFor]);
+
+  useLayoutEffect(() => {
+    onFilteredCountChange?.(nameFilteredTypes.length);
+  }, [nameFilteredTypes.length, onFilteredCountChange]);
+
   const rows = useMemo(() => {
-    const arr = types.map((t) => {
+    const arr = nameFilteredTypes.map((t) => {
       const unk = unknowns.byType[t.name] || { usage: [], value: [], tag: [] };
       const hasUnknown =
         (unk.usage?.length || 0) +
@@ -88,7 +110,7 @@ export default function TypesTable({
     }
 
     return arr;
-  }, [types, unknowns, sort]);
+  }, [nameFilteredTypes, unknowns, sort]);
 
   const maxNameWidth = useMemo(() => {
     if (rows.length === 0) return 20;

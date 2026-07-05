@@ -130,11 +130,12 @@ export default function App() {
     const [manageDefKind, setManageDefKind] = useState<'usage' | 'value' | 'tag' | null>(null);
     const [saveCLEHandler, setSaveCLEHandler] = useState<null | (() => void)>(null);
 
-    // Filtered types
+    const [displayFilteredCount, setDisplayFilteredCount] = useState<number | null>(null);
+
+    // Filtered types (name/displayName filtering is handled by TypesTable which has catalog access)
     const filteredTypes = useMemo(() => {
         if (!lootTypes) return [];
         return lootTypes.filter(t => {
-            if (filters.name && !t.name.toLowerCase().includes(filters.name.toLowerCase())) return false;
             if (filters.category !== 'all') {
                 if (filters.category === 'none' && t.category) return false;
                 if (filters.category !== 'none' && t.category !== filters.category) return false;
@@ -352,7 +353,7 @@ export default function App() {
                                             filters={filters}
                                             onChange={setFilters}
                                             onManage={(kind) => { setManageDefKind(kind); setModal('manage-definitions'); }}
-                                            matchingCount={filteredTypes.length}
+                                            matchingCount={displayFilteredCount ?? filteredTypes.length}
                                         />
                                     </aside>
 
@@ -365,7 +366,7 @@ export default function App() {
                                                 "min-w-0 min-h-0 flex flex-col",
                                                 selection.size > 0 ? "w-fit shrink-0" : "flex-1"
                                             )}>
-                                                <TypesTable 
+                                                <TypesTable
                                                     types={filteredTypes}
                                                     selection={selection}
                                                     setSelection={setSelection}
@@ -374,6 +375,9 @@ export default function App() {
                                                     unknowns={unknowns}
                                                     storageDiff={storageDiff}
                                                     showGroupColumn={filters.groups.length !== 1}
+                                                    nameQuery={filters.name}
+                                                    searchIn={filters.searchIn}
+                                                    onFilteredCountChange={setDisplayFilteredCount}
                                                 />
                                             </div>
 

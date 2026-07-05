@@ -53,6 +53,7 @@ export function useLootData() {
   const [filters, setFilters] = useState({
     category: 'all',
     name: '',
+    searchIn: /** @type {('className'|'displayName')[]} */(['className', 'displayName']),
     usage: [],
     value: [],
     tag: [],

@@ -5,6 +5,7 @@ import { Badge } from '@/components/base/badges/badges';
 import { Input } from '@/components/base/input/input';
 import { Button } from '@/components/base/button/button';
 import { Select } from '@/components/base/select/select';
+import { Checkbox } from '@/components/base/checkbox/checkbox';
 import { ChevronDown, Search, Settings, Filter, RotateCcw } from 'lucide-react';
 
 export interface Definitions {
@@ -14,9 +15,10 @@ export interface Definitions {
   tags: string[];
 }
 
-interface FilterState {
+export interface FilterState {
   category: string;
   name: string;
+  searchIn: ('className' | 'displayName')[];
   usage: string[];
   value: string[];
   tag: string[];
@@ -70,6 +72,7 @@ export default function Filters({
     onChange({
       category: 'all',
       name: '',
+      searchIn: ['className', 'displayName'],
       usage: [],
       value: [],
       tag: [],
@@ -196,6 +199,27 @@ export default function Filters({
               icon={Search}
               className="h-9"
             />
+
+            <div className="flex gap-4">
+              <Checkbox
+                isSelected={filters.searchIn?.includes('className') ?? true}
+                onChange={(checked) => {
+                  const curr = filters.searchIn ?? ['className', 'displayName'];
+                  const next = checked ? [...curr.filter(x => x !== 'className'), 'className'] : curr.filter(x => x !== 'className');
+                  setField('searchIn', next);
+                }}
+                label="Class name"
+              />
+              <Checkbox
+                isSelected={filters.searchIn?.includes('displayName') ?? true}
+                onChange={(checked) => {
+                  const curr = filters.searchIn ?? ['className', 'displayName'];
+                  const next = checked ? [...curr.filter(x => x !== 'displayName'), 'displayName'] : curr.filter(x => x !== 'displayName');
+                  setField('searchIn', next);
+                }}
+                label="Display name"
+              />
+            </div>
 
             <Select
               label="Category"
