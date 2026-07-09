@@ -435,7 +435,7 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
   );
 };
 
-interface Mission { file: string; data: any; isNew?: boolean; savedFiles?: string[]; }
+interface Mission { file: string; data: any; isNew?: boolean; savedFiles?: string[]; corrupt?: boolean; parseError?: string; }
 
 // Expansion requires exactly ONE DropLocation object per mission file. The editor
 // keeps a multi-zone array for authoring convenience; on load we group the split
@@ -447,10 +447,15 @@ function parseMissionFile(file: string): { base: string; index: number } {
   return { base: m[1], index: m[2] ? parseInt(m[2], 10) : 0 };
 }
 
-function groupMissionFiles(raw: { file: string; data: any }[]): Mission[] {
+function groupMissionFiles(raw: { file: string; data: any; error?: string }[]): Mission[] {
   const groups = new Map<string, { base: string; entries: { index: number; file: string; drops: any[] }[]; data: any }>();
-  for (const { file, data } of raw) {
-    if (!data) continue; // skip unparseable files
+  const corrupt: Mission[] = [];
+  for (const { file, data, error } of raw) {
+    if (!data) {
+      // Unparseable file: surface it as its own row so it can be inspected/deleted.
+      corrupt.push({ file, data: null, corrupt: true, parseError: error || 'Invalid JSON', savedFiles: [file] });
+      continue;
+    }
     const { base, index } = parseMissionFile(file);
     const key = base.toLowerCase();
     const dl = data.DropLocation;
@@ -459,7 +464,7 @@ function groupMissionFiles(raw: { file: string; data: any }[]): Mission[] {
     if (!g) { g = { base, entries: [], data }; groups.set(key, g); }
     g.entries.push({ index, file, drops });
   }
-  return Array.from(groups.values()).map((g) => {
+  const grouped = Array.from(groups.values()).map((g) => {
     g.entries.sort((a, b) => a.index - b.index);
     const { DropLocation, ...baseData } = g.data;
     return {
@@ -468,6 +473,7 @@ function groupMissionFiles(raw: { file: string; data: any }[]): Mission[] {
       savedFiles: g.entries.map((e) => e.file),
     } as Mission;
   });
+  return [...grouped, ...corrupt];
 }
 
 interface MissionsTabProps {
@@ -616,25 +622,25 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     setSelectedMissionIdx(null);
   };
 
-  const isUnique = mission ? (mission.data.Container !== 'Random' || (mission.data.Loot || []).length > 0) : false;
+  const isUnique = mission && !mission.corrupt ? (mission.data.Container !== 'Random' || (mission.data.Loot || []).length > 0) : false;
 
   const setMode = (unique: boolean) => {
     if (unique) {
-      patchData({ Container: containerNames[0] || mission?.data.Container || 'Container_Base' });
+      patchData({ Container: containerNames[0] || mission?.data?.Container || 'Container_Base' });
     } else {
       patchData({ Container: 'Random', Loot: [] });
     }
   };
 
-  const drops: DropLocation[] = mission?.data.DropLocation || [];
+  const drops: DropLocation[] = mission?.data?.DropLocation || [];
 
   const updateDrops = (next: DropLocation[]) => patchData({ DropLocation: next });
 
   const containerOptions = useMemo(() => {
     const set = new Set<string>(['Random', ...containerNames]);
-    if (mission?.data.Container) set.add(mission.data.Container);
+    if (mission?.data?.Container) set.add(mission.data.Container);
     return Array.from(set).map((c) => ({ id: c }));
-  }, [containerNames, mission?.data.Container]);
+  }, [containerNames, mission?.data?.Container]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -653,17 +659,27 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 selectedMissionIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
                   : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold truncate">{m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}</span>
-                {m.isNew && <Badge size="sm" color="warning">New</Badge>}
+                <span className={cx('text-sm font-semibold truncate', m.corrupt && 'text-error-600')}>{m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}</span>
+                {m.corrupt ? <Badge size="sm" color="error">Corrupt</Badge> : m.isNew && <Badge size="sm" color="warning">New</Badge>}
               </div>
-              <span className="text-xs text-gray-400 truncate block">{m.data?.Container || '—'}</span>
+              <span className="text-xs text-gray-400 truncate block">{m.corrupt ? 'Invalid JSON' : (m.data?.Container || '—')}</span>
             </button>
           ))}
         </div>
       </aside>
 
       <div className="flex-1 overflow-auto p-6">
-        {mission ? (
+        {mission && mission.corrupt ? (
+          <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
+            <AlertCircle size={48} className="text-error-500 mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Corrupt mission file</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              <span className="font-mono text-gray-700 dark:text-gray-300">{mission.file}</span> could not be parsed as JSON, so the server ignores it. Fix the file by hand, or delete it.
+            </p>
+            {mission.parseError && <p className="text-xs text-error-600 mt-2 font-mono">{mission.parseError}</p>}
+            <Button variant="error-secondary" icon={Trash01} className="mt-5" onClick={() => deleteMission(selectedMissionIdx!)}>Delete File</Button>
+          </div>
+        ) : mission ? (
           <div className="space-y-6 max-w-5xl">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
