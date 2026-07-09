@@ -129,7 +129,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         setSettings(fallback);
         setSavedSettings(fallback);
       }
-      if (mRes.ok) setMissions(await mRes.json());
+      if (mRes.ok) setMissions(groupMissionFiles(await mRes.json()));
     } catch (e) {
       console.error('Failed to load airdrop data', e);
       setSaveState({ kind: 'error', message: 'Failed to load airdrop data' });
@@ -435,7 +435,40 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
   );
 };
 
-interface Mission { file: string; data: any; isNew?: boolean; }
+interface Mission { file: string; data: any; isNew?: boolean; savedFiles?: string[]; }
+
+// Expansion requires exactly ONE DropLocation object per mission file. The editor
+// keeps a multi-zone array for authoring convenience; on load we group the split
+// per-location files back into a single mission, and on save we fan the array
+// back out to one file per location (see groupMissionFiles / saveMission).
+function parseMissionFile(file: string): { base: string; index: number } {
+  const m = file.match(/^Airdrop_(.+?)(?:_(\d+))?\.json$/i);
+  if (!m) return { base: file.replace(/\.json$/i, ''), index: 0 };
+  return { base: m[1], index: m[2] ? parseInt(m[2], 10) : 0 };
+}
+
+function groupMissionFiles(raw: { file: string; data: any }[]): Mission[] {
+  const groups = new Map<string, { base: string; entries: { index: number; file: string; drops: any[] }[]; data: any }>();
+  for (const { file, data } of raw) {
+    if (!data) continue; // skip unparseable files
+    const { base, index } = parseMissionFile(file);
+    const key = base.toLowerCase();
+    const dl = data.DropLocation;
+    const drops = Array.isArray(dl) ? dl : dl ? [dl] : [];
+    let g = groups.get(key);
+    if (!g) { g = { base, entries: [], data }; groups.set(key, g); }
+    g.entries.push({ index, file, drops });
+  }
+  return Array.from(groups.values()).map((g) => {
+    g.entries.sort((a, b) => a.index - b.index);
+    const { DropLocation, ...baseData } = g.data;
+    return {
+      file: `Airdrop_${g.base}.json`,
+      data: { ...baseData, DropLocation: g.entries.flatMap((e) => e.drops) },
+      savedFiles: g.entries.map((e) => e.file),
+    } as Mission;
+  });
+}
 
 interface MissionsTabProps {
   missions: Mission[];
@@ -527,15 +560,39 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
       setSaveState({ kind: 'error', message: 'File must match Airdrop_*.json' });
       return;
     }
+    // Expansion allows one DropLocation object per file, so fan the multi-zone
+    // array out to one file per location: Airdrop_<base>.json for a single zone,
+    // Airdrop_<base>_1.json..._N.json for many.
+    const base = mission.file.replace(/\.json$/i, '');
+    const dl = mission.data.DropLocation;
+    const dropList: any[] = Array.isArray(dl) ? dl : dl ? [dl] : [];
+    if (dropList.length === 0) {
+      setSaveState({ kind: 'error', message: 'Add at least one drop location' });
+      return;
+    }
+    const { DropLocation, ...baseData } = mission.data;
+    const targets = dropList.length === 1
+      ? [{ file: `${base}.json`, drop: dropList[0] }]
+      : dropList.map((d, i) => ({ file: `${base}_${i + 1}.json`, drop: d }));
+
     setSaveState({ kind: 'saving' });
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(mission.data),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
-      patchMission({ isNew: false });
+      for (const t of targets) {
+        const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(t.file)}`, {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...baseData, DropLocation: t.drop }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${t.file}`);
+      }
+      // Remove files from a previous save that this mission no longer produces
+      // (e.g. a removed zone leaves an orphaned _N.json behind).
+      const newSet = new Set(targets.map((t) => t.file.toLowerCase()));
+      const stale = (mission.savedFiles || []).filter((f) => !newSet.has(f.toLowerCase()));
+      for (const f of stale) {
+        await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(f)}`, { method: 'DELETE', headers });
+      }
+      patchMission({ isNew: false, savedFiles: targets.map((t) => t.file) });
       setSaveState({ kind: 'ok' });
       setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
     } catch (e: any) {
@@ -546,10 +603,13 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const deleteMission = async (idx: number) => {
     const m = missions[idx];
     if (!m.isNew) {
-      try {
-        await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(m.file)}`, { method: 'DELETE', headers });
-      } catch (e) {
-        console.error('Failed to delete mission', e);
+      const files = m.savedFiles && m.savedFiles.length ? m.savedFiles : [m.file];
+      for (const f of files) {
+        try {
+          await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(f)}`, { method: 'DELETE', headers });
+        } catch (e) {
+          console.error('Failed to delete mission file', f, e);
+        }
       }
     }
     setMissions((prev) => prev.filter((_, i) => i !== idx));
