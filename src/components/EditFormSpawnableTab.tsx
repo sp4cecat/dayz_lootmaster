@@ -10,9 +10,11 @@ import {
   Percent, 
   ChevronRight,
   Package,
-  AlertCircle 
+  Layers,
+  AlertCircle
 } from 'lucide-react';
 import type { Type } from '@/utils/xml';
+import { Modal } from '@/components/base/modal/modal';
 import { SpawnableSlotModal } from './SpawnableSlotModal';
 import { XMLNodeKind } from '@/types/xml';
 import { Loadout, LoadoutNode } from '@/types/loadouts';
