@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Modal } from '@/components/base/modal/modal';
-import { Plus, Package, PlusCircle } from '@untitledui/icons';
+import { Plus, Package, PlusCircle, Settings01 } from '@untitledui/icons';
 import { HierarchicalTree } from '../hierarchical/HierarchicalTree';
+import { ChildListConfig } from '../hierarchical/HierarchicalNodeItem';
 import { HierarchicalProperties } from '../hierarchical/HierarchicalProperties';
 import { loadoutToExpansionAirdrop, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { updateNodeInList, findNode } from '@/utils/tree';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
+
+// Expansion airdrop loot (ExpansionLoot / ExpansionLootVariant) has no Cargo
+// member — only Attachments. Restrict the tree to the attachments list so users
+// can't author cargo that Expansion would silently ignore.
+const AIRDROP_CHILD_LISTS: ChildListConfig[] = [
+  { key: 'attachments', label: 'Attachments', icon: Settings01 },
+];
 
 interface AirdropLootEditorProps {
   initialLoot: any[];
@@ -99,6 +107,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
         ) : (
           <HierarchicalTree
             items={nodes}
+            childLists={AIRDROP_CHILD_LISTS}
             onUpdate={commit}
             onSelect={(node) => {
               setSelectedNodeId(node.id);

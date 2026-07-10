@@ -178,11 +178,14 @@ export function loadoutToExpansionAirdrop(
 
   const mapNode = (node: LoadoutNode): any => {
     const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
+    // Field order matches Expansion's ExpansionLoot class (ExpansionLoot.c):
+    // Name, Chance, Attachments (from base/variant) then QuantityPercent, Max,
+    // Min, Variants. There is deliberately NO Cargo — Expansion airdrop loot has
+    // no Cargo member; the engine's JSON loader silently ignores unknown keys.
     return {
       Name: resolved.name,
       Chance: resolved.chance,
       Attachments: expandGroups(resolved.attachments || []).map(mapNode),
-      Cargo: expandGroups(resolved.cargo || []).map(mapNode),
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,
@@ -368,7 +371,7 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
       } : undefined,
       variants: item.Variants || [],
       attachments: (item.Attachments || []).map(mapNode),
-      cargo: (item.Cargo || []).map(mapNode) // Expansion sometimes uses Cargo too
+      cargo: [] // Expansion airdrop loot has no Cargo member; never read it back
     };
   };
 
