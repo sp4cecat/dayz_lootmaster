@@ -22,6 +22,8 @@ export interface TypeDetail {
   exposesSlots: string[] | null;
   occupiesSlots: string[] | null;
   cargoSize: number[] | null;
+  /** Compatible magazine classes (CfgWeapons magazines[]); null/empty for non-weapons. */
+  magazines: string[] | null;
 }
 
 export interface CatalogValue {

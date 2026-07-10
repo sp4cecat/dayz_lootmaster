@@ -24,6 +24,7 @@ import { LoadoutDesigner } from './components/LoadoutDesigner';
 import { SpawnableTypesManager } from './components/SpawnableTypesManager';
 import AddonEditorModal from './components/AddonEditorModal';
 import HeatMapModal from './components/HeatMapModal';
+import ItemScanModal from './components/ItemScanModal';
 import { Sidebar } from './components/layout/Sidebar';
 import { Breadcrumbs } from './components/layout/Breadcrumbs';
 import { Button } from '@/components/base/button/button';
@@ -429,6 +430,15 @@ export default function App() {
                         )}
                         {view === 'map-tools:heatmap' && (
                             <HeatMapModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                missionName={selectedProfile?.missionName}
+                                getApiBase={getApiBase}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'map-tools:item-scan' && (
+                            <ItemScanModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
                                 missionName={selectedProfile?.missionName}

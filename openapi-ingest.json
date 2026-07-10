@@ -3,10 +3,10 @@
   "info": {
     "title": "spacecat DayZ mod → receiver ingest contract",
     "version": "1.0.0",
-    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:8787`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick)."
+    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat/spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:4317`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick)."
   },
   "servers": [
-    { "url": "http://127.0.0.1:8787", "description": "Your service, at whatever host:port you set as the mod's baseUrl" }
+    { "url": "http://127.0.0.1:4317", "description": "Your service, at whatever host:port you set as the mod's baseUrl" }
   ],
   "tags": [
     { "name": "push", "description": "The mod POSTs live state to you" },
@@ -169,6 +169,7 @@
           "description": { "type": "string" },
           "inventorySlot": { "type": "array", "items": { "type": "string" } },
           "attachments": { "type": "array", "items": { "type": "string" } },
+          "magazines": { "type": "array", "items": { "type": "string" }, "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons." },
           "cargoSize": { "type": "array", "items": { "type": "integer" } },
           "weight": { "type": "number" }
         }

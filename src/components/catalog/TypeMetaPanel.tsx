@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/base/badges/badges';
-import { Info, Puzzle, PackageOpen, ChevronDown } from 'lucide-react';
+import { Info, Puzzle, PackageOpen, ChevronDown, Layers } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { useCatalog, type TypeDetail, type AttachmentGraph } from '@/contexts/CatalogContext';
 
@@ -22,7 +22,7 @@ export function TypeMetaPanel({
   className?: string;
   graphs?: ('accepts' | 'fitsInto')[];
 }) {
-  const { connected, getTypeDetail } = useCatalog();
+  const { connected, getTypeDetail, displayNameFor } = useCatalog();
   const [detail, setDetail] = useState<TypeDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -44,10 +44,13 @@ export function TypeMetaPanel({
   const hasGraph = (g: AttachmentGraph | null | undefined) =>
     !!g && !!g.bySlot && Object.keys(g.bySlot).length > 0;
 
+  const hasMagazines = !!detail && Array.isArray(detail.magazines) && detail.magazines.length > 0;
+
   const empty = !detail || (
     !detail.displayName && !detail.description &&
     !(showAccepts && hasGraph(detail.accepts)) &&
-    !(showFitsInto && hasGraph(detail.fitsInto))
+    !(showFitsInto && hasGraph(detail.fitsInto)) &&
+    !hasMagazines
   );
 
   return (
@@ -92,10 +95,52 @@ export function TypeMetaPanel({
                 graph={detail!.fitsInto!}
               />
             )}
+            {hasMagazines && (
+              <MagazineList
+                classes={detail!.magazines!}
+                labelFor={(cls) => displayNameFor(cls) || cls}
+              />
+            )}
           </>
         )}
       </div>
     </section>
+  );
+}
+
+/** Collapsible list of the compatible magazine classes for a weapon, default closed. */
+function MagazineList({ classes, labelFor }: { classes: string[]; labelFor: (cls: string) => string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+      >
+        <ChevronDown size={14} className={cx('transition-transform text-gray-400', !open && '-rotate-90')} />
+        <Layers size={13} /> Magazines (accepts)
+        <span className="ml-1 px-1.5 py-0.5 text-[10px] normal-case bg-gray-100 text-gray-600 rounded-full dark:bg-gray-800 dark:text-gray-300">
+          {classes.length}
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 animate-in slide-in-from-top-1 duration-200">
+          <div className="flex flex-wrap gap-1">
+            {classes.map(cls => (
+              <span
+                key={cls}
+                title={cls}
+                className="inline-flex items-center rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 text-[11px] text-gray-700 dark:text-gray-200"
+              >
+                {labelFor(cls)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

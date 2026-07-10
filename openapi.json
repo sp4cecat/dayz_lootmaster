@@ -6,7 +6,7 @@
     "description": "Localhost-only REST API exposing the live state of a running DayZ server: online players + stats, the loot/economy catalog with attachment metadata, events, a live-map positions feed, an admin-log (ADM) event feed, and basic admin commands.\n\nLive data is produced by a companion Enforce Script mod that pushes JSON snapshots to this server and polls it for admin commands; static economy data (types.xml/events.xml/cfgspawnabletypes.xml) and the .ADM log are read from disk. Bound to 127.0.0.1 only, no authentication by design.\n\nField values that require the mod (displayName, description, attachments, live players/heartbeat/map, spawnedCount) are null until the mod connects (see /health.modConnected)."
   },
   "servers": [
-    { "url": "http://127.0.0.1:8787", "description": "Local loopback (default port; configurable via API_PORT)" }
+    { "url": "http://127.0.0.1:4317", "description": "Local loopback (default port; configurable via API_PORT)" }
   ],
   "tags": [
     { "name": "status", "description": "Health and server heartbeat" },
@@ -156,6 +156,42 @@
         "operationId": "getMap",
         "responses": {
           "200": { "description": "Positions from the latest snapshot.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MapState" } } } }
+        }
+      }
+    },
+    "/items": {
+      "get": {
+        "tags": ["map"],
+        "summary": "On-demand scan of spawned world items in a region",
+        "description": "Enqueues a scanItems command; the mod sweeps GetObjectsAtPosition3D around (x,z) at terrain height and posts back each ItemBase's class, displayName, position, damage state, and lifetimeMax. Synchronous round-trip (waits for the mod, ~2-4s). Region-scoped only (radius <= 200 m) — DayZ has no performant map-wide item enumeration. Live remaining-TTL is not exposed by the engine; lifetimeMax is the configured CE lifetime.",
+        "operationId": "getItems",
+        "parameters": [
+          { "name": "x", "in": "query", "required": true, "schema": { "type": "number" }, "description": "World X of the sweep centre." },
+          { "name": "z", "in": "query", "required": true, "schema": { "type": "number" }, "description": "World Z of the sweep centre." },
+          { "name": "radius", "in": "query", "required": false, "schema": { "type": "number", "default": 30, "maximum": 200 }, "description": "Sphere radius in metres (default 30, capped at 200)." }
+        ],
+        "responses": {
+          "200": { "description": "Items found in the region.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemScan" } } } },
+          "400": { "description": "Missing/invalid x or z.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Mod not connected; live scan unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "504": { "description": "The mod did not respond in time; retry or poll /admin/commands/{commandId}.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/items/near/{playerId}": {
+      "get": {
+        "tags": ["map"],
+        "summary": "Region scan centred on an online player's position",
+        "operationId": "getItemsNear",
+        "parameters": [
+          { "name": "playerId", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Plain id / steamId / name of an online player." },
+          { "name": "radius", "in": "query", "required": false, "schema": { "type": "number", "default": 30, "maximum": 200 } }
+        ],
+        "responses": {
+          "200": { "description": "Items near the player.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemScan" } } } },
+          "404": { "description": "Player not found or offline.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Mod not connected.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "504": { "description": "Scan timed out.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -427,6 +463,7 @@
           "description": { "type": "string" },
           "inventorySlot": { "type": "array", "items": { "type": "string" }, "description": "Slots THIS item can occupy." },
           "attachments": { "type": "array", "items": { "type": "string" }, "description": "Slots THIS object exposes for other items." },
+          "magazines": { "type": "array", "items": { "type": "string" }, "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons." },
           "cargoSize": { "type": "array", "items": { "type": "integer" } },
           "weight": { "type": "number", "format": "float" }
         }
@@ -524,6 +561,30 @@
           "players": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
           "vehicles": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
           "events": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } }
+        }
+      },
+      "ItemInfo": {
+        "type": "object",
+        "description": "A spawned world item found by a region scan.",
+        "properties": {
+          "cls": { "type": "string", "description": "Config class name (GetType)." },
+          "displayName": { "type": "string", "description": "Localized in-game name." },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "healthLevel": { "type": "integer", "enum": [0, 1, 2, 3, 4], "description": "0=pristine .. 4=ruined." },
+          "damageState": { "type": "string", "enum": ["pristine", "worn", "damaged", "badly_damaged", "ruined", "unknown"] },
+          "lifetimeMax": { "type": "number", "description": "Configured CE lifetime in seconds (types.xml <lifetime>). NOT the live remaining TTL, which the engine does not expose." }
+        }
+      },
+      "ItemScan": {
+        "type": "object",
+        "properties": {
+          "center": {
+            "type": "object",
+            "properties": { "x": { "type": "number" }, "z": { "type": "number" } }
+          },
+          "radius": { "type": "number" },
+          "count": { "type": "integer" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ItemInfo" } }
         }
       },
       "FeedEvent": {

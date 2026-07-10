@@ -36,7 +36,8 @@ export const NAV_ITEMS: NavItem[] = [
     ] 
   },
   { id: 'map-tools', label: 'Map Tools', icon: MapIcon, subItems: [
-    { id: 'heatmap', label: 'Heat map' }
+    { id: 'heatmap', label: 'Heat map' },
+    { id: 'item-scan', label: 'Item scanner' }
   ]},
   { id: 'mission-files', label: 'Mission Files', icon: FileCode, subItems: [
     { id: 'random-presets', label: 'Random Presets' },

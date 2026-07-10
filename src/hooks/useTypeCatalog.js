@@ -25,6 +25,7 @@ function getApiBase() {
  * @property {string[]|null} exposesSlots
  * @property {string[]|null} occupiesSlots
  * @property {number[]|null} cargoSize
+ * @property {string[]|null} magazines
  */
 
 /**

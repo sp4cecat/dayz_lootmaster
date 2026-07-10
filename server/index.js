@@ -1299,6 +1299,8 @@ function buildCatalogDetail(name) {
         occupiesSlots: detail && Array.isArray(detail.inventorySlot) ? detail.inventorySlot : null,
         // cargoSize: [rows, cols] capacity; present/non-zero product ⇒ the item is a container.
         cargoSize: detail && Array.isArray(detail.cargoSize) ? detail.cargoSize : null,
+        // magazines: compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons.
+        magazines: detail && Array.isArray(detail.magazines) ? detail.magazines : null,
     };
 }
 
@@ -1377,6 +1379,91 @@ async function handleIngestRoute(pathname, req, res) {
     }
 
     methodNotAllowed(res);
+    return true;
+}
+
+// How long GET /items blocks waiting for the mod to ack a scanItems command before
+// giving up with 504. The mod's round-trip is ~2-4 s; 10 s leaves headroom.
+// eslint-disable-next-line no-undef
+const ITEM_SCAN_TIMEOUT_MS = Number(process.env.ITEM_SCAN_TIMEOUT_MS || 10000);
+
+// Await a command's ack (delivered out-of-band on POST /ingest/commands/ack) up to
+// timeoutMs. Resolves the done command, or null on timeout. Polls because the ack
+// arrives on a separate HTTP request handled concurrently.
+function waitForCommand(id, timeoutMs) {
+    return new Promise((resolve) => {
+        const started = Date.now();
+        const tick = () => {
+            const cmd = ingest.getCommand(id);
+            if (cmd && cmd.status === 'done') { resolve(cmd); return; }
+            if (Date.now() - started >= timeoutMs) { resolve(null); return; }
+            setTimeout(tick, 150);
+        };
+        tick();
+    });
+}
+
+// Enqueue a scanItems command centred on (x,z), block on the mod's ack, and send the
+// ItemScan response. Shared by GET /items and GET /items/near/{playerId}.
+async function runItemScan(res, x, z, radius) {
+    const cmd = ingest.enqueueCommand('scanItems', { x, z, radius });
+    const done = await waitForCommand(cmd.id, ITEM_SCAN_TIMEOUT_MS);
+    if (!done) {
+        send(res, 504, JSON.stringify({ error: 'The mod did not respond in time; retry.' }), { 'Content-Type': 'application/json' });
+        return;
+    }
+    const items = Array.isArray(done.result) ? done.result : [];
+    const body = { center: { x, z }, radius, count: items.length, items };
+    send(res, 200, JSON.stringify(body), { 'Content-Type': 'application/json' });
+}
+
+// Handles the live world-item scan routes (GET /items, GET /items/near/{playerId}).
+// Region-scoped only; enqueues a scanItems command for the companion mod and blocks on
+// the round-trip. Profile-independent. Returns true if it took the request.
+async function handleItemsRoute(url, req, res) {
+    const parts = url.pathname.split('/').filter(Boolean); // ['items'] or ['items','near',id]
+
+    if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+
+    // The scan is a live round-trip to the mod, so it must be connected.
+    if (!ingest.modConnected()) {
+        send(res, 503, JSON.stringify({ error: 'Mod not connected; live scan unavailable.' }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // radius: default 30, capped at 200 (DayZ has no performant map-wide enumeration).
+    const rawRadius = url.searchParams.get('radius');
+    let radius = rawRadius === null || rawRadius === '' ? 30 : Number(rawRadius);
+    if (!Number.isFinite(radius) || radius <= 0) radius = 30;
+    if (radius > 200) radius = 200;
+
+    // GET /items?x&z&radius
+    if (parts.length === 1) {
+        const x = Number(url.searchParams.get('x'));
+        const z = Number(url.searchParams.get('z'));
+        if (!Number.isFinite(x) || !Number.isFinite(z)) {
+            badRequest(res, 'x and z query parameters are required and must be numeric.');
+            return true;
+        }
+        await runItemScan(res, x, z, radius);
+        return true;
+    }
+
+    // GET /items/near/{playerId} — resolve the centre from the latest snapshot's players.
+    if (parts.length === 3 && parts[1] === 'near') {
+        const playerId = decodeURIComponent(parts[2]);
+        const snap = ingest.getSnapshot().data;
+        const players = snap && Array.isArray(snap.players) ? snap.players : [];
+        const player = players.find(p => p && (p.id === playerId || p.steamId === playerId || p.name === playerId));
+        if (!player || !Array.isArray(player.pos) || player.pos.length < 3) {
+            send(res, 404, JSON.stringify({ error: 'Player not found or offline.' }), { 'Content-Type': 'application/json' });
+            return true;
+        }
+        await runItemScan(res, Number(player.pos[0]), Number(player.pos[2]), radius);
+        return true;
+    }
+
+    notFound(res);
     return true;
 }
 
@@ -1527,6 +1614,11 @@ const server = http.createServer(async (req, res) => {
         // Companion-mod ingest write side (mod-facing push/poll; no X-Profile-ID)
         if (pathname.startsWith('/ingest')) {
             if (await handleIngestRoute(pathname, req, res)) return;
+        }
+
+        // Live world-item scan (profile-independent; round-trips a scanItems command to the mod)
+        if (pathname === '/items' || pathname.startsWith('/items/')) {
+            if (await handleItemsRoute(url, req, res)) return;
         }
 
         // Profile & Snapshot Management
