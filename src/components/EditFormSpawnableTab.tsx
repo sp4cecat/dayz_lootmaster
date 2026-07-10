@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from '@/components/base/badges/badges';
@@ -39,7 +39,7 @@ import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
-import { useCompatibleAttachments, useItemCapabilities } from '@/contexts/CatalogContext';
+import { useCompatibleAttachments, useItemCapabilities, useAttachmentSlots } from '@/contexts/CatalogContext';
 import { TypeMetaPanel } from '@/components/catalog/TypeMetaPanel';
 
 export default function EditFormSpawnableTab({ 
@@ -126,12 +126,32 @@ export default function EditFormSpawnableTab({
   }, [seedKey, viewMode]);
 
   // Restrict the item picker to compatible attachments when an attachment-slot node is selected.
+  // For a group member, restrict by the group's linked slot on the item that exposes it.
   const spawnableParentInfo = selectedNodeId ? findParent(treeItems, selectedNodeId) : null;
-  const treeAttachmentParent = spawnableParentInfo?.list === 'attachments' ? spawnableParentInfo.parent?.name : undefined;
+  const spawnableParent = spawnableParentInfo?.parent;
+  let treeAttachmentParent: string | undefined;
+  let treeAttachmentSlot: string | undefined;
+  if (spawnableParent?.type === 'group') {
+    treeAttachmentParent = findParent(treeItems, spawnableParent.id)?.parent?.name || undefined;
+    treeAttachmentSlot = spawnableParent.slot;
+  } else if (spawnableParentInfo?.list === 'attachments') {
+    treeAttachmentParent = spawnableParent?.name || undefined;
+  }
   // Tiles-view slot modal: the parent is always the root spawnable type.
   const slotAttachmentParent = (editingSlot?.kind === XMLNodeKind.ATTACHMENTS) ? type.name : undefined;
   const attachmentParentName = treeAttachmentParent || slotAttachmentParent;
-  const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
+  const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName, treeAttachmentSlot);
+
+  // When a group is selected, offer its parent item's exposed slots in the properties panel.
+  const groupParentName = editingNode?.type === 'group'
+    ? (findParent(treeItems, editingNode.id)?.parent?.name || undefined)
+    : undefined;
+  const groupSlotGraph = useAttachmentSlots(groupParentName);
+  const groupSlotOptions = useMemo(() => {
+    if (!groupSlotGraph) return null;
+    const slots = groupSlotGraph.slots?.length ? groupSlotGraph.slots : Object.keys(groupSlotGraph.bySlot || {});
+    return slots.map(s => ({ slot: s, count: (groupSlotGraph.bySlot?.[s] || []).length }));
+  }, [groupSlotGraph]);
 
   // Whether the spawnable type itself can hold cargo / accept attachments, per the
   // companion-mod catalog. Each capability is null when the catalog can't answer (mod
@@ -460,6 +480,7 @@ export default function EditFormSpawnableTab({
                 typeOptions={typeOptions}
                 availableTemplates={loadouts}
                 compatibleClasses={compatibleClasses}
+                groupSlotOptions={groupSlotOptions}
                 randomPresets={randomPresets}
                 config={{
                   title: 'Spawnable Item Properties',

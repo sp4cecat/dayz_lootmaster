@@ -9,6 +9,9 @@ export interface LoadoutNode {
   type: 'item' | 'template' | 'group';
   templateSource?: 'loadout' | 'preset' | 'airdrop' | 'spawnable';
   name: string; // Item classname or Template ID/Name (groups have no name)
+  slot?: string; // group nodes only: the exposed attachment-slot name (from the catalog
+                 // attachments[] feed) this group targets, e.g. "WeaponHandguardAK". Design-time
+                 // metadata; persists in native loadout JSON, not emitted to vanilla XML.
   chance: number; // 0.0 to 1.0
   quantity?: {
     min: number;

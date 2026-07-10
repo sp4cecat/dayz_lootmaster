@@ -65,23 +65,65 @@ export function useCatalog(): CatalogValue {
   return useContext(CatalogContext);
 }
 
+/** Case-insensitive lookup into an AttachmentGraph's bySlot map (server slot keys can
+ *  differ in case from the raw attachments[] casing). Exported for testing. */
+export function bySlotCaseInsensitive(graph: AttachmentGraph | null | undefined, slot: string): AttachmentRef[] | null {
+  if (!graph?.bySlot) return null;
+  const direct = graph.bySlot[slot];
+  if (direct) return direct;
+  const target = slot.toLowerCase();
+  for (const key of Object.keys(graph.bySlot)) {
+    if (key.toLowerCase() === target) return graph.bySlot[key];
+  }
+  return null;
+}
+
 /**
  * Resolve the list of classes that can attach onto `parentName` (loading its detail
  * on demand). Returns null when disabled or the catalog can't answer, so callers can
  * fall back to an unrestricted picker.
+ *
+ * When `slot` is given, the list is narrowed to the items that fit that specific exposed
+ * slot (`accepts.bySlot[slot]`) instead of the flattened set — used to restrict a group's
+ * member picker to its linked slot.
  */
-export function useCompatibleAttachments(parentName?: string, enabled = true): string[] | null {
-  const { getTypeDetail, getCompatibleAttachments } = useCatalog();
+export function useCompatibleAttachments(parentName?: string, enabled = true, slot?: string): string[] | null {
+  const { getTypeDetail, getCompatibleAttachments, peekTypeDetail } = useCatalog();
   const [list, setList] = useState<string[] | null>(null);
   useEffect(() => {
     let cancelled = false;
     if (!enabled || !parentName) { setList(null); return; }
     getTypeDetail(parentName).then(() => {
-      if (!cancelled) setList(getCompatibleAttachments(parentName));
+      if (cancelled) return;
+      if (slot) {
+        const refs = bySlotCaseInsensitive(peekTypeDetail(parentName)?.accepts, slot);
+        setList(refs ? refs.map(r => r.name) : null);
+      } else {
+        setList(getCompatibleAttachments(parentName));
+      }
     });
     return () => { cancelled = true; };
-  }, [parentName, enabled, getTypeDetail, getCompatibleAttachments]);
+  }, [parentName, enabled, slot, getTypeDetail, getCompatibleAttachments, peekTypeDetail]);
   return list;
+}
+
+/**
+ * Resolve the attachment-slot graph a class exposes (`accepts`), loading its detail on
+ * demand. Returns null when disabled or the catalog can't answer. Used to populate the
+ * slot picker when creating / editing an attachment group.
+ */
+export function useAttachmentSlots(name?: string, enabled = true): AttachmentGraph | null {
+  const { getTypeDetail, peekTypeDetail } = useCatalog();
+  const [graph, setGraph] = useState<AttachmentGraph | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !name) { setGraph(null); return; }
+    getTypeDetail(name).then(() => {
+      if (!cancelled) setGraph(peekTypeDetail(name)?.accepts ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [name, enabled, getTypeDetail, peekTypeDetail]);
+  return graph;
 }
 
 export interface ItemCapabilities {

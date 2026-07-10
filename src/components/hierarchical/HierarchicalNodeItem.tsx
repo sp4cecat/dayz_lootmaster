@@ -5,10 +5,15 @@ import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
 import { useResolvedNode } from '@/hooks/useResolvedNode';
-import { useItemCapabilities } from '@/contexts/CatalogContext';
+import { useItemCapabilities, useAttachmentSlots } from '@/contexts/CatalogContext';
+import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
+import { Button as AriaButton } from 'react-aria-components';
+
+// Sentinel menu key for "create an unassigned (generic) group", distinct from any slot name.
+const UNASSIGNED_SLOT = '__unassigned__';
 
 export interface ChildListConfig {
   key: 'attachments' | 'cargo';
@@ -112,6 +117,15 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   // the catalog can't answer (mod down / unknown) -> keep offering the option.
   const gateName = (!isGroup && node.type === 'item') ? node.name : undefined;
   const { acceptsAttachments, holdsCargo } = useItemCapabilities(gateName);
+
+  // Attachment slots this item exposes (from the catalog attachments[] feed), offered when
+  // creating a group so it can be linked to a specific slot. Only fetched for item nodes.
+  const slotGraph = useAttachmentSlots(gateName);
+  const slotOptions = React.useMemo(() => {
+    if (!slotGraph) return [] as { slot: string; count: number }[];
+    const slots = slotGraph.slots?.length ? slotGraph.slots : Object.keys(slotGraph.bySlot || {});
+    return slots.map(s => ({ slot: s, count: (slotGraph.bySlot?.[s] || []).length }));
+  }, [slotGraph]);
   const listOffered = (key: 'attachments' | 'cargo'): boolean => {
     if (isGroup) return true; // group members list is not catalog-gated
     return key === 'cargo' ? holdsCargo !== false : acceptsAttachments !== false;
@@ -170,12 +184,14 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     onUpdate({ ...node, [list]: newList });
   };
 
-  // Adds an inline group (one <attachments>/<cargo> block) to the given list.
-  const handleAddGroup = (list: 'attachments' | 'cargo') => {
+  // Adds an inline group (one <attachments>/<cargo> block) to the given list, optionally
+  // linked to an exposed attachment slot so its members can be restricted to that slot.
+  const handleAddGroup = (list: 'attachments' | 'cargo', slot?: string) => {
     const newGroup: LoadoutNode = {
       id: crypto.randomUUID(),
       type: 'group',
       name: '',
+      ...(slot ? { slot } : {}),
       chance: 1.0,
       attachments: [],
       cargo: [],
@@ -250,7 +266,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
             <span className="font-semibold truncate text-sm">{node.name || (node.type === 'item' ? 'Unnamed Item' : isGroup ? 'Group' : 'Unnamed Template')}</span>
             <Badge color="gray" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
             {node.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
-            {isGroup && <Badge color="purple" size="sm">Group · one of {(node.attachments || []).length}</Badge>}
+            {isGroup && <Badge color="purple" size="sm">Group{node.slot ? ` · ${node.slot}` : ''} · one of {(node.attachments || []).length}</Badge>}
             {isReadOnly && <Badge color="gray" size="sm">Linked</Badge>}
           </div>
         </div>
@@ -291,12 +307,41 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                   {!isReadOnly && offered && (
                     <div className="flex gap-2">
                       {!isGroup && (
-                        <button 
-                          onClick={() => handleAddGroup(listConfig.key)}
-                          className="text-xs text-purple-600 hover:underline flex items-center"
-                        >
-                          <Boxes size={12} className="mr-1" /> Group
-                        </button>
+                        listConfig.key === 'attachments' && slotOptions.length > 0 ? (
+                          // Link the new group to one of the parent's exposed slots, or create
+                          // an unassigned (generic) group.
+                          <Dropdown.Root>
+                            <AriaButton className="text-xs text-purple-600 hover:underline flex items-center outline-none focus-visible:underline">
+                              <Boxes size={12} className="mr-1" /> Group
+                            </AriaButton>
+                            <Dropdown.Popover>
+                              <Dropdown.Menu
+                                onAction={(key) => {
+                                  if (key === UNASSIGNED_SLOT) handleAddGroup(listConfig.key);
+                                  else handleAddGroup(listConfig.key, String(key));
+                                }}
+                              >
+                                <Dropdown.Section>
+                                  <Dropdown.SectionHeader className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                                    Exposed slots
+                                  </Dropdown.SectionHeader>
+                                  {slotOptions.map(o => (
+                                    <Dropdown.Item key={o.slot} id={o.slot} label={o.slot} addon={String(o.count)} />
+                                  ))}
+                                </Dropdown.Section>
+                                <Dropdown.Separator />
+                                <Dropdown.Item id={UNASSIGNED_SLOT} label="Unassigned group" icon={Boxes} />
+                              </Dropdown.Menu>
+                            </Dropdown.Popover>
+                          </Dropdown.Root>
+                        ) : (
+                          <button
+                            onClick={() => handleAddGroup(listConfig.key)}
+                            className="text-xs text-purple-600 hover:underline flex items-center"
+                          >
+                            <Boxes size={12} className="mr-1" /> Group
+                          </button>
+                        )
                       )}
                       <button 
                         onClick={() => onAddTemplate(listConfig.key)}

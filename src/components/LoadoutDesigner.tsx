@@ -10,7 +10,7 @@ import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
-import { useCompatibleAttachments } from '@/contexts/CatalogContext';
+import { useCompatibleAttachments, useAttachmentSlots } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
@@ -413,10 +413,33 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     }
   };
 
-  const selectedNode = editingLoadout ? findNode(editingLoadout.items, selectedNodeId || '') : null;
-  const parentInfo = editingLoadout && selectedNodeId ? findParent(editingLoadout.items, selectedNodeId) : null;
-  const attachmentParentName = parentInfo?.list === 'attachments' ? parentInfo.parent?.name : undefined;
-  const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName);
+  const treeItems = editingLoadout?.items || [];
+  const selectedNode = editingLoadout ? findNode(treeItems, selectedNodeId || '') : null;
+  const parentInfo = editingLoadout && selectedNodeId ? findParent(treeItems, selectedNodeId) : null;
+  const parentNode = parentInfo?.parent;
+
+  // Restrict the selected node's classname picker. For a group member, restrict by the group's
+  // linked slot on the item that exposes it (the grandparent); otherwise by the attachment parent.
+  let attachmentParentName: string | undefined;
+  let attachmentSlot: string | undefined;
+  if (parentNode?.type === 'group') {
+    attachmentParentName = findParent(treeItems, parentNode.id)?.parent?.name || undefined;
+    attachmentSlot = parentNode.slot;
+  } else if (parentInfo?.list === 'attachments') {
+    attachmentParentName = parentNode?.name || undefined;
+  }
+  const compatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName, attachmentSlot);
+
+  // When a group is selected, offer its parent item's exposed slots in the properties panel.
+  const groupParentName = selectedNode?.type === 'group'
+    ? (findParent(treeItems, selectedNode.id)?.parent?.name || undefined)
+    : undefined;
+  const groupSlotGraph = useAttachmentSlots(groupParentName);
+  const groupSlotOptions = useMemo(() => {
+    if (!groupSlotGraph) return null;
+    const slots = groupSlotGraph.slots?.length ? groupSlotGraph.slots : Object.keys(groupSlotGraph.bySlot || {});
+    return slots.map(s => ({ slot: s, count: (groupSlotGraph.bySlot?.[s] || []).length }));
+  }, [groupSlotGraph]);
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
@@ -572,6 +595,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     typeOptions={typeOptions}
                     availableTemplates={loadouts.filter(l => l.id !== editingLoadout.id)}
                     compatibleClasses={compatibleClasses}
+                    groupSlotOptions={groupSlotOptions}
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
                   />

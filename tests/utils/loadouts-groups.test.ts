@@ -77,6 +77,29 @@ describe('Spawnable attachment groups -> Loadout group nodes', () => {
     expect(xml).toContain('<item name="Fal_FoldingBttstck" chance="0.50"/>');
   });
 
+  it('keeps a group\'s linked slot in native JSON but never emits it to vanilla XML', () => {
+    const parsed = parseSpawnableTypesXml(FAL_XML);
+    const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
+
+    // Link the first group to an exposed slot (design-time metadata).
+    loadout.items[0].attachments[0].slot = 'WeaponHandguardFAL';
+
+    // Native JSON round-trip preserves the slot (whole node persisted to IndexedDB).
+    const cloned = JSON.parse(JSON.stringify(loadout));
+    expect(cloned.items[0].attachments[0].slot).toBe('WeaponHandguardFAL');
+
+    // Serialization to the XML store and to vanilla XML must not leak the slot.
+    const entry = loadoutToSpawnableEntry(loadout);
+    expect(JSON.stringify(entry)).not.toContain('WeaponHandguardFAL');
+    expect(entry.sections.find((s: any) => s.kind === 'attachments')?.attrs?.slot).toBeUndefined();
+
+    const xml = loadoutToVanillaXml(loadout, []);
+    expect(xml).not.toContain('WeaponHandguardFAL');
+    expect(xml).not.toContain('slot=');
+    // Structure is otherwise unchanged (still three blocks).
+    expect((xml.match(/<attachments /g) || []).length).toBe(3);
+  });
+
   it('flattens groups when exporting to Expansion airdrop format (chance multiplied)', () => {
     const parsed = parseSpawnableTypesXml(FAL_XML);
     const loadout = vanillaSpawnableToLoadout(parsed.types[0]);

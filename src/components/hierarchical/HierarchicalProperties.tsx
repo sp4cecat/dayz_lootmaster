@@ -32,10 +32,20 @@ interface HierarchicalPropertiesProps {
    */
   compatibleClasses?: string[] | null;
 
+  /**
+   * For a group node: the exposed attachment slots of the group's parent item (from the
+   * catalog attachments[] feed). Populates the "Linked slot" picker so members can be
+   * restricted to a specific slot. Null/empty leaves the group generic.
+   */
+  groupSlotOptions?: { slot: string; count: number }[] | null;
+
   // For template resolution context (optional)
   randomPresets?: { presets: any[] };
   expansionAirdrops?: any;
 }
+
+// Sentinel option for clearing a group's linked slot back to a generic group.
+const NO_SLOT = '__none__';
 
 export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   node,
@@ -50,11 +60,20 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
     showAttributes: false,
   },
   compatibleClasses,
+  groupSlotOptions,
   randomPresets,
   expansionAirdrops
 }) => {
   const { displayNameFor } = useCatalog();
   const [newVariant, setNewVariant] = React.useState('');
+
+  const slotComboItems = React.useMemo(() => {
+    const opts = groupSlotOptions || [];
+    return [
+      { id: NO_SLOT, name: 'None (generic group)', count: -1 },
+      ...opts.map(o => ({ id: o.slot, name: o.slot, count: o.count })),
+    ];
+  }, [groupSlotOptions]);
 
   const restricted = !!(compatibleClasses && compatibleClasses.length > 0);
   const itemOptions = React.useMemo(() => {
@@ -144,13 +163,57 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
               {node.type === 'template' ? 'Select Template' : node.type === 'group' ? 'Group' : 'Item Classname'}
             </label>
             {node.type === 'group' ? (
-              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-900/40 text-xs text-purple-800 dark:text-purple-200 space-y-1">
-                <p className="font-semibold">Attachment / Cargo Group</p>
-                <p className="text-purple-700/80 dark:text-purple-300/80">
-                  The Spawn Chance below is the probability this group is rolled. When it is, one
-                  member item is selected using the members' individual chances. Add members in the
-                  tree's "Items" list.
-                </p>
+              <div className="space-y-3">
+                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-900/40 text-xs text-purple-800 dark:text-purple-200 space-y-1">
+                  <p className="font-semibold">Attachment / Cargo Group</p>
+                  <p className="text-purple-700/80 dark:text-purple-300/80">
+                    The Spawn Chance below is the probability this group is rolled. When it is, one
+                    member item is selected using the members' individual chances. Add members in the
+                    tree's "Items" list.
+                  </p>
+                </div>
+
+                {groupSlotOptions && groupSlotOptions.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">Linked Slot</label>
+                    <ComboBox
+                      items={slotComboItems}
+                      inputValue={node.slot || ''}
+                      onInputChange={value => onUpdate({ ...node, slot: value || undefined })}
+                      onSelectionChange={key => {
+                        if (!key || key === NO_SLOT) onUpdate({ ...node, slot: undefined });
+                        else onUpdate({ ...node, slot: key as string });
+                      }}
+                      placeholder="Search exposed slots..."
+                      aria-label="Linked Slot"
+                    >
+                      {(item) => (
+                        <ComboBoxItem id={item.id} textValue={item.name}>
+                          <span className="flex items-center justify-between w-full gap-2">
+                            <span>{item.name}</span>
+                            {item.count >= 0 && <span className="text-xs text-gray-400">{item.count}</span>}
+                          </span>
+                        </ComboBoxItem>
+                      )}
+                    </ComboBox>
+                    <p className="text-[11px] text-gray-400">
+                      Restricts member items to those that fit this slot.
+                    </p>
+                  </div>
+                ) : node.slot ? (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Linked slot: <span className="font-mono text-gray-700 dark:text-gray-300">{node.slot}</span>
+                    </span>
+                    <button
+                      onClick={() => onUpdate({ ...node, slot: undefined })}
+                      className="text-gray-400 hover:text-error-600"
+                      aria-label="Clear linked slot"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : node.type === 'template' ? (
               <div className="space-y-3">
