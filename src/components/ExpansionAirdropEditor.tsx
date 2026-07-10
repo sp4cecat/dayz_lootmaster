@@ -34,10 +34,18 @@ const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string }[] = [
 ];
 
 const CONTAINER_CLASS_OPTIONS: string[] = [
-  'ExpansionAirdropContainer_Military',
-  'ExpansionAirdropContainer_Basebuilding',
-  'ExpansionAirdropContainer_Medical',
   'ExpansionAirdropContainer',
+  'ExpansionAirdropContainer_Grey',
+  'ExpansionAirdropContainer_Blue',
+  'ExpansionAirdropContainer_Olive',
+  'ExpansionAirdropContainer_Medical',
+  'ExpansionAirdropContainer_Military',
+  'ExpansionAirdropContainer_Military_GreenCamo',
+  'ExpansionAirdropContainer_Military_MarineCamo',
+  'ExpansionAirdropContainer_Military_OliveCamo',
+  'ExpansionAirdropContainer_Military_OliveCamo2',
+  'ExpansionAirdropContainer_Military_WinterCamo',
+  'ExpansionAirdropContainer_Basebuilding',
 ];
 
 const INFECTED_CLASSNAMES = [
