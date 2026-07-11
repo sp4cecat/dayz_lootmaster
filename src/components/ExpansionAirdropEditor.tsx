@@ -4,6 +4,7 @@ import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
 import { Toggle } from '@/components/base/toggle/toggle';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
+import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
   Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04,
@@ -313,15 +314,17 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
           </div>
           <div className="space-y-1">
             {containers.map((c: any, i: number) => (
-              <button key={i} onClick={() => setSelectedContainerIdx(i)}
-                className={cx('w-full text-left p-3 rounded-lg border transition-all',
-                  selectedContainerIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
-                    : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold truncate">{c.Container}</span>
-                  <Badge size="sm" color="gray">{c.Loot?.length || 0}</Badge>
-                </div>
-              </button>
+              <Tooltip key={i} title={c.Container} placement="right" delay={400}>
+                <TooltipTrigger onPress={() => setSelectedContainerIdx(i)}
+                  className={cx('w-full text-left p-3 rounded-lg border transition-all',
+                    selectedContainerIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                      : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold truncate">{c.Container}</span>
+                    <Badge size="sm" color="gray">{c.Loot?.length || 0}</Badge>
+                  </div>
+                </TooltipTrigger>
+              </Tooltip>
             ))}
           </div>
         </div>
