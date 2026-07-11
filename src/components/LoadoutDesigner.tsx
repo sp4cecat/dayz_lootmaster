@@ -12,6 +12,7 @@ import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
 import { useCompatibleAttachments, useAttachmentSlots, useMagazines, useCatalog, inferGroupSlot, MAGAZINE_SLOT } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
+import { ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { Button as AriaButton } from 'react-aria-components';
@@ -356,19 +357,39 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     return lower.endsWith('spawnabletypes.xml') && !lower.startsWith('cfg');
   };
 
-  // Groups that contain at least one importable top-level type (has attachments/cargo sections)
-  // within a dedicated spawnabletypes file. Vanilla overrides and `cfg`-prefixed root files are
-  // excluded as they are not standalone spawnabletypes files.
+  // The real spawnable-group keys that together make up the logical "Vanilla" bulk-import
+  // option: the mission-root file (__root, which holds the base vanilla spawnable types in a
+  // `cfg`-prefixed file) plus any staged vanilla spawnable overrides. Presented as a single
+  // "Vanilla" group (formatModName maps __root -> "Vanilla").
+  const VANILLA_BULK_SOURCES = [ROOT_SPAWNABLE_GROUP, 'vanilla', 'vanilla_overrides'];
+  const VANILLA_BULK_KEY = ROOT_SPAWNABLE_GROUP;
+
+  const hasImportableTypes = (data: any): boolean =>
+    (data?.types || []).some((t: any) => t.sections?.length > 1);
+
+  // Files eligible for bulk import within a real group. Dedicated spawnabletypes files always
+  // qualify; the vanilla source groups additionally accept the mission-root spawnabletypes file
+  // (which is `cfg`-prefixed and so excluded by isSpawnableTypesFile) that holds base vanilla types.
+  const bulkImportableFiles = (group: string): string[] => {
+    const files = spawnableTypesByGroup?.[group];
+    if (!files) return [];
+    const allowRoot = VANILLA_BULK_SOURCES.includes(group);
+    return Object.keys(files)
+      .filter(f => (isSpawnableTypesFile(f) || (allowRoot && /spawnabletypes?\.xml$/i.test(f)))
+        && hasImportableTypes(files[f]))
+      .sort();
+  };
+
+  // Logical groups that contain at least one importable top-level type. The vanilla sources are
+  // collapsed into a single "Vanilla" entry (listed first) that also covers vanilla overrides.
   const bulkGroups = useMemo(() => {
     if (!spawnableTypesByGroup) return [];
-    return Object.keys(spawnableTypesByGroup)
-      .filter(group => {
-        if (group === 'vanilla' || group === 'vanilla_overrides') return false;
-        const files = spawnableTypesByGroup[group];
-        return Object.entries(files).some(([fileName, data]: [string, any]) =>
-          isSpawnableTypesFile(fileName) && data?.types?.some((t: any) => t.sections?.length > 1));
-      })
+    const normal = Object.keys(spawnableTypesByGroup)
+      .filter(group => !VANILLA_BULK_SOURCES.includes(group) && bulkImportableFiles(group).length > 0)
       .sort();
+    const hasVanilla = VANILLA_BULK_SOURCES.some(group => bulkImportableFiles(group).length > 0);
+    return hasVanilla ? [VANILLA_BULK_KEY, ...normal] : normal;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spawnableTypesByGroup]);
 
   // The single selected group (used to expose per-file selection).
@@ -380,29 +401,34 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
 
   const bulkSingleGroupFiles = useMemo(() => {
     if (!bulkSingleGroup || !spawnableTypesByGroup) return [];
-    return Object.keys(spawnableTypesByGroup[bulkSingleGroup] || {})
-      .filter(fileName => isSpawnableTypesFile(fileName)
-        && (spawnableTypesByGroup[bulkSingleGroup][fileName]?.types || [])
-          .some((t: any) => t.sections?.length > 1))
-      .sort();
+    // The Vanilla option aggregates files across several real groups (whose names could
+    // collide), so it is imported all-or-nothing rather than exposing per-file selection.
+    if (bulkSingleGroup === VANILLA_BULK_KEY) return [];
+    return bulkImportableFiles(bulkSingleGroup);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bulkSingleGroup, spawnableTypesByGroup]);
 
-  // Collects every importable top-level type matching the current bulk selection.
+  // Collects every importable top-level type matching the current bulk selection. The Vanilla
+  // logical group expands to its real source groups (mission root + vanilla overrides).
   const collectBulkTypes = (): { group: string; file: string; type: any }[] => {
     if (!spawnableTypesByGroup) return [];
-    const groups = bulkAllGroups ? bulkGroups : bulkGroups.filter(g => bulkSelectedGroups.has(g));
+    const logicalGroups = bulkAllGroups ? bulkGroups : bulkGroups.filter(g => bulkSelectedGroups.has(g));
     const result: { group: string; file: string; type: any }[] = [];
-    for (const group of groups) {
-      const files = spawnableTypesByGroup[group];
-      if (!files) continue;
-      const fileNames = (bulkSingleGroup === group && bulkSelectedFiles.size > 0)
-        ? Object.keys(files).filter(f => isSpawnableTypesFile(f) && bulkSelectedFiles.has(f))
-        : Object.keys(files).filter(f => isSpawnableTypesFile(f));
-      for (const fileName of fileNames) {
-        const data = files[fileName];
-        (data?.types || [])
-          .filter((t: any) => t.sections?.length > 1)
-          .forEach((t: any) => result.push({ group, file: fileName, type: t }));
+    for (const logical of logicalGroups) {
+      const realGroups = logical === VANILLA_BULK_KEY ? VANILLA_BULK_SOURCES : [logical];
+      // Per-file selection only applies to a single normal group (not the aggregated Vanilla one).
+      const usePerFile = bulkSingleGroup === logical && logical !== VANILLA_BULK_KEY && bulkSelectedFiles.size > 0;
+      for (const group of realGroups) {
+        const files = spawnableTypesByGroup[group];
+        if (!files) continue;
+        const fileNames = usePerFile
+          ? bulkImportableFiles(group).filter(f => bulkSelectedFiles.has(f))
+          : bulkImportableFiles(group);
+        for (const fileName of fileNames) {
+          (files[fileName]?.types || [])
+            .filter((t: any) => t.sections?.length > 1)
+            .forEach((t: any) => result.push({ group, file: fileName, type: t }));
+        }
       }
     }
     return result;
