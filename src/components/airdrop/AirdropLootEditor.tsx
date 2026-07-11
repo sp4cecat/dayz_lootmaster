@@ -81,22 +81,17 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
     setEditingNode(newNode);
   };
 
-  // Deep-clone a loadout node, minting fresh ids so the copied entries stay
-  // independent of the source loadout. Variants are plain objects (no ids), so
-  // only attachments/cargo need recursive id regeneration.
-  const cloneNodeWithNewIds = (node: LoadoutNode): LoadoutNode => ({
-    ...node,
-    id: crypto.randomUUID(),
-    attachments: (node.attachments || []).map(cloneNodeWithNewIds),
-    cargo: (node.cargo || []).map(cloneNodeWithNewIds),
-    variants: node.variants ? node.variants.map((v) => (typeof v === 'string' ? v : { ...v })) : node.variants,
-  });
-
-  // Copy a saved loadout's items in as individual, editable loot entries. This is
-  // a one-time copy (fresh ids), not a live link — later loadout edits won't propagate.
+  // Copy a saved loadout's items in as individual, editable loot entries. Round-trip
+  // through the Expansion serializers (export then re-import) so the entries take the
+  // exact airdrop-native shape: templates resolved, inline groups flattened, and cargo
+  // folded into attachments (Expansion spawns children via ExpansionCreateInInventory,
+  // so a container's cargo — e.g. a FirstAidKit's BandageDressing — becomes an
+  // attachment). This guarantees the preview matches what will actually be exported.
+  // It's a one-time copy (fresh ids), not a live link — later loadout edits won't propagate.
   const addLoadout = (loadout: Loadout) => {
     setLoadoutPickerOpen(false);
-    const cloned = (loadout.items || []).map(cloneNodeWithNewIds);
+    const lootItems = loadoutToExpansionAirdrop(loadout, loadouts, randomPresets?.presets);
+    const cloned = expansionAirdropToLoadout(loadout.label, lootItems).items;
     if (cloned.length === 0) return;
     commit([...nodes, ...cloned]);
     setSelectedNodeId(cloned[0].id);

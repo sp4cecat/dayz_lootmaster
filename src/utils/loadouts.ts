@@ -197,29 +197,36 @@ export function loadoutToExpansionAirdrop(
     return out;
   };
 
+  // Expansion's Attachments field is really "children placed into the parent's
+  // inventory": the spawner uses ExpansionCreateInInventory (ExpansionLootSpawner.Spawn),
+  // which fills attachment slots OR cargo depending on the item. So a loadout node's
+  // attachments AND cargo both fold into one Expansion Attachments list (e.g. a
+  // FirstAidKit's cargo BandageDressing becomes an "attachment"). Groups have no
+  // exclusive primitive here, so they stay flattened (expandGroups).
+  const childVariants = (resolved: LoadoutNode): ExpansionLootVariant[] =>
+    [...expandGroups(resolved.attachments || []), ...expandGroups(resolved.cargo || [])].map(mapVariant);
+
   // An attachment/variant element is the slim ExpansionLootVariant shape
   // ({ Name, Chance, Attachments }) — it carries NO QuantityPercent/Max/Min/Variants.
-  // Attachment-level groups have no exclusive primitive in Expansion, so they stay
-  // flattened (expandGroups) into independent attachment rolls.
   const mapVariant = (node: LoadoutNode): ExpansionLootVariant => {
     const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
     return {
       Name: resolved.name,
       Chance: resolved.chance,
-      Attachments: expandGroups(resolved.attachments || []).map(mapVariant)
+      Attachments: childVariants(resolved)
     };
   };
 
   // A top-level Loot[] element is the full ExpansionLoot shape. Field order matches
   // Expansion's ExpansionLoot class (ExpansionLoot.c): Name, Chance, Attachments,
-  // QuantityPercent, Max, Min, Variants. There is deliberately NO Cargo — Expansion
-  // airdrop loot has no Cargo member.
+  // QuantityPercent, Max, Min, Variants. There is no separate Cargo member — cargo is
+  // folded into Attachments (see childVariants above).
   const mapLootItem = (node: LoadoutNode): any => {
     const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
     return {
       Name: resolved.name,
       Chance: resolved.chance,
-      Attachments: expandGroups(resolved.attachments || []).map(mapVariant),
+      Attachments: childVariants(resolved),
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,

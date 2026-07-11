@@ -227,3 +227,46 @@ describe('Expansion airdrop string-vs-object attachment duality', () => {
     expect(out[0].Variants[0]).toEqual({ Name: 'SKS', Chance: 1.0, Attachments: [] });
   });
 });
+
+describe('Cargo folds into Expansion Attachments', () => {
+  // Expansion spawns loot children via ExpansionCreateInInventory (attachment slot OR
+  // cargo), so a container's cargo contents must export as "attachments". A FirstAidKit
+  // imported from spawnabletypes stores BandageDressing in a cargo *group*.
+  const FIRSTAIDKIT_XML = `<spawnabletypes>
+    <type name="FirstAidKit">
+      <cargo chance="1.00">
+        <item name="BandageDressing" chance="1.00"/>
+      </cargo>
+    </type>
+  </spawnabletypes>`;
+
+  it('exports cargo group members as Attachments (not dropped)', () => {
+    const parsed = parseSpawnableTypesXml(FIRSTAIDKIT_XML);
+    const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
+    const out = loadoutToExpansionAirdrop(loadout, []);
+
+    expect(out).toHaveLength(1);
+    expect(out[0].Name).toBe('FirstAidKit');
+    expect(out[0].Attachments).toEqual([{ Name: 'BandageDressing', Chance: 1, Attachments: [] }]);
+  });
+
+  it('folds both attachments and cargo into one Attachments list', () => {
+    const loadout: Loadout = {
+      id: 'c',
+      label: 'c',
+      updatedAt: 0,
+      items: [
+        {
+          id: 'root',
+          type: 'item',
+          name: 'AKM',
+          chance: 1.0,
+          attachments: [{ id: 'a', type: 'item', name: 'AKM_Suppressor', chance: 1.0, attachments: [], cargo: [] }],
+          cargo: [{ id: 'c1', type: 'item', name: 'Mag_AKM_30Rnd', chance: 1.0, attachments: [], cargo: [] }],
+        },
+      ],
+    };
+    const out = loadoutToExpansionAirdrop(loadout, []);
+    expect(out[0].Attachments.map((a: any) => a.Name)).toEqual(['AKM_Suppressor', 'Mag_AKM_30Rnd']);
+  });
+});
