@@ -83,7 +83,8 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
 
   const addVariant = () => {
     if (!newVariant) return;
-    const variants = [...(node.variants || []), newVariant];
+    // Expansion expects variant objects, not bare strings, or its JSON loader drops them.
+    const variants = [...(node.variants || []), { Name: newVariant, Chance: 1.0, Attachments: [] }];
     onUpdate({ ...node, variants });
     setNewVariant('');
   };
@@ -359,7 +360,7 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
               <div className="flex flex-wrap gap-2">
                 {(node.variants || []).map((v, i) => (
                   <Badge key={i} color="gray" className="pr-1 py-1">
-                    {v}
+                    {typeof v === 'string' ? v : v.Name}
                     <button onClick={() => removeVariant(i)} className="ml-1 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500">
                       <Trash2 size={10} />
                     </button>

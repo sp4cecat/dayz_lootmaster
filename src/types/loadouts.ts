@@ -24,9 +24,21 @@ export interface LoadoutNode {
   };
   attachments: LoadoutNode[];
   cargo: LoadoutNode[];
-  variants?: string[]; // Expansion support
+  // Expansion loot variants. Each is an ExpansionLootVariant object ({ Name, Chance,
+  // Attachments }); legacy data may still hold bare classname strings, so consumers
+  // must tolerate both shapes.
+  variants?: (string | ExpansionLootVariant)[];
   attributes?: Record<string, string>; // XML attribute compatibility
   isExpanded?: boolean;
+}
+
+// Mirrors Expansion's ExpansionLootVariant (ExpansionLoot.c): an alternate version of
+// the parent item with its own chance and attachments. The editor only surfaces `Name`,
+// but the full object is preserved on round-trip so Chance/Attachments aren't lost.
+export interface ExpansionLootVariant {
+  Name: string;
+  Chance?: number;
+  Attachments?: any[];
 }
 
 export interface Loadout {

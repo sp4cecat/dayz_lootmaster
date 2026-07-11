@@ -189,7 +189,10 @@ export function loadoutToExpansionAirdrop(
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,
-      Variants: resolved.variants || []
+      // Expansion variants are objects; coerce any legacy bare-string entries so the
+      // written JSON always matches ExpansionLootVariant.
+      Variants: (resolved.variants || []).map((v: any) =>
+        typeof v === 'string' ? { Name: v, Chance: 1.0, Attachments: [] } : v)
     };
   };
 
