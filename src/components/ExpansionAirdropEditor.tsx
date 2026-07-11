@@ -418,9 +418,21 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
     setDraft('');
   };
 
+  const addAllInfected = () => {
+    const all = [...customInfected, ...INFECTED_CLASSNAMES];
+    const merged = [...values];
+    for (const name of all) {
+      if (!merged.includes(name)) merged.push(name);
+    }
+    onChange(merged);
+  };
+
   return (
     <div className="space-y-2">
-      <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Infected / AI</span>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Infected / AI</span>
+        <Button variant="link" size="sm" onClick={addAllInfected}>All Infected</Button>
+      </div>
       <div className="flex gap-2">
         <div className="flex-1">
           <ComboBox
