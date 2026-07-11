@@ -267,6 +267,17 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
     setSettings(next);
   };
 
+  const deleteContainer = (idx: number) => {
+    setSettings({ ...settings, Containers: containers.filter((_: any, i: number) => i !== idx) });
+    // Keep the selection pointing at the same visual position (or clear it if the
+    // selected container was the one removed / the list becomes empty).
+    const nextIdx =
+      selectedContainerIdx === null || selectedContainerIdx === idx ? null
+        : selectedContainerIdx > idx ? selectedContainerIdx - 1
+          : selectedContainerIdx;
+    setSelectedContainerIdx(nextIdx);
+  };
+
   const save = async () => {
     setSaveState({ kind: 'saving' });
     try {
@@ -331,7 +342,11 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
       </aside>
 
       <div className="flex-1 overflow-auto p-6">
-        <div className="flex items-center justify-end mb-4">
+        <div className="flex items-center justify-between mb-4">
+          {selected ? (
+            <Button variant="error-secondary" icon={Trash01}
+              onClick={() => deleteContainer(selectedContainerIdx!)}>Delete Container</Button>
+          ) : <span />}
           <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Core Settings</Button>
         </div>
         {selected ? (
