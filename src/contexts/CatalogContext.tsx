@@ -97,17 +97,33 @@ export function bySlotCaseInsensitive(graph: AttachmentGraph | null | undefined,
   return null;
 }
 
-/** Choose the exposed slot on `accepts` that best fits a group's member class names.
- *  Returns the slot name, or null when the catalog can't answer or no slot fits any member.
+/** Synthetic linked-slot name for a group of magazines. Magazines are not a real attachment
+ *  slot in the catalog's `accepts` graph — they live in the parent's compatible-magazine list
+ *  (CfgWeapons magazines[]) — but we treat them as one linked slot for grouping so magazine
+ *  groups can be linked and their member picker restricted to compatible magazines. */
+export const MAGAZINE_SLOT = 'magazines';
+
+/** Choose the linked slot that best fits a group's member class names. Candidates are the
+ *  exposed slots on `accepts` plus a synthetic `MAGAZINE_SLOT` backed by `magazines` (the
+ *  parent's compatible-magazine classes). Returns the slot name, or null when nothing fits.
  *  Prefers the slot covering the most members; ties broken toward the most specific slot
  *  (fewest fitting items). Comparison is case-insensitive (server slot/item casing varies). */
-export function inferGroupSlot(accepts: AttachmentGraph | null | undefined, memberNames: string[]): string | null {
-  if (!accepts?.bySlot) return null;
+export function inferGroupSlot(
+  accepts: AttachmentGraph | null | undefined,
+  memberNames: string[],
+  magazines?: string[] | null,
+): string | null {
   const members = memberNames.map(n => n?.toLowerCase()).filter(Boolean);
   if (!members.length) return null;
+  // Candidate slots: every exposed slot plus, when present, the synthetic magazines slot.
+  const candidates: Array<[string, string[]]> = [];
+  if (accepts?.bySlot) {
+    for (const [slot, refs] of Object.entries(accepts.bySlot)) candidates.push([slot, refs.map(r => r.name)]);
+  }
+  if (magazines?.length) candidates.push([MAGAZINE_SLOT, magazines]);
   let best: { slot: string; matched: number; size: number } | null = null;
-  for (const [slot, refs] of Object.entries(accepts.bySlot)) {
-    const fitting = new Set(refs.map(r => r.name.toLowerCase()));
+  for (const [slot, refs] of candidates) {
+    const fitting = new Set(refs.map(r => r.toLowerCase()));
     const matched = members.filter(m => fitting.has(m)).length;
     if (matched === 0) continue;
     if (!best || matched > best.matched || (matched === best.matched && fitting.size < best.size)) {
@@ -134,7 +150,10 @@ export function useCompatibleAttachments(parentName?: string, enabled = true, sl
     if (!enabled || !parentName) { setList(null); return; }
     getTypeDetail(parentName).then(() => {
       if (cancelled) return;
-      if (slot) {
+      if (slot === MAGAZINE_SLOT) {
+        // Magazine group: restrict to the parent's compatible magazines (not an accepts slot).
+        setList(peekTypeDetail(parentName)?.magazines ?? null);
+      } else if (slot) {
         const refs = bySlotCaseInsensitive(peekTypeDetail(parentName)?.accepts, slot);
         setList(refs ? refs.map(r => r.name) : null);
       } else {
@@ -163,6 +182,25 @@ export function useAttachmentSlots(name?: string, enabled = true): AttachmentGra
     return () => { cancelled = true; };
   }, [name, enabled, getTypeDetail, peekTypeDetail]);
   return graph;
+}
+
+/**
+ * Resolve the compatible-magazine class list for `name` (CfgWeapons magazines[]), loading its
+ * detail on demand. Returns null when disabled or the catalog can't answer. Used to offer the
+ * synthetic MAGAZINE_SLOT as a linked-slot option for a magazine group.
+ */
+export function useMagazines(name?: string, enabled = true): string[] | null {
+  const { getTypeDetail, peekTypeDetail } = useCatalog();
+  const [mags, setMags] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !name) { setMags(null); return; }
+    getTypeDetail(name).then(() => {
+      if (!cancelled) setMags(peekTypeDetail(name)?.magazines ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [name, enabled, getTypeDetail, peekTypeDetail]);
+  return mags;
 }
 
 export interface ItemCapabilities {

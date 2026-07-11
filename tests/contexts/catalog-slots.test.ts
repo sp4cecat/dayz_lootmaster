@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bySlotCaseInsensitive, inferGroupSlot } from '../../src/contexts/CatalogContext';
+import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT } from '../../src/contexts/CatalogContext';
 import type { AttachmentGraph } from '../../src/contexts/CatalogContext';
 
 const graph: AttachmentGraph = {
@@ -65,5 +65,29 @@ describe('inferGroupSlot', () => {
       },
     };
     expect(inferGroupSlot(overlap, ['AK_RailHndgrd'])).toBe('WeaponHandguardAK');
+  });
+
+  const mags = ['Mag_AK_30Rnd', 'Mag_AK_Drum75Rnd'];
+
+  it('resolves a group of magazines to the synthetic magazines slot', () => {
+    expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'], mags)).toBe(MAGAZINE_SLOT);
+    expect(inferGroupSlot(graph, ['mag_ak_30rnd', 'MAG_AK_DRUM75RND'], mags)).toBe(MAGAZINE_SLOT);
+  });
+
+  it('works with magazines even when there is no accepts graph', () => {
+    expect(inferGroupSlot(null, ['Mag_AK_30Rnd'], mags)).toBe(MAGAZINE_SLOT);
+  });
+
+  it('prefers a real attachment slot over magazines for non-magazine members', () => {
+    expect(inferGroupSlot(graph, ['AK_WoodHndgrd', 'AK_RailHndgrd'], mags)).toBe('WeaponHandguardAK');
+  });
+
+  it('returns null when members are neither attachments nor magazines', () => {
+    expect(inferGroupSlot(graph, ['SomethingElse'], mags)).toBeNull();
+  });
+
+  it('ignores magazines when the list is empty or absent', () => {
+    expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'], [])).toBeNull();
+    expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'])).toBeNull();
   });
 });

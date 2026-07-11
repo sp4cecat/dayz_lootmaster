@@ -13,7 +13,8 @@ import {
   generateRandomPresetsXml
 } from '../utils/xml.js';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile, loadAllLoadouts } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile } from '../utils/idb.js';
+import { loadAllLoadouts } from '../utils/loadoutStore.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
 
@@ -116,7 +117,8 @@ export function useLootData() {
   }, [randomPresets]);
 
   useEffect(() => {
-    loadAllLoadouts().then(setLoadouts);
+    // Server is the source of truth; degrade to an empty list if it's unreachable.
+    loadAllLoadouts().then(setLoadouts).catch(() => setLoadouts([]));
   }, []);
 
   useEffect(() => {

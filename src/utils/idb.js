@@ -116,49 +116,9 @@ export function loadAllTypeFiles() {
   }));
 }
 
-/**
- * Load all loadouts.
- * @returns {Promise<any[]>}
- */
-export function loadAllLoadouts() {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction('loadouts', 'readonly');
-    const store = tx.objectStore('loadouts');
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  }));
-}
-
-/**
- * Save a loadout.
- * @param {any} loadout
- */
-export async function saveLoadout(loadout) {
-  const db = await openDB();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction('loadouts', 'readwrite');
-    const store = tx.objectStore('loadouts');
-    store.put(loadout);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-/**
- * Delete a loadout.
- * @param {string} id
- */
-export async function deleteLoadout(id) {
-  const db = await openDB();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction('loadouts', 'readwrite');
-    const store = tx.objectStore('loadouts');
-    store.delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+// Modular loadout templates were moved to server-backed storage (see src/utils/loadoutStore.js
+// and the /api/loadouts routes). The `loadouts` object store remains in the schema for backward
+// compatibility with existing databases but is no longer read or written.
 
 /**
  * Load files grouped by group -> file -> types[]

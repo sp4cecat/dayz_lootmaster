@@ -34,6 +34,12 @@ const TEST_PROFILE_ID = 'example-dev-data';
 const PROFILES_FILE = resolve(join(__dirname, 'profiles.json'));
 let profiles = [];
 
+// Shared, profile-independent modular loadout templates, persisted alongside profiles.json.
+const LOADOUTS_FILE = resolve(join(__dirname, 'loadouts.json'));
+// Read-modify-write on a single JSON file; writes are serialized through this chain so that
+// overlapping saves (e.g. a bulk import firing many PUTs in quick succession) can't lose updates.
+let loadoutsWriteChain = Promise.resolve();
+
 const KNOWN_ADDONS = [
     { 
         id: 'deerisle', 
@@ -116,6 +122,30 @@ async function loadProfiles() {
 async function saveProfiles() {
     const toSave = profiles.filter(p => p.id !== TEST_PROFILE_ID);
     await writeFile(PROFILES_FILE, JSON.stringify(toSave, null, 2), 'utf8');
+}
+
+// Modular loadout templates are shared/global (not keyed by profile). Missing/corrupt file
+// reads as an empty list.
+async function loadLoadouts() {
+    try {
+        return JSON.parse(await readFile(LOADOUTS_FILE, 'utf8'));
+    } catch {
+        return [];
+    }
+}
+
+// Apply `mutator` to the current list and persist the result, serialized behind any in-flight
+// write. The returned promise resolves/rejects for this specific mutation, while the shared
+// chain swallows rejections so a single failed write never blocks later ones.
+function mutateLoadouts(mutator) {
+    const run = loadoutsWriteChain.then(async () => {
+        const list = await loadLoadouts();
+        const next = mutator(list);
+        await writeFile(LOADOUTS_FILE, JSON.stringify(next, null, 2), 'utf8');
+        return next;
+    });
+    loadoutsWriteChain = run.catch(() => {});
+    return run;
 }
 
 // Ensure profiles are loaded on start
@@ -1808,6 +1838,44 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
+
+        // Modular loadout templates (shared/global; profile-independent, stored in loadouts.json).
+        // Registered before the X-Profile-ID gate so the list is not tied to a selected profile.
+        if (pathname === '/api/loadouts' || pathname.startsWith('/api/loadouts/')) {
+            const idMatch = pathname.match(/^\/api\/loadouts\/(.+)$/);
+            const id = idMatch ? decodeURIComponent(idMatch[1]) : null;
+
+            if (req.method === 'GET' && !id) {
+                const list = await loadLoadouts();
+                send(res, 200, JSON.stringify(list), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method === 'PUT' && id) {
+                try {
+                    const loadout = JSON.parse((await readBody(req)) || '{}');
+                    if (!loadout || loadout.id !== id) {
+                        badRequest(res, 'Loadout id in body must match the URL');
+                        return;
+                    }
+                    await mutateLoadouts((list) => {
+                        const idx = list.findIndex((l) => l.id === id);
+                        if (idx >= 0) list[idx] = loadout; else list.push(loadout);
+                        return list;
+                    });
+                    send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid loadout payload: ${e.message}`);
+                }
+                return;
+            }
+            if (req.method === 'DELETE' && id) {
+                await mutateLoadouts((list) => list.filter((l) => l.id !== id));
+                send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
 
         // Helper to scan missions for a raw path (used when creating a new profile)
         if (pathname === '/api/scan-missions' && req.method === 'POST') {

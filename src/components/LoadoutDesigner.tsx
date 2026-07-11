@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loadout, LoadoutNode } from '@/types/loadouts';
-import { loadAllLoadouts, saveLoadout, deleteLoadout } from '@/utils/idb';
+import { loadAllLoadouts, saveLoadout, deleteLoadout } from '@/utils/loadoutStore';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Checkbox } from '@/components/base/checkbox/checkbox';
@@ -10,7 +10,7 @@ import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
-import { useCompatibleAttachments, useAttachmentSlots, useCatalog, inferGroupSlot } from '@/contexts/CatalogContext';
+import { useCompatibleAttachments, useAttachmentSlots, useMagazines, useCatalog, inferGroupSlot, MAGAZINE_SLOT } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
@@ -73,7 +73,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
 
   useEffect(() => {
     if (!propLoadouts) {
-      loadAllLoadouts().then(setInternalLoadouts);
+      loadAllLoadouts().then(setInternalLoadouts).catch(() => setInternalLoadouts([]));
     }
   }, [propLoadouts]);
 
@@ -90,21 +90,29 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
 
   const handleSave = async () => {
     if (!editingLoadout) return;
-    await saveLoadout(editingLoadout);
-    const all = await loadAllLoadouts();
-    setLoadouts(all);
-    setEditingLoadout(null);
-    setSelectedLoadoutId(null);
+    try {
+      await saveLoadout(editingLoadout);
+      const all = await loadAllLoadouts();
+      setLoadouts(all);
+      setEditingLoadout(null);
+      setSelectedLoadoutId(null);
+    } catch (e) {
+      alert(`Failed to save loadout to the server: ${e instanceof Error ? e.message : e}`);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this loadout?')) return;
-    await deleteLoadout(id);
-    const all = await loadAllLoadouts();
-    setLoadouts(all);
-    if (selectedLoadoutId === id) {
-      setEditingLoadout(null);
-      setSelectedLoadoutId(null);
+    try {
+      await deleteLoadout(id);
+      const all = await loadAllLoadouts();
+      setLoadouts(all);
+      if (selectedLoadoutId === id) {
+        setEditingLoadout(null);
+        setSelectedLoadoutId(null);
+      }
+    } catch (e) {
+      alert(`Failed to delete loadout from the server: ${e instanceof Error ? e.message : e}`);
     }
   };
 
@@ -406,14 +414,15 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         const loadout = vanillaSpawnableToLoadout(type);
         loadout.label = label;
 
-        // Infer each attachments group's exposed slot from the catalog (best-effort; no-op offline).
+        // Infer each attachments group's linked slot from the catalog (best-effort; no-op offline).
+        // Magazine groups resolve to the synthetic MAGAZINE_SLOT via the parent's magazines[].
         for (const root of loadout.items) {
-          const accepts = (await getTypeDetail(root.name))?.accepts;
-          if (!accepts) continue;
+          const detail = await getTypeDetail(root.name);
+          if (!detail?.accepts && !detail?.magazines?.length) continue;
           for (const group of root.attachments) {
             if (group.type !== 'group' || group.slot) continue; // attachments groups only
             const memberNames = group.attachments.filter(m => m.type === 'item').map(m => m.name);
-            const slot = inferGroupSlot(accepts, memberNames);
+            const slot = inferGroupSlot(detail.accepts, memberNames, detail.magazines);
             if (slot) { group.slot = slot; linkedTotal++; }
           }
         }
@@ -425,6 +434,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       setLoadouts(all);
       setBulkModalOpen(false);
       alert(`Imported ${created} loadout${created === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} already existing` : ''}${linkedTotal ? `; linked ${linkedTotal} group slot${linkedTotal === 1 ? '' : 's'}` : ''}.`);
+    } catch (e) {
+      alert(`Bulk import failed while saving to the server: ${e instanceof Error ? e.message : e}`);
     } finally {
       setBulkImporting(false);
     }
@@ -452,11 +463,17 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     ? (findParent(treeItems, selectedNode.id)?.parent?.name || undefined)
     : undefined;
   const groupSlotGraph = useAttachmentSlots(groupParentName);
+  const groupParentMagazines = useMagazines(groupParentName);
   const groupSlotOptions = useMemo(() => {
-    if (!groupSlotGraph) return null;
-    const slots = groupSlotGraph.slots?.length ? groupSlotGraph.slots : Object.keys(groupSlotGraph.bySlot || {});
-    return slots.map(s => ({ slot: s, count: (groupSlotGraph.bySlot?.[s] || []).length }));
-  }, [groupSlotGraph]);
+    const opts: { slot: string; count: number }[] = [];
+    if (groupSlotGraph) {
+      const slots = groupSlotGraph.slots?.length ? groupSlotGraph.slots : Object.keys(groupSlotGraph.bySlot || {});
+      for (const s of slots) opts.push({ slot: s, count: (groupSlotGraph.bySlot?.[s] || []).length });
+    }
+    // Offer magazines as a synthetic linked slot when the parent weapon has compatible magazines.
+    if (groupParentMagazines?.length) opts.push({ slot: MAGAZINE_SLOT, count: groupParentMagazines.length });
+    return opts.length ? opts : null;
+  }, [groupSlotGraph, groupParentMagazines]);
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
