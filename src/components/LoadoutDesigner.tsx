@@ -10,7 +10,7 @@ import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
-import { useCompatibleAttachments, useAttachmentSlots } from '@/contexts/CatalogContext';
+import { useCompatibleAttachments, useAttachmentSlots, useCatalog, inferGroupSlot } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
@@ -67,6 +67,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const [bulkSelectedGroups, setBulkSelectedGroups] = useState<Set<string>>(new Set());
   const [bulkSelectedFiles, setBulkSelectedFiles] = useState<Set<string>>(new Set());
   const [bulkImporting, setBulkImporting] = useState(false);
+
+  // Catalog accessor for imperative slot inference during bulk import.
+  const { getTypeDetail } = useCatalog();
 
   useEffect(() => {
     if (!propLoadouts) {
@@ -393,6 +396,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       const usedLabels = new Set(existingLabels);
       let created = 0;
       let skipped = 0;
+      let linkedTotal = 0;
       for (const { type } of collected) {
         if (existingLabels.has(type.name)) { skipped++; continue; }
         let label = type.name;
@@ -401,13 +405,26 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         usedLabels.add(label);
         const loadout = vanillaSpawnableToLoadout(type);
         loadout.label = label;
+
+        // Infer each attachments group's exposed slot from the catalog (best-effort; no-op offline).
+        for (const root of loadout.items) {
+          const accepts = (await getTypeDetail(root.name))?.accepts;
+          if (!accepts) continue;
+          for (const group of root.attachments) {
+            if (group.type !== 'group' || group.slot) continue; // attachments groups only
+            const memberNames = group.attachments.filter(m => m.type === 'item').map(m => m.name);
+            const slot = inferGroupSlot(accepts, memberNames);
+            if (slot) { group.slot = slot; linkedTotal++; }
+          }
+        }
+
         await saveLoadout(loadout);
         created++;
       }
       const all = await loadAllLoadouts();
       setLoadouts(all);
       setBulkModalOpen(false);
-      alert(`Imported ${created} loadout${created === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} already existing` : ''}.`);
+      alert(`Imported ${created} loadout${created === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} already existing` : ''}${linkedTotal ? `; linked ${linkedTotal} group slot${linkedTotal === 1 ? '' : 's'}` : ''}.`);
     } finally {
       setBulkImporting(false);
     }

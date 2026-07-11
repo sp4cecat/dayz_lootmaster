@@ -97,6 +97,26 @@ export function bySlotCaseInsensitive(graph: AttachmentGraph | null | undefined,
   return null;
 }
 
+/** Choose the exposed slot on `accepts` that best fits a group's member class names.
+ *  Returns the slot name, or null when the catalog can't answer or no slot fits any member.
+ *  Prefers the slot covering the most members; ties broken toward the most specific slot
+ *  (fewest fitting items). Comparison is case-insensitive (server slot/item casing varies). */
+export function inferGroupSlot(accepts: AttachmentGraph | null | undefined, memberNames: string[]): string | null {
+  if (!accepts?.bySlot) return null;
+  const members = memberNames.map(n => n?.toLowerCase()).filter(Boolean);
+  if (!members.length) return null;
+  let best: { slot: string; matched: number; size: number } | null = null;
+  for (const [slot, refs] of Object.entries(accepts.bySlot)) {
+    const fitting = new Set(refs.map(r => r.name.toLowerCase()));
+    const matched = members.filter(m => fitting.has(m)).length;
+    if (matched === 0) continue;
+    if (!best || matched > best.matched || (matched === best.matched && fitting.size < best.size)) {
+      best = { slot, matched, size: fitting.size };
+    }
+  }
+  return best ? best.slot : null;
+}
+
 /**
  * Resolve the list of classes that can attach onto `parentName` (loading its detail
  * on demand). Returns null when disabled or the catalog can't answer, so callers can
