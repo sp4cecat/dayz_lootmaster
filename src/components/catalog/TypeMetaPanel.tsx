@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/base/badges/badges';
 import { Info, Puzzle, PackageOpen, ChevronDown, Layers, Shield, Heart } from 'lucide-react';
 import { cx } from '@/utils/cx';
-import { useCatalog, type TypeDetail, type AttachmentGraph, type ArmorEntry } from '@/contexts/CatalogContext';
+import { useCatalog, type TypeDetail, type AttachmentGraph, type AttachmentRef, type ArmorEntry } from '@/contexts/CatalogContext';
 
 /**
  * Read-only info panel for a single class: displayName, description, and the
@@ -218,10 +218,25 @@ function ArmorTable({ rows, labelFor }: { rows: ArmorEntry[]; labelFor: (ammo: s
 /** Collapsible list of one attachment direction, default closed. */
 function AttachmentList({ icon, label, graph }: { icon: React.ReactNode; label: string; graph: AttachmentGraph }) {
   const [open, setOpen] = useState(false);
-  const count = useMemo(
-    () => Object.values(graph.bySlot).reduce((sum, refs) => sum + (refs?.length || 0), 0),
-    [graph],
-  );
+
+  // De-duplicate across the whole list: a class can fit several slots (and a slot can
+  // repeat a token), but showing the same entry more than once reads as duplication.
+  // Keep each class under the first slot it appears in and drop later repeats, then
+  // hide any slot group left empty. (The picker's own flatten dedupes separately.)
+  const groups = useMemo(() => {
+    const seen = new Set<string>();
+    const out: [string, AttachmentRef[]][] = [];
+    for (const [slot, refs] of Object.entries(graph.bySlot)) {
+      const unique = (refs || []).filter(ref => {
+        if (seen.has(ref.name)) return false;
+        seen.add(ref.name);
+        return true;
+      });
+      if (unique.length) out.push([slot, unique]);
+    }
+    return out;
+  }, [graph]);
+  const count = useMemo(() => groups.reduce((sum, [, refs]) => sum + refs.length, 0), [groups]);
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-950/30">
@@ -238,7 +253,7 @@ function AttachmentList({ icon, label, graph }: { icon: React.ReactNode; label: 
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-2 animate-in slide-in-from-top-1 duration-200">
-          {Object.entries(graph.bySlot).map(([slot, refs]) => (
+          {groups.map(([slot, refs]) => (
             <div key={slot}>
               <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">{slot}</p>
               <div className="flex flex-wrap gap-1">
