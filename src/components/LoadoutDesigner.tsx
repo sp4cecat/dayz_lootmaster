@@ -71,6 +71,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   // Catalog accessor for imperative slot inference during bulk import.
   const { getTypeDetail } = useCatalog();
 
+  // Bulk selection in the sidebar list (ids of checked loadouts) for bulk actions (delete, ...).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (!propLoadouts) {
       loadAllLoadouts().then(setInternalLoadouts).catch(() => setInternalLoadouts([]));
@@ -115,6 +118,48 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       alert(`Failed to delete loadout from the server: ${e instanceof Error ? e.message : e}`);
     }
   };
+
+  // Delete every checked loadout in one action, then refresh and clear the selection.
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} loadout${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    try {
+      for (const id of ids) await deleteLoadout(id);
+    } catch (e) {
+      alert(`Failed to delete some loadouts from the server: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      // Some deletes may have succeeded before a failure; reload to reflect the real state.
+      const all = await loadAllLoadouts().catch(() => null);
+      if (all) setLoadouts(all);
+      setSelectedIds(new Set());
+      if (selectedLoadoutId && ids.includes(selectedLoadoutId)) {
+        setEditingLoadout(null);
+        setSelectedLoadoutId(null);
+      }
+    }
+  };
+
+  const toggleSelected = (id: string, selected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (selected) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  // Keep the selection in sync with the list: drop ids that no longer exist (e.g. after a
+  // single-row delete or an external refresh).
+  useEffect(() => {
+    setSelectedIds(prev => {
+      if (prev.size === 0) return prev;
+      const ids = new Set(loadouts.map(l => l.id));
+      const next = new Set<string>();
+      let changed = false;
+      for (const id of prev) { if (ids.has(id)) next.add(id); else changed = true; }
+      return changed ? next : prev;
+    });
+  }, [loadouts]);
 
   const handleSelect = (l: Loadout) => {
     setEditingLoadout(JSON.parse(JSON.stringify(l)));
@@ -475,6 +520,20 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     return opts.length ? opts : null;
   }, [groupSlotGraph, groupParentMagazines]);
 
+  const filteredLoadouts = useMemo(
+    () => loadouts.filter(l => l.label.toLowerCase().includes(searchTerm.toLowerCase())),
+    [loadouts, searchTerm]
+  );
+  const allFilteredSelected = filteredLoadouts.length > 0 && filteredLoadouts.every(l => selectedIds.has(l.id));
+  const someFilteredSelected = filteredLoadouts.some(l => selectedIds.has(l.id));
+  const toggleSelectAll = (selected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      for (const l of filteredLoadouts) { if (selected) next.add(l.id); else next.delete(l.id); }
+      return next;
+    });
+  };
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
       <header className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
@@ -520,25 +579,53 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               Create New
             </Button>
           </div>
+          {/* Bulk selection bar: select-all + actions on the checked loadouts. */}
+          {filteredLoadouts.length > 0 && (
+            <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2 min-h-[44px]">
+              <span onClick={e => e.stopPropagation()}>
+                <Checkbox
+                  isSelected={allFilteredSelected}
+                  isIndeterminate={someFilteredSelected && !allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  label={
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
+                    </span>
+                  }
+                />
+              </span>
+              {selectedIds.size > 0 && (
+                <Button variant="error-secondary" size="sm" onClick={handleBulkDelete}>
+                  <Trash2 size={14} className="mr-1.5" />
+                  Delete
+                </Button>
+              )}
+            </div>
+          )}
           <div className="flex-1 overflow-auto p-2 space-y-1">
-            {loadouts
-              .filter(l => l.label.toLowerCase().includes(searchTerm.toLowerCase()))
-              .map(l => (
-                <div 
+            {filteredLoadouts.map(l => (
+                <div
                   key={l.id}
                   onClick={() => handleSelect(l)}
                   className={cx(
                     "group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors",
-                    selectedLoadoutId === l.id 
+                    selectedLoadoutId === l.id
                       ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
                       : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
                   )}
                 >
                   <div className="flex items-center gap-3">
+                    <span onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        isSelected={selectedIds.has(l.id)}
+                        onChange={(sel) => toggleSelected(l.id, sel)}
+                        aria-label={`Select ${l.label}`}
+                      />
+                    </span>
                     <FileCode size={18} className="text-gray-400" />
-                    <span className="font-medium truncate max-w-[140px]">{l.label}</span>
+                    <span className="font-medium truncate max-w-[120px]">{l.label}</span>
                   </div>
-                  <button 
+                  <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(l.id); }}
                     className="opacity-0 group-hover:opacity-100 p-1 hover:text-error-600 transition-opacity"
                   >
