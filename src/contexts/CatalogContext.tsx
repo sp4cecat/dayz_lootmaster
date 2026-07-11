@@ -13,6 +13,19 @@ export interface AttachmentGraph {
   bySlot: Record<string, AttachmentRef[]>;
 }
 
+/** One DamageSystem GlobalArmor row: how much a given damage-type deals to each zone
+ *  (0 = immune/full protection, higher = less protection, -1 = zone not declared). */
+export interface ArmorEntry {
+  /** cfgAmmo/damage-type class (e.g. Bullet_762x39, FragGrenade, MeleeFist). */
+  ammo: string;
+  /** Health-zone damage coefficient; -1 if not declared. */
+  health: number;
+  /** Blood-zone damage coefficient; -1 if not declared. */
+  blood: number;
+  /** Shock-zone damage coefficient; -1 if not declared. */
+  shock: number;
+}
+
 export interface TypeDetail {
   name: string;
   displayName: string | null;
@@ -24,6 +37,10 @@ export interface TypeDetail {
   cargoSize: number[] | null;
   /** Compatible magazine classes (CfgWeapons magazines[]); null/empty for non-weapons. */
   magazines: string[] | null;
+  /** Base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none. */
+  hitpoints: number | null;
+  /** DamageSystem GlobalArmor rows, one per declared damage-type; null when unknown. */
+  armor: ArmorEntry[] | null;
 }
 
 export interface CatalogValue {

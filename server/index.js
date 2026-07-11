@@ -1301,6 +1301,10 @@ function buildCatalogDetail(name) {
         cargoSize: detail && Array.isArray(detail.cargoSize) ? detail.cargoSize : null,
         // magazines: compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons.
         magazines: detail && Array.isArray(detail.magazines) ? detail.magazines : null,
+        // hitpoints: base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none.
+        hitpoints: detail && typeof detail.hitpoints === 'number' ? detail.hitpoints : null,
+        // armor: DamageSystem GlobalArmor rows, one per declared damage-type (cfgAmmo class).
+        armor: detail && Array.isArray(detail.armor) ? detail.armor : null,
     };
 }
 

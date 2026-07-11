@@ -171,7 +171,19 @@
           "attachments": { "type": "array", "items": { "type": "string" } },
           "magazines": { "type": "array", "items": { "type": "string" }, "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons." },
           "cargoSize": { "type": "array", "items": { "type": "integer" } },
-          "weight": { "type": "number" }
+          "weight": { "type": "number" },
+          "hitpoints": { "type": "number", "description": "Base durability (DamageSystem GlobalHealth Health hitpoints); 0 if none." },
+          "armor": { "type": "array", "description": "DamageSystem GlobalArmor, one row per declared damage-type (cfgAmmo class). damage is what that type deals to the zone: 0 = immune, higher = less protection.", "items": { "$ref": "#/components/schemas/ArmorEntry" } }
+        }
+      },
+      "ArmorEntry": {
+        "type": "object",
+        "description": "One GlobalArmor damage-type row. Zone value is -1 when that zone isn't declared (distinct from a declared 0 = full immunity).",
+        "properties": {
+          "ammo": { "type": "string", "description": "cfgAmmo/damage-type class name (e.g. Bullet_762x39, FragGrenade, MeleeFist)." },
+          "health": { "type": "number", "description": "Health-zone damage coefficient; -1 if not declared." },
+          "blood": { "type": "number", "description": "Blood-zone damage coefficient; -1 if not declared." },
+          "shock": { "type": "number", "description": "Shock-zone damage coefficient; -1 if not declared." }
         }
       },
       "CatalogChunk": {
