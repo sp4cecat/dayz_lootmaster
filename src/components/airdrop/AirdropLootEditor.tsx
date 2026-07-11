@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Modal } from '@/components/base/modal/modal';
-import { Plus, Package, PlusCircle, Settings01 } from '@untitledui/icons';
+import { Input } from '@/components/base/input/input';
+import { Plus, Package, PlusCircle, Settings01, SearchMd } from '@untitledui/icons';
 import { HierarchicalTree } from '../hierarchical/HierarchicalTree';
 import { ChildListConfig } from '../hierarchical/HierarchicalNodeItem';
 import { HierarchicalProperties } from '../hierarchical/HierarchicalProperties';
@@ -44,6 +45,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
   const [templateTarget, setTemplateTarget] = useState<{ nodeId: string; list: 'attachments' | 'cargo' } | null>(null);
   const [loadoutPickerOpen, setLoadoutPickerOpen] = useState(false);
+  const [loadoutSearch, setLoadoutSearch] = useState('');
 
   const commit = (next: LoadoutNode[]) => {
     setNodes(next);
@@ -121,7 +123,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
           <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Loot Contents</span>
           <div className="flex items-center gap-2">
             {loadouts.length > 0 && (
-              <Button size="xs" variant="secondary-gray" icon={Package} onClick={() => setLoadoutPickerOpen(true)}>
+              <Button size="xs" variant="secondary-gray" icon={Package} onClick={() => { setLoadoutSearch(''); setLoadoutPickerOpen(true); }}>
                 Add Loadout
               </Button>
             )}
@@ -176,16 +178,35 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
             <p className="text-xs text-gray-500">
               The loadout's items are copied in as individual loot entries you can edit. There is no live link back to the loadout.
             </p>
-            <div className="grid grid-cols-1 gap-2 max-h-80 overflow-auto p-1">
-              {loadouts.map((l, i) => {
-                const count = (l.items || []).length;
-                return (
-                  <Button key={i} variant="secondary-gray" className="justify-start font-mono text-xs" icon={Package} onClick={() => addLoadout(l)}>
-                    {l.label} · {count} item{count === 1 ? '' : 's'}
-                  </Button>
-                );
-              })}
+            <div className="relative">
+              <SearchMd className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <Input
+                placeholder="Search loadouts..."
+                className="pl-9"
+                value={loadoutSearch}
+                onChange={(e) => setLoadoutSearch(e.target.value)}
+                autoFocus
+              />
             </div>
+            {(() => {
+              const q = loadoutSearch.trim().toLowerCase();
+              const filtered = q ? loadouts.filter((l) => l.label.toLowerCase().includes(q)) : loadouts;
+              if (filtered.length === 0) {
+                return <p className="text-xs text-gray-400 py-4 text-center">No loadouts match "{loadoutSearch}".</p>;
+              }
+              return (
+                <div className="grid grid-cols-1 gap-2 max-h-80 overflow-auto p-1">
+                  {filtered.map((l) => {
+                    const count = (l.items || []).length;
+                    return (
+                      <Button key={l.id} variant="secondary-gray" className="justify-start font-mono text-xs" icon={Package} onClick={() => addLoadout(l)}>
+                        {l.label} · {count} item{count === 1 ? '' : 's'}
+                      </Button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </Modal>
       )}
