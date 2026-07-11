@@ -2644,7 +2644,11 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            const addonDir = join(paths.profilesPath, addon.folder);
+            // KNOWN_ADDONS defines folders per-probe (there is no top-level `addon.folder`);
+            // locate the addon's config directory via its profile-type probe.
+            const profileProbe = addon.probes.find(p => p.type === 'profile');
+            if (!profileProbe) { notFound(res); return; }
+            const addonDir = join(paths.profilesPath, profileProbe.folder);
 
             // GET /api/addons/:addon/files
             if (action === 'files' && req.method === 'GET') {
