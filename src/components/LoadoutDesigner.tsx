@@ -796,14 +796,18 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
             {importSource === 'spawnable' && spawnableTypesByGroup && (
               Object.entries(spawnableTypesByGroup)
                 .filter(([groupName]) => {
-                  if (groupName === '__root') return false;
                   if (importGroup === 'all') return true;
-                  if (importGroup === 'vanilla') return groupName === 'vanilla' || groupName === 'vanilla_overrides';
+                  // The "Vanilla" button passes ROOT_SPAWNABLE_GROUP ('__root'); include every vanilla source.
+                  if (importGroup === ROOT_SPAWNABLE_GROUP || importGroup === 'vanilla')
+                    return VANILLA_BULK_SOURCES.includes(groupName);
                   return groupName === importGroup;
                 })
-                .flatMap(([groupName, files]) => 
+                .flatMap(([groupName, files]) =>
                   Object.entries(files)
-                    .filter(([fileName]) => isSpawnableTypesFile(fileName))
+                    .filter(([fileName]) =>
+                      isSpawnableTypesFile(fileName) ||
+                      (VANILLA_BULK_SOURCES.includes(groupName) && /spawnabletypes?\.xml$/i.test(fileName))
+                    )
                     .flatMap(([fileName, data]) => 
                     (data.types || [])
                     .filter((t: any) => 
