@@ -24,18 +24,131 @@ if not defined APP_ENV (
     exit /b 1
 )
 
+REM --- Production: if already running, offer restart / update instead of a second launch ---
+if /I "%APP_ENV%"=="production" (
+    call :is_running
+    if defined RUNNING goto production_running
+)
+
 echo.
 echo Launching Lootmaster [%APP_ENV%]...
 echo   Server -^> http://localhost:4317
 echo   Client -^> http://localhost:4173  (vite preview)
 echo.
 
-REM --- Backend API server (binds all interfaces on port 4317) ---
-start "Lootmaster Server [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& node server/index.js"
-
-REM --- Client: build dist/ then serve via vite preview (--host = reachable on LAN) ---
-start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run build && npm run preview -- --host"
+call :launch_full
 
 echo Both windows launched. Close them to stop the servers.
 echo.
+goto end
+
+:production_running
+echo.
+echo ========================================
+echo   Production is already running (port 4317).
+echo ========================================
+echo   1. Restart (relaunch with current build)
+echo   2. Git pull, install, build ^& restart
+echo   3. Cancel
+echo ========================================
+echo.
+
+set "ACTION="
+set /p "ACTION=Select action [1-3]: "
+
+if "%ACTION%"=="1" goto do_restart
+if "%ACTION%"=="2" goto do_update
+if "%ACTION%"=="3" (
+    echo.
+    echo Cancelled. Production left running.
+    echo.
+    goto end
+)
+
+echo.
+echo Invalid choice "%ACTION%". Please run again and pick 1, 2 or 3.
+echo.
+pause
+exit /b 1
+
+:do_restart
+echo.
+echo Restarting Lootmaster [%APP_ENV%] with the current build...
+echo.
+call :stop_all
+call :launch_prebuilt
+echo Restart complete. Server -^> http://localhost:4317  Client -^> http://localhost:4173
+echo.
+goto end
+
+:do_update
+echo.
+echo Pulling latest changes...
+git pull
+if errorlevel 1 (
+    echo.
+    echo git pull failed. Production left running untouched.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Installing dependencies...
+call npm install
+if errorlevel 1 (
+    echo.
+    echo npm install failed. Production left running untouched.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Building client...
+call npm run build
+if errorlevel 1 (
+    echo.
+    echo Build failed. Production left running untouched.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Build succeeded. Restarting Lootmaster [%APP_ENV%]...
+echo.
+call :stop_all
+call :launch_prebuilt
+echo Update complete. Server -^> http://localhost:4317  Client -^> http://localhost:4173
+echo.
+goto end
+
+REM ============================================================
+REM  Subroutines
+REM ============================================================
+
+:is_running
+set "RUNNING="
+netstat -ano | findstr ":4317" | findstr /I "LISTENING" >nul 2>&1 && set "RUNNING=1"
+exit /b
+
+:stop_all
+taskkill /F /T /FI "WINDOWTITLE eq Lootmaster Server [%APP_ENV%]*" >nul 2>&1
+taskkill /F /T /FI "WINDOWTITLE eq Lootmaster Client [%APP_ENV%]*" >nul 2>&1
+exit /b
+
+REM Fresh launch: client builds then previews (unchanged behaviour)
+:launch_full
+start "Lootmaster Server [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& node server/index.js"
+start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run build && npm run preview -- --host"
+exit /b
+
+REM Restart / post-build relaunch: preview only, no rebuild
+:launch_prebuilt
+start "Lootmaster Server [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& node server/index.js"
+start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run preview -- --host"
+exit /b
+
+:end
 endlocal
