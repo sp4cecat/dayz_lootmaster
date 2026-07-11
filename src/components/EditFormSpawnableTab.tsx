@@ -402,7 +402,7 @@ export default function EditFormSpawnableTab({
               value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
               maxValue={100} 
               step={1}
-              onValueChange={(vals) => handleDamageChange('min', vals[0])}
+              onChange={(v) => handleDamageChange('min', Array.isArray(v) ? v[0] : v)}
               helperText="Minimum damage when spawned"
             />
             <Slider 
@@ -410,7 +410,7 @@ export default function EditFormSpawnableTab({
               value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
               maxValue={100} 
               step={1}
-              onValueChange={(vals) => handleDamageChange('max', vals[0])}
+              onChange={(v) => handleDamageChange('max', Array.isArray(v) ? v[0] : v)}
               helperText="Maximum damage when spawned"
             />
           </div>

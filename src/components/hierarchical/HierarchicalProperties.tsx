@@ -268,11 +268,11 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
             <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Spawn Chance</label>
             <Badge color="brand" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
           </div>
-          <Slider 
-            value={[node.chance * 100]} 
-            onValueChange={([val]) => onUpdate({ ...node, chance: val / 100 })}
-            min={0}
-            max={100}
+          <Slider
+            value={[node.chance * 100]}
+            onChange={(v) => onUpdate({ ...node, chance: (Array.isArray(v) ? v[0] : v) / 100 })}
+            minValue={0}
+            maxValue={100}
             step={1}
           />
         </section>
