@@ -43,6 +43,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
   const [templateTarget, setTemplateTarget] = useState<{ nodeId: string; list: 'attachments' | 'cargo' } | null>(null);
+  const [loadoutPickerOpen, setLoadoutPickerOpen] = useState(false);
 
   const commit = (next: LoadoutNode[]) => {
     setNodes(next);
@@ -67,6 +68,28 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
     commit([...nodes, newNode]);
     setSelectedNodeId(newNode.id);
     setEditingNode(newNode);
+  };
+
+  // Deep-clone a loadout node, minting fresh ids so the copied entries stay
+  // independent of the source loadout. Variants are plain objects (no ids), so
+  // only attachments/cargo need recursive id regeneration.
+  const cloneNodeWithNewIds = (node: LoadoutNode): LoadoutNode => ({
+    ...node,
+    id: crypto.randomUUID(),
+    attachments: (node.attachments || []).map(cloneNodeWithNewIds),
+    cargo: (node.cargo || []).map(cloneNodeWithNewIds),
+    variants: node.variants ? node.variants.map((v) => (typeof v === 'string' ? v : { ...v })) : node.variants,
+  });
+
+  // Copy a saved loadout's items in as individual, editable loot entries. This is
+  // a one-time copy (fresh ids), not a live link — later loadout edits won't propagate.
+  const addLoadout = (loadout: Loadout) => {
+    setLoadoutPickerOpen(false);
+    const cloned = (loadout.items || []).map(cloneNodeWithNewIds);
+    if (cloned.length === 0) return;
+    commit([...nodes, ...cloned]);
+    setSelectedNodeId(cloned[0].id);
+    setEditingNode(cloned[0]);
   };
 
   const addTemplate = (source: 'preset' | 'loadout', name: string) => {
@@ -96,9 +119,16 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
       <div className="flex-1 min-w-0 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Loot Contents</span>
-          <Button size="xs" variant="secondary-gray" icon={Plus} onClick={addRootItem}>
-            Add Item
-          </Button>
+          <div className="flex items-center gap-2">
+            {loadouts.length > 0 && (
+              <Button size="xs" variant="secondary-gray" icon={Package} onClick={() => setLoadoutPickerOpen(true)}>
+                Add Loadout
+              </Button>
+            )}
+            <Button size="xs" variant="secondary-gray" icon={Plus} onClick={addRootItem}>
+              Add Item
+            </Button>
+          </div>
         </div>
         {nodes.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-sm text-gray-400">
@@ -138,6 +168,26 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
             }}
           />
         </div>
+      )}
+
+      {loadoutPickerOpen && (
+        <Modal isOpen={loadoutPickerOpen} onClose={() => setLoadoutPickerOpen(false)} title="Add Loadout as Loot" maxWidth="max-w-md">
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              The loadout's items are copied in as individual loot entries you can edit. There is no live link back to the loadout.
+            </p>
+            <div className="grid grid-cols-1 gap-2 max-h-80 overflow-auto p-1">
+              {loadouts.map((l, i) => {
+                const count = (l.items || []).length;
+                return (
+                  <Button key={i} variant="secondary-gray" className="justify-start font-mono text-xs" icon={Package} onClick={() => addLoadout(l)}>
+                    {l.label} · {count} item{count === 1 ? '' : 's'}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        </Modal>
       )}
 
       {templateTarget && (
