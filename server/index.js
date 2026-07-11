@@ -183,6 +183,7 @@ function getPaths(profile) {
         tradersDirPath: join(missionPath, 'expansion', 'traders'),
         traderProfilesDirPath: join(profilesPath, 'ExpansionMod', 'Traders'),
         airdropSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'AirdropSettings.json'),
+        missionSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'MissionSettings.json'),
         airdropMissionsDirPath: join(missionPath, 'expansion', 'missions'),
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
@@ -2189,6 +2190,39 @@ const server = http.createServer(async (req, res) => {
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid AirdropSettings payload: ${e.message}`);
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // GET/PUT Expansion Mission Settings (mission scheduler = airdrop scheduler)
+        if (pathname === '/api/expansion/mission-settings') {
+            const profileId = req.headers['x-profile-id'];
+            const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
+            if (!profile) { notFound(res); return; }
+            const paths = getPaths(profile);
+            const target = paths.missionSettingsPath;
+            if (req.method === 'GET') {
+                try {
+                    const content = await readFile(target, 'utf8');
+                    send(res, 200, content, {'Content-Type': 'application/json'});
+                } catch {
+                    send(res, 404, JSON.stringify({ error: 'MissionSettings.json not found' }), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                try {
+                    const body = await readBody(req);
+                    // Validate JSON before writing to disk
+                    const parsed = JSON.parse(body || '{}');
+                    await mkdir(dirname(target), { recursive: true });
+                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid MissionSettings payload: ${e.message}`);
                 }
                 return;
             }

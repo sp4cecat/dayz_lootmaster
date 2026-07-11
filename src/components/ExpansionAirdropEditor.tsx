@@ -29,7 +29,6 @@ type SaveState = { kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string };
 type TabId = 'core' | 'missions';
 
 const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string }[] = [
-  { key: 'Frequency', label: 'Frequency', suffix: 'sec' },
   { key: 'ItemCount', label: 'Default Item Count' },
   { key: 'InfectedCount', label: 'Default Infected Count' },
 ];
@@ -96,6 +95,33 @@ const BOOL_CORE_FIELDS: { key: string; label: string }[] = [
   { key: 'ShowNotificationServerWide', label: 'Server-wide Notification' },
 ];
 
+// Airdrops are the only mission type Expansion ships, so MissionSettings.json is
+// the real airdrop scheduler (timing, concurrency, player gate) — separate file
+// from AirdropSettings.json.
+const MISSION_BOOL_FIELDS: { key: string; label: string }[] = [
+  { key: 'Enabled', label: 'Mission System Enabled' },
+];
+const MISSION_NUMERIC_FIELDS: { key: string; label: string; ms?: boolean }[] = [
+  { key: 'InitialMissionStartDelay', label: 'Initial Start Delay', ms: true },
+  { key: 'TimeBetweenMissions', label: 'Time Between Airdrops', ms: true },
+  { key: 'MinMissions', label: 'Min Concurrent' },
+  { key: 'MaxMissions', label: 'Max Concurrent' },
+  { key: 'MinPlayersToStartMissions', label: 'Min Players To Start' },
+];
+const MISSION_DEFAULTS = {
+  m_Version: 2, Enabled: 0, InitialMissionStartDelay: 300000,
+  TimeBetweenMissions: 3600000, MinMissions: 0, MaxMissions: 1, MinPlayersToStartMissions: 0,
+};
+
+// Friendly hint under the millisecond timer fields, e.g. "= 60 min".
+const formatMs = (ms: number) => {
+  if (!ms || ms < 1000) return `${ms || 0} ms`;
+  const s = ms / 1000;
+  if (s < 60) return `= ${s} sec`;
+  const m = s / 60;
+  return m < 60 ? `= ${+m.toFixed(m % 1 ? 1 : 0)} min` : `= ${+(m / 60).toFixed(1)} h`;
+};
+
 export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   selectedProfileId,
   getApiBase,
@@ -114,6 +140,10 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   const [savedSettings, setSavedSettings] = useState<any>(null);
   const [selectedContainerIdx, setSelectedContainerIdx] = useState<number | null>(null);
 
+  // Mission scheduling (MissionSettings.json — separate file from AirdropSettings.json)
+  const [missionSettings, setMissionSettings] = useState<any>(null);
+  const [savedMissionSettings, setSavedMissionSettings] = useState<any>(null);
+
   // Missions
   const [missions, setMissions] = useState<{ file: string; data: any }[]>([]);
   const [selectedMissionIdx, setSelectedMissionIdx] = useState<number | null>(null);
@@ -125,9 +155,10 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
     if (!getApiBase || !selectedProfileId) return;
     setLoading(true);
     try {
-      const [sRes, mRes] = await Promise.all([
+      const [sRes, mRes, msRes] = await Promise.all([
         fetch(`${getApiBase()}/api/expansion/airdrop-settings`, { headers }),
         fetch(`${getApiBase()}/api/expansion/airdrop-missions`, { headers }),
+        fetch(`${getApiBase()}/api/expansion/mission-settings`, { headers }),
       ]);
       if (sRes.ok) {
         const data = await sRes.json();
@@ -139,6 +170,15 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         setSavedSettings(fallback);
       }
       if (mRes.ok) setMissions(groupMissionFiles(await mRes.json()));
+      if (msRes.ok) {
+        const data = await msRes.json();
+        setMissionSettings(data);
+        setSavedMissionSettings(data);
+      } else {
+        // File may not exist yet — seed defaults; the first save (PUT) creates it.
+        setMissionSettings({ ...MISSION_DEFAULTS });
+        setSavedMissionSettings({ ...MISSION_DEFAULTS });
+      }
     } catch (e) {
       console.error('Failed to load airdrop data', e);
       setSaveState({ kind: 'error', message: 'Failed to load airdrop data' });
@@ -213,6 +253,10 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           setSaveState={setSaveState}
           savedSettings={savedSettings}
           setSavedSettings={setSavedSettings}
+          missionSettings={missionSettings}
+          setMissionSettings={setMissionSettings}
+          savedMissionSettings={savedMissionSettings}
+          setSavedMissionSettings={setSavedMissionSettings}
           customInfected={map.customInfected}
         />
       ) : (
@@ -250,13 +294,18 @@ interface CoreTabProps {
   setSaveState: (s: SaveState) => void;
   savedSettings: any;
   setSavedSettings: (s: any) => void;
+  missionSettings: any;
+  setMissionSettings: (s: any) => void;
+  savedMissionSettings: any;
+  setSavedMissionSettings: (s: any) => void;
   customInfected?: string[];
 }
 
 const CoreSettingsTab: React.FC<CoreTabProps> = ({
   settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
   typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
-  savedSettings, setSavedSettings, customInfected,
+  savedSettings, setSavedSettings, missionSettings, setMissionSettings,
+  savedMissionSettings, setSavedMissionSettings, customInfected,
 }) => {
   const containers = settings?.Containers || [];
 
@@ -300,6 +349,30 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
     [settings, savedSettings]
   );
 
+  const updateMission = (key: string, value: any) => setMissionSettings({ ...missionSettings, [key]: value });
+
+  const missionDirty = useMemo(
+    () => JSON.stringify(missionSettings) !== JSON.stringify(savedMissionSettings),
+    [missionSettings, savedMissionSettings]
+  );
+
+  const saveMission = async () => {
+    setSaveState({ kind: 'saving' });
+    try {
+      const res = await fetch(`${getApiBase()}/api/expansion/mission-settings`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(missionSettings),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      setSavedMissionSettings(missionSettings);
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
+    }
+  };
+
   const selected = selectedContainerIdx !== null ? containers[selectedContainerIdx] : null;
 
   return (
@@ -313,6 +386,22 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
           {NUMERIC_CORE_FIELDS.map(({ key, label, suffix }) => (
             <Input key={key} size="sm" label={label} type="number" suffix={suffix}
               value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
+          ))}
+        </div>
+        <div className="p-4 space-y-3 border-b border-gray-200 dark:border-gray-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Mission Scheduling</span>
+            <Button size="xs" variant="secondary-gray" icon={Save01} onClick={saveMission} disabled={!missionDirty}>
+              Save Scheduling
+            </Button>
+          </div>
+          {MISSION_BOOL_FIELDS.map(({ key, label }) => (
+            <Toggle key={key} label={label} isSelected={!!missionSettings?.[key]} onChange={(v) => updateMission(key, v ? 1 : 0)} />
+          ))}
+          {MISSION_NUMERIC_FIELDS.map(({ key, label, ms }) => (
+            <Input key={key} size="sm" label={label} type="number" suffix={ms ? 'ms' : undefined}
+              hint={ms ? formatMs(Number(missionSettings?.[key] ?? 0)) : undefined}
+              value={missionSettings?.[key] ?? ''} onChange={(e) => updateMission(key, Number(e.target.value))} />
           ))}
         </div>
         <div className="p-4">
