@@ -1,5 +1,21 @@
-import { Loadout, LoadoutNode } from '@/types/loadouts';
+import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
+
+/**
+ * Coerce an Expansion attachment/variant entry that may be a bare classname string
+ * (legacy m_Version < 5) OR an object into the canonical slim ExpansionLootVariant
+ * ({ Name, Chance, Attachments }). Recurses so nested attachment strings are upgraded
+ * too. This is the single source of truth for the string-vs-object duality Expansion
+ * exposes (see ExpansionLoot.c: ExpansionLootVariantV1.ConvertVariant).
+ */
+export function normalizeExpansionVariant(v: any): ExpansionLootVariant {
+  if (typeof v === 'string') return { Name: v, Chance: 1.0, Attachments: [] };
+  return {
+    Name: v?.Name ?? '',
+    Chance: v?.Chance ?? 1.0,
+    Attachments: (v?.Attachments || []).map(normalizeExpansionVariant)
+  };
+}
 
 /**
  * Converts a LoadoutNode to the internal structure used for spawnable types.
@@ -107,14 +123,19 @@ export function resolveLoadoutNode(
       const containers = expansionAirdrops.Containers || [];
       const airdrop = containers.find((l: any) => l.Container === node.name);
       if (airdrop) {
-        const mapAirdropNode = (item: any): LoadoutNode => ({
-           id: crypto.randomUUID(),
-           type: 'item',
-           name: item.Name,
-           chance: item.Chance ?? 1.0,
-           attachments: (item.Attachments || []).map((a: any) => mapAirdropNode(a)),
-           cargo: (item.Cargo || []).map((c: any) => mapAirdropNode(c))
-        });
+        // Attachments may be strings (legacy m_Version < 5) or objects; normalize.
+        // Airdrop loot has no Cargo member, so there is nothing to read there.
+        const mapAirdropNode = (raw: any): LoadoutNode => {
+           const item: any = typeof raw === 'string' ? normalizeExpansionVariant(raw) : raw;
+           return {
+             id: crypto.randomUUID(),
+             type: 'item',
+             name: item.Name,
+             chance: item.Chance ?? 1.0,
+             attachments: (item.Attachments || []).map((a: any) => mapAirdropNode(a)),
+             cargo: []
+           };
+        };
         return {
           ...node,
           name: airdrop.Container,
@@ -176,27 +197,56 @@ export function loadoutToExpansionAirdrop(
     return out;
   };
 
-  const mapNode = (node: LoadoutNode): any => {
+  // An attachment/variant element is the slim ExpansionLootVariant shape
+  // ({ Name, Chance, Attachments }) — it carries NO QuantityPercent/Max/Min/Variants.
+  // Attachment-level groups have no exclusive primitive in Expansion, so they stay
+  // flattened (expandGroups) into independent attachment rolls.
+  const mapVariant = (node: LoadoutNode): ExpansionLootVariant => {
     const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
-    // Field order matches Expansion's ExpansionLoot class (ExpansionLoot.c):
-    // Name, Chance, Attachments (from base/variant) then QuantityPercent, Max,
-    // Min, Variants. There is deliberately NO Cargo — Expansion airdrop loot has
-    // no Cargo member; the engine's JSON loader silently ignores unknown keys.
     return {
       Name: resolved.name,
       Chance: resolved.chance,
-      Attachments: expandGroups(resolved.attachments || []).map(mapNode),
-      QuantityPercent: resolved.quantity?.percent ?? -1.0,
-      Max: resolved.quantity?.max ?? -1,
-      Min: resolved.quantity?.min ?? 0,
-      // Expansion variants are objects; coerce any legacy bare-string entries so the
-      // written JSON always matches ExpansionLootVariant.
-      Variants: (resolved.variants || []).map((v: any) =>
-        typeof v === 'string' ? { Name: v, Chance: 1.0, Attachments: [] } : v)
+      Attachments: expandGroups(resolved.attachments || []).map(mapVariant)
     };
   };
 
-  return loadout.items.map(mapNode);
+  // A top-level Loot[] element is the full ExpansionLoot shape. Field order matches
+  // Expansion's ExpansionLoot class (ExpansionLoot.c): Name, Chance, Attachments,
+  // QuantityPercent, Max, Min, Variants. There is deliberately NO Cargo — Expansion
+  // airdrop loot has no Cargo member.
+  const mapLootItem = (node: LoadoutNode): any => {
+    const resolved = resolveLoadoutNode(node, allLoadouts, randomPresets, expansionAirdrops);
+    return {
+      Name: resolved.name,
+      Chance: resolved.chance,
+      Attachments: expandGroups(resolved.attachments || []).map(mapVariant),
+      QuantityPercent: resolved.quantity?.percent ?? -1.0,
+      Max: resolved.quantity?.max ?? -1,
+      Min: resolved.quantity?.min ?? 0,
+      // Normalize so legacy bare-string variants (and their string attachments) always
+      // become canonical ExpansionLootVariant objects in the written JSON.
+      Variants: (resolved.variants || []).map(normalizeExpansionVariant)
+    };
+  };
+
+  // An item-level group is a weighted select-one over whole items. Expansion's only
+  // exclusive select-one primitive is Variants (ExpansionLootSpawner.AddItem picks one
+  // of {base, ...Variants} by weight; the base absorbs 1 - sum(variantChances)). So we
+  // emit ONE loot entry: first member is the base, the rest become Variants, and the
+  // group's own chance governs whether the slot rolls at all.
+  const groupToLootItem = (group: LoadoutNode): any | null => {
+    const members = group.attachments || [];
+    if (members.length === 0) return null;
+    const [base, ...rest] = members;
+    const item = mapLootItem(base);
+    item.Chance = group.chance ?? 1.0;
+    item.Variants = [...item.Variants, ...rest.map(mapVariant)];
+    return item;
+  };
+
+  return loadout.items
+    .map(node => (node.type === 'group' ? groupToLootItem(node) : mapLootItem(node)))
+    .filter((x: any) => x !== null);
 }
 
 /**
@@ -361,7 +411,10 @@ export function vanillaPresetToLoadout(preset: any): Loadout {
 }
 
 export function expansionAirdropToLoadout(label: string, lootItems: any[]): Loadout {
-  const mapNode = (item: any): LoadoutNode => {
+  // Each entry may be a bare classname string (legacy m_Version < 5) or an object;
+  // normalize before reading so `item.Name`/`item.Attachments` are always present.
+  const mapNode = (raw: any): LoadoutNode => {
+    const item: any = typeof raw === 'string' ? normalizeExpansionVariant(raw) : raw;
     return {
       id: crypto.randomUUID(),
       type: 'item',
@@ -372,7 +425,8 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
         max: item.Max ?? 0,
         percent: item.QuantityPercent
       } : undefined,
-      variants: item.Variants || [],
+      // Coerce legacy string variants (and their string attachments) to objects.
+      variants: (item.Variants || []).map(normalizeExpansionVariant),
       attachments: (item.Attachments || []).map(mapNode),
       cargo: [] // Expansion airdrop loot has no Cargo member; never read it back
     };

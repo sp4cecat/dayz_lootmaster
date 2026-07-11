@@ -5,7 +5,9 @@ import {
   loadoutToSpawnableEntry,
   loadoutToVanillaXml,
   loadoutToExpansionAirdrop,
+  expansionAirdropToLoadout,
 } from '../../src/utils/loadouts.ts';
+import type { Loadout } from '../../src/types/loadouts.ts';
 
 // The FAL example from the issue: three separate <attachments> groups, each with
 // its own chance, and items with their own chances inside.
@@ -100,7 +102,7 @@ describe('Spawnable attachment groups -> Loadout group nodes', () => {
     expect((xml.match(/<attachments /g) || []).length).toBe(3);
   });
 
-  it('flattens groups when exporting to Expansion airdrop format (chance multiplied)', () => {
+  it('flattens attachment-level groups when exporting to Expansion airdrop format (chance multiplied)', () => {
     const parsed = parseSpawnableTypesXml(FAL_XML);
     const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
     const airdrop = loadoutToExpansionAirdrop(loadout, []);
@@ -112,5 +114,116 @@ describe('Spawnable attachment groups -> Loadout group nodes', () => {
     const buis = root.Attachments.find((a: any) => a.Name === 'BUISOptic');
     // 0.20 (group) * 0.20 (item) = 0.04
     expect(buis.Chance).toBeCloseTo(0.04, 5);
+    // Attachments use the slim ExpansionLootVariant shape — no loot-item-only fields.
+    expect(buis).not.toHaveProperty('QuantityPercent');
+    expect(buis).not.toHaveProperty('Max');
+    expect(buis).not.toHaveProperty('Min');
+    expect(buis).not.toHaveProperty('Variants');
+    expect(Object.keys(buis).sort()).toEqual(['Attachments', 'Chance', 'Name']);
+  });
+});
+
+describe('Item-level group -> Expansion Variants (exclusive select-one)', () => {
+  // A group sitting at the loot-list root is a weighted select-one over whole items.
+  // Expansion's exclusive primitive is Variants (base + Variants weighted pick).
+  const groupLoadout: Loadout = {
+    id: 'g',
+    label: 'g',
+    updatedAt: 0,
+    items: [
+      {
+        id: 'grp',
+        type: 'group',
+        name: '',
+        chance: 0.8, // whether the slot rolls at all
+        attachments: [
+          { id: 'a', type: 'item', name: 'AKM', chance: 0.5, attachments: [], cargo: [] },
+          { id: 'b', type: 'item', name: 'M4A1', chance: 0.3, attachments: [], cargo: [] },
+          { id: 'c', type: 'item', name: 'SKS', chance: 0.2, attachments: [], cargo: [] },
+        ],
+        cargo: [],
+      },
+    ],
+  };
+
+  it('emits one loot entry: first member as base, the rest as Variants', () => {
+    const airdrop = loadoutToExpansionAirdrop(groupLoadout, []);
+    expect(airdrop).toHaveLength(1);
+
+    const entry = airdrop[0];
+    expect(entry.Name).toBe('AKM'); // base = first member
+    expect(entry.Chance).toBe(0.8); // group chance governs the slot
+    // Remaining members become weighted Variants (base absorbs 1 - sum per AddItem).
+    expect(entry.Variants.map((v: any) => v.Name)).toEqual(['M4A1', 'SKS']);
+    expect(entry.Variants.map((v: any) => v.Chance)).toEqual([0.3, 0.2]);
+    // Base has no attachments here.
+    expect(entry.Attachments).toEqual([]);
+  });
+
+  it('drops an empty group instead of emitting a nameless entry', () => {
+    const empty: Loadout = {
+      id: 'e',
+      label: 'e',
+      updatedAt: 0,
+      items: [{ id: 'grp', type: 'group', name: '', chance: 1.0, attachments: [], cargo: [] }],
+    };
+    expect(loadoutToExpansionAirdrop(empty, [])).toEqual([]);
+  });
+});
+
+describe('Expansion airdrop string-vs-object attachment duality', () => {
+  it('imports legacy string attachments (m_Version < 5) without corruption', () => {
+    const loadout = expansionAirdropToLoadout('t', [
+      { Name: 'AKM', Chance: 1.0, Attachments: ['AKM_Suppressor', 'AK_PlasticBttstck'] },
+    ]);
+    const root = loadout.items[0];
+    expect(root.name).toBe('AKM');
+    expect(root.attachments.map((a) => a.name)).toEqual(['AKM_Suppressor', 'AK_PlasticBttstck']);
+    // String form implies chance 1.0 and no nested attachments.
+    expect(root.attachments.every((a) => a.chance === 1.0 && a.attachments.length === 0)).toBe(true);
+  });
+
+  it('exports object attachments in the slim shape (no loot-item fields leak)', () => {
+    const loadout = expansionAirdropToLoadout('t', [
+      {
+        Name: 'AKM',
+        Chance: 1.0,
+        Attachments: [{ Name: 'AKM_Suppressor', Chance: 0.5, Attachments: [] }],
+        QuantityPercent: -1,
+        Max: -1,
+        Min: 0,
+      },
+    ]);
+    const att = loadoutToExpansionAirdrop(loadout, [])[0].Attachments[0];
+    expect(att).toEqual({ Name: 'AKM_Suppressor', Chance: 0.5, Attachments: [] });
+  });
+
+  it('normalizes string attachments inside Variants on both import and export', () => {
+    const loadout = expansionAirdropToLoadout('t', [
+      {
+        Name: 'SKS',
+        Chance: 0.5,
+        Attachments: [],
+        QuantityPercent: -1,
+        Max: -1,
+        Min: 0,
+        Variants: [{ Name: 'SKS', Chance: 0.2, Attachments: ['PABlackHandguard'] }],
+      },
+    ]);
+    // Import coerces the variant's string attachment to an object.
+    expect((loadout.items[0].variants as any)[0].Attachments).toEqual([
+      { Name: 'PABlackHandguard', Chance: 1.0, Attachments: [] },
+    ]);
+    // Export keeps it as a normalized object.
+    const out = loadoutToExpansionAirdrop(loadout, []);
+    expect(out[0].Variants[0].Attachments[0]).toEqual({ Name: 'PABlackHandguard', Chance: 1.0, Attachments: [] });
+  });
+
+  it('coerces a fully-string variant entry to an object', () => {
+    const loadout = expansionAirdropToLoadout('t', [
+      { Name: 'SKS', Chance: 0.5, Attachments: [], QuantityPercent: -1, Max: -1, Min: 0, Variants: ['SKS'] },
+    ]);
+    const out = loadoutToExpansionAirdrop(loadout, []);
+    expect(out[0].Variants[0]).toEqual({ Name: 'SKS', Chance: 1.0, Attachments: [] });
   });
 });

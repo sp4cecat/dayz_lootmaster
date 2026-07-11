@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Modal } from '@/components/base/modal/modal';
 import { Input } from '@/components/base/input/input';
-import { Plus, Package, PlusCircle, Settings01, SearchMd } from '@untitledui/icons';
+import { Plus, Package, PlusCircle, Settings01, SearchMd, AlertTriangle } from '@untitledui/icons';
 import { HierarchicalTree } from '../hierarchical/HierarchicalTree';
 import { ChildListConfig } from '../hierarchical/HierarchicalNodeItem';
 import { HierarchicalProperties } from '../hierarchical/HierarchicalProperties';
@@ -16,6 +16,15 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 const AIRDROP_CHILD_LISTS: ChildListConfig[] = [
   { key: 'attachments', label: 'Attachments', icon: Settings01 },
 ];
+
+// Detect an attachment-level group: a `group` node sitting inside some node's
+// attachments list (at any depth). Root-level groups map cleanly to Variants, but
+// Expansion has no exclusive select-one primitive for attachments — a nested group
+// gets flattened into independent attachment rolls on export, so warn the user.
+const hasNestedGroup = (list: LoadoutNode[]): boolean =>
+  (list || []).some(
+    (n) => (n.attachments || []).some((c) => c.type === 'group') || hasNestedGroup(n.attachments || [])
+  );
 
 interface AirdropLootEditorProps {
   initialLoot: any[];
@@ -132,6 +141,16 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
             </Button>
           </div>
         </div>
+        {hasNestedGroup(nodes) && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 shrink-0" size={14} />
+            <span>
+              A select-one group is nested inside an item's attachments. Expansion airdrops have no
+              exclusive attachment primitive, so its members will be flattened into independent
+              attachment rolls (each rolled by its own chance) on export.
+            </span>
+          </div>
+        )}
         {nodes.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-sm text-gray-400">
             No loot configured. Add an item to begin.

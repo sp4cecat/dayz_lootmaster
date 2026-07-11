@@ -35,10 +35,13 @@ export interface LoadoutNode {
 // Mirrors Expansion's ExpansionLootVariant (ExpansionLoot.c): an alternate version of
 // the parent item with its own chance and attachments. The editor only surfaces `Name`,
 // but the full object is preserved on round-trip so Chance/Attachments aren't lost.
+// `Attachments` is polymorphic across Expansion schema versions: bare classname strings
+// when the config's m_Version < 5, full objects when >= 5. Consumers must tolerate both
+// (see normalizeExpansionVariant in utils/loadouts.ts).
 export interface ExpansionLootVariant {
   Name: string;
   Chance?: number;
-  Attachments?: any[];
+  Attachments?: (string | ExpansionLootVariant)[];
 }
 
 export interface Loadout {
