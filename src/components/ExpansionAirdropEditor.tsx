@@ -147,7 +147,6 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   // Missions
   const [missions, setMissions] = useState<{ file: string; data: any }[]>([]);
   const [selectedMissionIdx, setSelectedMissionIdx] = useState<number | null>(null);
-  const [selectedDropIdx, setSelectedDropIdx] = useState<number | null>(null);
 
   const headers = useMemo(() => ({ 'X-Profile-ID': selectedProfileId }), [selectedProfileId]);
 
@@ -169,7 +168,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         setSettings(fallback);
         setSavedSettings(fallback);
       }
-      if (mRes.ok) setMissions(groupMissionFiles(await mRes.json()));
+      if (mRes.ok) setMissions(buildMissions(await mRes.json(), map.worldSize));
       if (msRes.ok) {
         const data = await msRes.json();
         setMissionSettings(data);
@@ -271,8 +270,6 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           setMissions={setMissions}
           selectedMissionIdx={selectedMissionIdx}
           setSelectedMissionIdx={setSelectedMissionIdx}
-          selectedDropIdx={selectedDropIdx}
-          setSelectedDropIdx={setSelectedDropIdx}
           containerNames={containerNames}
           map={map}
           typeOptions={typeOptions}
@@ -595,45 +592,26 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
   );
 };
 
-interface Mission { file: string; data: any; isNew?: boolean; savedFiles?: string[]; corrupt?: boolean; parseError?: string; }
+interface Mission { file: string; data: any; isNew?: boolean; corrupt?: boolean; parseError?: string; }
 
-// Expansion requires exactly ONE DropLocation object per mission file. The editor
-// keeps a multi-zone array for authoring convenience; on load we group the split
-// per-location files back into a single mission, and on save we fan the array
-// back out to one file per location (see groupMissionFiles / saveMission).
-function parseMissionFile(file: string): { base: string; index: number } {
-  const m = file.match(/^Airdrop_(.+?)(?:_(\d+))?\.json$/i);
-  if (!m) return { base: file.replace(/\.json$/i, ''), index: 0 };
-  return { base: m[1], index: m[2] ? parseInt(m[2], 10) : 0 };
-}
+// Expansion requires exactly ONE DropLocation per mission file, so each file maps
+// to exactly one mission with a single drop location. On disk DropLocation is kept
+// as a 1-element array (the canonical Expansion shape); tolerant of legacy files
+// that stored it as a bare object.
+const DEFAULT_DROP = (worldSize: number): DropLocation => ({
+  Name: 'New Drop', x: Math.round(worldSize / 2), z: Math.round(worldSize / 2), Radius: 500.0,
+});
 
-function groupMissionFiles(raw: { file: string; data: any; error?: string }[]): Mission[] {
-  const groups = new Map<string, { base: string; entries: { index: number; file: string; drops: any[] }[]; data: any }>();
-  const corrupt: Mission[] = [];
-  for (const { file, data, error } of raw) {
+function buildMissions(raw: { file: string; data: any; error?: string }[], worldSize: number): Mission[] {
+  return raw.map(({ file, data, error }) => {
     if (!data) {
       // Unparseable file: surface it as its own row so it can be inspected/deleted.
-      corrupt.push({ file, data: null, corrupt: true, parseError: error || 'Invalid JSON', savedFiles: [file] });
-      continue;
+      return { file, data: null, corrupt: true, parseError: error || 'Invalid JSON' } as Mission;
     }
-    const { base, index } = parseMissionFile(file);
-    const key = base.toLowerCase();
     const dl = data.DropLocation;
-    const drops = Array.isArray(dl) ? dl : dl ? [dl] : [];
-    let g = groups.get(key);
-    if (!g) { g = { base, entries: [], data }; groups.set(key, g); }
-    g.entries.push({ index, file, drops });
-  }
-  const grouped = Array.from(groups.values()).map((g) => {
-    g.entries.sort((a, b) => a.index - b.index);
-    const { DropLocation, ...baseData } = g.data;
-    return {
-      file: `Airdrop_${g.base}.json`,
-      data: { ...baseData, DropLocation: g.entries.flatMap((e) => e.drops) },
-      savedFiles: g.entries.map((e) => e.file),
-    } as Mission;
+    const drop = (Array.isArray(dl) ? dl[0] : dl) || DEFAULT_DROP(worldSize);
+    return { file, data: { ...data, DropLocation: [drop] } } as Mission;
   });
-  return [...grouped, ...corrupt];
 }
 
 interface MissionsTabProps {
@@ -641,8 +619,6 @@ interface MissionsTabProps {
   setMissions: React.Dispatch<React.SetStateAction<Mission[]>>;
   selectedMissionIdx: number | null;
   setSelectedMissionIdx: (i: number | null) => void;
-  selectedDropIdx: number | null;
-  setSelectedDropIdx: (i: number | null) => void;
   containerNames: string[];
   map: MapMetadata;
   typeOptions: string[];
@@ -684,7 +660,7 @@ const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.t
 
 const MissionsTab: React.FC<MissionsTabProps> = ({
   missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
-  selectedDropIdx, setSelectedDropIdx, containerNames, map,
+  containerNames, map,
   typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
@@ -707,7 +683,6 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     while (existing.has(name.toLowerCase())) { name = `${base}${n++}.json`; }
     setMissions((prev) => [...prev, { file: name, data: DEFAULT_MISSION(map.worldSize), isNew: true }]);
     setSelectedMissionIdx(missions.length);
-    setSelectedDropIdx(0);
   };
 
   const duplicateMission = (idx: number) => {
@@ -726,39 +701,24 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
       setSaveState({ kind: 'error', message: 'File must match Airdrop_*.json' });
       return;
     }
-    // Expansion allows one DropLocation object per file, so fan the multi-zone
-    // array out to one file per location: Airdrop_<base>.json for a single zone,
-    // Airdrop_<base>_1.json..._N.json for many.
-    const base = mission.file.replace(/\.json$/i, '');
+    // Expansion allows one DropLocation per mission file, so write exactly one file
+    // with DropLocation as a 1-element array (the canonical Expansion shape).
     const dl = mission.data.DropLocation;
-    const dropList: any[] = Array.isArray(dl) ? dl : dl ? [dl] : [];
-    if (dropList.length === 0) {
-      setSaveState({ kind: 'error', message: 'Add at least one drop location' });
+    const drop = Array.isArray(dl) ? dl[0] : dl;
+    if (!drop) {
+      setSaveState({ kind: 'error', message: 'Set a drop location' });
       return;
     }
-    const { DropLocation, ...baseData } = mission.data;
-    const targets = dropList.length === 1
-      ? [{ file: `${base}.json`, drop: dropList[0] }]
-      : dropList.map((d, i) => ({ file: `${base}_${i + 1}.json`, drop: d }));
 
     setSaveState({ kind: 'saving' });
     try {
-      for (const t of targets) {
-        const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(t.file)}`, {
-          method: 'PUT',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...baseData, DropLocation: t.drop }),
-        });
-        if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${t.file}`);
-      }
-      // Remove files from a previous save that this mission no longer produces
-      // (e.g. a removed zone leaves an orphaned _N.json behind).
-      const newSet = new Set(targets.map((t) => t.file.toLowerCase()));
-      const stale = (mission.savedFiles || []).filter((f) => !newSet.has(f.toLowerCase()));
-      for (const f of stale) {
-        await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(f)}`, { method: 'DELETE', headers });
-      }
-      patchMission({ isNew: false, savedFiles: targets.map((t) => t.file) });
+      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...mission.data, DropLocation: [drop] }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${mission.file}`);
+      patchMission({ isNew: false });
       setSaveState({ kind: 'ok' });
       setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
     } catch (e: any) {
@@ -769,13 +729,10 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const deleteMission = async (idx: number) => {
     const m = missions[idx];
     if (!m.isNew) {
-      const files = m.savedFiles && m.savedFiles.length ? m.savedFiles : [m.file];
-      for (const f of files) {
-        try {
-          await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(f)}`, { method: 'DELETE', headers });
-        } catch (e) {
-          console.error('Failed to delete mission file', f, e);
-        }
+      try {
+        await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(m.file)}`, { method: 'DELETE', headers });
+      } catch (e) {
+        console.error('Failed to delete mission file', m.file, e);
       }
     }
     setMissions((prev) => prev.filter((_, i) => i !== idx));
@@ -792,9 +749,11 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     }
   };
 
-  const drops: DropLocation[] = mission?.data?.DropLocation || [];
+  const dl = mission?.data?.DropLocation;
+  const drop: DropLocation | null = (Array.isArray(dl) ? dl[0] : dl) || null;
 
-  const updateDrops = (next: DropLocation[]) => patchData({ DropLocation: next });
+  const updateDrop = (patch: Partial<DropLocation>) =>
+    patchData({ DropLocation: [{ ...(drop || { x: 0, z: 0 }), ...patch }] });
 
   const containerOptions = useMemo(() => {
     const set = new Set<string>(['Random', ...containerNames]);
@@ -814,7 +773,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
             <p className="p-3 text-xs text-gray-400">No mission files. Click + to create one.</p>
           )}
           {missions.map((m, i) => (
-            <button key={i} onClick={() => { setSelectedMissionIdx(i); setSelectedDropIdx(0); }}
+            <button key={i} onClick={() => setSelectedMissionIdx(i)}
               className={cx('w-full text-left p-3 rounded-lg border transition-all',
                 selectedMissionIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
                   : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
@@ -884,43 +843,29 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                  <Target04 size={14} /> Drop Locations
+                  <Target04 size={14} /> Drop Location
                 </span>
-                <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => {
-                  const next = [...drops, { Name: `Drop ${drops.length + 1}`, x: Math.round(map.worldSize / 2), z: Math.round(map.worldSize / 2), Radius: 500 }];
-                  updateDrops(next);
-                  setSelectedDropIdx(next.length - 1);
-                }}>Add Location</Button>
               </div>
               <div className="grid grid-cols-2 gap-6">
-                <AirdropDropLocationMap map={map} locations={drops} selectedIndex={selectedDropIdx}
-                  onSelect={setSelectedDropIdx} onChange={updateDrops} />
+                <AirdropDropLocationMap map={map} locations={drop ? [drop] : []} selectedIndex={drop ? 0 : null}
+                  onSelect={() => {}} onChange={(next) => updateDrop(next[0] || {})} />
                 <div className="space-y-2">
-                  {drops.map((d, i) => (
-                    <div key={i} onClick={() => setSelectedDropIdx(i)}
-                      className={cx('p-3 rounded-lg border cursor-pointer',
-                        selectedDropIdx === i ? 'border-primary-300 bg-primary-50/50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-800')}>
-                      <div className="flex items-center justify-between mb-2">
-                        <Input size="sm" className="w-40" value={d.Name || ''} placeholder="Location name"
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, Name: e.target.value } : x)))} />
-                        <button onClick={(e) => { e.stopPropagation(); updateDrops(drops.filter((_, j) => j !== i)); setSelectedDropIdx(null); }}
-                          className="text-gray-400 hover:text-error-600"><Trash01 size={14} /></button>
+                  {drop && (
+                    <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                      <div className="mb-2">
+                        <Input size="sm" value={drop.Name || ''} placeholder="Location name"
+                          onChange={(e) => updateDrop({ Name: e.target.value })} />
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <Input size="sm" type="number" suffix="X" value={Math.round(d.x)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, x: Number(e.target.value) } : x)))} />
-                        <Input size="sm" type="number" suffix="Z" value={Math.round(d.z)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, z: Number(e.target.value) } : x)))} />
-                        <Input size="sm" type="number" suffix="R" value={Math.round(d.Radius || 0)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => updateDrops(drops.map((x, j) => (j === i ? { ...x, Radius: Number(e.target.value) } : x)))} />
+                        <Input size="sm" type="number" suffix="X" value={Math.round(drop.x)}
+                          onChange={(e) => updateDrop({ x: Number(e.target.value) })} />
+                        <Input size="sm" type="number" suffix="Z" value={Math.round(drop.z)}
+                          onChange={(e) => updateDrop({ z: Number(e.target.value) })} />
+                        <Input size="sm" type="number" suffix="R" value={Math.round(drop.Radius || 0)}
+                          onChange={(e) => updateDrop({ Radius: Number(e.target.value) })} />
                       </div>
                     </div>
-                  ))}
-                  {drops.length === 0 && <p className="text-xs text-gray-400">No drop locations. Add one and drag it on the map.</p>}
+                  )}
                 </div>
               </div>
             </section>
