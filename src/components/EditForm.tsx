@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useTabParam } from '@/hooks/useHashRoute';
 import EditFormCLETab from './EditFormCLETab';
 import EditFormMarketplaceTab from './EditFormMarketplaceTab';
 import EditFormSpawnableTab from './EditFormSpawnableTab';
@@ -45,7 +46,7 @@ export default function EditForm({
   globalsDefaults = { LootDamageMin: null, LootDamageMax: null },
   loadouts = []
 }: EditFormProps) {
-  const [activeTab, setActiveTab] = useState<'CLE' | 'Spawnable' | 'Marketplace'>('CLE');
+  const [activeTab, setActiveTab] = useTabParam<'CLE' | 'Spawnable' | 'Marketplace'>('CLE', ['CLE', 'Spawnable', 'Marketplace']);
   const [marketTabOpened, setMarketTabOpened] = useState(false);
   const [canSaveCLE, setCanSaveCLE] = useState(false);
   const [saveCLE, setSaveCLE] = useState<null | (() => void)>(null);

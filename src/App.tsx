@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLootData } from './hooks/useLootData.js';
+import { useHashRoute } from './hooks/useHashRoute';
 import { CatalogProvider } from './contexts/CatalogContext';
 import Filters from './components/Filters';
 import TypesTable from './components/TypesTable';
@@ -126,8 +127,13 @@ export default function App() {
 
     // View state
     const [editorID, setEditorID] = useState(() => localStorage.getItem('dayz-editor:id') || '');
-    const [view, setView] = useState('cle'); // 'cle', 'profiles', and sidebar IDs
+    // Navigation is driven by the URL hash so a refresh / deep link restores the screen.
+    const { view, navigate } = useHashRoute(); // e.g. 'cle', 'profiles', 'addons:expansion:airdrops'
     const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'diff', 'manage-definitions'
+    const setView = useCallback((id: string) => {
+        navigate(id);
+        setModal(null);
+    }, [navigate]);
     const [manageDefKind, setManageDefKind] = useState<'usage' | 'value' | 'tag' | null>(null);
     const [saveCLEHandler, setSaveCLEHandler] = useState<null | (() => void)>(null);
 
@@ -232,10 +238,7 @@ export default function App() {
         <div className="flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
             <Sidebar
                 activeTab={view}
-                onTabChange={(id) => {
-                    setView(id);
-                    setModal(null);
-                }}
+                onTabChange={setView}
                 editorID={editorID}
                 onSignOut={onSignOut}
                 selectedProfile={selectedProfile}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTabParam } from '@/hooks/useHashRoute';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
@@ -8,7 +9,7 @@ import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
   Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, ClockRefresh, Map01, Link01,
-  Maximize01, Minimize01,
+  Maximize01, Minimize01, ChevronDown, ChevronRight,
 } from '@untitledui/icons';
 import { Loadout } from '@/types/loadouts';
 import { cx } from '@/utils/cx';
@@ -164,7 +165,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   loadouts,
   missionName,
 }) => {
-  const [tab, setTab] = useState<TabId>('core');
+  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'scheduling', 'missions', 'locations']);
   const [loading, setLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' });
   const map = useMapMetadata(missionName);
@@ -1001,12 +1002,56 @@ const MISSION_NUMERIC: { key: string; label: string; suffix?: string }[] = [
 
 const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.test(name);
 
+// Minify a drop-location name to a filename-safe token (alphanumerics only).
+const minifyName = (s: string) => (s || '').replace(/[^A-Za-z0-9]/g, '');
+
+// Derive an `Airdrop_<MinifiedLocation>.json` file name, suffixing with a number
+// (2, 3, …) when another mission already uses that file. `excludeIdx` skips the
+// mission being renamed so it doesn't collide with itself.
+const fileNameForLocation = (locName: string, missions: Mission[], excludeIdx: number): string => {
+  const base = minifyName(locName) || 'Drop';
+  const taken = new Set(missions.filter((_, i) => i !== excludeIdx).map((m) => m.file.toLowerCase()));
+  let name = `Airdrop_${base}.json`;
+  let n = 2;
+  while (taken.has(name.toLowerCase())) name = `Airdrop_${base}${n++}.json`;
+  return name;
+};
+
+// Group a mission by its drop-location name for the sidebar accordion.
+const groupOf = (m: Mission): { key: string; label: string } => {
+  if (m.corrupt) return { key: ' corrupt', label: 'Corrupt files' };
+  const dl = m.data?.DropLocation;
+  const d = Array.isArray(dl) ? dl[0] : dl;
+  const name = (d?.Name || '').trim();
+  return name ? { key: name.toLowerCase(), label: name } : { key: ' unnamed', label: 'Unnamed location' };
+};
+
 const MissionsTab: React.FC<MissionsTabProps> = ({
   missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
   containerNames, locations, map,
   typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
+
+  // Sidebar accordion: missions grouped by drop location, default collapsed.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const groups = useMemo(() => {
+    const byKey = new Map<string, { key: string; label: string; items: { m: Mission; idx: number }[] }>();
+    missions.forEach((m, idx) => {
+      const { key, label } = groupOf(m);
+      if (!byKey.has(key)) byKey.set(key, { key, label, items: [] });
+      byKey.get(key)!.items.push({ m, idx });
+    });
+    return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [missions]);
+
+  // Reveal the selected mission by opening its group (after add/duplicate/select, or
+  // when its drop location changes); the user can still collapse it afterwards.
+  const selectedGroupKey = mission ? groupOf(mission).key : null;
+  useEffect(() => {
+    if (selectedGroupKey === null) return;
+    setOpenGroups((s) => (s[selectedGroupKey] ? s : { ...s, [selectedGroupKey]: true }));
+  }, [selectedGroupKey]);
 
   const patchData = (patch: any) => {
     if (selectedMissionIdx === null) return;
@@ -1019,12 +1064,10 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   };
 
   const addMission = () => {
-    const base = 'Airdrop_NewDrop';
-    let name = `${base}.json`;
-    let n = 1;
-    const existing = new Set(missions.map((m) => m.file.toLowerCase()));
-    while (existing.has(name.toLowerCase())) { name = `${base}${n++}.json`; }
-    setMissions((prev) => [...prev, { file: name, data: DEFAULT_MISSION(map.worldSize), isNew: true }]);
+    const data = DEFAULT_MISSION(map.worldSize);
+    const dropName = (Array.isArray(data.DropLocation) ? data.DropLocation[0] : data.DropLocation)?.Name || 'New Drop';
+    const name = fileNameForLocation(dropName, missions, -1);
+    setMissions((prev) => [...prev, { file: name, data, isNew: true }]);
     setSelectedMissionIdx(missions.length);
   };
 
@@ -1098,9 +1141,19 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const updateDrop = (patch: Partial<DropLocation>) =>
     patchData({ DropLocation: [{ ...(drop || { x: 0, z: 0 }), ...patch }] });
 
-  // Copy a whole library location into this mission's drop (Name + coords).
-  const applyLocation = (loc: AirdropLocation) =>
-    patchData({ DropLocation: [{ ...(drop || {}), Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius }] });
+  // Copy a whole library location into this mission's drop (Name + coords). New
+  // (unsaved) mission files are auto-named after the location; already-saved files
+  // keep their name so we never orphan an on-disk file.
+  const applyLocation = (loc: AirdropLocation) => {
+    if (selectedMissionIdx === null) return;
+    setMissions((prev) => prev.map((m, i) => {
+      if (i !== selectedMissionIdx) return m;
+      const prevDrop = Array.isArray(m.data?.DropLocation) ? m.data.DropLocation[0] : m.data?.DropLocation;
+      const nextData = { ...m.data, DropLocation: [{ ...(prevDrop || {}), Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius }] };
+      const file = m.isNew ? fileNameForLocation(loc.Name, prev, i) : m.file;
+      return { ...m, data: nextData, file };
+    }));
+  };
 
   // Options for the location picker: library locations plus a "Custom…" escape hatch.
   const CUSTOM_KEY = '__custom__';
@@ -1131,18 +1184,52 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
           {missions.length === 0 && (
             <p className="p-3 text-xs text-gray-400">No mission files. Click + to create one.</p>
           )}
-          {missions.map((m, i) => (
-            <button key={i} onClick={() => setSelectedMissionIdx(i)}
-              className={cx('w-full text-left p-3 rounded-lg border transition-all',
-                selectedMissionIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
-                  : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
-              <div className="flex items-center justify-between gap-2">
-                <span className={cx('text-sm font-semibold truncate', m.corrupt && 'text-error-600')}>{m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}</span>
-                {m.corrupt ? <Badge size="sm" color="error">Corrupt</Badge> : m.isNew && <Badge size="sm" color="warning">New</Badge>}
+          {groups.map((g) => {
+            const open = !!openGroups[g.key];
+            return (
+              <div key={g.key}>
+                <button onClick={() => setOpenGroups((s) => ({ ...s, [g.key]: !s[g.key] }))}
+                  className="w-full flex items-center gap-1.5 px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800/50">
+                  {open ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 truncate flex-1 text-left">{g.label}</span>
+                  <Badge size="sm" color="gray">{g.items.length}</Badge>
+                </button>
+                {open && (
+                  <div className="pl-3 space-y-1 mt-1">
+                    {g.items.map(({ m, idx }) => {
+                      // Second meta line differentiates missions that share a location:
+                      // weight plus item/infected counts (a count of -1 means "inherit the
+                      // global default", so it's omitted).
+                      const ic = m.data?.ItemCount;
+                      const inf = m.data?.InfectedCount;
+                      const stats = [`W${m.data?.Weight ?? 0}`];
+                      if (ic != null && ic !== -1) stats.push(`${ic} items`);
+                      if (inf != null && inf !== -1) stats.push(`${inf} inf`);
+                      return (
+                        <button key={idx} onClick={() => setSelectedMissionIdx(idx)}
+                          className={cx('w-full text-left p-3 rounded-lg border transition-all',
+                            selectedMissionIdx === idx ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                              : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={cx('text-sm font-semibold truncate', m.corrupt && 'text-error-600')}>{m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}</span>
+                            {m.corrupt ? <Badge size="sm" color="error">Corrupt</Badge> : m.isNew && <Badge size="sm" color="warning">New</Badge>}
+                          </div>
+                          {m.corrupt ? (
+                            <span className="text-xs text-gray-400 truncate block">Invalid JSON</span>
+                          ) : (
+                            <>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate block">{m.data?.Container || '—'}</span>
+                              <span className="text-[11px] text-gray-400 truncate block">{stats.join(' · ')}</span>
+                            </>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <span className="text-xs text-gray-400 truncate block">{m.corrupt ? 'Invalid JSON' : (m.data?.Container || '—')}</span>
-            </button>
-          ))}
+            );
+          })}
         </div>
       </aside>
 
