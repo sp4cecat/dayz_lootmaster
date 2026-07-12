@@ -991,6 +991,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
 
 const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void; customInfected?: string[] }> = ({ values, onChange, customInfected = [] }) => {
   const [draft, setDraft] = useState('');
+  const [open, setOpen] = useState(false); // collapsed accordion by default
 
   const suggestions = useMemo(() => {
     const d = draft.toLowerCase();
@@ -1021,45 +1022,59 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Infected / AI</span>
-        <Button variant="link" size="sm" onClick={addAllInfected}>All Infected</Button>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+        >
+          {open ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
+          Infected / AI
+          {values.length > 0 && (
+            <span className="normal-case font-normal text-gray-500">({values.length})</span>
+          )}
+        </button>
+        {open && <Button variant="link" size="sm" onClick={addAllInfected}>All Infected</Button>}
       </div>
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <ComboBox
-            placeholder="ZmbM_... or eAI_...|faction:..."
-            items={suggestions}
-            inputValue={draft}
-            onInputChange={setDraft}
-            allowsCustomValue
-            menuTrigger="focus"
-            onSelectionChange={(key) => {
-              if (key) {
-                setDraft(String(key));
-              }
-            }}
-          >
-            {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
-          </ComboBox>
-        </div>
-        <Button
-          variant="secondary-gray"
-          icon={Plus}
-          onClick={() => addItem(draft)}
-          className="h-10 shrink-0"
-        />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {values.map((v, i) => (
-          <span key={i} className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono text-gray-700 dark:text-gray-300">
-            {v}
-            <button onClick={() => onChange(values.filter((_, j) => j !== i))} className="text-gray-400 hover:text-error-600">
-              <Trash01 size={12} />
-            </button>
-          </span>
-        ))}
-        {values.length === 0 && <span className="text-xs text-gray-400 italic">None configured.</span>}
-      </div>
+      {open && (
+        <>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <ComboBox
+                placeholder="ZmbM_... or eAI_...|faction:..."
+                items={suggestions}
+                inputValue={draft}
+                onInputChange={setDraft}
+                allowsCustomValue
+                menuTrigger="focus"
+                onSelectionChange={(key) => {
+                  if (key) {
+                    setDraft(String(key));
+                  }
+                }}
+              >
+                {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
+              </ComboBox>
+            </div>
+            <Button
+              variant="secondary-gray"
+              icon={Plus}
+              onClick={() => addItem(draft)}
+              className="h-10 shrink-0"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {values.map((v, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono text-gray-700 dark:text-gray-300">
+                {v}
+                <button onClick={() => onChange(values.filter((_, j) => j !== i))} className="text-gray-400 hover:text-error-600">
+                  <Trash01 size={12} />
+                </button>
+              </span>
+            ))}
+            {values.length === 0 && <span className="text-xs text-gray-400 italic">None configured.</span>}
+          </div>
+        </>
+      )}
     </div>
   );
 };
