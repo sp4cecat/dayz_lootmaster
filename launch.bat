@@ -76,6 +76,7 @@ echo.
 echo Restarting Lootmaster [%APP_ENV%] with the current build...
 echo.
 call :stop_all
+call :wait_for_free
 call :launch_prebuilt
 echo Restart complete. Server -^> http://localhost:4317  Client -^> http://localhost:4173
 echo.
@@ -119,6 +120,7 @@ echo.
 echo Build succeeded. Restarting Lootmaster [%APP_ENV%]...
 echo.
 call :stop_all
+call :wait_for_free
 call :launch_prebuilt
 echo Update complete. Server -^> http://localhost:4317  Client -^> http://localhost:4173
 echo.
@@ -130,24 +132,49 @@ REM ============================================================
 
 :is_running
 set "RUNNING="
-netstat -ano | findstr ":4317" | findstr /I "LISTENING" >nul 2>&1 && set "RUNNING=1"
+netstat -ano | findstr /C:":4317 " | findstr /I "LISTENING" >nul 2>&1 && set "RUNNING=1"
 exit /b
 
 :stop_all
+REM Close our own windows (best-effort; the client title may not match after npm/vite run)
 taskkill /F /T /FI "WINDOWTITLE eq Lootmaster Server [%APP_ENV%]*" >nul 2>&1
 taskkill /F /T /FI "WINDOWTITLE eq Lootmaster Client [%APP_ENV%]*" >nul 2>&1
+REM Guarantee the ports are freed regardless of window title
+call :kill_port 4317
+call :kill_port 4173
 exit /b
 
-REM Fresh launch: client builds then previews (unchanged behaviour)
+REM Kill whatever process is LISTENING on the given port (arg 1), plus its child tree
+:kill_port
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /C:":%~1 " ^| findstr /I "LISTENING"') do taskkill /F /T /PID %%p >nul 2>&1
+exit /b
+
+REM Poll until both 4317 and 4173 are free before relaunching (~15s cap)
+:wait_for_free
+set /a _tries=0
+:wff_loop
+set "_busy="
+netstat -ano | findstr /C:":4317 " | findstr /I "LISTENING" >nul 2>&1 && set "_busy=1"
+netstat -ano | findstr /C:":4173 " | findstr /I "LISTENING" >nul 2>&1 && set "_busy=1"
+if not defined _busy exit /b 0
+set /a _tries+=1
+if %_tries% GEQ 15 (
+    echo   Warning: ports still busy after 15s; continuing anyway.
+    exit /b 1
+)
+timeout /t 1 /nobreak >nul
+goto wff_loop
+
+REM Fresh launch: client builds then previews (port pinned so it never silently drifts)
 :launch_full
 start "Lootmaster Server [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& node server/index.js"
-start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run build && npm run preview -- --host"
+start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run build && npm run preview -- --host --port 4173 --strictPort"
 exit /b
 
-REM Restart / post-build relaunch: preview only, no rebuild
+REM Restart / post-build relaunch: preview only, no rebuild (port pinned)
 :launch_prebuilt
 start "Lootmaster Server [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& node server/index.js"
-start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run preview -- --host"
+start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run preview -- --host --port 4173 --strictPort"
 exit /b
 
 :end
