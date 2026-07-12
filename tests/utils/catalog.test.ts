@@ -47,6 +47,8 @@ describe('normalizeTypeDetail', () => {
       fitsInto: null,
       exposesSlots: null,
       occupiesSlots: null,
+      cargoSize: null,
+      isContainer: null,
     });
   });
 

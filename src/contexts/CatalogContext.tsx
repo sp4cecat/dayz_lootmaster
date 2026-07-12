@@ -35,6 +35,8 @@ export interface TypeDetail {
   exposesSlots: string[] | null;
   occupiesSlots: string[] | null;
   cargoSize: number[] | null;
+  /** Descends from Container_Base; holds cargo even when cargoSize is empty (grid lives in the p3d). */
+  isContainer?: boolean | null;
   /** Compatible magazine classes (CfgWeapons magazines[]); null/empty for non-weapons. */
   magazines: string[] | null;
   /** Base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none. */
@@ -243,8 +245,14 @@ export function deriveItemCapabilities(detail?: TypeDetail): ItemCapabilities {
   const acceptsAttachments = Array.isArray(exposes) ? exposes.length > 0 : null;
   // cargoSize is [rows, cols]; a positive product means real container capacity.
   const cargo = detail.cargoSize;
-  const holdsCargo = Array.isArray(cargo)
-    ? cargo.length > 0 && cargo.reduce((a, b) => a * (Number(b) || 0), 1) > 0
-    : null;
+  const hasGrid = Array.isArray(cargo)
+    && cargo.length > 0
+    && cargo.reduce((a, b) => a * (Number(b) || 0), 1) > 0;
+  // Container_Base descendants (SeaChest, Barrel, WoodenCrate, teddy bears) hold cargo even
+  // when itemsCargoSize is absent — their grid lives in the p3d model. The mod flags these
+  // via isContainer so we don't wrongly hide the cargo section for a bare/zero cargoSize.
+  const holdsCargo = (hasGrid || detail.isContainer === true)
+    ? true
+    : (Array.isArray(cargo) ? false : null);
   return { acceptsAttachments, holdsCargo };
 }

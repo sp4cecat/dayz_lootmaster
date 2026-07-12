@@ -9,7 +9,7 @@
  *  - detail:      GET /types/{name}             (vanilla only; description + graphs; null for modded)
  *  - attachments: GET /types/{name}/attachments (vanilla AND modded; accepts/fitsInto + displayName)
  * Prefer the /attachments graph (broader coverage); pull description from the vanilla detail.
- * @returns {{name:string, displayName:string|null, description:string|null, accepts:object|null, fitsInto:object|null, exposesSlots:string[]|null, occupiesSlots:string[]|null, cargoSize:number[]|null}}
+ * @returns {{name:string, displayName:string|null, description:string|null, accepts:object|null, fitsInto:object|null, exposesSlots:string[]|null, occupiesSlots:string[]|null, cargoSize:number[]|null, isContainer:boolean|null}}
  */
 export function normalizeTypeDetail(name, detail, attachments) {
   const config = detail && detail.config;
@@ -22,6 +22,7 @@ export function normalizeTypeDetail(name, detail, attachments) {
     exposesSlots: (attachments && attachments.exposesSlots) || null,
     occupiesSlots: (attachments && attachments.occupiesSlots) || null,
     cargoSize: (attachments && attachments.cargoSize) || (detail && detail.cargoSize) || null,
+    isContainer: (attachments && attachments.isContainer) ?? (detail && detail.isContainer) ?? null,
   };
 }
 

@@ -1374,6 +1374,9 @@ function buildCatalogDetail(name) {
         occupiesSlots: detail && Array.isArray(detail.inventorySlot) ? detail.inventorySlot : null,
         // cargoSize: [rows, cols] capacity; present/non-zero product ⇒ the item is a container.
         cargoSize: detail && Array.isArray(detail.cargoSize) ? detail.cargoSize : null,
+        // isContainer: Container_Base descendant — holds cargo even when cargoSize is empty
+        // (storage containers' grids live in the p3d, not itemsCargoSize).
+        isContainer: detail && typeof detail.isContainer === 'boolean' ? detail.isContainer : null,
         // magazines: compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons.
         magazines: detail && Array.isArray(detail.magazines) ? detail.magazines : null,
         // hitpoints: base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none.

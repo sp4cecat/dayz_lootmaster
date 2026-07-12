@@ -465,6 +465,7 @@
           "attachments": { "type": "array", "items": { "type": "string" }, "description": "Slots THIS object exposes for other items." },
           "magazines": { "type": "array", "items": { "type": "string" }, "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons." },
           "cargoSize": { "type": "array", "items": { "type": "integer" } },
+          "isContainer": { "type": "boolean", "description": "Descends from Container_Base/DeployableContainer_Base; holds cargo even when itemsCargoSize is absent (grid lives in the p3d)." },
           "weight": { "type": "number", "format": "float" },
           "hitpoints": { "type": "number", "format": "float", "description": "Base durability (DamageSystem GlobalHealth Health hitpoints); 0 if none." },
           "armor": { "type": "array", "description": "DamageSystem GlobalArmor, one row per declared damage-type (cfgAmmo class). damage is what that type deals to the zone: 0 = immune, higher = less protection.", "items": { "$ref": "#/components/schemas/ArmorEntry" } }

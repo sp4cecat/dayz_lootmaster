@@ -25,6 +25,7 @@ function getApiBase() {
  * @property {string[]|null} exposesSlots
  * @property {string[]|null} occupiesSlots
  * @property {number[]|null} cargoSize
+ * @property {boolean|null} isContainer
  * @property {string[]|null} magazines
  * @property {number|null} hitpoints
  * @property {{ammo:string,health:number,blood:number,shock:number}[]|null} armor

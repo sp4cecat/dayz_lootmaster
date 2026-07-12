@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT } from '../../src/contexts/CatalogContext';
-import type { AttachmentGraph } from '../../src/contexts/CatalogContext';
+import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities } from '../../src/contexts/CatalogContext';
+import type { AttachmentGraph, TypeDetail } from '../../src/contexts/CatalogContext';
 
 const graph: AttachmentGraph = {
   slots: ['WeaponHandguardAK', 'weaponMuzzleAK'],
@@ -89,5 +89,51 @@ describe('inferGroupSlot', () => {
   it('ignores magazines when the list is empty or absent', () => {
     expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'], [])).toBeNull();
     expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'])).toBeNull();
+  });
+});
+
+describe('deriveItemCapabilities', () => {
+  // Minimal detail factory: the derivation only reads exposesSlots, cargoSize, isContainer.
+  const detail = (over: Partial<TypeDetail>): TypeDetail => ({
+    name: 'X', displayName: null, description: null, accepts: null, fitsInto: null,
+    exposesSlots: null, occupiesSlots: null, cargoSize: null, magazines: null,
+    hitpoints: null, armor: null, ...over,
+  });
+
+  it('reports cargo for a positive grid (e.g. a jacket [6,4] / teddy bear [2,3])', () => {
+    expect(deriveItemCapabilities(detail({ cargoSize: [2, 3] })).holdsCargo).toBe(true);
+    expect(deriveItemCapabilities(detail({ cargoSize: [6, 4] })).holdsCargo).toBe(true);
+  });
+
+  it('reports no cargo for a zeroed grid (weapons ship [0,0])', () => {
+    expect(deriveItemCapabilities(detail({ cargoSize: [0, 0] })).holdsCargo).toBe(false);
+  });
+
+  it('reports no cargo for an empty grid on a non-container (hats/knives ship [])', () => {
+    expect(deriveItemCapabilities(detail({ cargoSize: [] })).holdsCargo).toBe(false);
+  });
+
+  it('reports cargo for a Container_Base descendant even with an empty grid (SeaChest/Barrel)', () => {
+    expect(deriveItemCapabilities(detail({ cargoSize: [], isContainer: true })).holdsCargo).toBe(true);
+  });
+
+  it('still reports cargo when a grid is present regardless of isContainer:false', () => {
+    expect(deriveItemCapabilities(detail({ cargoSize: [2, 3], isContainer: false })).holdsCargo).toBe(true);
+  });
+
+  it('treats a missing/non-array cargoSize as unknown (null), not a definitive "no cargo"', () => {
+    expect(deriveItemCapabilities(detail({ cargoSize: null })).holdsCargo).toBeNull();
+    // isContainer:true rescues even the unknown case.
+    expect(deriveItemCapabilities(detail({ cargoSize: null, isContainer: true })).holdsCargo).toBe(true);
+  });
+
+  it('returns all-null for a missing detail', () => {
+    expect(deriveItemCapabilities(undefined)).toEqual({ acceptsAttachments: null, holdsCargo: null });
+  });
+
+  it('derives acceptsAttachments from exposesSlots', () => {
+    expect(deriveItemCapabilities(detail({ exposesSlots: ['Vest'] })).acceptsAttachments).toBe(true);
+    expect(deriveItemCapabilities(detail({ exposesSlots: [] })).acceptsAttachments).toBe(false);
+    expect(deriveItemCapabilities(detail({ exposesSlots: null })).acceptsAttachments).toBeNull();
   });
 });
