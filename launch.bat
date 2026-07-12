@@ -95,8 +95,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Installing dependencies...
-call npm install
+echo Installing dependencies (including build toolchain)...
+call npm install --include=dev
 if errorlevel 1 (
     echo.
     echo npm install failed. Production left running untouched.
