@@ -30,6 +30,13 @@ interface AirdropDropLocationMapProps {
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   onChange: (locations: DropLocation[]) => void;
+  /**
+   * When true the map sizes itself to the available vertical height (a square
+   * driven by the parent's height) instead of the full container width, capped so
+   * the image is never scaled beyond 100% of its native pixels. The parent must be
+   * a flex container with a bounded height. Default false = full-width square.
+   */
+  fill?: boolean;
 }
 
 type DragMode = 'center' | 'radius' | null;
@@ -50,10 +57,14 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
   selectedIndex,
   onSelect,
   onChange,
+  fill = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ mode: DragMode; index: number }>({ mode: null, index: -1 });
   const [, forceRender] = useState(0);
+  // Native image size, measured on load, used to cap fill-mode zoom at 100% (never
+  // upscale the map image beyond its intrinsic pixels).
+  const [naturalSize, setNaturalSize] = useState<number | null>(null);
 
   const worldSize = map.worldSize || 15360;
 
@@ -137,13 +148,24 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
     <div
       ref={containerRef}
       onPointerDown={handleBackgroundClick}
-      className="relative w-full aspect-square overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 select-none touch-none"
+      style={fill && naturalSize ? { maxWidth: naturalSize, maxHeight: naturalSize } : undefined}
+      className={cx(
+        'relative aspect-square overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 select-none touch-none',
+        // Fill mode: square driven by the parent's height (capped at native size via
+        // the inline max-*). Default: full-width square.
+        fill ? 'h-full max-w-full max-h-full' : 'w-full'
+      )}
     >
       {map.imagePath ? (
         <img
           src={map.imagePath}
           alt={map.displayName}
           draggable={false}
+          onLoad={(e) => {
+            const { naturalWidth, naturalHeight } = e.currentTarget;
+            const n = Math.min(naturalWidth || 0, naturalHeight || 0);
+            if (n > 0) setNaturalSize(n);
+          }}
           className="absolute inset-0 h-full w-full object-cover opacity-90 pointer-events-none"
         />
       ) : (

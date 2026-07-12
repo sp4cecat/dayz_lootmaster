@@ -8,6 +8,7 @@ import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
   Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, ClockRefresh, Map01, Link01,
+  Maximize01, Minimize01,
 } from '@untitledui/icons';
 import { Loadout } from '@/types/loadouts';
 import { cx } from '@/utils/cx';
@@ -619,6 +620,9 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
   missions, setMissions, map, getApiBase, headers, setSaveState,
 }) => {
   const selected = selectedLocationIdx !== null ? locations[selectedLocationIdx] : null;
+  // When on, the map grows to use the available vertical height (up to the image's
+  // native size) and the editor moves to a side column.
+  const [mapFill, setMapFill] = useState(false);
 
   const isDirty = useMemo(
     () => JSON.stringify(locations) !== JSON.stringify(savedLocations),
@@ -751,6 +755,31 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
     }
   };
 
+  // Shared editor markup — rendered beside the map in both compact and fill layouts.
+  const editorPanel = selected ? (
+    <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
+      <Input label="Location Name" value={selected.Name}
+        onChange={(e) => updateLocation({ Name: e.target.value })} />
+      <div className="grid grid-cols-3 gap-2">
+        <Input size="sm" label="X" type="number" value={Math.round(selected.x)}
+          onChange={(e) => updateLocation({ x: Number(e.target.value) })} />
+        <Input size="sm" label="Z" type="number" value={Math.round(selected.z)}
+          onChange={(e) => updateLocation({ z: Number(e.target.value) })} />
+        <Input size="sm" label="Radius" type="number" value={Math.round(selected.Radius || 0)}
+          onChange={(e) => updateLocation({ Radius: Number(e.target.value) })} />
+      </div>
+      <p className="text-xs text-gray-400">
+        Referenced by {refCount(selected)} mission{refCount(selected) === 1 ? '' : 's'}.
+      </p>
+    </div>
+  ) : (
+    <div className="h-full flex flex-col items-center justify-center text-center">
+      <Map01 size={40} className="text-gray-200 mb-3" />
+      <h3 className="text-base font-bold text-gray-900 dark:text-white">Select a location</h3>
+      <p className="text-sm text-gray-500 max-w-xs">Choose a drop zone to edit, or click + to add one. Drag on the map to reposition or resize.</p>
+    </div>
+  );
+
   return (
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
@@ -784,8 +813,8 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
         </div>
       </aside>
 
-      <div className="flex-1 overflow-auto p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className={cx('flex-1 p-6', mapFill ? 'flex flex-col overflow-hidden' : 'overflow-auto')}>
+        <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">Drop Locations</h3>
             <p className="text-sm text-gray-500 max-w-xl">
@@ -794,6 +823,12 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Tooltip title={mapFill ? 'Back to compact map' : 'Zoom map to fill available height'} placement="bottom" delay={400}>
+              <TooltipTrigger>
+                <Button variant={mapFill ? 'primary' : 'secondary-gray'} icon={mapFill ? Minimize01 : Maximize01}
+                  onClick={() => setMapFill((v) => !v)}>{mapFill ? 'Compact' : 'Fit height'}</Button>
+              </TooltipTrigger>
+            </Tooltip>
             {selected && (
               <>
                 <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateLocation(selectedLocationIdx!)}>Duplicate</Button>
@@ -804,35 +839,21 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 max-w-5xl">
-          <AirdropDropLocationMap map={map} locations={locations} selectedIndex={selectedLocationIdx}
-            onSelect={setSelectedLocationIdx} onChange={handleMapChange} />
-          <div className="space-y-3">
-            {selected ? (
-              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
-                <Input label="Location Name" value={selected.Name}
-                  onChange={(e) => updateLocation({ Name: e.target.value })} />
-                <div className="grid grid-cols-3 gap-2">
-                  <Input size="sm" label="X" type="number" value={Math.round(selected.x)}
-                    onChange={(e) => updateLocation({ x: Number(e.target.value) })} />
-                  <Input size="sm" label="Z" type="number" value={Math.round(selected.z)}
-                    onChange={(e) => updateLocation({ z: Number(e.target.value) })} />
-                  <Input size="sm" label="Radius" type="number" value={Math.round(selected.Radius || 0)}
-                    onChange={(e) => updateLocation({ Radius: Number(e.target.value) })} />
-                </div>
-                <p className="text-xs text-gray-400">
-                  Referenced by {refCount(selected)} mission{refCount(selected) === 1 ? '' : 's'}.
-                </p>
-              </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center">
-                <Map01 size={40} className="text-gray-200 mb-3" />
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Select a location</h3>
-                <p className="text-sm text-gray-500 max-w-xs">Choose a drop zone to edit, or click + to add one. Drag on the map to reposition or resize.</p>
-              </div>
-            )}
+        {mapFill ? (
+          <div className="flex-1 min-h-0 flex gap-6">
+            <div className="flex-1 min-h-0 flex justify-center">
+              <AirdropDropLocationMap fill map={map} locations={locations} selectedIndex={selectedLocationIdx}
+                onSelect={setSelectedLocationIdx} onChange={handleMapChange} />
+            </div>
+            <div className="w-80 shrink-0 overflow-auto">{editorPanel}</div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-6 max-w-5xl">
+            <AirdropDropLocationMap map={map} locations={locations} selectedIndex={selectedLocationIdx}
+              onSelect={setSelectedLocationIdx} onChange={handleMapChange} />
+            <div className="space-y-3">{editorPanel}</div>
+          </div>
+        )}
       </div>
     </div>
   );
