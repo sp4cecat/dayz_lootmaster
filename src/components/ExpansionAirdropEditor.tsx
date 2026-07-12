@@ -625,13 +625,14 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
     [locations, savedLocations]
   );
 
-  // How many missions currently reference a location (by DropLocation.Name).
-  const refCount = (loc: AirdropLocation) => missions.filter((m) => {
+  // Missions that currently reference a location (by DropLocation.Name).
+  const referencingMissions = (loc: AirdropLocation) => missions.filter((m) => {
     if (m.corrupt) return false;
     const dl = m.data?.DropLocation;
     const drop = Array.isArray(dl) ? dl[0] : dl;
     return drop && nameKey(drop.Name) === nameKey(loc.Name);
-  }).length;
+  });
+  const refCount = (loc: AirdropLocation) => referencingMissions(loc).length;
 
   const updateLocation = (patch: Partial<AirdropLocation>) => {
     if (selectedLocationIdx === null) return;
@@ -666,6 +667,18 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
   };
 
   const deleteLocation = (idx: number) => {
+    const loc = locations[idx];
+    // Deny deletion while any airdrop mission still references this location — the
+    // user must delete or reassign those missions first, else they'd point at a
+    // location name that no longer exists in the library.
+    const users = referencingMissions(loc);
+    if (users.length > 0) {
+      const names = users.map((m) => `  • ${m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}`).join('\n');
+      window.alert(
+        `Can't delete «${loc.Name || 'Unnamed'}» — ${users.length} airdrop mission${users.length === 1 ? '' : 's'} use this location:\n\n${names}\n\nDelete those airdrops, or edit them to use a different location, first.`
+      );
+      return;
+    }
     setLocations(locations.filter((_, i) => i !== idx));
     const nextIdx =
       selectedLocationIdx === null || selectedLocationIdx === idx ? null
