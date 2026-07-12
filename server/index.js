@@ -16,7 +16,7 @@
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve} from 'node:path';
-import {mkdir, readFile, writeFile, stat, appendFile, readdir, cp, rm} from 'node:fs/promises';
+import {mkdir, readFile, stat, appendFile, readdir, cp, rm, rename, open} from 'node:fs/promises';
 import crypto from 'node:crypto';
 import moment from 'moment';
 import * as ingest from './ingest-store.js';
@@ -121,7 +121,7 @@ async function loadProfiles() {
 
 async function saveProfiles() {
     const toSave = profiles.filter(p => p.id !== TEST_PROFILE_ID);
-    await writeFile(PROFILES_FILE, JSON.stringify(toSave, null, 2), 'utf8');
+    await writeFileAtomic(PROFILES_FILE, JSON.stringify(toSave, null, 2));
 }
 
 // Modular loadout templates are shared/global (not keyed by profile). Missing/corrupt file
@@ -141,7 +141,7 @@ function mutateLoadouts(mutator) {
     const run = loadoutsWriteChain.then(async () => {
         const list = await loadLoadouts();
         const next = mutator(list);
-        await writeFile(LOADOUTS_FILE, JSON.stringify(next, null, 2), 'utf8');
+        await writeFileAtomic(LOADOUTS_FILE, JSON.stringify(next, null, 2));
         return next;
     });
     loadoutsWriteChain = run.catch(() => {});
@@ -258,7 +258,7 @@ async function internalCreateSnapshot(profileId, name, description, editorId) {
         editorId
     };
 
-    await writeFile(join(targetDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+    await writeFileAtomic(join(targetDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
     return metadata;
 }
 
@@ -312,7 +312,7 @@ async function removeItemFromMarketplaceCompletely(className, paths) {
                 }
 
                 if (changed) {
-                    await writeFile(filePath, JSON.stringify(json, null, 4) + '\n', 'utf8');
+                    await writeFileAtomic(filePath, JSON.stringify(json, null, 4) + '\n');
                     report.marketFiles++;
                 }
             }
@@ -354,7 +354,7 @@ async function removeItemFromMarketplaceCompletely(className, paths) {
             }
 
             if (changed) {
-                await writeFile(filePath, JSON.stringify(json, null, 4) + '\n', 'utf8');
+                await writeFileAtomic(filePath, JSON.stringify(json, null, 4) + '\n');
                 report.traderZoneFiles++;
             }
         }
@@ -389,7 +389,7 @@ async function removeItemFromMarketplaceCompletely(className, paths) {
             }
 
             if (changed) {
-                await writeFile(filePath, JSON.stringify(json, null, 4) + '\n', 'utf8');
+                await writeFileAtomic(filePath, JSON.stringify(json, null, 4) + '\n');
                 report.traderFiles++;
             }
         }
@@ -580,7 +580,7 @@ async function ensureSpawnableTypeFileInEconomyCore(profile, paths, group, fileN
         }
 
         const newXml = xml.replace(full, openTag + newInner + closeTag);
-        await writeFile(economyCore, newXml, 'utf8');
+        await writeFileAtomic(economyCore, newXml);
         
         // Clear caches to force reload
         groupFolderCaches.delete(profile.id);
@@ -602,8 +602,47 @@ async function createBackupIfExists(target) {
     const backup = join(backupDir, `${String(target).split(/[\\/]/).pop()}.${stamp}.bak`);
     await mkdir(backupDir, {recursive: true});
     const content = await readFile(target, 'utf8');
-    await writeFile(backup, content, 'utf8');
+    await writeFileAtomic(backup, content);
     return backup;
+}
+
+/**
+ * Atomically and durably write a file: write to a same-directory temp file,
+ * fsync it, rename over the target, then fsync the directory.
+ * Prevents the zero-filled/truncated-file corruption that occurs when a plain
+ * writeFile (truncate-then-write, no fsync) is interrupted by a crash/power-loss.
+ * On failure the target is never touched, so the previous good file survives.
+ * @param {string} target absolute path to write
+ * @param {string} data file contents (utf8)
+ * @returns {Promise<string>} the target path
+ */
+async function writeFileAtomic(target, data) {
+    const dir = dirname(target);
+    await mkdir(dir, {recursive: true});
+    // Same-dir temp so rename() is atomic (same filesystem). PID suffix keeps it
+    // collision-free for this single-writer server without needing randomness.
+    // eslint-disable-next-line no-undef
+    const tmp = join(dir, `.${String(target).split(/[\\/]/).pop()}.tmp-${process.pid}`);
+    let fh;
+    try {
+        fh = await open(tmp, 'w');
+        await fh.writeFile(data, 'utf8');
+        await fh.sync();          // flush temp file data to stable storage
+        await fh.close();
+        fh = null;
+        await rename(tmp, target); // atomic replace on same volume
+    } catch (e) {
+        // On any failure the target is left untouched; remove the orphaned temp file.
+        if (fh) { try { await fh.close(); } catch { /* ignore */ } }
+        try { await rm(tmp, {force: true}); } catch { /* ignore */ }
+        throw e;
+    }
+    // Best-effort: fsync the directory so the rename itself is durable.
+    try {
+        const dh = await open(dir, 'r');
+        try { await dh.sync(); } finally { await dh.close(); }
+    } catch { /* directory fsync unsupported (e.g. Windows) — file fsync + atomic rename still applied */ }
+    return target;
 }
 
 /**
@@ -1277,9 +1316,13 @@ async function synthesizeEconomyCoreXml(paths) {
     return lines.join('\n');
 }
 
-async function ensureDirFor(filePath) {
-    const dir = dirname(filePath);
-    await mkdir(dir, {recursive: true});
+// Read a settings file and confirm it parses as JSON. Throws (handled as 404 by the
+// callers' catch blocks) when the file is empty, all-NUL (crash-corrupted), or otherwise
+// not valid JSON — so the client falls back to defaults instead of choking on garbage.
+async function readValidJsonFile(target) {
+    const content = await readFile(target, 'utf8');
+    JSON.parse(content); // throws on '', NUL-filled, or malformed content
+    return content;
 }
 
 async function readBody(req) {
@@ -1956,8 +1999,8 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
                 const p = paths.defsPath;
-                await ensureDirFor(p);
-                await writeFile(p, body, 'utf8');
+                await createBackupIfExists(p);
+                await writeFileAtomic(p, body);
                 send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
                 return;
             }
@@ -2174,7 +2217,7 @@ const server = http.createServer(async (req, res) => {
             const target = paths.airdropSettingsPath;
             if (req.method === 'GET') {
                 try {
-                    const content = await readFile(target, 'utf8');
+                    const content = await readValidJsonFile(target);
                     send(res, 200, content, {'Content-Type': 'application/json'});
                 } catch {
                     send(res, 404, JSON.stringify({ error: 'AirdropSettings.json not found' }), {'Content-Type': 'application/json'});
@@ -2186,8 +2229,9 @@ const server = http.createServer(async (req, res) => {
                     const body = await readBody(req);
                     // Validate JSON before writing to disk
                     const parsed = JSON.parse(body || '{}');
-                    await mkdir(dirname(target), { recursive: true });
-                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    const out = JSON.stringify(parsed, null, 4);
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, out);
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid AirdropSettings payload: ${e.message}`);
@@ -2207,7 +2251,7 @@ const server = http.createServer(async (req, res) => {
             const target = paths.missionSettingsPath;
             if (req.method === 'GET') {
                 try {
-                    const content = await readFile(target, 'utf8');
+                    const content = await readValidJsonFile(target);
                     send(res, 200, content, {'Content-Type': 'application/json'});
                 } catch {
                     send(res, 404, JSON.stringify({ error: 'MissionSettings.json not found' }), {'Content-Type': 'application/json'});
@@ -2219,8 +2263,9 @@ const server = http.createServer(async (req, res) => {
                     const body = await readBody(req);
                     // Validate JSON before writing to disk
                     const parsed = JSON.parse(body || '{}');
-                    await mkdir(dirname(target), { recursive: true });
-                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    const out = JSON.stringify(parsed, null, 4);
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, out);
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid MissionSettings payload: ${e.message}`);
@@ -2241,10 +2286,10 @@ const server = http.createServer(async (req, res) => {
             const target = paths.airdropLocationsPath;
             if (req.method === 'GET') {
                 try {
-                    const content = await readFile(target, 'utf8');
+                    const content = await readValidJsonFile(target);
                     send(res, 200, content, {'Content-Type': 'application/json'});
                 } catch {
-                    // File may not exist yet — client seeds from existing missions.
+                    // File missing OR corrupt (empty/NUL/garbage) — client seeds from existing missions.
                     send(res, 404, JSON.stringify({ error: 'airdrop-locations.json not found' }), {'Content-Type': 'application/json'});
                 }
                 return;
@@ -2254,8 +2299,9 @@ const server = http.createServer(async (req, res) => {
                     const body = await readBody(req);
                     // Validate JSON before writing to disk
                     const parsed = JSON.parse(body || '{}');
-                    await mkdir(dirname(target), { recursive: true });
-                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    const out = JSON.stringify(parsed, null, 4);
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, out);
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid airdrop-locations payload: ${e.message}`);
@@ -2310,8 +2356,9 @@ const server = http.createServer(async (req, res) => {
                 try {
                     const body = await readBody(req);
                     const parsed = JSON.parse(body || '{}');
-                    await mkdir(dir, { recursive: true });
-                    await writeFile(join(dir, fileName), JSON.stringify(parsed, null, 4), 'utf8');
+                    const missionTarget = join(dir, fileName);
+                    await createBackupIfExists(missionTarget);
+                    await writeFileAtomic(missionTarget, JSON.stringify(parsed, null, 4));
                     send(res, 200, JSON.stringify({ ok: true, file: fileName }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid mission payload: ${e.message}`);
@@ -2451,8 +2498,7 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 const backup = await createBackupIfExists(target);
-                await ensureDirFor(target);
-                await writeFile(target, body, 'utf8');
+                await writeFileAtomic(target, body);
 
                 if (isNew && group !== '__root' && group !== 'vanilla' && group !== 'vanilla_overrides') {
                     await ensureSpawnableTypeFileInEconomyCore(profile, paths, group, String(target).split(/[\\/]/).pop());
@@ -2485,8 +2531,7 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
                 const backup = await createBackupIfExists(target);
-                await ensureDirFor(target);
-                await writeFile(target, body, 'utf8');
+                await writeFileAtomic(target, body);
                 send(res, 200, JSON.stringify({ok: true, path: target, backup}), {'Content-Type': 'application/json'});
                 return;
             }
@@ -2539,8 +2584,8 @@ const server = http.createServer(async (req, res) => {
                     if (parsed.Items) {
                         parsed.divingLootListNormal = parsed.Items;
                     }
-                    await ensureDirFor(target);
-                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, JSON.stringify(parsed, null, 4));
                     send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
                 } catch (e) {
                     badRequest(res, `Invalid JSON or write error: ${e.message}`);
@@ -2609,8 +2654,8 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 // Write new content
-                await ensureDirFor(target);
-                await writeFile(target, body, 'utf8');
+                await createBackupIfExists(target);
+                await writeFileAtomic(target, body);
 
                 // Compute detailed changes (added/removed/modified with field-level diffs)
                 try {
@@ -2723,8 +2768,8 @@ const server = http.createServer(async (req, res) => {
                     try {
                         // Validate JSON
                         const parsed = JSON.parse(body);
-                        await ensureDirFor(filePath);
-                        await writeFile(filePath, JSON.stringify(parsed, null, 4), 'utf8');
+                        await createBackupIfExists(filePath);
+                        await writeFileAtomic(filePath, JSON.stringify(parsed, null, 4));
                         send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
                     } catch (e) {
                         badRequest(res, `Invalid JSON or write error: ${e.message}`);
@@ -2789,9 +2834,9 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
                 try {
-                    await ensureDirFor(target);
                     const formatted = JSON.stringify(parsed, null, 4);
-                    await writeFile(target, formatted + (formatted.endsWith('\n') ? '' : '\n'), 'utf8');
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, formatted + (formatted.endsWith('\n') ? '' : '\n'));
                     send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
                 } catch {
                     send(res, 500, JSON.stringify({ error: 'Failed to write category' }), { 'Content-Type': 'application/json' });
@@ -2904,8 +2949,8 @@ const server = http.createServer(async (req, res) => {
                 }
                 const line = buildTraderMapLine({ className, traderFileName, position: pos, orientation: ori, gear: att });
                 try {
-                    await ensureDirFor(target);
-                    await writeFile(target, line + (line.endsWith('\n') ? '' : '\n'), 'utf8');
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, line + (line.endsWith('\n') ? '' : '\n'));
                     send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
                 } catch {
                     send(res, 500, JSON.stringify({ error: 'Failed to write trader map' }), { 'Content-Type': 'application/json' });
@@ -2970,9 +3015,9 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
                 try {
-                    await ensureDirFor(target);
                     const formatted = JSON.stringify(parsed, null, 4);
-                    await writeFile(target, formatted + (formatted.endsWith('\n') ? '' : '\n'), 'utf8');
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, formatted + (formatted.endsWith('\n') ? '' : '\n'));
                     send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
                 } catch {
                     send(res, 500, JSON.stringify({ error: 'Failed to write trader profile' }), { 'Content-Type': 'application/json' });
@@ -3038,9 +3083,9 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
                 try {
-                    await ensureDirFor(target);
                     const formatted = JSON.stringify(parsed, null, 4);
-                    await writeFile(target, formatted + (formatted.endsWith('\n') ? '' : '\n'), 'utf8');
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, formatted + (formatted.endsWith('\n') ? '' : '\n'));
                     send(res, 200, JSON.stringify({ ok: true, path: target }), { 'Content-Type': 'application/json' });
                 } catch {
                     send(res, 500, JSON.stringify({ error: 'Failed to write trader zone' }), { 'Content-Type': 'application/json' });
