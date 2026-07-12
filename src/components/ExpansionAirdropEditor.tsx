@@ -30,7 +30,7 @@ interface ExpansionAirdropEditorProps {
 }
 
 type SaveState = { kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string };
-type TabId = 'core' | 'scheduling' | 'missions' | 'locations';
+type TabId = 'core' | 'containers' | 'scheduling' | 'missions' | 'locations';
 
 // Stable-ish id generator for Lootmaster-owned location entries (crypto.randomUUID
 // where available, else a random suffix). Never written to Expansion mission files.
@@ -226,7 +226,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   loadouts,
   missionName,
 }) => {
-  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'scheduling', 'missions', 'locations']);
+  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'containers', 'scheduling', 'missions', 'locations']);
   const [loading, setLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' });
   const map = useMapMetadata(missionName);
@@ -339,7 +339,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           </div>
         </div>
         <nav className="flex gap-1 mt-4">
-          {([['core', 'Core Settings', Settings01], ['scheduling', 'Scheduling', ClockRefresh], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
+          {([['core', 'Core Settings', Settings01], ['containers', 'Containers', Package], ['scheduling', 'Scheduling', ClockRefresh], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -362,6 +362,16 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         </div>
       ) : tab === 'core' ? (
         <CoreSettingsTab
+          settings={settings}
+          setSettings={setSettings}
+          getApiBase={getApiBase}
+          headers={headers}
+          setSaveState={setSaveState}
+          savedSettings={savedSettings}
+          setSavedSettings={setSavedSettings}
+        />
+      ) : tab === 'containers' ? (
+        <ContainersTab
           settings={settings}
           setSettings={setSettings}
           selectedContainerIdx={selectedContainerIdx}
@@ -426,6 +436,67 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
 interface CoreTabProps {
   settings: any;
   setSettings: (s: any) => void;
+  getApiBase: () => string;
+  headers: Record<string, string>;
+  setSaveState: (s: SaveState) => void;
+  savedSettings: any;
+  setSavedSettings: (s: any) => void;
+}
+
+const CoreSettingsTab: React.FC<CoreTabProps> = ({
+  settings, setSettings, getApiBase, headers, setSaveState,
+  savedSettings, setSavedSettings,
+}) => {
+  const updateField = (key: string, value: any) => setSettings({ ...settings, [key]: value });
+
+  const save = async () => {
+    setSaveState({ kind: 'saving' });
+    try {
+      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      setSavedSettings(settings);
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
+    }
+  };
+
+  const isDirty = useMemo(
+    () => JSON.stringify(settings) !== JSON.stringify(savedSettings),
+    [settings, savedSettings]
+  );
+
+  return (
+    <div className="flex-1 overflow-auto p-6">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex items-center justify-end mb-4">
+          <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Core Settings</Button>
+        </div>
+        <div className="p-4 space-y-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Global Settings</span>
+          {BOOL_CORE_FIELDS.map(({ key, label }) => (
+            <Toggle key={key} label={label} isSelected={!!settings?.[key]} onChange={(v) => updateField(key, v ? 1 : 0)} />
+          ))}
+          {NUMERIC_CORE_FIELDS.map(({ key, label, suffix, hint }) => (
+            <Input key={key} size="sm" label={label} type="number" suffix={suffix} hint={hint}
+              value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
+          ))}
+          <Input size="sm" label="Airdrop Plane Class" placeholder="(default plane)"
+            value={settings?.AirdropPlaneClassName ?? ''} onChange={(e) => updateField('AirdropPlaneClassName', e.target.value)} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface ContainersTabProps {
+  settings: any;
+  setSettings: (s: any) => void;
   selectedContainerIdx: number | null;
   setSelectedContainerIdx: (i: number | null) => void;
   typeOptions: string[];
@@ -439,14 +510,12 @@ interface CoreTabProps {
   customInfected?: string[];
 }
 
-const CoreSettingsTab: React.FC<CoreTabProps> = ({
+const ContainersTab: React.FC<ContainersTabProps> = ({
   settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
   typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
   savedSettings, setSavedSettings, customInfected,
 }) => {
   const containers = settings?.Containers || [];
-
-  const updateField = (key: string, value: any) => setSettings({ ...settings, [key]: value });
 
   const updateContainer = (idx: number, patch: any) => {
     const next = { ...settings, Containers: containers.map((c: any, i: number) => (i === idx ? { ...c, ...patch } : c)) };
@@ -491,18 +560,6 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
   return (
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
-        <div className="p-4 space-y-3 border-b border-gray-200 dark:border-gray-800">
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Global Settings</span>
-          {BOOL_CORE_FIELDS.map(({ key, label }) => (
-            <Toggle key={key} label={label} isSelected={!!settings?.[key]} onChange={(v) => updateField(key, v ? 1 : 0)} />
-          ))}
-          {NUMERIC_CORE_FIELDS.map(({ key, label, suffix, hint }) => (
-            <Input key={key} size="sm" label={label} type="number" suffix={suffix} hint={hint}
-              value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
-          ))}
-          <Input size="sm" label="Airdrop Plane Class" placeholder="(default plane)"
-            value={settings?.AirdropPlaneClassName ?? ''} onChange={(e) => updateField('AirdropPlaneClassName', e.target.value)} />
-        </div>
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Containers</span>
@@ -535,7 +592,7 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
             <Button variant="error-secondary" icon={Trash01}
               onClick={() => deleteContainer(selectedContainerIdx!)}>Delete Container</Button>
           ) : <span />}
-          <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Core Settings</Button>
+          <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Containers</Button>
         </div>
         {selected ? (
           <div className="space-y-6">
