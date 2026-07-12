@@ -171,7 +171,10 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
       </div>
 
       {selectedNodeId && editingNode && (
-        <div className="w-[360px] shrink-0">
+        // self-start + sticky keeps the properties panel in view while the (potentially long)
+        // loot list scrolls inside the editor's overflow-auto container. self-start stops the
+        // flex row from stretching the panel to full height (which would defeat position:sticky).
+        <div className="w-[360px] shrink-0 self-start sticky top-4 max-h-[calc(100vh-7rem)] overflow-y-auto">
           <HierarchicalProperties
             node={editingNode}
             onUpdate={handleUpdateNode}
