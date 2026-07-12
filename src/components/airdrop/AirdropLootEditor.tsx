@@ -12,9 +12,12 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 
 // Expansion airdrop loot (ExpansionLoot / ExpansionLootVariant) has no Cargo
 // member — only Attachments. Restrict the tree to the attachments list so users
-// can't author cargo that Expansion would silently ignore.
+// can't author cargo that Expansion would silently ignore. gate:'either' offers the
+// list for any item that accepts attachments OR holds cargo, since Expansion folds a
+// container's cargo into attachments on spawn (ExpansionCreateInInventory) — so a
+// cargo-only container (e.g. Bear_Pink) must still accept loot here.
 const AIRDROP_CHILD_LISTS: ChildListConfig[] = [
-  { key: 'attachments', label: 'Attachments', icon: Settings01 },
+  { key: 'attachments', label: 'Contents', icon: Settings01, gate: 'either' },
 ];
 
 // Detect an attachment-level group: a `group` node sitting inside some node's

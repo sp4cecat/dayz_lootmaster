@@ -19,6 +19,12 @@ export interface ChildListConfig {
   key: 'attachments' | 'cargo';
   label: string;
   icon: any;
+  /** Which catalog capability decides whether this list is offered. Defaults to `key`.
+   *  'either' offers the list when the item accepts attachments OR holds cargo — used by
+   *  Expansion airdrop loot, whose single "attachments" list represents all container
+   *  contents (Expansion folds cargo into attachments via ExpansionCreateInInventory), so a
+   *  cargo-only container (e.g. Bear_Pink) must still accept children. */
+  gate?: 'attachments' | 'cargo' | 'either';
 }
 
 interface HierarchicalNodeItemProps {
@@ -126,12 +132,17 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     const slots = slotGraph.slots?.length ? slotGraph.slots : Object.keys(slotGraph.bySlot || {});
     return slots.map(s => ({ slot: s, count: (slotGraph.bySlot?.[s] || []).length }));
   }, [slotGraph]);
-  const listOffered = (key: 'attachments' | 'cargo'): boolean => {
+  const listOffered = (cfg: ChildListConfig): boolean => {
     if (isGroup) return true; // group members list is not catalog-gated
-    return key === 'cargo' ? holdsCargo !== false : acceptsAttachments !== false;
+    const gate = cfg.gate ?? cfg.key;
+    if (gate === 'either') return acceptsAttachments !== false || holdsCargo !== false;
+    return gate === 'cargo' ? holdsCargo !== false : acceptsAttachments !== false;
   };
-  const emptyNote = (key: 'attachments' | 'cargo'): string =>
-    key === 'cargo' ? 'This item has no cargo capacity' : 'This item exposes no attachment slots';
+  const emptyNote = (cfg: ChildListConfig): string => {
+    const gate = cfg.gate ?? cfg.key;
+    if (gate === 'either') return 'This item can hold no contents';
+    return gate === 'cargo' ? 'This item has no cargo capacity' : 'This item exposes no attachment slots';
+  };
 
   // An item that the catalog says can hold neither attachments nor cargo has no child
   // options to open — so hide the expand chevron entirely. We still allow expansion when
@@ -299,7 +310,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
         <div className="ml-6 pl-4 border-l-2 border-gray-100 dark:border-gray-800 space-y-4 py-2">
           {effectiveChildLists.map((listConfig) => {
              const children = resolvedChildren[listConfig.key] || [];
-             const offered = listOffered(listConfig.key);
+             const offered = listOffered(listConfig);
              return (
               <div key={listConfig.key} className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -388,7 +399,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                   />
                 ) : (
                   <div className="text-[10px] text-gray-400 italic p-2">
-                    {emptyNote(listConfig.key)}
+                    {emptyNote(listConfig)}
                   </div>
                 )}
               </div>
