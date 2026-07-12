@@ -1375,8 +1375,9 @@ function buildCatalogDetail(name) {
         // cargoSize: [rows, cols] capacity; present/non-zero product ⇒ the item is a container.
         cargoSize: detail && Array.isArray(detail.cargoSize) ? detail.cargoSize : null,
         // isContainer: Container_Base descendant — holds cargo even when cargoSize is empty
-        // (storage containers' grids live in the p3d, not itemsCargoSize).
-        isContainer: detail && typeof detail.isContainer === 'boolean' ? detail.isContainer : null,
+        // (storage containers' grids live in the p3d, not itemsCargoSize). The mod's Enforce
+        // JsonSerializer emits bool as 1/0 (number), so coerce truthiness; absent ⇒ null (unknown).
+        isContainer: detail && detail.isContainer != null ? !!detail.isContainer : null,
         // magazines: compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons.
         magazines: detail && Array.isArray(detail.magazines) ? detail.magazines : null,
         // hitpoints: base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none.
