@@ -185,6 +185,7 @@ function getPaths(profile) {
         airdropSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'AirdropSettings.json'),
         missionSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'MissionSettings.json'),
         airdropMissionsDirPath: join(missionPath, 'expansion', 'missions'),
+        airdropLocationsPath: join(missionPath, '.lootmaster', 'airdrop-locations.json'),
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
         expansionLogsDirPath: join(profilesPath, 'ExpansionMod', 'Logs'),
@@ -2223,6 +2224,41 @@ const server = http.createServer(async (req, res) => {
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid MissionSettings payload: ${e.message}`);
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // GET/PUT Lootmaster Airdrop Locations library (Lootmaster-owned, not read by the game).
+        // Normalised drop zones that missions reference by Name; stored under .lootmaster/.
+        if (pathname === '/api/expansion/airdrop-locations') {
+            const profileId = req.headers['x-profile-id'];
+            const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
+            if (!profile) { notFound(res); return; }
+            const paths = getPaths(profile);
+            const target = paths.airdropLocationsPath;
+            if (req.method === 'GET') {
+                try {
+                    const content = await readFile(target, 'utf8');
+                    send(res, 200, content, {'Content-Type': 'application/json'});
+                } catch {
+                    // File may not exist yet — client seeds from existing missions.
+                    send(res, 404, JSON.stringify({ error: 'airdrop-locations.json not found' }), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                try {
+                    const body = await readBody(req);
+                    // Validate JSON before writing to disk
+                    const parsed = JSON.parse(body || '{}');
+                    await mkdir(dirname(target), { recursive: true });
+                    await writeFile(target, JSON.stringify(parsed, null, 4), 'utf8');
+                    send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid airdrop-locations payload: ${e.message}`);
                 }
                 return;
             }

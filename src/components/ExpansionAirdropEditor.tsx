@@ -7,14 +7,14 @@ import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
-  Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, ClockRefresh,
+  Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, ClockRefresh, Map01, Link01,
 } from '@untitledui/icons';
 import { Loadout } from '@/types/loadouts';
 import { cx } from '@/utils/cx';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
 import { MapMetadata } from '@/consts/maps';
 import { AirdropLootEditor } from './airdrop/AirdropLootEditor';
-import { AirdropDropLocationMap, DropLocation } from './AirdropDropLocationMap';
+import { AirdropDropLocationMap, DropLocation, AirdropLocation } from './AirdropDropLocationMap';
 
 interface ExpansionAirdropEditorProps {
   selectedProfileId: string;
@@ -26,7 +26,40 @@ interface ExpansionAirdropEditorProps {
 }
 
 type SaveState = { kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string };
-type TabId = 'core' | 'scheduling' | 'missions';
+type TabId = 'core' | 'scheduling' | 'missions' | 'locations';
+
+// Stable-ish id generator for Lootmaster-owned location entries (crypto.randomUUID
+// where available, else a random suffix). Never written to Expansion mission files.
+const genLocationId = (): string =>
+  `loc_${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10)).replace(/-/g, '').slice(0, 8)}`;
+
+// Match tolerance when de-duplicating drop locations into the library: same Name
+// (case-insensitive) and identical rounded coordinates/radius.
+const sameZone = (a: { Name?: string; x: number; z: number; Radius?: number }, b: { Name?: string; x: number; z: number; Radius?: number }) =>
+  (a.Name || '').trim().toLowerCase() === (b.Name || '').trim().toLowerCase() &&
+  Math.round(a.x) === Math.round(b.x) &&
+  Math.round(a.z) === Math.round(b.z) &&
+  Math.round(a.Radius || 0) === Math.round(b.Radius || 0);
+
+// Build the initial locations library from the loaded missions' inline DropLocations,
+// de-duplicating identical zones. Used to auto-seed when no library file exists yet.
+function seedLocationsFromMissions(missions: { data: any }[]): AirdropLocation[] {
+  const out: AirdropLocation[] = [];
+  for (const m of missions) {
+    const dl = m?.data?.DropLocation;
+    const drop = Array.isArray(dl) ? dl[0] : dl;
+    if (!drop || typeof drop.x !== 'number' || typeof drop.z !== 'number') continue;
+    if (out.some((l) => sameZone(l, drop))) continue;
+    out.push({
+      id: genLocationId(),
+      Name: (drop.Name || 'Drop').trim(),
+      x: Math.round(drop.x),
+      z: Math.round(drop.z),
+      Radius: drop.Radius != null ? Math.round(drop.Radius) : 500,
+    });
+  }
+  return out;
+}
 
 const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string }[] = [
   { key: 'ItemCount', label: 'Default Item Count' },
@@ -148,16 +181,22 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   const [missions, setMissions] = useState<{ file: string; data: any }[]>([]);
   const [selectedMissionIdx, setSelectedMissionIdx] = useState<number | null>(null);
 
+  // Locations library (Lootmaster-owned; missions reference these by Name)
+  const [locations, setLocations] = useState<AirdropLocation[]>([]);
+  const [savedLocations, setSavedLocations] = useState<AirdropLocation[]>([]);
+  const [selectedLocationIdx, setSelectedLocationIdx] = useState<number | null>(null);
+
   const headers = useMemo(() => ({ 'X-Profile-ID': selectedProfileId }), [selectedProfileId]);
 
   const load = async () => {
     if (!getApiBase || !selectedProfileId) return;
     setLoading(true);
     try {
-      const [sRes, mRes, msRes] = await Promise.all([
+      const [sRes, mRes, msRes, lRes] = await Promise.all([
         fetch(`${getApiBase()}/api/expansion/airdrop-settings`, { headers }),
         fetch(`${getApiBase()}/api/expansion/airdrop-missions`, { headers }),
         fetch(`${getApiBase()}/api/expansion/mission-settings`, { headers }),
+        fetch(`${getApiBase()}/api/expansion/airdrop-locations`, { headers }),
       ]);
       if (sRes.ok) {
         const data = await sRes.json();
@@ -168,7 +207,8 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         setSettings(fallback);
         setSavedSettings(fallback);
       }
-      if (mRes.ok) setMissions(buildMissions(await mRes.json(), map.worldSize));
+      const builtMissions = mRes.ok ? buildMissions(await mRes.json(), map.worldSize) : [];
+      if (mRes.ok) setMissions(builtMissions);
       if (msRes.ok) {
         const data = await msRes.json();
         setMissionSettings(data);
@@ -177,6 +217,24 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         // File may not exist yet — seed defaults; the first save (PUT) creates it.
         setMissionSettings({ ...MISSION_DEFAULTS });
         setSavedMissionSettings({ ...MISSION_DEFAULTS });
+      }
+      // Locations library: load the Lootmaster-owned file, or auto-seed from the
+      // missions' inline DropLocations when it doesn't exist yet. A seeded library
+      // is left "dirty" (savedLocations = []) so the first save persists it.
+      let loadedLocations: AirdropLocation[] | null = null;
+      if (lRes.ok) {
+        try {
+          const data = await lRes.json();
+          if (Array.isArray(data?.locations)) loadedLocations = data.locations;
+        } catch { /* fall through to seeding */ }
+      }
+      if (loadedLocations && loadedLocations.length > 0) {
+        setLocations(loadedLocations);
+        setSavedLocations(loadedLocations);
+      } else {
+        const seeded = seedLocationsFromMissions(builtMissions);
+        setLocations(seeded);
+        setSavedLocations(loadedLocations ? loadedLocations : []);
       }
     } catch (e) {
       console.error('Failed to load airdrop data', e);
@@ -190,6 +248,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
     load();
     setSelectedContainerIdx(null);
     setSelectedMissionIdx(null);
+    setSelectedLocationIdx(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProfileId]);
 
@@ -217,7 +276,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           </div>
         </div>
         <nav className="flex gap-1 mt-4">
-          {([['core', 'Core Settings', Settings01], ['scheduling', 'Scheduling', ClockRefresh], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
+          {([['core', 'Core Settings', Settings01], ['scheduling', 'Scheduling', ClockRefresh], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -264,6 +323,21 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           headers={headers}
           setSaveState={setSaveState}
         />
+      ) : tab === 'locations' ? (
+        <LocationsTab
+          locations={locations}
+          setLocations={setLocations}
+          savedLocations={savedLocations}
+          setSavedLocations={setSavedLocations}
+          selectedLocationIdx={selectedLocationIdx}
+          setSelectedLocationIdx={setSelectedLocationIdx}
+          missions={missions}
+          setMissions={setMissions}
+          map={map}
+          getApiBase={getApiBase}
+          headers={headers}
+          setSaveState={setSaveState}
+        />
       ) : (
         <MissionsTab
           missions={missions}
@@ -271,6 +345,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           selectedMissionIdx={selectedMissionIdx}
           setSelectedMissionIdx={setSelectedMissionIdx}
           containerNames={containerNames}
+          locations={locations}
           map={map}
           typeOptions={typeOptions}
           randomPresets={randomPresets}
@@ -517,6 +592,239 @@ const SchedulingTab: React.FC<SchedulingTabProps> = ({
   );
 };
 
+interface LocationsTabProps {
+  locations: AirdropLocation[];
+  setLocations: React.Dispatch<React.SetStateAction<AirdropLocation[]>>;
+  savedLocations: AirdropLocation[];
+  setSavedLocations: (l: AirdropLocation[]) => void;
+  selectedLocationIdx: number | null;
+  setSelectedLocationIdx: (i: number | null) => void;
+  missions: Mission[];
+  setMissions: React.Dispatch<React.SetStateAction<Mission[]>>;
+  map: MapMetadata;
+  getApiBase: () => string;
+  headers: Record<string, string>;
+  setSaveState: (s: SaveState) => void;
+}
+
+// Case-insensitive linkage key used to match a mission's DropLocation.Name to a
+// library location Name.
+const nameKey = (n?: string) => (n || '').trim().toLowerCase();
+
+// Reusable-locations library. Locations are Lootmaster-owned; missions reference
+// them by Name and get the coordinates inlined into their Airdrop_*.json on save.
+const LocationsTab: React.FC<LocationsTabProps> = ({
+  locations, setLocations, savedLocations, setSavedLocations,
+  selectedLocationIdx, setSelectedLocationIdx,
+  missions, setMissions, map, getApiBase, headers, setSaveState,
+}) => {
+  const selected = selectedLocationIdx !== null ? locations[selectedLocationIdx] : null;
+
+  const isDirty = useMemo(
+    () => JSON.stringify(locations) !== JSON.stringify(savedLocations),
+    [locations, savedLocations]
+  );
+
+  // How many missions currently reference a location (by DropLocation.Name).
+  const refCount = (loc: AirdropLocation) => missions.filter((m) => {
+    if (m.corrupt) return false;
+    const dl = m.data?.DropLocation;
+    const drop = Array.isArray(dl) ? dl[0] : dl;
+    return drop && nameKey(drop.Name) === nameKey(loc.Name);
+  }).length;
+
+  const updateLocation = (patch: Partial<AirdropLocation>) => {
+    if (selectedLocationIdx === null) return;
+    setLocations(locations.map((l, i) => (i === selectedLocationIdx ? { ...l, ...patch } : l)));
+  };
+
+  // The map hands back a DropLocation[]; fold it back onto the library entries,
+  // preserving each location's Lootmaster id and Name by index.
+  const handleMapChange = (next: DropLocation[]) => {
+    setLocations(next.map((d, i) => ({
+      id: locations[i]?.id ?? genLocationId(),
+      Name: (d.Name ?? locations[i]?.Name ?? 'Drop'),
+      x: Math.round(d.x),
+      z: Math.round(d.z),
+      Radius: d.Radius != null ? Math.round(d.Radius) : locations[i]?.Radius,
+    })));
+  };
+
+  const addLocation = () => {
+    const loc: AirdropLocation = {
+      id: genLocationId(), Name: `Location ${locations.length + 1}`,
+      x: Math.round(map.worldSize / 2), z: Math.round(map.worldSize / 2), Radius: 500,
+    };
+    setLocations([...locations, loc]);
+    setSelectedLocationIdx(locations.length);
+  };
+
+  const duplicateLocation = (idx: number) => {
+    const src = locations[idx];
+    setLocations([...locations, { ...src, id: genLocationId(), Name: `${src.Name} Copy` }]);
+    setSelectedLocationIdx(locations.length);
+  };
+
+  const deleteLocation = (idx: number) => {
+    setLocations(locations.filter((_, i) => i !== idx));
+    const nextIdx =
+      selectedLocationIdx === null || selectedLocationIdx === idx ? null
+        : selectedLocationIdx > idx ? selectedLocationIdx - 1
+          : selectedLocationIdx;
+    setSelectedLocationIdx(nextIdx);
+  };
+
+  // Missions whose inlined DropLocation is now stale relative to the library. A
+  // mission is linked by its *previous* Name (from savedLocations) so renames still
+  // match; new/unsaved mission files are skipped (they persist via their own save).
+  const computeMissionUpdates = (): { file: string; data: any }[] => {
+    const ups: { file: string; data: any }[] = [];
+    for (const loc of locations) {
+      const prev = savedLocations.find((l) => l.id === loc.id);
+      const linkName = nameKey(prev?.Name ?? loc.Name);
+      if (!linkName) continue;
+      for (const m of missions) {
+        if (m.corrupt || m.isNew || ups.some((u) => u.file === m.file)) continue;
+        const dl = m.data?.DropLocation;
+        const drop = Array.isArray(dl) ? dl[0] : dl;
+        if (!drop || nameKey(drop.Name) !== linkName) continue;
+        const stale =
+          (drop.Name || '') !== loc.Name ||
+          Math.round(drop.x) !== Math.round(loc.x) ||
+          Math.round(drop.z) !== Math.round(loc.z) ||
+          Math.round(drop.Radius || 0) !== Math.round(loc.Radius || 0);
+        if (stale) {
+          const desired = { ...drop, Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius };
+          ups.push({ file: m.file, data: { ...m.data, DropLocation: [desired] } });
+        }
+      }
+    }
+    return ups;
+  };
+
+  const save = async () => {
+    setSaveState({ kind: 'saving' });
+    try {
+      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-locations`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locations }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+
+      // Offer to push the updated coordinates into any missions that reference
+      // these locations, so the on-disk Airdrop_*.json files stay in sync.
+      const updates = computeMissionUpdates();
+      if (updates.length > 0 &&
+        confirm(`${updates.length} mission${updates.length === 1 ? '' : 's'} reference these locations. Update their drop coordinates to match?`)) {
+        await Promise.all(updates.map((u) =>
+          fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(u.file)}`, {
+            method: 'PUT',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(u.data),
+          })
+        ));
+        setMissions((prev) => prev.map((m) => {
+          const u = updates.find((x) => x.file === m.file);
+          return u ? { ...m, data: u.data } : m;
+        }));
+      }
+
+      setSavedLocations(locations);
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
+    }
+  };
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
+        <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Locations</span>
+          <Button size="xs" variant="secondary-gray" icon={Plus} onClick={addLocation} />
+        </div>
+        <div className="p-2 space-y-1">
+          {locations.length === 0 && (
+            <p className="p-3 text-xs text-gray-400">No locations yet. Click + to create a reusable drop zone.</p>
+          )}
+          {locations.map((loc, i) => {
+            const count = refCount(loc);
+            return (
+              <button key={loc.id} onClick={() => setSelectedLocationIdx(i)}
+                className={cx('w-full text-left p-3 rounded-lg border transition-all',
+                  selectedLocationIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                    : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold truncate">{loc.Name || 'Unnamed'}</span>
+                  <Tooltip title={`${count} mission${count === 1 ? '' : 's'} use this location`} placement="right" delay={400}>
+                    <TooltipTrigger>
+                      <Badge size="sm" color={count > 0 ? 'brand' : 'gray'}>{count}</Badge>
+                    </TooltipTrigger>
+                  </Tooltip>
+                </div>
+                <span className="text-xs text-gray-400 truncate block">{Math.round(loc.x)}, {Math.round(loc.z)} · R{Math.round(loc.Radius || 0)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <div className="flex-1 overflow-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Drop Locations</h3>
+            <p className="text-sm text-gray-500 max-w-xl">
+              Reusable named drop zones. Reference them from the <span className="font-medium">Missions</span> tab;
+              saving here can push coordinate changes into every mission that uses a location.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {selected && (
+              <>
+                <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateLocation(selectedLocationIdx!)}>Duplicate</Button>
+                <Button variant="error-secondary" icon={Trash01} onClick={() => deleteLocation(selectedLocationIdx!)}>Delete</Button>
+              </>
+            )}
+            <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Locations</Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6 max-w-5xl">
+          <AirdropDropLocationMap map={map} locations={locations} selectedIndex={selectedLocationIdx}
+            onSelect={setSelectedLocationIdx} onChange={handleMapChange} />
+          <div className="space-y-3">
+            {selected ? (
+              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
+                <Input label="Location Name" value={selected.Name}
+                  onChange={(e) => updateLocation({ Name: e.target.value })} />
+                <div className="grid grid-cols-3 gap-2">
+                  <Input size="sm" label="X" type="number" value={Math.round(selected.x)}
+                    onChange={(e) => updateLocation({ x: Number(e.target.value) })} />
+                  <Input size="sm" label="Z" type="number" value={Math.round(selected.z)}
+                    onChange={(e) => updateLocation({ z: Number(e.target.value) })} />
+                  <Input size="sm" label="Radius" type="number" value={Math.round(selected.Radius || 0)}
+                    onChange={(e) => updateLocation({ Radius: Number(e.target.value) })} />
+                </div>
+                <p className="text-xs text-gray-400">
+                  Referenced by {refCount(selected)} mission{refCount(selected) === 1 ? '' : 's'}.
+                </p>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center">
+                <Map01 size={40} className="text-gray-200 mb-3" />
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Select a location</h3>
+                <p className="text-sm text-gray-500 max-w-xs">Choose a drop zone to edit, or click + to add one. Drag on the map to reposition or resize.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void; customInfected?: string[] }> = ({ values, onChange, customInfected = [] }) => {
   const [draft, setDraft] = useState('');
 
@@ -620,6 +928,7 @@ interface MissionsTabProps {
   selectedMissionIdx: number | null;
   setSelectedMissionIdx: (i: number | null) => void;
   containerNames: string[];
+  locations: AirdropLocation[];
   map: MapMetadata;
   typeOptions: string[];
   randomPresets: any;
@@ -660,7 +969,7 @@ const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.t
 
 const MissionsTab: React.FC<MissionsTabProps> = ({
   missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
-  containerNames, map,
+  containerNames, locations, map,
   typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
@@ -755,6 +1064,22 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const updateDrop = (patch: Partial<DropLocation>) =>
     patchData({ DropLocation: [{ ...(drop || { x: 0, z: 0 }), ...patch }] });
 
+  // Copy a whole library location into this mission's drop (Name + coords).
+  const applyLocation = (loc: AirdropLocation) =>
+    patchData({ DropLocation: [{ ...(drop || {}), Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius }] });
+
+  // Options for the location picker: library locations plus a "Custom…" escape hatch.
+  const CUSTOM_KEY = '__custom__';
+  const locationOptions = useMemo(
+    () => [{ id: CUSTOM_KEY, label: 'Custom…' }, ...locations.map((l) => ({ id: l.id, label: l.Name }))],
+    [locations]
+  );
+  // The mission is "linked" to a library location when its drop Name matches one.
+  const linkedLocation = useMemo(
+    () => (drop ? locations.find((l) => (l.Name || '').trim().toLowerCase() === (drop.Name || '').trim().toLowerCase()) : undefined),
+    [locations, drop]
+  );
+
   const containerOptions = useMemo(() => {
     const set = new Set<string>(['Random', ...containerNames]);
     if (mission?.data?.Container) set.add(mission.data.Container);
@@ -845,11 +1170,29 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
                   <Target04 size={14} /> Drop Location
                 </span>
+                {linkedLocation && (
+                  <span className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400">
+                    <Link01 size={12} /> Linked to «{linkedLocation.Name}»
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <AirdropDropLocationMap map={map} locations={drop ? [drop] : []} selectedIndex={drop ? 0 : null}
                   onSelect={() => {}} onChange={(next) => updateDrop(next[0] || {})} />
                 <div className="space-y-2">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Use Location</label>
+                    <ComboBox aria-label="Use Location" items={locationOptions}
+                      selectedKey={linkedLocation?.id ?? CUSTOM_KEY}
+                      onSelectionChange={(k) => {
+                        if (!k || k === CUSTOM_KEY) return;
+                        const loc = locations.find((l) => l.id === String(k));
+                        if (loc) applyLocation(loc);
+                      }}>
+                      {(item: { id: string; label: string }) => <ComboBoxItem id={item.id}>{item.label}</ComboBoxItem>}
+                    </ComboBox>
+                    <p className="text-xs text-gray-400 mt-1">Pick a saved location, or edit coordinates below for a custom drop.</p>
+                  </div>
                   {drop && (
                     <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-800">
                       <div className="mb-2">

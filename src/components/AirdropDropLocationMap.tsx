@@ -10,6 +10,20 @@ export interface DropLocation {
   [key: string]: any;
 }
 
+/**
+ * A normalised, reusable airdrop drop zone in Lootmaster's own locations library.
+ * `id` is Lootmaster-internal (stable across renames) and is never written to
+ * Expansion files — missions reference a location by `Name`. A location is a 2D
+ * ground circle only; plane Height/Speed are mission-level, not part of a location.
+ */
+export interface AirdropLocation {
+  id: string;
+  Name: string;
+  x: number;
+  z: number;
+  Radius?: number;
+}
+
 interface AirdropDropLocationMapProps {
   map: MapMetadata;
   locations: DropLocation[];
