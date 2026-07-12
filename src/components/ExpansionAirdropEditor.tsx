@@ -4,6 +4,8 @@ import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
 import { Toggle } from '@/components/base/toggle/toggle';
+import { Checkbox } from '@/components/base/checkbox/checkbox';
+import { Select } from '@/components/base/select/select';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import {
@@ -63,9 +65,20 @@ function seedLocationsFromMissions(missions: { data: any }[]): AirdropLocation[]
   return out;
 }
 
-const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string }[] = [
-  { key: 'ItemCount', label: 'Default Item Count' },
-  { key: 'InfectedCount', label: 'Default Infected Count' },
+// Real AirdropSettings.json (ExpansionAirdropSettings VERSION 8) top-level numeric
+// fields. See the ExpansionAirdropSettings.c source — these are the plane/drop
+// tuning globals; per-mission files can override Height/Speed/DropZone*.
+const NUMERIC_CORE_FIELDS: { key: string; label: string; suffix?: string; hint?: string }[] = [
+  { key: 'Height', label: 'Plane Height', suffix: 'm' },
+  { key: 'DropZoneHeight', label: 'Drop Zone Height', suffix: 'm' },
+  { key: 'FollowTerrainFraction', label: 'Follow Terrain Fraction', hint: '0–1' },
+  { key: 'Speed', label: 'Plane Speed', suffix: 'm/s' },
+  { key: 'DropZoneSpeed', label: 'Drop Zone Speed', suffix: 'm/s' },
+  { key: 'Radius', label: 'Drop Radius', suffix: 'm' },
+  { key: 'InfectedSpawnRadius', label: 'Infected Spawn Radius', suffix: 'm' },
+  { key: 'InfectedSpawnInterval', label: 'Infected Spawn Interval', suffix: 'ms' },
+  { key: 'DropZoneProximityDistance', label: 'Drop Zone Proximity', suffix: 'm' },
+  { key: 'ItemCount', label: 'Item Count (legacy)', hint: 'Fallback; set per container' },
 ];
 
 const CONTAINER_CLASS_OPTIONS: string[] = [
@@ -123,11 +136,29 @@ const EAI_CLASSNAMES = [
   "eAI_SurvivorM_Rolf", "eAI_SurvivorM_Seth", "eAI_SurvivorM_Taiki"
 ];
 
+// Real AirdropSettings.json (VERSION 8) top-level boolean toggles.
 const BOOL_CORE_FIELDS: { key: string; label: string }[] = [
-  { key: 'Enabled', label: 'Airdrops Enabled' },
-  { key: 'EnableMapMarker', label: 'Map Marker' },
-  { key: 'EnableServerMarker', label: 'Server Marker' },
-  { key: 'ShowNotificationServerWide', label: 'Server-wide Notification' },
+  { key: 'ServerMarkerOnDropLocation', label: 'Server Marker on Drop' },
+  { key: 'Server3DMarkerOnDropLocation', label: '3D Marker on Drop' },
+  { key: 'ShowAirdropTypeOnMarker', label: 'Show Airdrop Type on Marker' },
+  { key: 'HideCargoWhileParachuteIsDeployed', label: 'Hide Cargo While Parachuting' },
+  { key: 'HeightIsRelativeToGroundLevel', label: 'Height Relative to Ground' },
+  { key: 'ExplodeAirVehiclesOnCollision', label: 'Explode Air Vehicles on Collision' },
+];
+
+// Container Usage: which drop kinds this container is eligible for.
+const USAGE_OPTIONS = [
+  { value: '0', label: 'Missions & player-called' },
+  { value: '1', label: 'Only missions' },
+  { value: '2', label: 'Only player-called' },
+];
+
+// Container-level ExplodeAirVehiclesOnCollision is tri-state: -1 inherits the
+// global AirdropSettings value, 0 off, 1 on.
+const EXPLODE_OPTIONS = [
+  { value: '-1', label: 'Default (inherit)' },
+  { value: '0', label: 'Off' },
+  { value: '1', label: 'On' },
 ];
 
 // Airdrops are the only mission type Expansion ships, so MissionSettings.json is
@@ -155,6 +186,36 @@ const formatMs = (ms: number) => {
   if (s < 60) return `= ${s} sec`;
   const m = s / 60;
   return m < 60 ? `= ${+m.toFixed(m % 1 ? 1 : 0)} min` : `= ${+(m / 60).toFixed(1)} h`;
+};
+
+// Number input paired with a "Default" checkbox. Expansion inherits several
+// per-container / per-mission values from a parent when they are left at the
+// sentinel -1 (ItemCount/InfectedCount) or <= 0 (Speed/DropZoneSpeed/FallSpeed):
+// container ItemCount/InfectedCount fall back to the global AirdropSettings, and
+// mission ItemCount/InfectedCount/Speed fall back to the container then global.
+// Checking Default stores -1 (which satisfies both sentinels), disables the input,
+// and shows the resolved default value as a placeholder.
+const DefaultableNumber: React.FC<{
+  label: string;
+  value: number | undefined;
+  resolvedDefault?: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+  size?: 'sm' | 'md';
+}> = ({ label, value, resolvedDefault, onChange, suffix, size }) => {
+  const inheriting = value == null || value === -1;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5 gap-2">
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
+        <Checkbox size="sm" label="Default" isSelected={inheriting} onChange={(on) => onChange(on ? -1 : (resolvedDefault ?? 0))} />
+      </div>
+      <Input type="number" size={size} suffix={suffix} disabled={inheriting}
+        value={inheriting ? '' : value}
+        placeholder={inheriting ? `Default${resolvedDefault != null ? `: ${resolvedDefault}` : ' (inherited)'}` : undefined}
+        onChange={(e) => onChange(Number(e.target.value))} />
+    </div>
+  );
 };
 
 export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
@@ -347,6 +408,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           selectedMissionIdx={selectedMissionIdx}
           setSelectedMissionIdx={setSelectedMissionIdx}
           containerNames={containerNames}
+          settings={settings}
           locations={locations}
           map={map}
           typeOptions={typeOptions}
@@ -434,16 +496,18 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
           {BOOL_CORE_FIELDS.map(({ key, label }) => (
             <Toggle key={key} label={label} isSelected={!!settings?.[key]} onChange={(v) => updateField(key, v ? 1 : 0)} />
           ))}
-          {NUMERIC_CORE_FIELDS.map(({ key, label, suffix }) => (
-            <Input key={key} size="sm" label={label} type="number" suffix={suffix}
+          {NUMERIC_CORE_FIELDS.map(({ key, label, suffix, hint }) => (
+            <Input key={key} size="sm" label={label} type="number" suffix={suffix} hint={hint}
               value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
           ))}
+          <Input size="sm" label="Airdrop Plane Class" placeholder="(default plane)"
+            value={settings?.AirdropPlaneClassName ?? ''} onChange={(e) => updateField('AirdropPlaneClassName', e.target.value)} />
         </div>
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Containers</span>
             <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => {
-              setSettings({ ...settings, Containers: [...containers, { Container: 'NewContainer', Loot: [], Infected: [] }] });
+              setSettings({ ...settings, Containers: [...containers, { Container: 'NewContainer', Usage: 0, Weight: 1, FallSpeed: 4.5, ItemCount: -1, InfectedCount: 15, SpawnInfectedForPlayerCalledDrops: 0, ExplodeAirVehiclesOnCollision: -1, Loot: [], Infected: [] }] });
               setSelectedContainerIdx(containers.length);
             }} />
           </div>
@@ -487,14 +551,22 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
                   {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
                 </ComboBox>
               </div>
-              <div className="flex items-end pb-2">
-                <Toggle label="Spawn Smoke" isSelected={!!selected.SpawnSmoke}
-                  onChange={(v) => updateContainer(selectedContainerIdx!, { SpawnSmoke: v ? 1 : 0 })} />
-              </div>
-              <Input label="Item Count" type="number" value={selected.ItemCount ?? ''}
-                onChange={(e) => updateContainer(selectedContainerIdx!, { ItemCount: Number(e.target.value) })} />
+              <Select label="Usage" options={USAGE_OPTIONS} value={String(selected.Usage ?? 0)}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { Usage: Number(e.target.value) })} />
+              <Input label="Weight" type="number" value={selected.Weight ?? ''}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { Weight: Number(e.target.value) })} />
+              <Input label="Fall Speed" type="number" suffix="m/s" value={selected.FallSpeed ?? ''}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { FallSpeed: Number(e.target.value) })} />
+              <DefaultableNumber label="Item Count" value={selected.ItemCount} resolvedDefault={settings?.ItemCount}
+                onChange={(v) => updateContainer(selectedContainerIdx!, { ItemCount: v })} />
               <Input label="Infected Count" type="number" value={selected.InfectedCount ?? ''}
                 onChange={(e) => updateContainer(selectedContainerIdx!, { InfectedCount: Number(e.target.value) })} />
+              <div className="flex items-end pb-2">
+                <Toggle label="Spawn Infected for Player-Called Drops" isSelected={!!selected.SpawnInfectedForPlayerCalledDrops}
+                  onChange={(v) => updateContainer(selectedContainerIdx!, { SpawnInfectedForPlayerCalledDrops: v ? 1 : 0 })} />
+              </div>
+              <Select label="Explode Air Vehicles on Collision" options={EXPLODE_OPTIONS} value={String(selected.ExplodeAirVehiclesOnCollision ?? -1)}
+                onChange={(e) => updateContainer(selectedContainerIdx!, { ExplodeAirVehiclesOnCollision: Number(e.target.value) })} />
             </div>
 
             <InfectedList values={selected.Infected || []} customInfected={customInfected} onChange={(v) => updateContainer(selectedContainerIdx!, { Infected: v })} />
@@ -713,7 +785,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
           Math.round(drop.Radius || 0) !== Math.round(loc.Radius || 0);
         if (stale) {
           const desired = { ...drop, Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius };
-          ups.push({ file: m.file, data: { ...m.data, DropLocation: [desired] } });
+          ups.push({ file: m.file, data: { ...m.data, DropLocation: desired } });
         }
       }
     }
@@ -938,9 +1010,9 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
 interface Mission { file: string; data: any; isNew?: boolean; corrupt?: boolean; parseError?: string; }
 
 // Expansion requires exactly ONE DropLocation per mission file, so each file maps
-// to exactly one mission with a single drop location. On disk DropLocation is kept
-// as a 1-element array (the canonical Expansion shape); tolerant of legacy files
-// that stored it as a bare object.
+// to exactly one mission with a single drop location. On disk DropLocation is a
+// bare object (the canonical Expansion shape: ref ExpansionAirdropLocation);
+// tolerant of legacy files that stored it as a 1-element array.
 const DEFAULT_DROP = (worldSize: number): DropLocation => ({
   Name: 'New Drop', x: Math.round(worldSize / 2), z: Math.round(worldSize / 2), Radius: 500.0,
 });
@@ -953,7 +1025,10 @@ function buildMissions(raw: { file: string; data: any; error?: string }[], world
     }
     const dl = data.DropLocation;
     const drop = (Array.isArray(dl) ? dl[0] : dl) || DEFAULT_DROP(worldSize);
-    return { file, data: { ...data, DropLocation: [drop] } } as Mission;
+    // Expansion's mission class declares DropLocation as a single object
+    // (ref ExpansionAirdropLocation), so we normalise to an object on disk.
+    // Reads stay tolerant of legacy 1-element-array files.
+    return { file, data: { ...data, DropLocation: drop } } as Mission;
   });
 }
 
@@ -963,6 +1038,7 @@ interface MissionsTabProps {
   selectedMissionIdx: number | null;
   setSelectedMissionIdx: (i: number | null) => void;
   containerNames: string[];
+  settings: any;
   locations: AirdropLocation[];
   map: MapMetadata;
   typeOptions: string[];
@@ -973,31 +1049,40 @@ interface MissionsTabProps {
   setSaveState: (s: SaveState) => void;
 }
 
+// Matches ExpansionMissionEventAirdrop (VERSION 3) defaults (see OnDefaultMission):
+// ItemCount/InfectedCount default to -1 (inherit from the container, then global
+// AirdropSettings); Speed/DropZoneSpeed inherit from AirdropSettings when <= 0.
 const DEFAULT_MISSION = (worldSize: number) => ({
+  m_Version: 3,
+  Enabled: 1,
   Weight: 100,
-  MissionMaxTime: 1200.0,
+  MissionMaxTime: 1200,
   MissionName: 'Random',
   Difficulty: 0,
   Objective: 0,
   Reward: '',
   ShowNotification: 1,
-  Height: 600.0,
-  Speed: 100.0,
+  Height: 450.0,
+  DropZoneHeight: 450.0,
+  Speed: -1,
+  DropZoneSpeed: -1,
   Container: 'Random',
-  DropLocation: [{ Name: 'New Drop', x: Math.round(worldSize / 2), z: Math.round(worldSize / 2), Radius: 500.0 }],
-  ItemCount: 25,
-  InfectedCount: 15,
+  FallSpeed: 4.5,
+  DropLocation: { Name: 'New Drop', x: Math.round(worldSize / 2), z: Math.round(worldSize / 2), Radius: 500.0 },
   Infected: [],
+  ItemCount: -1,
+  InfectedCount: -1,
+  AirdropPlaneClassName: '',
   Loot: [],
 });
 
+// Plain per-mission numeric fields (no inheritance). Speed/DropZoneSpeed/ItemCount/
+// InfectedCount are rendered separately with DefaultableNumber.
 const MISSION_NUMERIC: { key: string; label: string; suffix?: string }[] = [
   { key: 'Weight', label: 'Weight' },
   { key: 'MissionMaxTime', label: 'Max Time', suffix: 'sec' },
   { key: 'Height', label: 'Plane Height', suffix: 'm' },
-  { key: 'Speed', label: 'Plane Speed' },
-  { key: 'ItemCount', label: 'Item Count' },
-  { key: 'InfectedCount', label: 'Infected Count' },
+  { key: 'DropZoneHeight', label: 'Drop Zone Height', suffix: 'm' },
 ];
 
 const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.test(name);
@@ -1028,7 +1113,7 @@ const groupOf = (m: Mission): { key: string; label: string } => {
 
 const MissionsTab: React.FC<MissionsTabProps> = ({
   missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
-  containerNames, locations, map,
+  containerNames, settings, locations, map,
   typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
@@ -1087,8 +1172,8 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
       setSaveState({ kind: 'error', message: 'File must match Airdrop_*.json' });
       return;
     }
-    // Expansion allows one DropLocation per mission file, so write exactly one file
-    // with DropLocation as a 1-element array (the canonical Expansion shape).
+    // Expansion allows one DropLocation per mission file, written as a single
+    // object (ref ExpansionAirdropLocation) — the canonical Expansion shape.
     const dl = mission.data.DropLocation;
     const drop = Array.isArray(dl) ? dl[0] : dl;
     if (!drop) {
@@ -1101,7 +1186,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
       const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...mission.data, DropLocation: [drop] }),
+        body: JSON.stringify({ ...mission.data, DropLocation: drop }),
       });
       if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${mission.file}`);
       patchMission({ isNew: false });
@@ -1139,7 +1224,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const drop: DropLocation | null = (Array.isArray(dl) ? dl[0] : dl) || null;
 
   const updateDrop = (patch: Partial<DropLocation>) =>
-    patchData({ DropLocation: [{ ...(drop || { x: 0, z: 0 }), ...patch }] });
+    patchData({ DropLocation: { ...(drop || { x: 0, z: 0 }), ...patch } });
 
   // Copy a whole library location into this mission's drop (Name + coords). New
   // (unsaved) mission files are auto-named after the location; already-saved files
@@ -1149,7 +1234,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     setMissions((prev) => prev.map((m, i) => {
       if (i !== selectedMissionIdx) return m;
       const prevDrop = Array.isArray(m.data?.DropLocation) ? m.data.DropLocation[0] : m.data?.DropLocation;
-      const nextData = { ...m.data, DropLocation: [{ ...(prevDrop || {}), Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius }] };
+      const nextData = { ...m.data, DropLocation: { ...(prevDrop || {}), Name: loc.Name, x: loc.x, z: loc.z, Radius: loc.Radius } };
       const file = m.isNew ? fileNameForLocation(loc.Name, prev, i) : m.file;
       return { ...m, data: nextData, file };
     }));
@@ -1172,6 +1257,21 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     if (mission?.data?.Container) set.add(mission.data.Container);
     return Array.from(set).map((c) => ({ id: c }));
   }, [containerNames, mission?.data?.Container]);
+
+  // Resolved defaults shown when a mission field is set to inherit (see
+  // ExpansionMissionEventAirdrop.Event_OnStart): ItemCount/InfectedCount inherit
+  // from the selected container (ItemCount then falls back to global), and
+  // Speed/DropZoneSpeed inherit from the global AirdropSettings.
+  const missionDefaults = useMemo(() => {
+    const cont = (settings?.Containers || []).find((c: any) => c?.Container === mission?.data?.Container);
+    const contItem = cont && cont.ItemCount > 0 ? cont.ItemCount : settings?.ItemCount;
+    return {
+      ItemCount: contItem,
+      InfectedCount: cont?.InfectedCount,
+      Speed: settings?.Speed,
+      DropZoneSpeed: settings?.DropZoneSpeed,
+    };
+  }, [settings, mission?.data?.Container]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -1265,12 +1365,27 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 <Input key={key} label={label} type="number" suffix={suffix}
                   value={mission.data[key] ?? ''} onChange={(e) => patchData({ [key]: Number(e.target.value) })} />
               ))}
+              <DefaultableNumber label="Plane Speed" suffix="m/s" value={mission.data.Speed} resolvedDefault={missionDefaults.Speed}
+                onChange={(v) => patchData({ Speed: v })} />
+              <DefaultableNumber label="Drop Zone Speed" suffix="m/s" value={mission.data.DropZoneSpeed} resolvedDefault={missionDefaults.DropZoneSpeed}
+                onChange={(v) => patchData({ DropZoneSpeed: v })} />
+              <DefaultableNumber label="Item Count" value={mission.data.ItemCount} resolvedDefault={missionDefaults.ItemCount}
+                onChange={(v) => patchData({ ItemCount: v })} />
+              <DefaultableNumber label="Infected Count" value={mission.data.InfectedCount} resolvedDefault={missionDefaults.InfectedCount}
+                onChange={(v) => patchData({ InfectedCount: v })} />
             </div>
 
             <div className="flex items-center gap-6">
+              <Toggle label="Enabled" isSelected={!!mission.data.Enabled}
+                onChange={(v) => patchData({ Enabled: v ? 1 : 0 })} />
               <Toggle label="Show Notification" isSelected={!!mission.data.ShowNotification}
                 onChange={(v) => patchData({ ShowNotification: v ? 1 : 0 })} />
               <Toggle label="Unique loot (override container)" isSelected={isUnique} onChange={setMode} />
+            </div>
+
+            <div className="max-w-sm">
+              <Input label="Airdrop Plane Class" placeholder="(inherit from settings)"
+                value={mission.data.AirdropPlaneClassName ?? ''} onChange={(e) => patchData({ AirdropPlaneClassName: e.target.value })} />
             </div>
 
             {isUnique && (
