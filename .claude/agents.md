@@ -18,6 +18,11 @@ Agent definitions live in `.claude/agents/`. Invoke via the Agent tool with the 
 **Use for**: DayZ CLE domain questions — types.xml schema, cfgeconomycore.xml structure, spawnable types resolution hierarchy, Expansion Mod integration (market, airdrops, traders), cfglimitsdefinition.xml validation rules, vanilla override protection logic.
 **Skip when**: you need implementation code — this agent analyses and specifies; it routes coding tasks to the other two.
 
+## lootmaster-expansion-airdrops
+**File**: `.claude/agents/lootmaster-expansion-airdrops.md`
+**Use for**: how DayZ-Expansion airdrops actually spawn loot — the `ExpansionLootSpawner` algorithm (`SpawnLoot`/`AddItem`/`Spawn`), **Variants (weighted select-one substitution) vs Attachments (independent additive rolls)**, the authoritative settings v8 / mission v3 / container schema, and how Lootmaster's `LoadoutNode` tree maps to Expansion loot on export (`loadoutToExpansionAirdrop`). Deep specialisation of the airdrop slice of `lootmaster-dayz`.
+**Skip when**: the question is general CLE (use `lootmaster-dayz`) or you need the code written (routes to the coder agents).
+
 ---
 
 ## Decision guide
@@ -32,4 +37,6 @@ Agent definitions live in `.claude/agents/`. Invoke via the Agent tool with the 
 | Work with IndexedDB or persistence | `lootmaster-backend` |
 | Understand how a DayZ config field works | `lootmaster-dayz` |
 | Debug why a types.xml value behaves unexpectedly | `lootmaster-dayz` |
+| Understand how airdrop Variants / Attachments spawn, or the airdrop JSON schema | `lootmaster-expansion-airdrops` |
+| Spec how `LoadoutNode` should map to Expansion airdrop loot | `lootmaster-expansion-airdrops` (spec) → then a coder |
 | Add support for a new DayZ map or add-on | `lootmaster-dayz` (spec) → then appropriate coder |

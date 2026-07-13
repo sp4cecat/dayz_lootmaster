@@ -55,6 +55,10 @@ Special cases:
 - Recursive JSON loot table — containers can nest other containers
 - Managed via `ExpansionAirdropEditor` and the Universal Hierarchical Editor framework
 - Uses `variants` field on `LoadoutNode` (Expansion-specific extension)
+- **For anything deeper — the spawn algorithm, Variants (weighted select-one) vs
+  Attachments (independent additive rolls), the authoritative v8/v3 schema, or the
+  `LoadoutNode` → Expansion loot export mapping — defer to `lootmaster-expansion-airdrops`.**
+  Note the committed example `AirdropSettings.json` is fabricated; the mod bundle is truth.
 
 ### Traders
 - Config at `<serverPath>/mpmissions/<missionName>/expansion/traders/*.json`
