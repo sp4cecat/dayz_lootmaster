@@ -37,7 +37,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { findParent, findNode, reorderList, cloneNodeWithNewIds } from '@/utils/tree';
+import { findParent, findNode, reorderList, cloneNodeWithNewIds, cloneNodeAsLink, buildNodeIndex } from '@/utils/tree';
 
 interface HierarchicalTreeProps {
   items: LoadoutNode[];
@@ -73,6 +73,9 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
 }) => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isCopyDrag, setIsCopyDrag] = useState(false);
+
+  // id -> node lookup so linked clones (linkedTo) can be resolved to their source sibling.
+  const nodeIndex = useMemo(() => buildNodeIndex(items), [items]);
 
   const activeIdRef = React.useRef<string | null>(null);
   const isCopyDragRef = React.useRef(false);
@@ -146,7 +149,16 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   };
 
   const duplicateItem = (index: number) => {
-    const clone = cloneNodeWithNewIds(items[index]);
+    const source = items[index];
+    // Duplicating an item creates a live, read-only linked clone; groups/templates keep the
+    // old independent-copy behavior. A linked clone isn't selected (it's read-only).
+    if (source.type === 'item') {
+      const next = [...items];
+      next.splice(index + 1, 0, cloneNodeAsLink(source));
+      onUpdate(next);
+      return;
+    }
+    const clone = cloneNodeWithNewIds(source);
     const next = [...items];
     next.splice(index + 1, 0, clone);
     onUpdate(next);
@@ -215,7 +227,11 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
         const sourceNode = findNode(items, active.id as string);
         if (!sourceNode) return;
 
-        const newNode = cloneNodeWithNewIds(sourceNode);
+        // Drag-copy of an item produces a linked clone (live mirror); groups/templates copy
+        // independently, as before.
+        const newNode = sourceNode.type === 'item'
+          ? cloneNodeAsLink(sourceNode)
+          : cloneNodeWithNewIds(sourceNode);
 
         let targetParent: LoadoutNode | null = null;
         let targetListKey: 'attachments' | 'cargo' | 'root' = 'root';
@@ -289,6 +305,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
               expansionAirdrops={expansionAirdrops}
               spawnableTypesByGroup={spawnableTypesByGroup}
               isReadOnly={isReadOnly}
+              nodeIndex={nodeIndex}
             />
           ))}
         </SortableContext>
@@ -321,6 +338,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
               randomPresets={randomPresets}
               expansionAirdrops={expansionAirdrops}
               spawnableTypesByGroup={spawnableTypesByGroup}
+              nodeIndex={nodeIndex}
             />
             {isCopyDrag && (
               <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-lg font-bold uppercase">

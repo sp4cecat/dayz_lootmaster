@@ -30,6 +30,11 @@ export interface LoadoutNode {
   variants?: (string | ExpansionLootVariant)[];
   attributes?: Record<string, string>; // XML attribute compatibility
   isExpanded?: boolean;
+  // When set, this node is a live, read-only mirror of the sibling node with this id (its
+  // source). Display and DayZ export resolve content from the source; the node's own stored
+  // attachments/cargo/etc. are a stale fallback used only if the source is gone. Cleared by
+  // the "Unlink" action, which bakes the resolved content in as an independent editable copy.
+  linkedTo?: string;
 }
 
 // Mirrors Expansion's ExpansionLootVariant (ExpansionLoot.c): an alternate version of

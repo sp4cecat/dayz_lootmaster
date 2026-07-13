@@ -1,10 +1,10 @@
 import React from 'react';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
-import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical, Boxes, Copy } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical, Boxes, Copy, Unlink } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
-import { cloneNodeWithNewIds } from '@/utils/tree';
+import { cloneNodeWithNewIds, cloneNodeAsLink, resolveLinkedNode, unlinkNode } from '@/utils/tree';
 import { useResolvedNode } from '@/hooks/useResolvedNode';
 import { useItemCapabilities, useAttachmentSlots, useCatalog } from '@/contexts/CatalogContext';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
@@ -47,6 +47,8 @@ interface HierarchicalNodeItemProps {
   expansionAirdrops?: any;
   spawnableTypesByGroup?: any;
   isReadOnly?: boolean;
+  /** id -> node lookup for resolving linked clones (nodes with `linkedTo`) to their source. */
+  nodeIndex?: Map<string, LoadoutNode>;
 }
 
 const DroppablePlaceholder: React.FC<{ id: string, label: string }> = ({ id, label }) => {
@@ -82,10 +84,22 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   randomPresets,
   expansionAirdrops,
   spawnableTypesByGroup,
-  isReadOnly = false
+  isReadOnly = false,
+  nodeIndex
 }) => {
+  // A linked clone mirrors its source sibling live and is immutable until "Unlink" is used.
+  // `displayNode` carries the source's content but this node's own id/expand state.
+  const isLinked = !!node.linkedTo;
+  const displayNode = React.useMemo(
+    () => (isLinked && nodeIndex ? resolveLinkedNode(node, nodeIndex) : node),
+    [isLinked, node, nodeIndex]
+  );
+  // Linked clones are read-only for editing, but still selectable so their mirrored values can
+  // be inspected in the properties panel.
+  const editLocked = isReadOnly || isLinked;
+
   const [localExpanded, setLocalExpanded] = React.useState(defaultExpanded);
-  const isExpanded = isReadOnly ? localExpanded : (node.isExpanded ?? defaultExpanded);
+  const isExpanded = editLocked ? localExpanded : (node.isExpanded ?? defaultExpanded);
   const isSelected = selectedNodeId === node.id;
 
   const {
@@ -95,9 +109,9 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ 
+  } = useSortable({
     id: node.id,
-    disabled: isReadOnly 
+    disabled: editLocked
   });
 
   const style = {
@@ -107,17 +121,17 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   };
 
   const resolvedChildren = useResolvedNode(
-    node, 
-    allLoadouts, 
-    randomPresets, 
-    expansionAirdrops, 
+    displayNode,
+    allLoadouts,
+    randomPresets,
+    expansionAirdrops,
     spawnableTypesByGroup
   );
 
   // A group node renders a single members list (its `attachments`) instead of the
   // default Attachments + Cargo lists. Its kind (attachments vs cargo) is implied by
   // which parent list it lives in.
-  const isGroup = node.type === 'group';
+  const isGroup = displayNode.type === 'group';
   const effectiveChildLists: ChildListConfig[] = isGroup
     ? [{ key: 'attachments', label: 'Items', icon: Package }]
     : childLists;
@@ -125,13 +139,13 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   // Companion-mod catalog capabilities for this class. Only item nodes map to a real
   // class; group/template nodes are structural, so we skip them. null capability means
   // the catalog can't answer (mod down / unknown) -> keep offering the option.
-  const gateName = (!isGroup && node.type === 'item') ? node.name : undefined;
+  const gateName = (!isGroup && displayNode.type === 'item') ? displayNode.name : undefined;
   const { acceptsAttachments, holdsCargo } = useItemCapabilities(gateName);
 
   // Root item rows show the catalog display name in small text beneath the classname.
   const { displayNameFor } = useCatalog();
-  const rootDisplayName = depth === 0 && node.type === 'item'
-    ? displayNameFor(node.name)
+  const rootDisplayName = depth === 0 && displayNode.type === 'item'
+    ? displayNameFor(displayNode.name)
     : undefined;
 
   // Attachment slots this item exposes (from the catalog attachments[] feed), offered when
@@ -158,7 +172,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   // options to open — so hide the expand chevron entirely. We still allow expansion when
   // the catalog can't answer (null) or when the node already has children to show, so no
   // existing config becomes unreachable.
-  const noChildCapacity = !isGroup && node.type === 'item'
+  const noChildCapacity = !isGroup && displayNode.type === 'item'
     && acceptsAttachments === false && holdsCargo === false;
   const hasChildren = (resolvedChildren.attachments?.length || 0) > 0
     || (resolvedChildren.cargo?.length || 0) > 0;
@@ -205,13 +219,29 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     onUpdate({ ...node, [list]: newList });
   };
 
-  // Inserts a fresh-ID deep copy of a child item directly after the original.
+  // Duplicating a child item inserts a live, read-only linked clone directly after it;
+  // groups/templates keep the old independent-copy behavior.
   const duplicateChild = (list: 'attachments' | 'cargo', index: number) => {
-    const clone = cloneNodeWithNewIds(node[list][index]);
+    const source = node[list][index];
     const newList = [...node[list]];
+    if (source.type === 'item') {
+      newList.splice(index + 1, 0, cloneNodeAsLink(source));
+      onUpdate({ ...node, [list]: newList });
+      return;
+    }
+    const clone = cloneNodeWithNewIds(source);
     newList.splice(index + 1, 0, clone);
     onUpdate({ ...node, [list]: newList });
     onSelect(clone);
+  };
+
+  // Bakes the mirrored source content into this node as an independent editable copy and
+  // clears the link. Requires the node index to find the source.
+  const handleUnlink = () => {
+    if (!nodeIndex) return;
+    const unlinked = unlinkNode(node, nodeIndex);
+    onUpdate(unlinked);
+    onSelect(unlinked);
   };
 
   // Adds an inline group (one <attachments>/<cargo> block) to the given list, optionally
@@ -243,11 +273,11 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
           isSelected 
             ? "bg-primary-50 border-primary-200 dark:bg-primary-900/20 dark:border-primary-800" 
             : "bg-white border-gray-200 dark:bg-gray-900 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700",
-          isReadOnly && "opacity-60 grayscale-[0.5] cursor-default"
+          editLocked && "opacity-60 grayscale-[0.5] cursor-default"
         )}
-        onClick={() => !isReadOnly && onSelect(node)}
+        onClick={() => { if (!editLocked) onSelect(node); }}
       >
-        {!isReadOnly && (
+        {!editLocked && (
           <div 
             {...attributes} 
             {...listeners}
@@ -267,7 +297,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (isReadOnly) {
+              if (editLocked) {
                 setLocalExpanded(!isExpanded);
               } else {
                 onUpdate({ ...node, isExpanded: !isExpanded });
@@ -284,38 +314,54 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
 
         <div className={cx(
           "p-1.5 rounded mr-3",
-          node.type === 'template' ? "bg-amber-100 text-amber-600"
+          displayNode.type === 'template' ? "bg-amber-100 text-amber-600"
             : isGroup ? "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
             : "bg-blue-100 text-blue-600"
         )}>
-          {node.type === 'template' ? <Layers size={14} /> : isGroup ? <Boxes size={14} /> : <Package size={14} />}
+          {displayNode.type === 'template' ? <Layers size={14} /> : isGroup ? <Boxes size={14} /> : <Package size={14} />}
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold truncate text-sm">{node.name || (node.type === 'item' ? 'Unnamed Item' : isGroup ? 'Group' : 'Unnamed Template')}</span>
-            <Badge color="gray" size="sm">{(node.chance * 100).toFixed(0)}%</Badge>
-            {node.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
-            {isGroup && <Badge color="purple" size="sm">Group{node.slot ? ` · ${node.slot}` : ''} · one of {(node.attachments || []).length}</Badge>}
-            {isReadOnly && <Badge color="gray" size="sm">Linked</Badge>}
+            <span className="font-semibold truncate text-sm">{displayNode.name || (displayNode.type === 'item' ? 'Unnamed Item' : isGroup ? 'Group' : 'Unnamed Template')}</span>
+            <Badge color="gray" size="sm">{(displayNode.chance * 100).toFixed(0)}%</Badge>
+            {displayNode.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
+            {isGroup && <Badge color="purple" size="sm">Group{displayNode.slot ? ` · ${displayNode.slot}` : ''} · one of {(displayNode.attachments || []).length}</Badge>}
+            {(isReadOnly || isLinked) && <Badge color="gray" size="sm">Linked</Badge>}
           </div>
           {rootDisplayName && rootDisplayName !== node.name && (
             <span className="block truncate text-xs text-gray-400 dark:text-gray-500">{rootDisplayName}</span>
           )}
         </div>
 
+        {/* Linked clones: an always-visible Unlink control (they have no edit buttons). */}
+        {isLinked && !isReadOnly && (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 w-8 p-0"
+              aria-label="Unlink clone"
+              title="Unlink to edit independently"
+              onClick={(e) => { e.stopPropagation(); handleUnlink(); }}
+            >
+              <Unlink size={14} />
+            </Button>
+          </div>
+        )}
+
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {!isReadOnly && (
+          {!editLocked && (
             <>
-              <Button 
-                variant="secondary" 
-                size="sm" 
+              <Button
+                variant="secondary"
+                size="sm"
                 className="h-8 w-8 p-0"
                 onClick={(e) => { e.stopPropagation(); onSelect(node); }}
               >
                 <Settings2 size={14} />
               </Button>
-              {node.type === 'item' && onDuplicate && (
+              {displayNode.type === 'item' && onDuplicate && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -347,7 +393,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
               <div key={listConfig.key} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{listConfig.label}</span>
-                  {!isReadOnly && offered && (
+                  {!editLocked && offered && (
                     <div className="flex gap-2">
                       {!isGroup && (
                         listConfig.key === 'attachments' && slotOptions.length > 0 ? (
@@ -420,7 +466,8 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                           randomPresets={randomPresets}
                           expansionAirdrops={expansionAirdrops}
                           spawnableTypesByGroup={spawnableTypesByGroup}
-                          isReadOnly={isReadOnly || node.type === 'template'}
+                          isReadOnly={editLocked || displayNode.type === 'template'}
+                          nodeIndex={nodeIndex}
                         />
                       ))}
                     </SortableContext>

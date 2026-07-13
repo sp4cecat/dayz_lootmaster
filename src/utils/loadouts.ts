@@ -1,5 +1,6 @@
 import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
+import { buildNodeIndex, materializeLinkedClones } from '@/utils/tree';
 
 /**
  * Coerce an Expansion attachment/variant entry that may be a bare classname string
@@ -180,6 +181,9 @@ export function loadoutToExpansionAirdrop(
   randomPresets: any[] = [],
   expansionAirdrops: any = null
 ) {
+  // DayZ has no link concept: materialize linked clones into concrete source content first.
+  const rootItems = materializeLinkedClones(loadout.items, buildNodeIndex(loadout.items));
+
   // Expansion airdrop JSON has no concept of an anonymous chance-bearing group, so
   // inline group nodes are flattened into individual entries: each member's chance is
   // multiplied by its group's chance. A linked random preset (cfgrandompresets.xml) used
@@ -260,7 +264,7 @@ export function loadoutToExpansionAirdrop(
     return item;
   };
 
-  return loadout.items
+  return rootItems
     .map(node => (node.type === 'group' ? groupToLootItem(node) : mapLootItem(node)))
     .filter((x: any) => x !== null);
 }
@@ -275,6 +279,9 @@ export function loadoutToVanillaXml(
   expansionAirdrops: any = null
 ) {
   const lines: string[] = [];
+
+  // DayZ has no link concept: materialize linked clones into concrete source content first.
+  const rootItems = materializeLinkedClones(loadout.items, buildNodeIndex(loadout.items));
 
   // Renders one child of a root item's attachments/cargo list as a single
   // <attachments>/<cargo> block. A child can be a group (inline block), a preset
@@ -333,7 +340,7 @@ export function loadoutToVanillaXml(
     lines.push(`${space}</type>`);
   };
 
-  loadout.items.forEach(item => mapRoot(item, 0));
+  rootItems.forEach(item => mapRoot(item, 0));
 
   return lines.join('\n');
 }

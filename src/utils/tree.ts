@@ -1,5 +1,7 @@
+import { LoadoutNode } from '@/types/loadouts';
+
 export function findNode<T extends { id: string, attachments?: T[], cargo?: T[] }>(
-  nodes: T[], 
+  nodes: T[],
   id: string
 ): T | null {
   for (const node of nodes) {
@@ -58,6 +60,82 @@ export function cloneNodeWithNewIds<T extends { id: string, attachments?: T[], c
     cargo: (n.cargo || []).map(reId) as T[],
   });
   return reId(deep);
+}
+
+// Walks a tree and returns an id -> node lookup, used to resolve `linkedTo` sibling links.
+export function buildNodeIndex(nodes: LoadoutNode[]): Map<string, LoadoutNode> {
+  const index = new Map<string, LoadoutNode>();
+  const walk = (list: LoadoutNode[]) => {
+    for (const node of list) {
+      index.set(node.id, node);
+      if (node.attachments) walk(node.attachments);
+      if (node.cargo) walk(node.cargo);
+    }
+  };
+  walk(nodes);
+  return index;
+}
+
+// Resolves a linked clone to a display node carrying its source's content but the clone's own
+// identity (id), link marker, and UI expand state. Follows `linkedTo` chains and guards cycles.
+// Returns `node` unchanged when it isn't linked or its source can't be found.
+export function resolveLinkedNode(
+  node: LoadoutNode,
+  index: Map<string, LoadoutNode>,
+  seen: Set<string> = new Set()
+): LoadoutNode {
+  if (!node.linkedTo || seen.has(node.id)) return node;
+  const source = index.get(node.linkedTo);
+  if (!source) return node;
+  seen.add(node.id);
+  const resolvedSource = resolveLinkedNode(source, index, seen);
+  return {
+    ...resolvedSource,
+    id: node.id,
+    linkedTo: node.linkedTo,
+    isExpanded: node.isExpanded,
+  };
+}
+
+// Deep-clones a node (fresh IDs) and marks it a linked clone of `source`. When `source` is
+// itself a clone, links to the ORIGINAL source so links never chain.
+export function cloneNodeAsLink(source: LoadoutNode): LoadoutNode {
+  return { ...cloneNodeWithNewIds(source), linkedTo: source.linkedTo ?? source.id };
+}
+
+// Turns a linked clone into an independent editable copy: bakes in a fresh-ID deep clone of
+// the currently-mirrored source content, keeping the clone's own id/expand state, and drops
+// the link. If the source is gone, just strips the link off the node's stale stored content.
+export function unlinkNode(node: LoadoutNode, index: Map<string, LoadoutNode>): LoadoutNode {
+  const resolved = resolveLinkedNode(node, index);
+  const baked = cloneNodeWithNewIds(resolved);
+  return { ...baked, id: node.id, isExpanded: node.isExpanded, linkedTo: undefined };
+}
+
+// Recursively replaces every linked clone with a fresh-ID deep clone of its resolved source
+// content (dropping the link), producing a link-free tree for DayZ-format export.
+export function materializeLinkedClones(
+  nodes: LoadoutNode[],
+  index: Map<string, LoadoutNode>,
+  seen: Set<string> = new Set()
+): LoadoutNode[] {
+  return nodes.map(node => {
+    let resolved: LoadoutNode = node;
+    if (node.linkedTo && !seen.has(node.id)) {
+      const r = resolveLinkedNode(node, index, new Set(seen));
+      if (r !== node) resolved = { ...cloneNodeWithNewIds(r), id: node.id, linkedTo: undefined };
+    }
+    const nextSeen = new Set(seen).add(node.id);
+    return {
+      ...resolved,
+      attachments: resolved.attachments
+        ? materializeLinkedClones(resolved.attachments, index, nextSeen)
+        : resolved.attachments,
+      cargo: resolved.cargo
+        ? materializeLinkedClones(resolved.cargo, index, nextSeen)
+        : resolved.cargo,
+    };
+  });
 }
 
 export function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
