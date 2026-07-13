@@ -79,7 +79,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
       attachments: [],
       cargo: [],
     };
-    commit([...nodes, newNode]);
+    commit([newNode, ...nodes]);
     setSelectedNodeId(newNode.id);
     setEditingNode(newNode);
   };
@@ -157,6 +157,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
           <HierarchicalTree
             items={nodes}
             childLists={AIRDROP_CHILD_LISTS}
+            allowRootDuplicate
             onUpdate={commit}
             onSelect={(node) => {
               setSelectedNodeId(node.id);

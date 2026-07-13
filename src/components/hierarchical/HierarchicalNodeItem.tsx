@@ -1,11 +1,12 @@
 import React from 'react';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
-import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical, Boxes } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Trash2, Package, Layers, Settings2, GripVertical, Boxes, Copy } from 'lucide-react';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
+import { cloneNodeWithNewIds } from '@/utils/tree';
 import { useResolvedNode } from '@/hooks/useResolvedNode';
-import { useItemCapabilities, useAttachmentSlots } from '@/contexts/CatalogContext';
+import { useItemCapabilities, useAttachmentSlots, useCatalog } from '@/contexts/CatalogContext';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -31,6 +32,8 @@ interface HierarchicalNodeItemProps {
   node: LoadoutNode;
   onUpdate: (updatedNode: LoadoutNode) => void;
   onDelete: () => void;
+  /** Insert a fresh-ID copy of this node as a sibling. Omitted -> no Duplicate button. */
+  onDuplicate?: () => void;
   onSelect: (node: LoadoutNode) => void;
   onAddTemplate: (list: 'attachments' | 'cargo') => void;
   selectedNodeId: string | null;
@@ -65,6 +68,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   node,
   onUpdate,
   onDelete,
+  onDuplicate,
   onSelect,
   onAddTemplate,
   selectedNodeId,
@@ -123,6 +127,12 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   // the catalog can't answer (mod down / unknown) -> keep offering the option.
   const gateName = (!isGroup && node.type === 'item') ? node.name : undefined;
   const { acceptsAttachments, holdsCargo } = useItemCapabilities(gateName);
+
+  // Root item rows show the catalog display name in small text beneath the classname.
+  const { displayNameFor } = useCatalog();
+  const rootDisplayName = depth === 0 && node.type === 'item'
+    ? displayNameFor(node.name)
+    : undefined;
 
   // Attachment slots this item exposes (from the catalog attachments[] feed), offered when
   // creating a group so it can be linked to a specific slot. Only fetched for item nodes.
@@ -193,6 +203,15 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     const newList = [...node[list]];
     newList.splice(index, 1);
     onUpdate({ ...node, [list]: newList });
+  };
+
+  // Inserts a fresh-ID deep copy of a child item directly after the original.
+  const duplicateChild = (list: 'attachments' | 'cargo', index: number) => {
+    const clone = cloneNodeWithNewIds(node[list][index]);
+    const newList = [...node[list]];
+    newList.splice(index + 1, 0, clone);
+    onUpdate({ ...node, [list]: newList });
+    onSelect(clone);
   };
 
   // Adds an inline group (one <attachments>/<cargo> block) to the given list, optionally
@@ -280,6 +299,9 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
             {isGroup && <Badge color="purple" size="sm">Group{node.slot ? ` · ${node.slot}` : ''} · one of {(node.attachments || []).length}</Badge>}
             {isReadOnly && <Badge color="gray" size="sm">Linked</Badge>}
           </div>
+          {rootDisplayName && rootDisplayName !== node.name && (
+            <span className="block truncate text-xs text-gray-400 dark:text-gray-500">{rootDisplayName}</span>
+          )}
         </div>
 
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -293,9 +315,19 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
               >
                 <Settings2 size={14} />
               </Button>
-              <Button 
-                variant="secondary" 
-                size="sm" 
+              {node.type === 'item' && onDuplicate && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+                >
+                  <Copy size={14} />
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
                 className="h-8 w-8 p-0 text-error-600"
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
               >
@@ -378,6 +410,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                           node={child}
                           onUpdate={(updated) => updateChild(listConfig.key, idx, updated)}
                           onDelete={() => deleteChild(listConfig.key, idx)}
+                          onDuplicate={() => duplicateChild(listConfig.key, idx)}
                           onSelect={onSelect}
                           onAddTemplate={onAddTemplate}
                           selectedNodeId={selectedNodeId}

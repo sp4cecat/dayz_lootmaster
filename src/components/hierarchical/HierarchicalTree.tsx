@@ -37,7 +37,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { findParent, findNode, reorderList } from '@/utils/tree';
+import { findParent, findNode, reorderList, cloneNodeWithNewIds } from '@/utils/tree';
 
 interface HierarchicalTreeProps {
   items: LoadoutNode[];
@@ -53,6 +53,8 @@ interface HierarchicalTreeProps {
   expansionAirdrops?: any;
   spawnableTypesByGroup?: any;
   isReadOnly?: boolean;
+  /** Show the Duplicate button on root-level item rows (consumers with multiple roots). */
+  allowRootDuplicate?: boolean;
 }
 
 export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
@@ -66,7 +68,8 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   randomPresets,
   expansionAirdrops,
   spawnableTypesByGroup,
-  isReadOnly = false
+  isReadOnly = false,
+  allowRootDuplicate = false
 }) => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isCopyDrag, setIsCopyDrag] = useState(false);
@@ -142,6 +145,14 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
     onUpdate(next);
   };
 
+  const duplicateItem = (index: number) => {
+    const clone = cloneNodeWithNewIds(items[index]);
+    const next = [...items];
+    next.splice(index + 1, 0, clone);
+    onUpdate(next);
+    onSelect(clone);
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     setActiveId(active.id as string);
@@ -204,13 +215,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
         const sourceNode = findNode(items, active.id as string);
         if (!sourceNode) return;
 
-        const newNode = {
-          ...JSON.parse(JSON.stringify(sourceNode)),
-          id: crypto.randomUUID(),
-          // Recursively update IDs for children too to avoid duplicates
-          attachments: (sourceNode.attachments || []).map(a => resetIds(a)),
-          cargo: (sourceNode.cargo || []).map(c => resetIds(c))
-        };
+        const newNode = cloneNodeWithNewIds(sourceNode);
 
         let targetParent: LoadoutNode | null = null;
         let targetListKey: 'attachments' | 'cargo' | 'root' = 'root';
@@ -257,15 +262,6 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
     };
   };
 
-  const resetIds = (node: LoadoutNode): LoadoutNode => {
-    return {
-      ...node,
-      id: crypto.randomUUID(),
-      attachments: (node.attachments || []).map(a => resetIds(a)),
-      cargo: (node.cargo || []).map(c => resetIds(c))
-    };
-  };
-
   const activeNode = activeId ? findNode(items, activeId) : null;
 
   return (
@@ -283,6 +279,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
               node={item}
               onUpdate={(updated) => updateItem(idx, updated)}
               onDelete={() => deleteItem(idx)}
+              onDuplicate={allowRootDuplicate ? () => duplicateItem(idx) : undefined}
               onSelect={onSelect}
               onAddTemplate={(list) => onAddTemplate(item.id, list)}
               selectedNodeId={selectedNodeId}

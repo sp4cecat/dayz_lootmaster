@@ -123,6 +123,63 @@ describe('Spawnable attachment groups -> Loadout group nodes', () => {
   });
 });
 
+describe('Linked random preset inside attachments -> flattened (Expansion airdrop)', () => {
+  // A weapon whose attachments link a random preset (cfgrandompresets.xml). Expansion has
+  // no exclusive attachment primitive, so the preset's members must flatten into
+  // independent attachment rolls — NOT leak through as an attachment named after the
+  // preset with the real members nested beneath it.
+  const RANDOM_PRESETS = [
+    {
+      name: 'ar_scopes',
+      items: [
+        { name: 'ACOGOptic', chance: 0.5 },
+        { name: 'M68Optic', chance: 0.3 },
+      ],
+    },
+  ];
+
+  const tavor: Loadout = {
+    id: 't',
+    label: 't',
+    updatedAt: 0,
+    items: [
+      {
+        id: 'root',
+        type: 'item',
+        name: 'TTC_TAVOR_DMR',
+        chance: 1.0,
+        attachments: [
+          {
+            id: 'p',
+            type: 'template',
+            templateSource: 'preset',
+            name: 'ar_scopes',
+            chance: 0.4,
+            attachments: [],
+            cargo: [],
+          },
+        ],
+        cargo: [],
+      },
+    ],
+  };
+
+  it('flattens the preset members into independent rolls (chance multiplied); no preset-named attachment', () => {
+    const out = loadoutToExpansionAirdrop(tavor, [], RANDOM_PRESETS);
+    const root = out[0];
+    expect(root.Name).toBe('TTC_TAVOR_DMR');
+    // The preset name never appears as an attachment; its members are lifted up instead.
+    expect(root.Attachments.some((a: any) => a.Name === 'ar_scopes')).toBe(false);
+    expect(root.Attachments.map((a: any) => a.Name)).toEqual(['ACOGOptic', 'M68Optic']);
+    // preset chance (0.4) * member chance.
+    expect(root.Attachments[0].Chance).toBeCloseTo(0.2, 5); // 0.4 * 0.5
+    expect(root.Attachments[1].Chance).toBeCloseTo(0.12, 5); // 0.4 * 0.3
+    // Slim ExpansionLootVariant shape (no loot-item-only fields, no nested wrapper).
+    expect(Object.keys(root.Attachments[0]).sort()).toEqual(['Attachments', 'Chance', 'Name']);
+    expect(root.Attachments[0].Attachments).toEqual([]);
+  });
+});
+
 describe('Item-level group -> Expansion Variants (exclusive select-one)', () => {
   // A group sitting at the loot-list root is a weighted select-one over whole items.
   // Expansion's exclusive primitive is Variants (base + Variants weighted pick).

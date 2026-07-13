@@ -182,12 +182,21 @@ export function loadoutToExpansionAirdrop(
 ) {
   // Expansion airdrop JSON has no concept of an anonymous chance-bearing group, so
   // inline group nodes are flattened into individual entries: each member's chance is
-  // multiplied by its group's chance.
+  // multiplied by its group's chance. A linked random preset (cfgrandompresets.xml) used
+  // inside attachments/cargo is the same "select one of these" set and gets flattened the
+  // same way — otherwise it would leak through as an attachment literally named after the
+  // preset (e.g. "ar_scopes") with the real scopes nested beneath it. Recurse so nested
+  // groups/presets fully unwrap.
   const expandGroups = (nodes: LoadoutNode[]): LoadoutNode[] => {
     const out: LoadoutNode[] = [];
     for (const n of (nodes || [])) {
       if (n.type === 'group') {
-        for (const m of (n.attachments || [])) {
+        for (const m of expandGroups(n.attachments || [])) {
+          out.push({ ...m, chance: (n.chance ?? 1) * (m.chance ?? 1) });
+        }
+      } else if (n.type === 'template' && n.templateSource === 'preset') {
+        const resolved = resolveLoadoutNode(n, allLoadouts, randomPresets, expansionAirdrops);
+        for (const m of expandGroups(resolved.attachments || [])) {
           out.push({ ...m, chance: (n.chance ?? 1) * (m.chance ?? 1) });
         }
       } else {

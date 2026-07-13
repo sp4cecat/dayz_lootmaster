@@ -46,6 +46,20 @@ export function updateNodeInList<T extends { id: string, attachments?: T[], carg
   });
 }
 
+// Deep-clones a node and assigns a fresh crypto.randomUUID() to it and every
+// attachments/cargo descendant, so a duplicated subtree carries no shared IDs with the
+// original. Used by the Duplicate action and the right-click drag-copy in HierarchicalTree.
+export function cloneNodeWithNewIds<T extends { id: string, attachments?: T[], cargo?: T[] }>(node: T): T {
+  const deep = JSON.parse(JSON.stringify(node)) as T;
+  const reId = (n: T): T => ({
+    ...n,
+    id: crypto.randomUUID(),
+    attachments: (n.attachments || []).map(reId) as T[],
+    cargo: (n.cargo || []).map(reId) as T[],
+  });
+  return reId(deep);
+}
+
 export function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
   const result = Array.from(list);
   const [removed] = result.splice(startIndex, 1);
