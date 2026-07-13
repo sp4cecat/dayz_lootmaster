@@ -136,6 +136,41 @@ Hierarchical Editor. Mapping rules that follow directly from the algorithm above
   becomes an attachment. The airdrop tree therefore uses a single "Contents" list gated
   `'either'` (see catalog/cargo notes), not separate attachment/cargo lists.
 
+### cfgrandompresets select-one group ↔ Variants (maps for "exactly one", breaks on "…or none")
+
+A vanilla/preset `<attachments chance="X" name="…">` with weighted child `<item>`s is the
+same *idea* as `Variants` — pick exactly one from a weighted set — but the analogy only
+half-holds. Worked example, `AR_Scopes_1` (wrapper `chance=0.100`, five optics each
+`chance=0.200`):
+
+- **The select-one part maps exactly.** Promote one member to the base `Name`, list the
+  other four as `Variants`, reuse the source chances. Four variants at `0.2` sum to `0.8 <
+  1.0`, so the engine treats them as true probabilities and the **base absorbs the
+  remainder** (`1.0 − 0.8 = 0.2`) → all five land at `0.2`. (Equivalently, every variant
+  `Chance = 1.0` in the `≥1` raw-weights regime gives five equal weights — same result.)
+- **Break #1 — position.** `Variants` exist **only on top-level `ExpansionLoot`**, not on
+  the attachment type `ExpansionLootVariant` (which has just `Name`/`Chance`/`Attachments`).
+  A scope preset is normally a **weapon attachment**, where there is no select-one
+  primitive at all. The Variants encoding is valid **only** if the container rolls the item
+  directly into itself as a loot slot — not hanging off a rifle.
+- **Break #2 — the "…or none" chance.** The wrapper's `chance=0.100` ("10% a scope, else
+  nothing") has nowhere to go. Variants always fill the slot — the base item is a permanent
+  candidate, so *one* member always spawns; there is no null outcome. A top-level entry's
+  own `Chance` is a **weight in the fixed `ItemCount` draw**, not an independent 10% gate,
+  so "90% of the time, no scope" is **not faithfully reproducible** with Variants.
+
+**Consequence / rule of thumb:**
+- Preset **as a weapon attachment** (the usual case) → cannot use Variants; **flatten** to N
+  independent attachment rolls, each `Chance = wrapper × member` (`0.100 × 0.200 = 0.02`).
+  This is what `expandGroups` does today. Preserves the ~10%-a-scope, ~equal-among-N
+  distribution; loses strict exclusivity (a single optic slot still only accepts the first
+  that fits).
+- Preset **as a root loot slot**, and a member spawning *every* time is acceptable → the
+  Variants encoding above is the exact select-one, but you've dropped the wrapper's gate.
+- Net: Variants model **"exactly one of these"**; they cannot express **"…or none"**, and
+  cannot live on an attachment — which is the whole reason the exporter flattens presets
+  rather than converting them to Variants.
+
 ## Working rules
 
 - Cite the mod file + class when stating a rule; if the repo sample and the mod source
