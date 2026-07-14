@@ -102,6 +102,27 @@ export function bySlotCaseInsensitive(graph: AttachmentGraph | null | undefined,
   return null;
 }
 
+/** Flatten an AttachmentGraph's bySlot map into `[slot, refs][]`, de-duplicated by the
+ *  rendered display label (`displayName || name`) across the whole graph. A single label
+ *  can map to many distinct engine classes — e.g. dozens of infected variants (`ZmbM_…`)
+ *  all share the `"Infected"` displayName — so keying on `name` would let identical-looking
+ *  pills through. We keep the first ref for each label, under the first slot it appears in,
+ *  and drop empty slot groups. Exported for testing. */
+export function dedupeGraphByLabel(graph: AttachmentGraph): [string, AttachmentRef[]][] {
+  const seen = new Set<string>();
+  const out: [string, AttachmentRef[]][] = [];
+  for (const [slot, refs] of Object.entries(graph.bySlot)) {
+    const unique = (refs || []).filter(ref => {
+      const key = ref.displayName || ref.name;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (unique.length) out.push([slot, unique]);
+  }
+  return out;
+}
+
 /** Synthetic linked-slot name for a group of magazines. Magazines are not a real attachment
  *  slot in the catalog's `accepts` graph — they live in the parent's compatible-magazine list
  *  (CfgWeapons magazines[]) — but we treat them as one linked slot for grouping so magazine

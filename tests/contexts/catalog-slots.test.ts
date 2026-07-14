@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities } from '../../src/contexts/CatalogContext';
+import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel } from '../../src/contexts/CatalogContext';
 import type { AttachmentGraph, TypeDetail } from '../../src/contexts/CatalogContext';
 
 const graph: AttachmentGraph = {
@@ -89,6 +89,70 @@ describe('inferGroupSlot', () => {
   it('ignores magazines when the list is empty or absent', () => {
     expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'], [])).toBeNull();
     expect(inferGroupSlot(graph, ['Mag_AK_30Rnd'])).toBeNull();
+  });
+});
+
+describe('dedupeGraphByLabel', () => {
+  it('collapses distinct classes that share a display label into one entry', () => {
+    // e.g. PlateCarrierVest fits into the Vest slot, exposed by dozens of infected classes
+    // that all display as "Infected".
+    const g: AttachmentGraph = {
+      slots: ['Vest'],
+      bySlot: {
+        Vest: [
+          { name: 'ZmbM_A', displayName: 'Infected' },
+          { name: 'ZmbF_B', displayName: 'Infected' },
+          { name: 'ZmbM_C', displayName: 'Infected' },
+        ],
+      },
+    };
+    const groups = dedupeGraphByLabel(g);
+    expect(groups).toEqual([['Vest', [{ name: 'ZmbM_A', displayName: 'Infected' }]]]);
+  });
+
+  it('keeps entries with distinct display labels', () => {
+    const g: AttachmentGraph = {
+      slots: ['Vest'],
+      bySlot: {
+        Vest: [
+          { name: 'A', displayName: 'Soldier' },
+          { name: 'B', displayName: 'Infected' },
+        ],
+      },
+    };
+    expect(dedupeGraphByLabel(g)).toEqual([[
+      'Vest',
+      [{ name: 'A', displayName: 'Soldier' }, { name: 'B', displayName: 'Infected' }],
+    ]]);
+  });
+
+  it('falls back to the class name and dedupes on it when displayName is absent', () => {
+    const g: AttachmentGraph = {
+      slots: ['Vest'],
+      bySlot: {
+        Vest: [
+          { name: 'PlateCarrier' },
+          { name: 'PlateCarrier' },
+          { name: 'PressVest' },
+        ],
+      },
+    };
+    expect(dedupeGraphByLabel(g)).toEqual([[
+      'Vest',
+      [{ name: 'PlateCarrier' }, { name: 'PressVest' }],
+    ]]);
+  });
+
+  it('keeps a shared label only under the first slot it appears in and drops empty groups', () => {
+    const g: AttachmentGraph = {
+      slots: ['Vest', 'Body'],
+      bySlot: {
+        Vest: [{ name: 'ZmbM_A', displayName: 'Infected' }],
+        Body: [{ name: 'ZmbF_B', displayName: 'Infected' }],
+      },
+    };
+    // Body's only entry shares the "Infected" label already kept under Vest, so Body is dropped.
+    expect(dedupeGraphByLabel(g)).toEqual([['Vest', [{ name: 'ZmbM_A', displayName: 'Infected' }]]]);
   });
 });
 

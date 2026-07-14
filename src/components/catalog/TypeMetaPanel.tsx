@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/base/badges/badges';
 import { Info, Puzzle, PackageOpen, ChevronDown, Layers, Shield, Heart } from 'lucide-react';
 import { cx } from '@/utils/cx';
-import { useCatalog, type TypeDetail, type AttachmentGraph, type AttachmentRef, type ArmorEntry } from '@/contexts/CatalogContext';
+import { useCatalog, dedupeGraphByLabel, type TypeDetail, type AttachmentGraph, type ArmorEntry } from '@/contexts/CatalogContext';
 
 /**
  * Read-only info panel for a single class: displayName, description, and the
@@ -219,23 +219,12 @@ function ArmorTable({ rows, labelFor }: { rows: ArmorEntry[]; labelFor: (ammo: s
 function AttachmentList({ icon, label, graph }: { icon: React.ReactNode; label: string; graph: AttachmentGraph }) {
   const [open, setOpen] = useState(false);
 
-  // De-duplicate across the whole list: a class can fit several slots (and a slot can
-  // repeat a token), but showing the same entry more than once reads as duplication.
-  // Keep each class under the first slot it appears in and drop later repeats, then
-  // hide any slot group left empty. (The picker's own flatten dedupes separately.)
-  const groups = useMemo(() => {
-    const seen = new Set<string>();
-    const out: [string, AttachmentRef[]][] = [];
-    for (const [slot, refs] of Object.entries(graph.bySlot)) {
-      const unique = (refs || []).filter(ref => {
-        if (seen.has(ref.name)) return false;
-        seen.add(ref.name);
-        return true;
-      });
-      if (unique.length) out.push([slot, unique]);
-    }
-    return out;
-  }, [graph]);
+  // De-duplicate across the whole list by the rendered display label: a class can fit
+  // several slots, and many distinct engine classes share one label (e.g. dozens of
+  // infected variants all display as "Infected"), so keying on the class name would let
+  // identical-looking pills through. Keep each label under the first slot it appears in
+  // and drop later repeats, then hide any slot group left empty.
+  const groups = useMemo(() => dedupeGraphByLabel(graph), [graph]);
   const count = useMemo(() => groups.reduce((sum, [, refs]) => sum + refs.length, 0), [groups]);
 
   return (
