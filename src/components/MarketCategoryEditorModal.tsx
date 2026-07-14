@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { Input } from './base/input/input';
@@ -16,6 +16,7 @@ import {
     ShoppingBag01
 } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
+import { apiFetch } from '@/utils/api';
 
 interface MarketItem {
   ClassName: string;
@@ -32,12 +33,6 @@ interface MarketCategoryEditorModalProps {
   onClose: () => void;
   selectedProfileId: string;
   isPanel?: boolean;
-}
-
-function useApiBase() {
-  const savedBase = typeof localStorage !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
-  const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
-  return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 }
 
 function useEditorID() {
@@ -72,7 +67,6 @@ function dedupeItemsByClassName(list: MarketItem[]) {
 }
 
 export default function MarketCategoryEditorModal({ onClose, selectedProfileId, isPanel = false }: MarketCategoryEditorModalProps) {
-  const API_BASE = useApiBase();
   const editorID = useEditorID();
 
   const [categoryNames, setCategoryNames] = useState<string[]>([]);
@@ -107,8 +101,8 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/market/categories`, {
-          headers: { 'X-Profile-ID': selectedProfileId }
+        const res = await apiFetch('/api/market/categories', {
+          profileId: selectedProfileId
         });
         const json = await res.json().catch(() => ({ categories: [] }));
         const names = Array.isArray(json.categories) ? json.categories : [];
@@ -118,7 +112,7 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
         setError(String(e));
       }
     })();
-  }, [API_BASE, selectedProfileId]);
+  }, [selectedProfileId]);
 
   useEffect(() => {
     if (!selectedCategory) {
@@ -131,8 +125,8 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
         setBusy(true);
         setError(null);
         setNotice(null);
-        const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
-          headers: { 'X-Profile-ID': selectedProfileId }
+        const res = await apiFetch(`/api/market/category/${encodeURIComponent(selectedCategory)}`, {
+          profileId: selectedProfileId
         });
         if (!res.ok) throw new Error(`Failed to load category ${selectedCategory}`);
         const json = await res.json();
@@ -154,7 +148,7 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
         setBusy(false);
       }
     })();
-  }, [API_BASE, selectedCategory, selectedProfileId]);
+  }, [selectedCategory, selectedProfileId]);
 
   const filteredItems = useMemo(() => {
     const f = (filterText || '').trim().toLowerCase();
@@ -201,13 +195,13 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
       const removed = nextItems.length - deduped.length;
       setItems(deduped);
       const payload = { ...categoryJson, Items: deduped };
-      const res = await fetch(`${API_BASE}/api/market/category/${encodeURIComponent(selectedCategory)}`, {
+      const res = await apiFetch(`/api/market/category/${encodeURIComponent(selectedCategory)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-Editor-ID': editorID || 'unknown',
-          'X-Profile-ID': selectedProfileId
+          'X-Editor-ID': editorID || 'unknown'
         },
+        profileId: selectedProfileId,
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
@@ -278,13 +272,13 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
       setBusy(true);
       setError(null);
       setNotice(null);
-      const res = await fetch(`${API_BASE}/api/market/remove-item-completely`, {
+      const res = await apiFetch('/api/market/remove-item-completely', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Editor-ID': editorID || 'unknown',
-          'X-Profile-ID': selectedProfileId
+          'X-Editor-ID': editorID || 'unknown'
         },
+        profileId: selectedProfileId,
         body: JSON.stringify({ className })
       });
       if (!res.ok) {

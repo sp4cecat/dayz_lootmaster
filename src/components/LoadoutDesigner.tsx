@@ -17,6 +17,7 @@ import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoado
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
+import { apiFetch } from '@/utils/api';
 
 
 interface LoadoutDesignerProps {
@@ -25,7 +26,6 @@ interface LoadoutDesignerProps {
   randomPresets?: { presets: any[] };
   spawnableTypesByGroup?: Record<string, Record<string, any>>;
   selectedProfileId?: string;
-  getApiBase?: () => string;
   loadouts?: Loadout[];
   setLoadouts?: (l: Loadout[]) => void;
 }
@@ -36,7 +36,6 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   randomPresets,
   spawnableTypesByGroup,
   selectedProfileId,
-  getApiBase,
   loadouts: propLoadouts,
   setLoadouts: propSetLoadouts
 }) => {
@@ -274,11 +273,11 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   };
 
   const fetchAirdrops = async () => {
-    if (expansionAirdrops || loadingAirdrops || !getApiBase || !selectedProfileId) return;
+    if (expansionAirdrops || loadingAirdrops || !selectedProfileId) return;
     setLoadingAirdrops(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
-        headers: { 'X-Profile-ID': selectedProfileId }
+      const res = await apiFetch(`/api/expansion/airdrop-settings`, {
+        profileId: selectedProfileId
       });
       if (res.ok) {
         setExpansionAirdrops(await res.json());
@@ -716,7 +715,6 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                         setTemplateModalOpen(true);
                       }}
                       selectedNodeId={selectedNodeId}
-                      typeOptions={typeOptions}
                       randomPresets={randomPresets}
                       allLoadouts={loadouts}
                       spawnableTypesByGroup={spawnableTypesByGroup}

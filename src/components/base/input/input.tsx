@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 
 export type InputSize = 'sm' | 'md';
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
   label?: string;
   error?: string;
   hint?: string;

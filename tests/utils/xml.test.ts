@@ -162,9 +162,10 @@ describe('spawnabletypes utilities', () => {
 <spawnabletypes>
   <type name="jmc_mjolnir_head"><attachments chance="0.75"/></type>
 </spawnabletypes>`);
+    // spawnableTypesByGroup is nested per group -> per file -> parsed { types }.
     const found = findSpawnableEntryForType({
-      weapons: { types: [] },
-      [ROOT_SPAWNABLE_GROUP]: rootSpawnable
+      weapons: { 'cfgspawnabletypes.xml': { types: [] } },
+      [ROOT_SPAWNABLE_GROUP]: { 'cfgspawnabletypes.xml': rootSpawnable }
     }, 'weapons', 'JMC_MJOLNIR_HEAD');
 
     expect(found?.group).toBe(ROOT_SPAWNABLE_GROUP);
@@ -177,10 +178,11 @@ describe('spawnabletypes utilities', () => {
 <spawnabletypes>
   <type name="jmc_mjolnir_head"><attachments chance="0.75"/></type>
 </spawnabletypes>`);
-    // In our app, 'vanilla' group is explicitly loaded and might point to root
+    // In our app, 'vanilla' group is explicitly loaded and might point to root.
+    // spawnableTypesByGroup is nested per group -> per file -> parsed { types }.
     const found = findSpawnableEntryForType({
-      vanilla: rootSpawnable,
-      [ROOT_SPAWNABLE_GROUP]: rootSpawnable
+      vanilla: { 'cfgspawnabletypes.xml': rootSpawnable },
+      [ROOT_SPAWNABLE_GROUP]: { 'cfgspawnabletypes.xml': rootSpawnable }
     }, 'vanilla', 'jmc_mjolnir_head');
 
     expect(found?.group).toBe('vanilla');

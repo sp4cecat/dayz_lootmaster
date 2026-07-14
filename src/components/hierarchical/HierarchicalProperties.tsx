@@ -52,7 +52,6 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   onUpdate,
   onClose,
   typeOptions,
-  availableTemplates,
   config = {
     showQuantity: true,
     showDamage: true,
@@ -61,8 +60,6 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   },
   compatibleClasses,
   groupSlotOptions,
-  randomPresets,
-  expansionAirdrops
 }) => {
   const { displayNameFor } = useCatalog();
   const [newVariant, setNewVariant] = React.useState('');

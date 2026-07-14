@@ -15,6 +15,7 @@ import {
 } from '@untitledui/icons';
 import { Loadout } from '@/types/loadouts';
 import { cx } from '@/utils/cx';
+import { apiFetch } from '@/utils/api';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
 import { MapMetadata } from '@/consts/maps';
 import { AirdropLootEditor } from './airdrop/AirdropLootEditor';
@@ -22,7 +23,6 @@ import { AirdropDropLocationMap, DropLocation, AirdropLocation } from './Airdrop
 
 interface ExpansionAirdropEditorProps {
   selectedProfileId: string;
-  getApiBase: () => string;
   typeOptions: string[];
   randomPresets: any;
   loadouts: Loadout[];
@@ -220,7 +220,6 @@ const DefaultableNumber: React.FC<{
 
 export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   selectedProfileId,
-  getApiBase,
   typeOptions,
   randomPresets,
   loadouts,
@@ -249,17 +248,15 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   const [savedLocations, setSavedLocations] = useState<AirdropLocation[]>([]);
   const [selectedLocationIdx, setSelectedLocationIdx] = useState<number | null>(null);
 
-  const headers = useMemo(() => ({ 'X-Profile-ID': selectedProfileId }), [selectedProfileId]);
-
   const load = async () => {
-    if (!getApiBase || !selectedProfileId) return;
+    if (!selectedProfileId) return;
     setLoading(true);
     try {
       const [sRes, mRes, msRes, lRes] = await Promise.all([
-        fetch(`${getApiBase()}/api/expansion/airdrop-settings`, { headers }),
-        fetch(`${getApiBase()}/api/expansion/airdrop-missions`, { headers }),
-        fetch(`${getApiBase()}/api/expansion/mission-settings`, { headers }),
-        fetch(`${getApiBase()}/api/expansion/airdrop-locations`, { headers }),
+        apiFetch('/api/expansion/airdrop-settings', { profileId: selectedProfileId }),
+        apiFetch('/api/expansion/airdrop-missions', { profileId: selectedProfileId }),
+        apiFetch('/api/expansion/mission-settings', { profileId: selectedProfileId }),
+        apiFetch('/api/expansion/airdrop-locations', { profileId: selectedProfileId }),
       ]);
       if (sRes.ok) {
         const data = await sRes.json();
@@ -364,8 +361,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         <CoreSettingsTab
           settings={settings}
           setSettings={setSettings}
-          getApiBase={getApiBase}
-          headers={headers}
+          selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
           savedSettings={savedSettings}
           setSavedSettings={setSavedSettings}
@@ -379,8 +375,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           typeOptions={typeOptions}
           randomPresets={randomPresets}
           loadouts={loadouts}
-          getApiBase={getApiBase}
-          headers={headers}
+          selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
           savedSettings={savedSettings}
           setSavedSettings={setSavedSettings}
@@ -392,8 +387,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           setMissionSettings={setMissionSettings}
           savedMissionSettings={savedMissionSettings}
           setSavedMissionSettings={setSavedMissionSettings}
-          getApiBase={getApiBase}
-          headers={headers}
+          selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
         />
       ) : tab === 'locations' ? (
@@ -407,8 +401,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           missions={missions}
           setMissions={setMissions}
           map={map}
-          getApiBase={getApiBase}
-          headers={headers}
+          selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
         />
       ) : (
@@ -424,8 +417,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           typeOptions={typeOptions}
           randomPresets={randomPresets}
           loadouts={loadouts}
-          getApiBase={getApiBase}
-          headers={headers}
+          selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
         />
       )}
@@ -436,15 +428,14 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
 interface CoreTabProps {
   settings: any;
   setSettings: (s: any) => void;
-  getApiBase: () => string;
-  headers: Record<string, string>;
+  selectedProfileId: string;
   setSaveState: (s: SaveState) => void;
   savedSettings: any;
   setSavedSettings: (s: any) => void;
 }
 
 const CoreSettingsTab: React.FC<CoreTabProps> = ({
-  settings, setSettings, getApiBase, headers, setSaveState,
+  settings, setSettings, selectedProfileId, setSaveState,
   savedSettings, setSavedSettings,
 }) => {
   const updateField = (key: string, value: any) => setSettings({ ...settings, [key]: value });
@@ -452,9 +443,10 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
   const save = async () => {
     setSaveState({ kind: 'saving' });
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
+      const res = await apiFetch(`/api/expansion/airdrop-settings`, {
         method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
+        profileId: selectedProfileId,
         body: JSON.stringify(settings),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
@@ -502,8 +494,7 @@ interface ContainersTabProps {
   typeOptions: string[];
   randomPresets: any;
   loadouts: Loadout[];
-  getApiBase: () => string;
-  headers: Record<string, string>;
+  selectedProfileId: string;
   setSaveState: (s: SaveState) => void;
   savedSettings: any;
   setSavedSettings: (s: any) => void;
@@ -512,7 +503,7 @@ interface ContainersTabProps {
 
 const ContainersTab: React.FC<ContainersTabProps> = ({
   settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
-  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
+  typeOptions, randomPresets, loadouts, selectedProfileId, setSaveState,
   savedSettings, setSavedSettings, customInfected,
 }) => {
   const containers = settings?.Containers || [];
@@ -536,9 +527,10 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
   const save = async () => {
     setSaveState({ kind: 'saving' });
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-settings`, {
+      const res = await apiFetch(`/api/expansion/airdrop-settings`, {
         method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
+        profileId: selectedProfileId,
         body: JSON.stringify(settings),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
@@ -656,8 +648,7 @@ interface SchedulingTabProps {
   setMissionSettings: (s: any) => void;
   savedMissionSettings: any;
   setSavedMissionSettings: (s: any) => void;
-  getApiBase: () => string;
-  headers: Record<string, string>;
+  selectedProfileId: string;
   setSaveState: (s: SaveState) => void;
 }
 
@@ -666,7 +657,7 @@ interface SchedulingTabProps {
 // airdrops spawn — separate file/endpoint from the airdrop core settings.
 const SchedulingTab: React.FC<SchedulingTabProps> = ({
   missionSettings, setMissionSettings, savedMissionSettings, setSavedMissionSettings,
-  getApiBase, headers, setSaveState,
+  selectedProfileId, setSaveState,
 }) => {
   const updateMission = (key: string, value: any) => setMissionSettings({ ...missionSettings, [key]: value });
 
@@ -678,9 +669,10 @@ const SchedulingTab: React.FC<SchedulingTabProps> = ({
   const save = async () => {
     setSaveState({ kind: 'saving' });
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/mission-settings`, {
+      const res = await apiFetch(`/api/expansion/mission-settings`, {
         method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
+        profileId: selectedProfileId,
         body: JSON.stringify(missionSettings),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
@@ -733,8 +725,7 @@ interface LocationsTabProps {
   missions: Mission[];
   setMissions: React.Dispatch<React.SetStateAction<Mission[]>>;
   map: MapMetadata;
-  getApiBase: () => string;
-  headers: Record<string, string>;
+  selectedProfileId: string;
   setSaveState: (s: SaveState) => void;
 }
 
@@ -747,7 +738,7 @@ const nameKey = (n?: string) => (n || '').trim().toLowerCase();
 const LocationsTab: React.FC<LocationsTabProps> = ({
   locations, setLocations, savedLocations, setSavedLocations,
   selectedLocationIdx, setSelectedLocationIdx,
-  missions, setMissions, map, getApiBase, headers, setSaveState,
+  missions, setMissions, map, selectedProfileId, setSaveState,
 }) => {
   const selected = selectedLocationIdx !== null ? locations[selectedLocationIdx] : null;
   // When on, the map grows to use the available vertical height (up to the image's
@@ -852,9 +843,10 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
   const save = async () => {
     setSaveState({ kind: 'saving' });
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-locations`, {
+      const res = await apiFetch(`/api/expansion/airdrop-locations`, {
         method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
+        profileId: selectedProfileId,
         body: JSON.stringify({ locations }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
@@ -865,9 +857,10 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
       if (updates.length > 0 &&
         confirm(`${updates.length} mission${updates.length === 1 ? '' : 's'} reference these locations. Update their drop coordinates to match?`)) {
         await Promise.all(updates.map((u) =>
-          fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(u.file)}`, {
+          apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(u.file)}`, {
             method: 'PUT',
-            headers: { ...headers, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
+            profileId: selectedProfileId,
             body: JSON.stringify(u.data),
           })
         ));
@@ -1116,8 +1109,7 @@ interface MissionsTabProps {
   typeOptions: string[];
   randomPresets: any;
   loadouts: Loadout[];
-  getApiBase: () => string;
-  headers: Record<string, string>;
+  selectedProfileId: string;
   setSaveState: (s: SaveState) => void;
 }
 
@@ -1186,7 +1178,7 @@ const groupOf = (m: Mission): { key: string; label: string } => {
 const MissionsTab: React.FC<MissionsTabProps> = ({
   missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
   containerNames, settings, locations, map,
-  typeOptions, randomPresets, loadouts, getApiBase, headers, setSaveState,
+  typeOptions, randomPresets, loadouts, selectedProfileId, setSaveState,
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
 
@@ -1255,9 +1247,10 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
 
     setSaveState({ kind: 'saving' });
     try {
-      const res = await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
+      const res = await apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
         method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
+        profileId: selectedProfileId,
         body: JSON.stringify({ ...mission.data, DropLocation: drop }),
       });
       if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${mission.file}`);
@@ -1273,7 +1266,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     const m = missions[idx];
     if (!m.isNew) {
       try {
-        await fetch(`${getApiBase()}/api/expansion/airdrop-missions?file=${encodeURIComponent(m.file)}`, { method: 'DELETE', headers });
+        await apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(m.file)}`, { method: 'DELETE', profileId: selectedProfileId });
       } catch (e) {
         console.error('Failed to delete mission file', m.file, e);
       }

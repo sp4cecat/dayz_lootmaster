@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatModName } from '@/utils/format';
 import { generateTypesXml, generateTypesXmlFromFilesWithComments } from '../utils/xml.js';
 import { createZip } from '../utils/zip.js';
@@ -12,7 +12,7 @@ interface ExportModalProps {
   onClose: () => void;
   groups: string[];
   getGroupTypes: (group: string) => any[];
-  getGroupFiles: (group: string) => Record<string, string>;
+  getGroupFiles: (group: string) => { file: string; types: any[] }[];
 }
 
 export default function ExportModal({ onClose, groups, getGroupTypes, getGroupFiles }: ExportModalProps) {
@@ -23,7 +23,7 @@ export default function ExportModal({ onClose, groups, getGroupTypes, getGroupFi
   const [copied, setCopied] = useState(false);
 
   const groupFiles = useMemo(() => getGroupFiles(selectedGroup), [selectedGroup, getGroupFiles]);
-  const hasMultipleFiles = useMemo(() => Object.keys(groupFiles).length > 1, [groupFiles]);
+  const hasMultipleFiles = useMemo(() => groupFiles.length > 1, [groupFiles]);
 
   useEffect(() => {
     if (copied) {
@@ -38,17 +38,17 @@ export default function ExportModal({ onClose, groups, getGroupTypes, getGroupFi
       const types = getGroupTypes(selectedGroup);
       
       if (typesFormat === 'zip' && hasMultipleFiles) {
+        // getGroupFiles returns the group's types already split per origin file: { file, types }[].
         const files = getGroupFiles(selectedGroup);
-        const xmlFiles: Record<string, string> = {};
-        
-        for (const [name, content] of Object.entries(files)) {
-          const fileTypes = types.filter(t => t.file === name);
-          xmlFiles[`${name}.xml`] = includeComments 
-            ? generateTypesXmlFromFilesWithComments(fileTypes, { [name]: content })
+        const encoder = new TextEncoder();
+        const zipFiles = files.map(({ file, types: fileTypes }) => {
+          const xml = includeComments
+            ? generateTypesXmlFromFilesWithComments([{ file, types: fileTypes }])
             : generateTypesXml(fileTypes);
-        }
-        
-        const zip = await createZip(xmlFiles);
+          return { name: `${file}.xml`, data: encoder.encode(xml) };
+        });
+
+        const zip = await createZip(zipFiles);
         const blob = new Blob([zip], { type: 'application/zip' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -56,10 +56,20 @@ export default function ExportModal({ onClose, groups, getGroupTypes, getGroupFi
         a.download = `${selectedGroup}_types.zip`;
         a.click();
       } else {
-        const xml = includeComments 
-          ? generateTypesXmlFromFilesWithComments(types, groupFiles)
-          : generateTypesXml(types);
-        
+        let xml: string;
+        if (includeComments) {
+          // Group the group's types by their origin file so each block gets a `<!-- file.xml -->` marker.
+          const byFile = new Map<string, any[]>();
+          for (const t of types) {
+            const f = t.file || selectedGroup;
+            if (!byFile.has(f)) byFile.set(f, []);
+            byFile.get(f)!.push(t);
+          }
+          xml = generateTypesXmlFromFilesWithComments(Array.from(byFile, ([file, fileTypes]) => ({ file, types: fileTypes })));
+        } else {
+          xml = generateTypesXml(types);
+        }
+
         const blob = new Blob([xml], { type: 'application/xml' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

@@ -3,49 +3,101 @@
   "info": {
     "title": "spacecat DayZ Server API",
     "version": "1.0.0",
-    "description": "Localhost-only REST API exposing the live state of a running DayZ server: online players + stats, the loot/economy catalog with attachment metadata, events, a live-map positions feed, an admin-log (ADM) event feed, and basic admin commands.\n\nLive data is produced by a companion Enforce Script mod that pushes JSON snapshots to this server and polls it for admin commands; static economy data (types.xml/events.xml/cfgspawnabletypes.xml) and the .ADM log are read from disk. Bound to 127.0.0.1 only, no authentication by design.\n\nField values that require the mod (displayName, description, attachments, live players/heartbeat/map, spawnedCount) are null until the mod connects (see /health.modConnected)."
+    "description": "Localhost-only REST API for a running DayZ server. Two capabilities: (1) on-demand scans of spawned world items in a region (GET /items, /items/near/{playerId}), and (2) mod-facing ingest endpoints the companion Enforce Script mod pushes to / polls (POST /ingest/snapshot, POST /ingest/catalog, GET /ingest/commands, POST /ingest/commands/ack). Bound to 127.0.0.1 only, no authentication by design.\n\nItem scans are synchronous round-trips that enqueue a command and wait for the mod to sweep the region; they return 503 when the mod is not connected. Live remaining-TTL is not exposed by the engine, so lifetimeMax is the configured CE lifetime."
   },
   "servers": [
-    { "url": "http://127.0.0.1:4317", "description": "Local loopback (default port; configurable via API_PORT)" }
+    {
+      "url": "http://127.0.0.1:4317",
+      "description": "Local loopback (default port; configurable via PORT)"
+    }
   ],
   "tags": [
-    { "name": "status", "description": "Health and server heartbeat" },
-    { "name": "players", "description": "Online player state" },
-    { "name": "economy", "description": "Types (loot) and events catalog + attachment resolution" },
-    { "name": "map", "description": "Live positions" },
-    { "name": "feed", "description": "Parsed .ADM admin-log event feed" },
-    { "name": "admin", "description": "Broadcast / kick commands (queued, executed by the mod)" },
-    { "name": "internal", "description": "Mod-facing ingest endpoints; do not call manually" }
+    {
+      "name": "map",
+      "description": "Live positions"
+    },
+    {
+      "name": "internal",
+      "description": "Mod-facing ingest endpoints; do not call manually"
+    }
   ],
   "paths": {
-    "/health": {
+    "/items": {
       "get": {
-        "tags": ["status"],
-        "summary": "Liveness + mod-connection status",
-        "operationId": "getHealth",
-        "responses": {
-          "200": {
-            "description": "Node is up.",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } }
+        "tags": [
+          "map"
+        ],
+        "summary": "On-demand scan of spawned world items in a region",
+        "description": "Enqueues a scanItems command; the mod sweeps GetObjectsAtPosition3D around (x,z) at terrain height and posts back each ItemBase's class, displayName, position, damage state, and lifetimeMax. Synchronous round-trip (waits for the mod, ~2-4s). Region-scoped only (radius <= 200 m) — DayZ has no performant map-wide item enumeration. Live remaining-TTL is not exposed by the engine; lifetimeMax is the configured CE lifetime.",
+        "operationId": "getItems",
+        "parameters": [
+          {
+            "name": "x",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "description": "World X of the sweep centre."
+          },
+          {
+            "name": "z",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "description": "World Z of the sweep centre."
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 30,
+              "maximum": 200
+            },
+            "description": "Sphere radius in metres (default 30, capped at 200)."
           }
-        }
-      }
-    },
-    "/server": {
-      "get": {
-        "tags": ["status"],
-        "summary": "Server heartbeat (uptime, online count, in-game date/time, weather, fps)",
-        "operationId": "getServer",
+        ],
         "responses": {
           "200": {
-            "description": "Latest heartbeat, or a no-live-data marker if the mod has not pushed a snapshot within API_MOD_STALE_MS.",
+            "description": "Items found in the region.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    { "$ref": "#/components/schemas/ServerHeartbeat" },
-                    { "$ref": "#/components/schemas/NoLiveData" }
-                  ]
+                  "$ref": "#/components/schemas/ItemScan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/invalid x or z.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Mod not connected; live scan unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The mod did not respond in time; retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -53,253 +105,190 @@
         }
       }
     },
-    "/players": {
-      "get": {
-        "tags": ["players"],
-        "summary": "All online players with stats and metadata",
-        "operationId": "getPlayers",
-        "responses": {
-          "200": {
-            "description": "Player list (empty while no snapshot / nobody online).",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlayersList" } } }
-          }
-        }
-      }
-    },
-    "/players/{id}": {
-      "get": {
-        "tags": ["players"],
-        "summary": "One online player by plain id, steamId, or name",
-        "operationId": "getPlayer",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Plain id / steamId / exact player name." }
-        ],
-        "responses": {
-          "200": { "description": "The player.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Player" } } } },
-          "404": { "description": "Not found or offline.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/types": {
-      "get": {
-        "tags": ["economy"],
-        "summary": "Economy catalog (types.xml) with live count + displayName",
-        "operationId": "getTypes",
-        "parameters": [
-          { "name": "category", "in": "query", "required": false, "schema": { "type": "string" }, "example": "food", "description": "Filter to a single economy category (e.g. food, weapons, clothes)." }
-        ],
-        "responses": {
-          "200": { "description": "Type summaries.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TypesList" } } } }
-        }
-      }
-    },
-    "/types/{name}": {
-      "get": {
-        "tags": ["economy"],
-        "summary": "Full detail for one type, incl. attachment resolution",
-        "description": "Merges types.xml, cfgspawnabletypes.xml spawn presets, and the mod catalog (displayName, description, slots, cargo). Adds compatibleAttachments (what attaches ONTO this object) and fitsInto (which objects accept THIS item). Returns 404 for classes not present in vanilla types.xml (e.g. modded weapons) — use /types/{name}/attachments for those.",
-        "operationId": "getType",
-        "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" }, "example": "Apple", "description": "CfgVehicles/economy class name." }
-        ],
-        "responses": {
-          "200": { "description": "Type detail.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TypeDetail" } } } },
-          "404": { "description": "Type not in types.xml.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/types/{name}/attachments": {
-      "get": {
-        "tags": ["economy"],
-        "summary": "Both-directions attachment view for a class (catalog-backed)",
-        "description": "Works for vanilla AND modded classes (reads the mod catalog, not types.xml). 'accepts' = items that attach onto this object; 'fitsInto' = objects this item attaches onto. Slot matching is case-insensitive.",
-        "operationId": "getTypeAttachments",
-        "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" }, "example": "AKM", "description": "Config class name (vanilla or modded, e.g. AKM, TTC_AK12)." }
-        ],
-        "responses": {
-          "200": {
-            "description": "Attachment graph for the class. Fields are empty/null if the class is unknown or the mod is not connected.",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TypeAttachments" } } }
-          }
-        }
-      }
-    },
-    "/events": {
-      "get": {
-        "tags": ["economy"],
-        "summary": "Events catalog (events.xml)",
-        "operationId": "getEvents",
-        "responses": {
-          "200": { "description": "Events with lifetime (TTL), min/max, and child items.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventsList" } } } }
-        }
-      }
-    },
-    "/events/{name}": {
-      "get": {
-        "tags": ["economy"],
-        "summary": "One event by name",
-        "operationId": "getEvent",
-        "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" }, "example": "AmbientFox" }
-        ],
-        "responses": {
-          "200": { "description": "The event.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventDef" } } } },
-          "404": { "description": "Event not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/map": {
-      "get": {
-        "tags": ["map"],
-        "summary": "Live player / vehicle / event positions",
-        "operationId": "getMap",
-        "responses": {
-          "200": { "description": "Positions from the latest snapshot.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MapState" } } } }
-        }
-      }
-    },
-    "/items": {
-      "get": {
-        "tags": ["map"],
-        "summary": "On-demand scan of spawned world items in a region",
-        "description": "Enqueues a scanItems command; the mod sweeps GetObjectsAtPosition3D around (x,z) at terrain height and posts back each ItemBase's class, displayName, position, damage state, and lifetimeMax. Synchronous round-trip (waits for the mod, ~2-4s). Region-scoped only (radius <= 200 m) — DayZ has no performant map-wide item enumeration. Live remaining-TTL is not exposed by the engine; lifetimeMax is the configured CE lifetime.",
-        "operationId": "getItems",
-        "parameters": [
-          { "name": "x", "in": "query", "required": true, "schema": { "type": "number" }, "description": "World X of the sweep centre." },
-          { "name": "z", "in": "query", "required": true, "schema": { "type": "number" }, "description": "World Z of the sweep centre." },
-          { "name": "radius", "in": "query", "required": false, "schema": { "type": "number", "default": 30, "maximum": 200 }, "description": "Sphere radius in metres (default 30, capped at 200)." }
-        ],
-        "responses": {
-          "200": { "description": "Items found in the region.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemScan" } } } },
-          "400": { "description": "Missing/invalid x or z.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "503": { "description": "Mod not connected; live scan unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "504": { "description": "The mod did not respond in time; retry or poll /admin/commands/{commandId}.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
     "/items/near/{playerId}": {
       "get": {
-        "tags": ["map"],
+        "tags": [
+          "map"
+        ],
         "summary": "Region scan centred on an online player's position",
         "operationId": "getItemsNear",
         "parameters": [
-          { "name": "playerId", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Plain id / steamId / name of an online player." },
-          { "name": "radius", "in": "query", "required": false, "schema": { "type": "number", "default": 30, "maximum": 200 } }
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Plain id / steamId / name of an online player."
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 30,
+              "maximum": 200
+            }
+          }
         ],
-        "responses": {
-          "200": { "description": "Items near the player.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemScan" } } } },
-          "404": { "description": "Player not found or offline.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "503": { "description": "Mod not connected.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "504": { "description": "Scan timed out.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/feed": {
-      "get": {
-        "tags": ["feed"],
-        "summary": "Parsed .ADM admin-log events since a sequence number",
-        "operationId": "getFeed",
-        "parameters": [
-          { "name": "since", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Return only events with seq greater than this value (poll with the previous lastSeq)." }
-        ],
-        "responses": {
-          "200": { "description": "Feed page.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FeedResponse" } } } }
-        }
-      }
-    },
-    "/feed/stream": {
-      "get": {
-        "tags": ["feed"],
-        "summary": "Server-Sent-Events stream of .ADM events",
-        "operationId": "getFeedStream",
         "responses": {
           "200": {
-            "description": "An SSE stream (text/event-stream). Each message data payload is a FeedEvent JSON object.",
-            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+            "description": "Items near the player.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemScan"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Player not found or offline.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Mod not connected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Scan timed out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
-      }
-    },
-    "/admin/broadcast": {
-      "post": {
-        "tags": ["admin"],
-        "summary": "Queue an in-game broadcast notification",
-        "operationId": "postBroadcast",
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BroadcastRequest" } } }
-        },
-        "responses": {
-          "202": { "description": "Queued; the mod executes it on its next poll.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Queued" } } } },
-          "400": { "description": "Missing message.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/admin/kick": {
-      "post": {
-        "tags": ["admin"],
-        "summary": "Queue a player kick",
-        "operationId": "postKick",
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KickRequest" } } }
-        },
-        "responses": {
-          "202": { "description": "Queued.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Queued" } } } },
-          "400": { "description": "Missing playerId.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/admin/commands/{id}": {
-      "get": {
-        "tags": ["admin"],
-        "summary": "Status / result of a queued command",
-        "operationId": "getCommandStatus",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
-        "responses": {
-          "200": { "description": "The command.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Command" } } } },
-          "404": { "description": "Unknown command id.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/ingest/snapshot": {
       "post": {
-        "tags": ["internal"],
+        "tags": [
+          "internal"
+        ],
         "summary": "Mod pushes a live snapshot (players + heartbeat + map)",
         "operationId": "ingestSnapshot",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Snapshot" } } } },
-        "responses": { "200": { "description": "Stored.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } } }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Snapshot"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/ingest/catalog": {
       "post": {
-        "tags": ["internal"],
+        "tags": [
+          "internal"
+        ],
         "summary": "Mod pushes a catalog chunk (config-derived type detail)",
         "operationId": "ingestCatalog",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CatalogChunk" } } } },
-        "responses": { "200": { "description": "Merged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } } }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogChunk"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Merged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/ingest/commands": {
       "get": {
-        "tags": ["internal"],
+        "tags": [
+          "internal"
+        ],
         "summary": "Mod polls pending admin commands (marks them sent)",
         "operationId": "ingestCommands",
         "responses": {
-          "200": { "description": "Pending commands.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommandsList" } } } }
+          "200": {
+            "description": "Pending commands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandsList"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/ingest/commands/ack": {
       "post": {
-        "tags": ["internal"],
+        "tags": [
+          "internal"
+        ],
         "summary": "Mod reports a command result",
         "operationId": "ingestAck",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ack" } } } },
-        "responses": { "200": { "description": "Recorded.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } } }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Ack"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -307,285 +296,176 @@
     "schemas": {
       "Ok": {
         "type": "object",
-        "properties": { "ok": { "type": "boolean", "example": true } }
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          }
+        }
       },
       "Error": {
         "type": "object",
         "properties": {
-          "error": { "type": "string" },
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "path": { "type": "string" }
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
         },
-        "required": ["error"]
-      },
-      "Health": {
-        "type": "object",
-        "properties": {
-          "ok": { "type": "boolean" },
-          "instance": { "type": "string", "example": "chernarus" },
-          "nodeUptimeSec": { "type": "integer" },
-          "modConnected": { "type": "boolean", "description": "True if the mod pushed a snapshot within modStaleMs." },
-          "lastSnapshotAgeMs": { "type": "integer", "nullable": true },
-          "modStaleMs": { "type": "integer", "example": 15000 }
-        }
-      },
-      "Weather": {
-        "type": "object",
-        "properties": {
-          "overcast": { "type": "number", "format": "float" },
-          "rain": { "type": "number", "format": "float" },
-          "fog": { "type": "number", "format": "float" }
-        }
-      },
-      "ServerHeartbeat": {
-        "type": "object",
-        "properties": {
-          "online": { "type": "integer" },
-          "uptime": { "type": "integer", "description": "Seconds since mod init." },
-          "year": { "type": "integer" },
-          "month": { "type": "integer" },
-          "day": { "type": "integer" },
-          "hour": { "type": "integer" },
-          "minute": { "type": "integer" },
-          "fps": { "type": "number", "format": "float" },
-          "weather": { "$ref": "#/components/schemas/Weather" },
-          "snapshotAt": { "type": "integer", "format": "int64", "description": "Epoch ms of the snapshot." }
-        }
-      },
-      "NoLiveData": {
-        "type": "object",
-        "properties": {
-          "error": { "type": "string", "example": "no live data" },
-          "modConnected": { "type": "boolean", "example": false }
-        }
+        "required": [
+          "error"
+        ]
       },
       "Position": {
         "type": "array",
         "description": "World position [x, y, z].",
-        "items": { "type": "number" },
+        "items": {
+          "type": "number"
+        },
         "minItems": 3,
         "maxItems": 3,
-        "example": [8056.22, 3.21, 2820.32]
-      },
-      "Player": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "id": { "type": "string", "description": "Plain id (stable per account)." },
-          "steamId": { "type": "string" },
-          "pos": { "$ref": "#/components/schemas/Position" },
-          "health": { "type": "number", "format": "float" },
-          "blood": { "type": "number", "format": "float" },
-          "shock": { "type": "number", "format": "float" },
-          "energy": { "type": "number", "format": "float" },
-          "water": { "type": "number", "format": "float" },
-          "heatComfort": { "type": "number", "format": "float" },
-          "alive": { "type": "integer", "description": "1 = alive, 0 = dead (from IsAlive)." }
-        }
-      },
-      "PlayersList": {
-        "type": "object",
-        "properties": {
-          "count": { "type": "integer" },
-          "modConnected": { "type": "boolean" },
-          "players": { "type": "array", "items": { "$ref": "#/components/schemas/Player" } }
-        }
-      },
-      "TypeSummary": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "nominal": { "type": "integer" },
-          "min": { "type": "integer" },
-          "lifetime": { "type": "integer" },
-          "restock": { "type": "integer" },
-          "category": { "type": "array", "items": { "type": "string" } },
-          "usage": { "type": "array", "items": { "type": "string" } },
-          "value": { "type": "array", "items": { "type": "string" } },
-          "spawnedCount": { "type": "integer", "nullable": true, "description": "Live count if a CE source is wired in; otherwise null." },
-          "displayName": { "type": "string", "nullable": true, "description": "From the mod catalog; null until the mod connects." }
-        }
-      },
-      "TypesList": {
-        "type": "object",
-        "properties": {
-          "count": { "type": "integer" },
-          "countsLive": { "type": "boolean" },
-          "types": { "type": "array", "items": { "$ref": "#/components/schemas/TypeSummary" } }
-        }
-      },
-      "TypeFlags": {
-        "type": "object",
-        "additionalProperties": { "type": "integer", "enum": [0, 1] },
-        "description": "Economy flags (count_in_cargo, count_in_map, crafted, deloot, ...).",
-        "example": { "count_in_cargo": 0, "count_in_map": 1, "crafted": 1, "deloot": 0 }
-      },
-      "AttachmentRef": {
-        "type": "object",
-        "description": "An item/object reference in an attachment resolution.",
-        "properties": {
-          "name": { "type": "string", "description": "Config class name." },
-          "displayName": { "type": "string", "nullable": true }
-        }
-      },
-      "AttachmentAccepts": {
-        "type": "object",
-        "description": "What can attach ONTO an object: each slot it exposes -> items that fit.",
-        "properties": {
-          "slots": { "type": "array", "items": { "type": "string" } },
-          "itemCount": { "type": "integer" },
-          "bySlot": {
-            "type": "object",
-            "additionalProperties": { "type": "array", "items": { "$ref": "#/components/schemas/AttachmentRef" } }
-          }
-        }
-      },
-      "AttachmentFitsInto": {
-        "type": "object",
-        "description": "Which objects accept an item: each slot it occupies -> objects that expose that slot.",
-        "properties": {
-          "slots": { "type": "array", "items": { "type": "string" } },
-          "objectCount": { "type": "integer" },
-          "bySlot": {
-            "type": "object",
-            "additionalProperties": { "type": "array", "items": { "$ref": "#/components/schemas/AttachmentRef" } }
-          }
-        }
+        "example": [
+          8056.22,
+          3.21,
+          2820.32
+        ]
       },
       "TypeConfig": {
         "type": "object",
         "nullable": true,
         "description": "Mod-catalog detail for a class; null until the mod pushes the catalog.",
         "properties": {
-          "name": { "type": "string" },
-          "displayName": { "type": "string" },
-          "description": { "type": "string" },
-          "inventorySlot": { "type": "array", "items": { "type": "string" }, "description": "Slots THIS item can occupy." },
-          "attachments": { "type": "array", "items": { "type": "string" }, "description": "Slots THIS object exposes for other items." },
-          "magazines": { "type": "array", "items": { "type": "string" }, "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons." },
-          "cargoSize": { "type": "array", "items": { "type": "integer" } },
-          "isContainer": { "type": "boolean", "description": "Descends from Container_Base/DeployableContainer_Base; holds cargo even when itemsCargoSize is absent (grid lives in the p3d)." },
-          "weight": { "type": "number", "format": "float" },
-          "hitpoints": { "type": "number", "format": "float", "description": "Base durability (DamageSystem GlobalHealth Health hitpoints); 0 if none." },
-          "armor": { "type": "array", "description": "DamageSystem GlobalArmor, one row per declared damage-type (cfgAmmo class). damage is what that type deals to the zone: 0 = immune, higher = less protection.", "items": { "$ref": "#/components/schemas/ArmorEntry" } }
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inventorySlot": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Slots THIS item can occupy."
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Slots THIS object exposes for other items."
+          },
+          "magazines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons."
+          },
+          "cargoSize": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "isContainer": {
+            "type": "boolean",
+            "description": "Descends from Container_Base/DeployableContainer_Base; holds cargo even when itemsCargoSize is absent (grid lives in the p3d)."
+          },
+          "weight": {
+            "type": "number",
+            "format": "float"
+          },
+          "hitpoints": {
+            "type": "number",
+            "format": "float",
+            "description": "Base durability (DamageSystem GlobalHealth Health hitpoints); 0 if none."
+          },
+          "armor": {
+            "type": "array",
+            "description": "DamageSystem GlobalArmor, one row per declared damage-type (cfgAmmo class). damage is what that type deals to the zone: 0 = immune, higher = less protection.",
+            "items": {
+              "$ref": "#/components/schemas/ArmorEntry"
+            }
+          }
         }
       },
       "ArmorEntry": {
         "type": "object",
         "description": "One GlobalArmor damage-type row. Zone value is -1 when that zone isn't declared (distinct from a declared 0 = full immunity).",
         "properties": {
-          "ammo": { "type": "string", "description": "cfgAmmo/damage-type class name (e.g. Bullet_762x39, FragGrenade, MeleeFist)." },
-          "health": { "type": "number", "format": "float", "description": "Health-zone damage coefficient; -1 if not declared." },
-          "blood": { "type": "number", "format": "float", "description": "Blood-zone damage coefficient; -1 if not declared." },
-          "shock": { "type": "number", "format": "float", "description": "Shock-zone damage coefficient; -1 if not declared." }
-        }
-      },
-      "TypeDetail": {
-        "type": "object",
-        "description": "types.xml fields (name, nominal, min, lifetime, restock, quantmin, quantmax, cost, flags, category, usage, value, tag) plus the fields below.",
-        "properties": {
-          "name": { "type": "string" },
-          "nominal": { "type": "integer" },
-          "min": { "type": "integer" },
-          "lifetime": { "type": "integer" },
-          "restock": { "type": "integer" },
-          "quantmin": { "type": "integer" },
-          "quantmax": { "type": "integer" },
-          "cost": { "type": "integer" },
-          "flags": { "$ref": "#/components/schemas/TypeFlags" },
-          "category": { "type": "array", "items": { "type": "string" } },
-          "usage": { "type": "array", "items": { "type": "string" } },
-          "value": { "type": "array", "items": { "type": "string" } },
-          "tag": { "type": "array", "items": { "type": "string" } },
-          "spawnedCount": { "type": "integer", "nullable": true },
-          "spawnable": { "type": "object", "nullable": true, "description": "Attachment/cargo spawn presets from cfgspawnabletypes.xml.", "additionalProperties": true },
-          "config": { "$ref": "#/components/schemas/TypeConfig" },
-          "compatibleAttachments": { "allOf": [{ "$ref": "#/components/schemas/AttachmentAccepts" }], "nullable": true },
-          "fitsInto": { "allOf": [{ "$ref": "#/components/schemas/AttachmentFitsInto" }], "nullable": true }
-        }
-      },
-      "TypeAttachments": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "displayName": { "type": "string", "nullable": true },
-          "modConnected": { "type": "boolean" },
-          "exposesSlots": { "type": "array", "items": { "type": "string" }, "description": "attachments[] — slots this object offers." },
-          "occupiesSlots": { "type": "array", "items": { "type": "string" }, "description": "inventorySlot[] — slots this item occupies." },
-          "accepts": { "allOf": [{ "$ref": "#/components/schemas/AttachmentAccepts" }], "nullable": true },
-          "fitsInto": { "allOf": [{ "$ref": "#/components/schemas/AttachmentFitsInto" }], "nullable": true }
-        }
-      },
-      "EventChild": {
-        "type": "object",
-        "properties": {
-          "type": { "type": "string" },
-          "min": { "type": "integer" },
-          "max": { "type": "integer" },
-          "lootmin": { "type": "integer" },
-          "lootmax": { "type": "integer" }
-        },
-        "additionalProperties": true
-      },
-      "EventDef": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "nominal": { "type": "integer" },
-          "min": { "type": "integer" },
-          "max": { "type": "integer" },
-          "lifetime": { "type": "integer", "description": "TTL in seconds." },
-          "restock": { "type": "integer" },
-          "saferadius": { "type": "integer" },
-          "distanceradius": { "type": "integer" },
-          "cleanupradius": { "type": "integer" },
-          "flags": {
-            "type": "object",
-            "additionalProperties": { "type": "integer", "enum": [0, 1] }
+          "ammo": {
+            "type": "string",
+            "description": "cfgAmmo/damage-type class name (e.g. Bullet_762x39, FragGrenade, MeleeFist)."
           },
-          "position": { "type": "string" },
-          "limit": { "type": "string" },
-          "active": { "type": "integer", "enum": [0, 1] },
-          "children": { "type": "array", "items": { "$ref": "#/components/schemas/EventChild" } }
-        }
-      },
-      "EventsList": {
-        "type": "object",
-        "properties": {
-          "count": { "type": "integer" },
-          "events": { "type": "array", "items": { "$ref": "#/components/schemas/EventDef" } },
-          "active": { "type": "object", "nullable": true, "additionalProperties": true, "description": "Live active-event data if the mod supplies it; otherwise null." }
-        }
-      },
-      "MapEnt": {
-        "type": "object",
-        "properties": {
-          "label": { "type": "string" },
-          "type": { "type": "string", "enum": ["player", "vehicle", "event"] },
-          "pos": { "$ref": "#/components/schemas/Position" }
-        }
-      },
-      "MapState": {
-        "type": "object",
-        "properties": {
-          "modConnected": { "type": "boolean" },
-          "snapshotAt": { "type": "integer", "format": "int64", "nullable": true },
-          "players": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
-          "vehicles": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
-          "events": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } }
+          "health": {
+            "type": "number",
+            "format": "float",
+            "description": "Health-zone damage coefficient; -1 if not declared."
+          },
+          "blood": {
+            "type": "number",
+            "format": "float",
+            "description": "Blood-zone damage coefficient; -1 if not declared."
+          },
+          "shock": {
+            "type": "number",
+            "format": "float",
+            "description": "Shock-zone damage coefficient; -1 if not declared."
+          }
         }
       },
       "ItemInfo": {
         "type": "object",
         "description": "A spawned world item found by a region scan.",
         "properties": {
-          "cls": { "type": "string", "description": "Config class name (GetType)." },
-          "displayName": { "type": "string", "description": "Localized in-game name." },
-          "pos": { "$ref": "#/components/schemas/Position" },
-          "healthLevel": { "type": "integer", "enum": [0, 1, 2, 3, 4], "description": "0=pristine .. 4=ruined." },
-          "damageState": { "type": "string", "enum": ["pristine", "worn", "damaged", "badly_damaged", "ruined", "unknown"] },
-          "lifetimeMax": { "type": "number", "description": "Configured CE lifetime in seconds (types.xml <lifetime>). NOT the live remaining TTL, which the engine does not expose." }
+          "cls": {
+            "type": "string",
+            "description": "Config class name (GetType)."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Localized in-game name."
+          },
+          "pos": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "healthLevel": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "0=pristine .. 4=ruined."
+          },
+          "damageState": {
+            "type": "string",
+            "enum": [
+              "pristine",
+              "worn",
+              "damaged",
+              "badly_damaged",
+              "ruined",
+              "unknown"
+            ]
+          },
+          "lifetimeMax": {
+            "type": "number",
+            "description": "Configured CE lifetime in seconds (types.xml <lifetime>). NOT the live remaining TTL, which the engine does not expose."
+          }
         }
       },
       "ItemScan": {
@@ -593,64 +473,27 @@
         "properties": {
           "center": {
             "type": "object",
-            "properties": { "x": { "type": "number" }, "z": { "type": "number" } }
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            }
           },
-          "radius": { "type": "number" },
-          "count": { "type": "integer" },
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ItemInfo" } }
-        }
-      },
-      "FeedEvent": {
-        "type": "object",
-        "properties": {
-          "seq": { "type": "integer", "description": "Monotonic sequence number; poll /feed with since=<lastSeq>." },
-          "time": { "type": "string", "nullable": true, "example": "15:23:50" },
-          "type": { "type": "string", "enum": ["connect", "disconnect", "death", "hit", "chat", "placed", "build", "other", "meta"] },
-          "player": { "type": "string", "nullable": true },
-          "id": { "type": "string", "nullable": true },
-          "pos": { "type": "array", "items": { "type": "number" }, "nullable": true },
-          "raw": { "type": "string", "description": "The original log message." }
-        }
-      },
-      "FeedResponse": {
-        "type": "object",
-        "properties": {
-          "lastSeq": { "type": "integer" },
-          "count": { "type": "integer" },
-          "events": { "type": "array", "items": { "$ref": "#/components/schemas/FeedEvent" } }
-        }
-      },
-      "BroadcastRequest": {
-        "type": "object",
-        "required": ["message"],
-        "properties": { "message": { "type": "string" } }
-      },
-      "KickRequest": {
-        "type": "object",
-        "required": ["playerId"],
-        "properties": {
-          "playerId": { "type": "string", "description": "Target plain id." },
-          "reason": { "type": "string" }
-        }
-      },
-      "Queued": {
-        "type": "object",
-        "properties": {
-          "queued": { "type": "boolean", "example": true },
-          "commandId": { "type": "integer" }
-        }
-      },
-      "Command": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "type": { "type": "string", "enum": ["broadcast", "kick"] },
-          "args": { "type": "object", "additionalProperties": true },
-          "status": { "type": "string", "enum": ["pending", "sent", "done"] },
-          "result": { "nullable": true, "description": "Set by the mod on ack (e.g. \"ok\", \"player_not_found\")." },
-          "createdAt": { "type": "integer", "format": "int64" },
-          "sentAt": { "type": "integer", "format": "int64", "description": "0 until polled by the mod." },
-          "ackedAt": { "type": "integer", "format": "int64", "description": "0 until acked." }
+          "radius": {
+            "type": "number"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemInfo"
+            }
+          }
         }
       },
       "Snapshot": {
@@ -662,10 +505,14 @@
         "type": "object",
         "description": "A chunk of the config-derived catalog. Chunks are merged; 'reset' (sent on the first chunk of a fresh export) clears the catalog first.",
         "properties": {
-          "reset": { "type": "boolean" },
+          "reset": {
+            "type": "boolean"
+          },
           "items": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/TypeConfig" }
+            "items": {
+              "$ref": "#/components/schemas/TypeConfig"
+            }
           }
         }
       },
@@ -677,9 +524,16 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "integer" },
-                "type": { "type": "string" },
-                "args": { "type": "object", "additionalProperties": true }
+                "id": {
+                  "type": "integer"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
               }
             }
           }
@@ -687,10 +541,16 @@
       },
       "Ack": {
         "type": "object",
-        "required": ["id"],
+        "required": [
+          "id"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "result": { "description": "Any JSON value; recorded as the command result." }
+          "id": {
+            "type": "integer"
+          },
+          "result": {
+            "description": "Any JSON value; recorded as the command result."
+          }
         }
       }
     }

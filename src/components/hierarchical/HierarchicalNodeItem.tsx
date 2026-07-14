@@ -449,8 +449,8 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                 </div>
                 {children.length > 0 ? (
                   <div className="space-y-1">
-                    <SortableContext items={children.map(c => c.id)} strategy={verticalListSortingStrategy}>
-                      {children.map((child, idx) => (
+                    <SortableContext items={children.map((c: LoadoutNode) => c.id)} strategy={verticalListSortingStrategy}>
+                      {children.map((child: LoadoutNode, idx: number) => (
                         <HierarchicalNodeItem 
                           key={child.id}
                           node={child}

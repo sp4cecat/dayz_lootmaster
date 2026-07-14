@@ -17,9 +17,10 @@
  * (modConnected reflects a fresh push, not a stale cache).
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -47,10 +48,18 @@ function persistCatalog() {
     if (saveTimer) return;
     saveTimer = setTimeout(async () => {
         saveTimer = null;
+        // Atomic write (temp + rename) so a crash mid-write can't leave a truncated
+        // ingest-catalog.json that loadPersistedCatalog would then fail to parse.
+        // eslint-disable-next-line no-undef
+        const tmp = `${CATALOG_CACHE_FILE}.tmp-${process.pid}-${crypto.randomUUID()}`;
         try {
             await mkdir(dirname(CATALOG_CACHE_FILE), { recursive: true });
-            await writeFile(CATALOG_CACHE_FILE, JSON.stringify({ at: catalogAt, catalog }), 'utf8');
-        } catch { /* best-effort cache; failures are non-fatal */ }
+            await writeFile(tmp, JSON.stringify({ at: catalogAt, catalog }), 'utf8');
+            await rename(tmp, CATALOG_CACHE_FILE);
+        } catch {
+            try { await rm(tmp, { force: true }); } catch { /* ignore */ }
+            /* best-effort cache; failures are non-fatal */
+        }
     }, 500);
 }
 
@@ -210,7 +219,33 @@ export function modConnected() {
 
 // ---- command queue (Node -> mod, since the mod's RestApi is outbound-only) ----
 
+// The mod pushes commands and polls, but acked commands otherwise live forever in
+// `commands`, so a long-running server leaks memory and takePendingCommands scans a
+// growing map. Evict completed commands past a TTL, with a hard size cap as a backstop.
+// eslint-disable-next-line no-undef
+const COMMAND_TTL_MS = Number(process.env.DAYZ_COMMAND_TTL_MS || 5 * 60 * 1000);
+const COMMAND_MAX = 1000;
+function pruneCommands() {
+    const cutoff = now() - COMMAND_TTL_MS;
+    for (const [id, cmd] of commands) {
+        if (cmd.status === 'done' && cmd.ackedAt && cmd.ackedAt < cutoff) {
+            commands.delete(id);
+        }
+    }
+    if (commands.size > COMMAND_MAX) {
+        // Drop the oldest completed commands first until back under the cap.
+        const done = [...commands.values()]
+            .filter(c => c.status === 'done')
+            .sort((a, b) => a.createdAt - b.createdAt);
+        for (const c of done) {
+            if (commands.size <= COMMAND_MAX) break;
+            commands.delete(c.id);
+        }
+    }
+}
+
 export function enqueueCommand(type, args) {
+    pruneCommands();
     const id = ++commandSeq;
     const cmd = {
         id,

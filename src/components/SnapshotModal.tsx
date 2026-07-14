@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import moment from 'moment';
 import { cx } from '@/utils/cx';
+import { apiFetch } from '@/utils/api';
 
 interface Snapshot {
     id: string;
@@ -27,14 +28,12 @@ interface Snapshot {
 interface SnapshotModalProps {
     onClose: () => void;
     selectedProfileId: string;
-    getApiBase: () => string;
     inline?: boolean;
 }
 
-export const SnapshotModal: React.FC<SnapshotModalProps> = ({ 
-    onClose, 
-    selectedProfileId, 
-    getApiBase,
+export const SnapshotModal: React.FC<SnapshotModalProps> = ({
+    onClose,
+    selectedProfileId,
     inline = false
 }) => {
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -43,14 +42,11 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
     const [newSnapshot, setNewSnapshot] = useState({ name: '', description: '' });
     const [restoring, setRestoring] = useState<string | null>(null);
 
-    const apiBase = getApiBase();
-    const normalizedApiBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
-
     const fetchSnapshots = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots`, {
-                headers: { 'x-profile-id': selectedProfileId }
+            const res = await apiFetch(`/api/profiles/${selectedProfileId}/snapshots`, {
+                profileId: selectedProfileId
             });
             if (res.ok) {
                 const data = await res.json();
@@ -67,19 +63,19 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         if (selectedProfileId) {
             fetchSnapshots();
         }
-    }, [selectedProfileId, apiBase]);
+    }, [selectedProfileId]);
 
     const handleCreate = async () => {
         if (!newSnapshot.name.trim()) return;
         setCreating(true);
         try {
-            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots`, {
+            const res = await apiFetch(`/api/profiles/${selectedProfileId}/snapshots`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
-                    'x-editor-id': localStorage.getItem('dayz-editor:id') || 'unknown',
-                    'x-profile-id': selectedProfileId
+                    'x-editor-id': localStorage.getItem('dayz-editor:id') || 'unknown'
                 },
+                profileId: selectedProfileId,
                 body: JSON.stringify(newSnapshot)
             });
             if (res.ok) {
@@ -96,9 +92,9 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
     const handleDelete = async (id: string) => {
         if (!window.confirm('Are you sure you want to delete this snapshot? This cannot be undone.')) return;
         try {
-            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots/${id}`, {
+            const res = await apiFetch(`/api/profiles/${selectedProfileId}/snapshots/${id}`, {
                 method: 'DELETE',
-                headers: { 'x-profile-id': selectedProfileId }
+                profileId: selectedProfileId
             });
             if (res.ok) {
                 fetchSnapshots();
@@ -114,12 +110,12 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         
         setRestoring(id);
         try {
-            const res = await fetch(`${normalizedApiBase}/api/profiles/${selectedProfileId}/snapshots/${id}/restore`, {
+            const res = await apiFetch(`/api/profiles/${selectedProfileId}/snapshots/${id}/restore`, {
                 method: 'POST',
-                headers: { 
-                    'x-profile-id': selectedProfileId,
+                headers: {
                     'x-editor-id': localStorage.getItem('dayz-editor:id') || 'unknown'
-                }
+                },
+                profileId: selectedProfileId
             });
             if (res.ok) {
                 window.alert('Snapshot restored successfully! The application will now reload.');

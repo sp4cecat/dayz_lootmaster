@@ -25,7 +25,7 @@ All file operations are relative to the active profile:
 ## Add-on Detection
 Probe the server directory for directory signatures:
 - **Expansion**: `profiles/ExpansionMod` OR `mpmissions/<missionName>/expansion` exists
-- **DeerIsle**: `profiles/Deerisles` exists
+- **DeerIsle**: `profiles/Deerisle` exists
 Detected add-ons are returned in the `/api/profiles` response and consumed by the frontend for UI gating.
 
 ## Key Business Rules
@@ -48,5 +48,5 @@ Detected add-ons are returned in the `/api/profiles` response and consumed by th
 
 ## Testing
 - Framework: Vitest; environment: `jsdom` (required for `DOMParser`)
-- Run: `npm test --watch=false`
+- Run: `npm test -- --watch=false` (the `--` passes the flag to vitest, not npm)
 - Focus coverage on `src/utils/xml.ts`, `src/utils/validation.js`, `src/hooks/useLootData.js`

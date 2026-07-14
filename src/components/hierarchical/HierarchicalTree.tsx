@@ -37,7 +37,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { findParent, findNode, reorderList, cloneNodeWithNewIds, cloneNodeAsLink, buildNodeIndex } from '@/utils/tree';
+import { findParent, findNode, cloneNodeWithNewIds, cloneNodeAsLink, buildNodeIndex } from '@/utils/tree';
 
 interface HierarchicalTreeProps {
   items: LoadoutNode[];
@@ -311,8 +311,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
         </SortableContext>
       </div>
 
-      <DragOverlay 
-        onContextMenu={(e) => e.preventDefault()}
+      <DragOverlay
         dropAnimation={{
           sideEffects: defaultDropAnimationSideEffects({
             styles: {

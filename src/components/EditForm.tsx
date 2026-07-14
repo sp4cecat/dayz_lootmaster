@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useTabParam } from '@/hooks/useHashRoute';
 import EditFormCLETab from './EditFormCLETab';
 import EditFormMarketplaceTab from './EditFormMarketplaceTab';
@@ -22,7 +22,6 @@ interface EditFormProps {
   typeOptionsByCategory?: Record<string, string[]>;
   selectedProfileId: string;
   selectedProfile?: { id: string; addons?: string[] };
-  getApiBase: () => string;
   spawnableTypesByGroup?: Record<string, Record<string, any>>;
   setSpawnableTypesByGroup?: (next: any) => void;
   randomPresets?: { presets: any[] };
@@ -37,10 +36,9 @@ export default function EditForm({
   onSave, 
   typeOptions = [], 
   typeOptionsByCategory = {}, 
-  selectedProfileId, 
-  selectedProfile, 
-  getApiBase, 
-  spawnableTypesByGroup = {}, 
+  selectedProfileId,
+  selectedProfile,
+  spawnableTypesByGroup = {},
   setSpawnableTypesByGroup = () => {}, 
   randomPresets = { presets: [] }, 
   globalsDefaults = { LootDamageMin: null, LootDamageMax: null },
@@ -139,7 +137,6 @@ export default function EditForm({
             registerSaveHandler={registerSaveHandler}
             selectedProfileId={selectedProfileId}
             selectedProfile={selectedProfile}
-            getApiBase={getApiBase}
           />
         </div>
 

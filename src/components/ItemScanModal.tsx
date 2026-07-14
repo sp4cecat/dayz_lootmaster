@@ -14,7 +14,6 @@ interface ItemScanModalProps {
   onClose: () => void;
   missionName?: string;
   selectedProfileId?: string;
-  getApiBase?: () => string;
   isPanel?: boolean;
 }
 

@@ -619,10 +619,11 @@ async function createBackupIfExists(target) {
 async function writeFileAtomic(target, data) {
     const dir = dirname(target);
     await mkdir(dir, {recursive: true});
-    // Same-dir temp so rename() is atomic (same filesystem). PID suffix keeps it
-    // collision-free for this single-writer server without needing randomness.
+    // Same-dir temp so rename() is atomic (same filesystem). A per-write random token
+    // (plus PID) keeps the temp path unique so two concurrent writes to the SAME target
+    // (e.g. two editors saving the same types file) can't clobber each other's temp file.
     // eslint-disable-next-line no-undef
-    const tmp = join(dir, `.${String(target).split(/[\\/]/).pop()}.tmp-${process.pid}`);
+    const tmp = join(dir, `.${String(target).split(/[\\/]/).pop()}.tmp-${process.pid}-${crypto.randomUUID()}`);
     let fh;
     try {
         fh = await open(tmp, 'w');
@@ -1396,7 +1397,9 @@ async function handleCatalogRoute(pathname, req, res) {
     // /api/catalog/health — is the mod actively pushing?
     if (parts.length === 3 && parts[2] === 'health') {
         const modConnected = ingest.modConnected();
-        send(res, 200, JSON.stringify({ ok: true, modConnected }), { 'Content-Type': 'application/json' });
+        const { at: snapshotAt } = ingest.getSnapshot();   // ms epoch of last live push; 0 when never synced
+        const { at: catalogAt } = ingest.getCatalog();     // ms epoch of last catalog import
+        send(res, 200, JSON.stringify({ ok: true, modConnected, snapshotAt, catalogAt }), { 'Content-Type': 'application/json' });
         return true;
     }
 

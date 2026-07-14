@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateTypeAgainstDefinitions } from '@/utils/validation';
 import { formatLifetime } from '@/utils/time';
 import { Badge } from '@/components/base/badges/badges';
 import { Input } from '@/components/base/input/input';
 import { Select } from '@/components/base/select/select';
 import { Button } from '@/components/base/button/button';
-import { Clock, Info, AlertCircle, AlertTriangle } from 'lucide-react';
-import { Checkbox } from '@/components/base/checkbox/checkbox';
+import { Clock, Info, AlertCircle } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import type { Type } from '@/utils/xml';
+import { apiFetch } from '@/utils/api';
 
 interface EditFormCLETabProps {
   definitions: {
@@ -23,18 +23,16 @@ interface EditFormCLETabProps {
   registerSaveHandler?: (fn: null | (() => void)) => void;
   selectedProfileId: string;
   selectedProfile?: { id: string; addons?: string[] };
-  getApiBase: () => string;
 }
 
-export default function EditFormCLETab({ 
-  definitions, 
-  selectedTypes, 
-  onSave, 
-  onCanSaveChange, 
-  registerSaveHandler, 
-  selectedProfileId, 
-  selectedProfile, 
-  getApiBase 
+export default function EditFormCLETab({
+  definitions,
+  selectedTypes,
+  onSave,
+  onCanSaveChange,
+  registerSaveHandler,
+  selectedProfileId,
+  selectedProfile
 }: EditFormCLETabProps) {
   const base = selectedTypes[0];
 
@@ -196,8 +194,8 @@ export default function EditFormCLETab({
 
   const loadDivingConfig = async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/deerisle/diving-loot`, {
-        headers: { 'X-Profile-ID': selectedProfileId }
+      const res = await apiFetch(`/api/deerisle/diving-loot`, {
+        profileId: selectedProfileId
       });
       if (res.ok) {
         const data = await res.json();
@@ -219,12 +217,12 @@ export default function EditFormCLETab({
 
   const saveDivingConfig = async () => {
     try {
-      await fetch(`${getApiBase()}/api/deerisle/diving-loot`, {
+      await apiFetch(`/api/deerisle/diving-loot`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Profile-ID': selectedProfileId 
+        headers: {
+          'Content-Type': 'application/json'
         },
+        profileId: selectedProfileId,
         body: JSON.stringify(divingConfig)
       });
       setDivingConfigDirty(false);

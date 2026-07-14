@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from '@/components/base/modal/modal';
 import { Button } from '@/components/base/button/button';
 import { Badge } from '@/components/base/badges/badges';
@@ -8,7 +8,7 @@ interface StorageStatusModalProps {
   diff: {
     files: Record<string, Record<string, { changedNames?: string[] }>>;
     definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean };
-    mission: { spawnableGroups: Record<string, boolean>, randomPresets: boolean };
+    mission: { spawnableGroups: Record<string, Record<string, boolean>>, randomPresets: boolean };
   } | null;
   onClose: () => void;
   onApply: () => Promise<{ ok: boolean, error?: string }>;
@@ -48,7 +48,7 @@ export default function StorageStatusModal({ diff, onClose, onApply }: StorageSt
 
   const hasChanges = fileList.length > 0 || 
                      diff?.definitions.categories || diff?.definitions.usageflags || diff?.definitions.valueflags || diff?.definitions.tags || 
-                     diff?.mission.randomPresets || Object.values(diff?.mission.spawnableGroups || {}).some(v => v);
+                     diff?.mission.randomPresets || Object.values(diff?.mission.spawnableGroups || {}).some(files => Object.values(files).some(v => v));
 
   const footer = (
     <>

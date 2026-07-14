@@ -1,5 +1,6 @@
 import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
+import { escapeAttr } from '@/utils/xml';
 import { buildNodeIndex, materializeLinkedClones } from '@/utils/tree';
 
 /**
@@ -289,7 +290,7 @@ export function loadoutToVanillaXml(
   const renderBlock = (tag: 'attachments' | 'cargo', node: LoadoutNode, space: string) => {
     // Named group reference, e.g. <attachments preset="MyPreset" chance="0.5" />
     if (node.type === 'template' && node.templateSource === 'preset') {
-      lines.push(`${space}<${tag} preset="${node.name}" chance="${node.chance.toFixed(2)}" />`);
+      lines.push(`${space}<${tag} preset="${escapeAttr(node.name)}" chance="${node.chance.toFixed(2)}" />`);
       return;
     }
 
@@ -298,9 +299,9 @@ export function loadoutToVanillaXml(
       lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
       (node.attachments || []).forEach(child => {
         if (child.type === 'template' && child.templateSource === 'preset') {
-          lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+          lines.push(`${space}  <item preset="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
         } else {
-          lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+          lines.push(`${space}  <item name="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
         }
       });
       lines.push(`${space}</${tag}>`);
@@ -314,9 +315,9 @@ export function loadoutToVanillaXml(
       lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
       members.forEach(child => {
         if (child.type === 'template' && child.templateSource === 'preset') {
-          lines.push(`${space}  <item preset="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+          lines.push(`${space}  <item preset="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
         } else {
-          lines.push(`${space}  <item name="${child.name}" chance="${child.chance.toFixed(2)}"/>`);
+          lines.push(`${space}  <item name="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
         }
       });
       lines.push(`${space}</${tag}>`);
@@ -325,13 +326,13 @@ export function loadoutToVanillaXml(
 
     // Legacy bare item -> its own single-item block.
     lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
-    lines.push(`${space}  <item name="${node.name}" chance="1.00"/>`);
+    lines.push(`${space}  <item name="${escapeAttr(node.name)}" chance="1.00"/>`);
     lines.push(`${space}</${tag}>`);
   };
 
   const mapRoot = (node: LoadoutNode, indent: number) => {
     const space = ' '.repeat(indent);
-    lines.push(`${space}<type name="${node.name}">`);
+    lines.push(`${space}<type name="${escapeAttr(node.name)}">`);
     if (node.damage) {
       lines.push(`${space}  <damage min="${node.damage.min.toFixed(2)}" max="${node.damage.max.toFixed(2)}"/>`);
     }

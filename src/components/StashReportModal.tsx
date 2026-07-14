@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { DatePicker } from './base/datepicker/datepicker';
-import { Archive, BarChart01, AlertTriangle, XClose } from '@untitledui/icons';
-import { 
-  CalendarDateTime, 
-  fromDate, 
-  toCalendarDateTime, 
-  getLocalTimeZone 
+import { Archive, BarChart01, XClose } from '@untitledui/icons';
+import {
+  CalendarDateTime,
+  getLocalTimeZone
 } from '@internationalized/date';
+import { apiFetch } from '@/utils/api';
 
 interface PlayerReport {
   id: string;
@@ -21,11 +20,10 @@ interface PlayerReport {
 interface StashReportModalProps {
   onClose: () => void;
   selectedProfileId: string;
-  getApiBase: () => string;
   isPanel?: boolean;
 }
 
-export default function StashReportModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: StashReportModalProps) {
+export default function StashReportModal({ onClose, selectedProfileId, isPanel = false }: StashReportModalProps) {
   const [start, setStart] = useState<CalendarDateTime | null>(null);
   const [end, setEnd] = useState<CalendarDateTime | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,14 +40,12 @@ export default function StashReportModal({ onClose, selectedProfileId, getApiBas
       if (start) payload.start = start.toDate(getLocalTimeZone()).toISOString();
       if (end) payload.end = end.toDate(getLocalTimeZone()).toISOString();
 
-      const API_BASE = getApiBase();
-
-      const res = await fetch(`${API_BASE}/api/logs/stash-report`, {
+      const res = await apiFetch(`/api/logs/stash-report`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Profile-ID': selectedProfileId
+        headers: {
+          'Content-Type': 'application/json'
         },
+        profileId: selectedProfileId,
         body: JSON.stringify(payload)
       });
       if (!res.ok) {

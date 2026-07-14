@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { FileSearch01, CheckCircle, AlertTriangle, XClose } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
+import { apiFetch } from '@/utils/api';
 
 interface Totals {
   files: number;
@@ -28,11 +29,10 @@ interface Report {
 interface LintFilesModalProps {
   onClose: () => void;
   selectedProfileId: string;
-  getApiBase: () => string;
   isPanel?: boolean;
 }
 
-export default function LintFilesModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: LintFilesModalProps) {
+export default function LintFilesModal({ onClose, selectedProfileId, isPanel = false }: LintFilesModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -43,11 +43,9 @@ export default function LintFilesModal({ onClose, selectedProfileId, getApiBase,
       setError(null);
       setReport(null);
 
-      const API_BASE = getApiBase();
-
-      const res = await fetch(`${API_BASE}/api/lint`, { 
+      const res = await apiFetch(`/api/lint`, {
         method: 'GET',
-        headers: { 'X-Profile-ID': selectedProfileId }
+        profileId: selectedProfileId
       });
       if (!res.ok) {
         const msg = await res.text().catch(() => '');

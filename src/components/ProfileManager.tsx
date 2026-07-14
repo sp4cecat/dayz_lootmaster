@@ -6,6 +6,7 @@ import { Server, Plus, Edit2, Trash2, Check, ExternalLink, Folder, Map as MapIco
 import { Badge } from '@/components/base/badges/badges';
 
 import { getMapMetadata } from '@/consts/maps';
+import { apiFetch } from '@/utils/api';
 
 interface Profile {
   id: string;
@@ -19,14 +20,12 @@ interface ProfileManagerProps {
   profiles: Profile[];
   selectedProfileId: string;
   onSelect: (id: string) => void;
-  getApiBase: () => string;
 }
 
-export default function ProfileManager({ 
-    profiles, 
-    selectedProfileId, 
-    onSelect,
-    getApiBase
+export default function ProfileManager({
+    profiles,
+    selectedProfileId,
+    onSelect
 }: ProfileManagerProps) {
     const [isAdding, setIsAdding] = useState(false);
     const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
@@ -56,12 +55,12 @@ export default function ProfileManager({
         e.preventDefault();
         
         const method = editingProfile ? 'PUT' : 'POST';
-        const url = editingProfile 
-            ? `${getApiBase()}/api/profiles/${editingProfile.id}`
-            : `${getApiBase()}/api/profiles`;
+        const path = editingProfile
+            ? `/api/profiles/${editingProfile.id}`
+            : `/api/profiles`;
 
         try {
-            const res = await fetch(url, {
+            const res = await apiFetch(path, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
@@ -80,7 +79,7 @@ export default function ProfileManager({
         if (!window.confirm('Are you sure you want to delete this profile?')) return;
 
         try {
-            const res = await fetch(`${getApiBase()}/api/profiles/${id}`, {
+            const res = await apiFetch(`/api/profiles/${id}`, {
                 method: 'DELETE'
             });
 

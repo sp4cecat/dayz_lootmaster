@@ -4,15 +4,16 @@ import { Select } from './base/select/select';
 import { Button } from './base/button/button';
 import { Slider } from './base/slider/slider';
 import { Modal } from './base/modal/modal';
-import { Map as MapIcon, Calendar, Filter, Maximize2, Zap, AlertCircle } from 'lucide-react';
+import { Map as MapIcon, Maximize2, Zap, AlertCircle } from 'lucide-react';
 import moment from 'moment';
 import { useMapMetadata } from '../hooks/useMapMetadata';
 import { cx } from '@/utils/cx';
-import { 
-  CalendarDateTime, 
-  fromDate, 
-  toCalendarDateTime, 
-  getLocalTimeZone 
+import { apiFetch } from '@/utils/api';
+import {
+  CalendarDateTime,
+  fromDate,
+  toCalendarDateTime,
+  getLocalTimeZone
 } from '@internationalized/date';
 
 
@@ -20,11 +21,10 @@ interface HeatMapModalProps {
   onClose: () => void;
   selectedProfileId: string;
   missionName?: string;
-  getApiBase: () => string;
   isPanel?: boolean;
 }
 
-export default function HeatMapModal({ onClose, selectedProfileId, missionName, getApiBase, isPanel = false }: HeatMapModalProps) {
+export default function HeatMapModal({ onClose, selectedProfileId, missionName, isPanel = false }: HeatMapModalProps) {
     const mapMetadata = useMapMetadata(missionName);
     const [start, setStart] = useState<CalendarDateTime | null>(() => {
         const d = new Date();
@@ -63,19 +63,17 @@ export default function HeatMapModal({ onClose, selectedProfileId, missionName, 
     const [isPanning, setIsPanning] = useState(false);
     const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
-    const API_BASE = getApiBase();
-
     const fetchData = async () => {
         if (!start || !end) return;
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/api/logs/heatmap-data`, {
+            const res = await apiFetch(`/api/logs/heatmap-data`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-Profile-ID': selectedProfileId
+                headers: {
+                    'Content-Type': 'application/json'
                 },
+                profileId: selectedProfileId,
                 body: JSON.stringify({
                     start: moment(start.toDate(getLocalTimeZone())).format('YYYY-MM-DD HH:mm:ss'),
                     end: moment(end.toDate(getLocalTimeZone())).format('YYYY-MM-DD HH:mm:ss'),

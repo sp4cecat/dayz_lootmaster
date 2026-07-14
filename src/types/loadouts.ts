@@ -54,6 +54,5 @@ export interface Loadout {
   label: string;
   items: LoadoutNode[];
   updatedAt: number;
-  config?: {
-  };
+  config?: Record<string, unknown>;
 }

@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
 import { 
-  Database, 
-  Map as MapIcon, 
-  LogOut, 
-  User, 
+  Database,
+  LogOut,
+  User,
   ChevronRight,
   LayoutGrid,
-  FileCode,
-  Settings,
   ChevronDown,
   Bell,
   Search as SearchIcon

@@ -1,15 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DatePicker } from './base/datepicker/datepicker';
 import { Input } from './base/input/input';
 import { Button } from './base/button/button';
 import { Checkbox } from './base/checkbox/checkbox';
 import { Modal } from './base/modal/modal';
 import { cx } from '../utils/cx';
+import { apiFetch } from '../utils/api';
 import { FileText, MapPin, Users, Download, AlertTriangle } from 'lucide-react';
 import moment from 'moment';
-import { 
-  parseDateTime, 
-  CalendarDateTime, 
+import {
+  CalendarDateTime,
   fromDate, 
   toCalendarDateTime, 
   getLocalTimeZone 
@@ -18,7 +18,6 @@ import {
 interface ExpansionLogModalProps {
   onClose: () => void;
   selectedProfileId: string;
-  getApiBase: () => string;
   isPanel?: boolean;
 }
 
@@ -27,7 +26,7 @@ interface Player {
   aliases: string[];
 }
 
-export default function ExpansionLogModal({ onClose, selectedProfileId, getApiBase, isPanel = false }: ExpansionLogModalProps) {
+export default function ExpansionLogModal({ onClose, selectedProfileId, isPanel = false }: ExpansionLogModalProps) {
   const [start, setStart] = useState<CalendarDateTime | null>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -178,8 +177,6 @@ export default function ExpansionLogModal({ onClose, selectedProfileId, getApiBa
 
     setBusy(true);
     try {
-      const API_BASE = getApiBase();
-
       const payload: any = {
         start: sM.clone().utcOffset(600, true).format('YYYY-MM-DD HH:mm:ss'),
         end: eM.clone().utcOffset(600, true).format('YYYY-MM-DD HH:mm:ss')
@@ -191,12 +188,12 @@ export default function ExpansionLogModal({ onClose, selectedProfileId, getApiBa
         Object.assign(payload, { x: xn, y: yn, radius: rn, expandByIds: !!playersInRadiusOnly });
       }
 
-      const res = await fetch(`${API_BASE}/api/logs/expansion`, {
+      const res = await apiFetch(`/api/logs/expansion`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Profile-ID': selectedProfileId
+        headers: {
+          'Content-Type': 'application/json'
         },
+        profileId: selectedProfileId,
         body: JSON.stringify(payload)
       });
       if (!res.ok) {

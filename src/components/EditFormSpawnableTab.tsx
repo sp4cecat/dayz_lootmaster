@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Badge } from '@/components/base/badges/badges';
@@ -10,14 +10,13 @@ import {
   Percent, 
   ChevronRight,
   Package,
-  Layers,
-  AlertCircle
+  Layers
 } from 'lucide-react';
 import type { Type } from '@/utils/xml';
 import { Modal } from '@/components/base/modal/modal';
 import { SpawnableSlotModal } from './SpawnableSlotModal';
 import { XMLNodeKind } from '@/types/xml';
-import { Loadout, LoadoutNode } from '@/types/loadouts';
+import { LoadoutNode } from '@/types/loadouts';
 import { loadoutNodeToSpawnableSection } from '@/utils/loadouts';
 
 interface EditFormSpawnableTabProps {
@@ -98,8 +97,8 @@ export default function EditFormSpawnableTab({
   const type = selectedTypes[0];
   const result = findSpawnableEntryForType(spawnableTypesByGroup, type.group, type.name);
 
-  const effectiveGroup = result ? result.group : (
-    (type.group === 'vanilla' || type.group === 'vanilla_overrides') ? ROOT_SPAWNABLE_GROUP : type.group
+  const effectiveGroup: string = result ? result.group : (
+    (type.group === 'vanilla' || type.group === 'vanilla_overrides') ? ROOT_SPAWNABLE_GROUP : (type.group ?? ROOT_SPAWNABLE_GROUP)
   );
 
   const effectiveFile = result?.file || (
@@ -214,7 +213,7 @@ export default function EditFormSpawnableTab({
     
     updateSpawnableEntry(current => {
       const nextSections = [...(current.sections || [])];
-      let damageIdx = nextSections.findIndex(s => s.kind === XMLNodeKind.DAMAGE);
+      const damageIdx = nextSections.findIndex(s => s.kind === XMLNodeKind.DAMAGE);
       
       if (damageIdx === -1) {
         nextSections.push({
@@ -464,7 +463,6 @@ export default function EditFormSpawnableTab({
                 setTemplateModalOpen(true);
               }}
               selectedNodeId={selectedNodeId}
-              typeOptions={typeOptions}
               randomPresets={randomPresets}
               allLoadouts={loadouts}
               spawnableTypesByGroup={spawnableTypesByGroup}
@@ -653,7 +651,7 @@ export default function EditFormSpawnableTab({
                 <p className="text-sm font-bold text-gray-900 dark:text-white truncate">Cargo Item {idx + 1}</p>
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-gray-500 dark:text-gray-400">{chancePercent(item.chance)}% chance</p>
-                  {item.preset && <Badge color="blue" size="xs">Preset: {item.preset}</Badge>}
+                  {item.preset && <Badge color="blue" size="sm">Preset: {item.preset}</Badge>}
                 </div>
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

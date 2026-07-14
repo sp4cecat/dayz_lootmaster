@@ -1,17 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { ItemScan } from '../types/items';
-
-/**
- * Resolve the app's backend base URL (same rule as useTypeCatalog/useLootData):
- * the 4317 backend by default, overridable via localStorage['dayz-editor:apiBase'].
- */
-function getApiBase(): string {
-  const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
-  const defaultBase = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:4317`
-    : 'http://localhost:4317';
-  return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
-}
+import { apiFetch } from '../utils/api';
 
 /** Turn a non-2xx scan response into a friendly message. */
 async function messageForError(res: Response): Promise<string> {
@@ -43,7 +32,7 @@ export function useItemScan() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}${path}`);
+      const res = await apiFetch(path);
       if (!res.ok) {
         setError(await messageForError(res));
         return null;

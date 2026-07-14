@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { Input } from './base/input/input';
 import { Select } from './base/select/select';
-import { Checkbox } from './base/checkbox/checkbox';
-import { RadioGroup, Radio } from './base/radio-buttons/radio-buttons';
 import { ShoppingBag01, Trash01, Plus, Save01, XClose } from '@untitledui/icons';
-import { cx } from '@/utils/cx';
+import { apiFetch } from '@/utils/api';
 
 const ENTITY_CLASSES = [
   'ExpansionTraderAIMirek',
@@ -51,12 +49,6 @@ interface TraderEditorModalProps {
   onClose: () => void;
   selectedProfileId: string;
   isPanel?: boolean;
-}
-
-function useApiBase() {
-  const savedBase = typeof localStorage !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
-  const defaultBase = `${window.location.protocol}//${window.location.hostname}:4317`;
-  return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
 }
 
 function useEditorID() {
@@ -107,7 +99,6 @@ function serializeCategories(list: Category[]) {
 }
 
 export default function TraderEditorModal({ onClose, selectedProfileId, isPanel = false }: TraderEditorModalProps) {
-  const API_BASE = useApiBase();
   const editorID = useEditorID();
 
   const [traders, setTraders] = useState<string[]>([]);
@@ -134,9 +125,9 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
     (async () => {
       try {
         const [tRes, pRes, mRes] = await Promise.all([
-          fetch(`${API_BASE}/api/traders`, { headers: { 'X-Profile-ID': selectedProfileId } }),
-          fetch(`${API_BASE}/api/trader-profiles`, { headers: { 'X-Profile-ID': selectedProfileId } }),
-          fetch(`${API_BASE}/api/market/categories`, { headers: { 'X-Profile-ID': selectedProfileId } }),
+          apiFetch('/api/traders', { profileId: selectedProfileId }),
+          apiFetch('/api/trader-profiles', { profileId: selectedProfileId }),
+          apiFetch('/api/market/categories', { profileId: selectedProfileId }),
         ]);
         const tJson = await tRes.json().catch(() => ({ traders: [] }));
         const pJson = await pRes.json().catch(() => ({ profiles: [] }));
@@ -151,7 +142,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
         setError(String(e));
       }
     })();
-  }, [API_BASE, selectedProfileId]);
+  }, [selectedProfileId]);
 
   useEffect(() => {
     if (!selectedTrader) return;
@@ -159,8 +150,8 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
       setBusy(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/traders/${encodeURIComponent(selectedTrader)}`, {
-          headers: { 'X-Profile-ID': selectedProfileId }
+        const res = await apiFetch(`/api/traders/${encodeURIComponent(selectedTrader)}`, {
+          profileId: selectedProfileId
         });
         if (!res.ok) throw new Error(`Failed to load trader ${selectedTrader}`);
         const json = await res.json();
@@ -175,7 +166,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
         setBusy(false);
       }
     })();
-  }, [API_BASE, selectedTrader, selectedProfileId]);
+  }, [selectedTrader, selectedProfileId]);
 
   useEffect(() => {
     if (!traderFileName) {
@@ -187,8 +178,8 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
       setBusy(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/trader-profile/${encodeURIComponent(traderFileName)}`, {
-          headers: { 'X-Profile-ID': selectedProfileId }
+        const res = await apiFetch(`/api/trader-profile/${encodeURIComponent(traderFileName)}`, {
+          profileId: selectedProfileId
         });
         if (!res.ok) throw new Error(`Failed to load profile ${traderFileName}`);
         const json = await res.json();
@@ -202,7 +193,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
         setBusy(false);
       }
     })();
-  }, [API_BASE, traderFileName, selectedProfileId]);
+  }, [traderFileName, selectedProfileId]);
 
   const setAllFlags = (flag: number) => {
     setCategories(prev => prev.map(c => ({ ...c, flag })));
@@ -226,13 +217,13 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
         orientation: orientation.map(Number),
         gear: attachments.split(',').map(s => s.trim()).filter(Boolean),
       };
-      const mapRes = await fetch(`${API_BASE}/api/traders/${encodeURIComponent(selectedTrader)}`, {
+      const mapRes = await apiFetch(`/api/traders/${encodeURIComponent(selectedTrader)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-Editor-ID': editorID || 'unknown',
-          'X-Profile-ID': selectedProfileId
+          'X-Editor-ID': editorID || 'unknown'
         },
+        profileId: selectedProfileId,
         body: JSON.stringify(payloadMap),
       });
       if (!mapRes.ok) {
@@ -242,13 +233,13 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
       if (profileJson) {
         const deduped = dedupeCategoryList(categories);
         const updated = { ...profileJson, Categories: serializeCategories(deduped) };
-        const profRes = await fetch(`${API_BASE}/api/trader-profile/${encodeURIComponent(traderFileName)}`, {
+        const profRes = await apiFetch(`/api/trader-profile/${encodeURIComponent(traderFileName)}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-Editor-ID': editorID || 'unknown',
-            'X-Profile-ID': selectedProfileId
+            'X-Editor-ID': editorID || 'unknown'
           },
+          profileId: selectedProfileId,
           body: JSON.stringify(updated),
         });
         if (!profRes.ok) {
