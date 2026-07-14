@@ -1,4 +1,3 @@
-import React from 'react';
 import { Badge } from '@/components/base/badges/badges';
 import { Store } from 'lucide-react';
 import type { Type } from '@/utils/xml';

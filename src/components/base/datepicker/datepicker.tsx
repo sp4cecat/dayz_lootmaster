@@ -1,5 +1,4 @@
-import React from 'react';
-import { 
+import {
   DatePicker as AriaDatePicker, 
   DatePickerProps as AriaDatePickerProps,
   DateValue,
@@ -13,7 +12,6 @@ import {
   Dialog,
   Group,
   Heading,
-  Input as AriaInput,
   Label,
   Popover,
   DateSegment,

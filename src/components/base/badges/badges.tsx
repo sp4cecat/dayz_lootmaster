@@ -484,7 +484,7 @@ export const BadgeWithButton = <T extends BadgeTypes>(props: BadgeWithButtonProp
                 }}
                 className={cx(
                     "flex cursor-pointer items-center justify-center p-0.5 transition duration-100 ease-linear focus-visible:outline-2 focus-visible:outline-focus-ring",
-                    colors.styles[color].addonButton,
+                    (colors.styles[color] as { addonButton?: string }).addonButton,
                     type === "pill-color" ? "rounded-full" : "rounded-[3px]",
                 )}
             >

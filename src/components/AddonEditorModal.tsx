@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { Select } from './base/select/select';
-import { FileCode01, Save01, XClose, AlertCircle, CheckCircle } from '@untitledui/icons';
+import { FileCode01, Save01, AlertCircle, CheckCircle } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
 
 interface AddonEditorModalProps {

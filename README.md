@@ -9,7 +9,7 @@ So yeah - this tool is optimised for doing things my way, with each mod's CLE fi
 Lootmaster will only work on a server that gives you access to the Windows / Windows Server desktop. You'll need to have the latest version of Node / npm installed globally.
 
 ## Server Side
-Lootmaster is a single page app, and is served up via a Node.js server. The server does all of the reading and saving of your files.
+Lootmaster is a single page app (built with Vite) backed by a Node.js API server. The Node server does all of the reading and saving of your files; it is API-only and does not itself serve the built SPA. `npm run dev` starts both the API server and the Vite dev server together.
 
 # Installation
 Clone the repo and run `npm install`
@@ -19,6 +19,9 @@ You'll need to have Node.js installed.
 Then run `npm run dev`
 
 # File Structure
+
+> **Note:** Lootmaster now manages servers via **Profiles** — each profile points at a real server directory (`serverPath`) and mission (`missionName`), and all CLE paths are resolved relative to that mission. The `./data` layout described below is the older single-server fallback (`DATA_DIR`); prefer creating a profile in the app.
+
 Lootmaster is currently locked to a specific folder structure. It comes with the current types.xml for the vanilla Chernarus CLE.
 
 ## Minimum Setup

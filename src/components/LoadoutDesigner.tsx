@@ -716,7 +716,6 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                         setTemplateModalOpen(true);
                       }}
                       selectedNodeId={selectedNodeId}
-                      typeOptions={typeOptions}
                       randomPresets={randomPresets}
                       allLoadouts={loadouts}
                       spawnableTypesByGroup={spawnableTypesByGroup}

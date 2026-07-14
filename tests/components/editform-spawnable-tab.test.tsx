@@ -5,7 +5,7 @@ import { act } from 'react';
 import EditFormSpawnableTab from '../../src/components/EditFormSpawnableTab';
 import { XMLNodeKind } from '../../src/types/xml';
 
-// @ts-ignore
+// @ts-expect-error - test-only global flag not in the ambient types
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 // Mock dependencies if needed
@@ -92,8 +92,10 @@ describe('EditFormSpawnableTab', () => {
 
     expect(defaultProps.setSpawnableTypesByGroup).toHaveBeenCalled();
     const nextGroups = defaultProps.setSpawnableTypesByGroup.mock.calls[0][0];
-    const entry = nextGroups['__root'].types[0];
-    expect(entry.sections.some(s => s.kind === XMLNodeKind.DAMAGE)).toBe(true);
+    // spawnableTypesByGroup is nested per group -> per file -> { types }. A vanilla-group
+    // item writes to the mission root's cfgspawnabletypes.xml.
+    const entry = nextGroups['__root']['cfgspawnabletypes.xml'].types[0];
+    expect(entry.sections.some((s: any) => s.kind === XMLNodeKind.DAMAGE)).toBe(true);
     unmount();
   });
 });

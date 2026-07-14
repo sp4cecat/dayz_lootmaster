@@ -25,7 +25,7 @@ export function updateNodeInList<T extends { id: string, attachments?: T[], carg
   return nodes.map(node => {
     if (node.id === updatedNode.id) return updatedNode;
     
-    let nextNode = { ...node };
+    const nextNode = { ...node };
     let changed = false;
     
     if (node.attachments) {

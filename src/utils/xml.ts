@@ -499,7 +499,7 @@ function toBool(attrVal) {
 function to01(b) {
   return b ? '1' : '0';
 }
-function escapeAttr(s) {
+export function escapeAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 

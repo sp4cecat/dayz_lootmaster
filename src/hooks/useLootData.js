@@ -12,6 +12,7 @@ import {
   generateSpawnableTypesXml,
   generateRandomPresetsXml
 } from '../utils/xml.js';
+import { getApiBase, apiFetch } from '../utils/api';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
 import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile } from '../utils/idb.js';
 import { loadAllLoadouts } from '../utils/loadoutStore.js';
@@ -41,13 +42,15 @@ const STORAGE_KEY_SUMMARY_SHOWN = 'dayz-types-editor:summaryShown';
  */
 export function useLootData() {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [definitions, setDefinitions] = useState(null);
+  const [error, setError] = useState(/** @type {Error | string | null} */(null));
+  const [definitions, setDefinitions] = useState(/** @type {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}|null} */(null));
 
   // File-level persisted structure: group -> file -> types
   const [lootFiles, setLootFiles] = useState(/** @type {TypeFiles|null} */(null));
   // Derived grouped structure for convenience (combined per group)
-  const [lootGroups, setLootGroups] = useState(/** @type {TypeGroups|null} */(null));
+  // Only the setter is used: the group list the UI consumes is `groupsList` (derived from
+  // lootFiles). setLootGroups is retained for its callers; the value itself is never read.
+  const [, setLootGroups] = useState(/** @type {TypeGroups|null} */(null));
   // Merged array view with metadata for UI (each element augmented with "group" and source file)
   const [lootTypes, _setLootTypes] = useState(/** @type {(Type & {group: string, file: string})[]|null} */(null));
   // Filters include groups selection
@@ -55,15 +58,15 @@ export function useLootData() {
     category: 'all',
     name: '',
     searchIn: /** @type {('className'|'displayName')[]} */(['className', 'displayName']),
-    usage: [],
-    value: [],
-    tag: [],
-    flags: [],
-    changeFilter: 'all',
+    usage: /** @type {string[]} */([]),
+    value: /** @type {string[]} */([]),
+    tag: /** @type {string[]} */([]),
+    flags: /** @type {string[]} */([]),
+    changeFilter: /** @type {'all'|'changed'|'unchanged'} */('all'),
     groups: /** @type {string[]} */([])
   });
   const [selection, setSelection] = useState(new Set());
-  const [lastClickedId, setLastClickedId] = useState(null);
+  const [lastClickedId, setLastClickedId] = useState(/** @type {string | null} */(null));
 
   const historyRef = useRef(createHistory([]));
 
@@ -74,10 +77,10 @@ export function useLootData() {
 
   /**
    * Summary data computed after initial load.
-   * Contains counts of types and definition entries, plus optional group breakdown.
-   * @type {[{typesTotal: number, definitions: {categories: number, usageflags: number, valueflags: number, tags: number}, groups?: { name: string, count: number }[] } | null, (next: any) => void]}
+   * Shape matches SummaryModal's `summary` prop (type/group/file counts + definition counts).
+   * @type {[{typeCount: number, groupCount: number, fileCount: number, definitionCounts: {categories: number, usageflags: number, valueflags: number, tags: number}} | null, (next: any) => void]}
    */
-  const [loadSummary, setLoadSummary] = useState(/** @type {{typesTotal: number, definitions: {categories: number, usageflags: number, valueflags: number, tags: number}, groups?: { name: string, count: number }[] }|null} */(null));
+  const [loadSummary, setLoadSummary] = useState(/** @type {{typeCount: number, groupCount: number, fileCount: number, definitionCounts: {categories: number, usageflags: number, valueflags: number, tags: number}}|null} */(null));
   const [summaryOpen, setSummaryOpen] = useState(false);
 
 
@@ -91,13 +94,6 @@ export function useLootData() {
   const [baselineRandomPresets, setBaselineRandomPresets] = useState(/** @type {{presets: any[]}} */({ presets: [] }));
   const [globalsDefaults, setGlobalsDefaults] = useState(/** @type {{LootDamageMin: number|null, LootDamageMax: number|null}} */({ LootDamageMin: null, LootDamageMax: null }));
   const [loadouts, setLoadouts] = useState(/** @type {any[]} */([]));
-
-  // Helper to get API base
-  const getApiBase = useCallback(() => {
-    const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
-    const defaultBase = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4317` : 'http://localhost:4317';
-    return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
-  }, []);
 
   const [profiles, setProfiles] = useState(/** @type {{id: string, name: string, serverPath: string, missionName: string, addons?: string[]}[]} */([]));
   const [profilesLoaded, setProfilesLoaded] = useState(false);
@@ -129,14 +125,8 @@ export function useLootData() {
     }
   }, [selectedProfileId]);
 
-  const fetchWithProfile = useCallback(async (url, options = {}) => {
-    const opts = { ...options };
-    opts.headers = {
-      ...opts.headers,
-      'X-Profile-ID': selectedProfileId
-    };
-    return fetch(url, opts);
-  }, [selectedProfileId]);
+  const fetchWithProfile = useCallback((url, options = {}) =>
+    apiFetch(url, { ...options, profileId: selectedProfileId }), [selectedProfileId]);
 
   const loadMissionFilesFromAPI = useCallback(async (API_BASE, filesInput, warnings = []) => {
     const filesByGroup = filesInput?.filesByGroup || filesInput;
@@ -281,7 +271,7 @@ export function useLootData() {
     } finally {
       setProfilesLoaded(true);
     }
-  }, [getApiBase, selectedProfileId]);
+  }, [selectedProfileId]);
 
   useEffect(() => {
     loadProfiles();
@@ -363,8 +353,10 @@ export function useLootData() {
                   baseline[group][fileBase] = parsed;
                 } catch { /* skip */ }
               }
-            } else if (spawnableFilesByGroup[group]) {
-              // Ensure group exists in baseline even if no types files, so spawnabletypes are loaded
+            } else if (sFilesWithRoot[group]) {
+              // Ensure group exists in baseline even if no types files, so spawnabletypes are loaded.
+              // Use the freshly-parsed sFilesWithRoot, not the spawnableFilesByGroup state, which is
+              // still empty on first load (setSpawnableFilesByGroup above hasn't flushed yet).
               if (!baseline[group]) baseline[group] = {};
             }
           }
@@ -382,7 +374,7 @@ export function useLootData() {
         }
       } catch { /* no overrides present */ }
 
-      if (Object.keys(baseline).length > 0 || Object.keys(spawnableFilesByGroup).length > 0) {
+      if (Object.keys(baseline).length > 0 || Object.keys(sFilesWithRoot).length > 0) {
         setBaselineFiles(baseline);
         await loadMissionFilesFromAPI(API_BASE, sFilesWithRoot, []);
         return true;
@@ -391,7 +383,7 @@ export function useLootData() {
     } catch {
       return false;
     }
-  }, [selectedProfileId, getApiBase, fetchWithProfile, loadMissionFilesFromAPI, profilesLoaded]);
+  }, [selectedProfileId, fetchWithProfile, loadMissionFilesFromAPI, profilesLoaded]);
 
   // Prefer baseline from live API to compare in storageDiff (initial load)
   useEffect(() => {
@@ -411,7 +403,7 @@ export function useLootData() {
   }, [refreshBaselineFromAPI]);
 
   const storageDiff = useMemo(() => {
-    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>> }} */
+    /** @type {{ definitions: { categories: boolean, usageflags: boolean, valueflags: boolean, tags: boolean }, files: Record<string, Record<string, { changed: boolean, added: number, removed: number, modified: number, changedCount: number, addedNames: string[], removedNames: string[], modifiedNames: string[], changedNames: string[] }>>, mission: { spawnableGroups: Record<string, Record<string, boolean>>, randomPresets: boolean } }} */
     const diff = {
       definitions: { categories: false, usageflags: false, valueflags: false, tags: false },
       files: {},
@@ -580,7 +572,7 @@ export function useLootData() {
       console.error('Persistence failed:', e);
       return { ok: false, error: e.message };
     }
-  }, [selectedProfileId, getApiBase, storageDiff, definitions, lootFiles, spawnableTypesByGroup, randomPresets, fetchWithProfile, refreshBaselineFromAPI]);
+  }, [selectedProfileId, storageDiff, definitions, lootFiles, spawnableTypesByGroup, randomPresets, fetchWithProfile, refreshBaselineFromAPI]);
 
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
@@ -907,15 +899,17 @@ export function useLootData() {
 
         // Prepare and show one-time summary of loaded data
         const groupOrder = Object.keys(groups).sort((a, b) => (a === 'vanilla' ? -1 : b === 'vanilla' ? 1 : 0));
+        const fileCount = Object.values(files).reduce((n, perFile) => n + Object.keys(perFile || {}).length, 0);
         const summaryPayload = {
-          typesTotal: merged.length,
-          definitions: {
+          typeCount: merged.length,
+          groupCount: groupOrder.length,
+          fileCount,
+          definitionCounts: {
             categories: defs.categories.length,
             usageflags: defs.usageflags.length,
             valueflags: defs.valueflags.length,
             tags: defs.tags.length,
           },
-          groups: groupOrder.map(name => ({ name, count: (groups[name] || []).length }))
         };
         const alreadyShown = !!loadFromStorage(STORAGE_KEY_SUMMARY_SHOWN);
         if (!alreadyShown) {
@@ -1051,11 +1045,12 @@ export function useLootData() {
         kind === 'usage' ? { ...d, usageflags: d.usageflags.filter(x => x !== entry) } :
         kind === 'value' ? { ...d, valueflags: d.valueflags.filter(x => x !== entry) } :
         { ...d, tags: d.tags.filter(x => x !== entry) };
-      // Recompute unknowns with updated definitions
-      setUnknowns(validateUnknowns(_setLootTypes ? (lootTypes || []) : [], next));
+      // Recompute unknowns against the just-rebuilt types (`merged`, with the entry removed)
+      // and the updated definitions — not the stale `lootTypes` closure.
+      setUnknowns(validateUnknowns(merged, next));
       return next;
     });
-  }, [lootGroups, definitions, lootTypes]);
+  }, [definitions, lootFiles]);
 
   /**
    * Add an entry to definitions.
@@ -1138,7 +1133,7 @@ export function useLootData() {
       }
       setUnknownsOpen(false);
     }
-  }), [unknownsOpen, unknowns, lootTypes, setFromMergedTypes, pushHistory, lootGroups]);
+  }), [unknownsOpen, unknowns, lootTypes, setFromMergedTypes, pushHistory]);
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {

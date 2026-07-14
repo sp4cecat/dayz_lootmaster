@@ -1,4 +1,3 @@
-import React from 'react';
 import { Modal } from '@/components/base/modal/modal';
 import { Button } from '@/components/base/button/button';
 import { Database, FileCode, Tags, Layers } from 'lucide-react';

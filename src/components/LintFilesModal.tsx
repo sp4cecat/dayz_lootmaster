@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { FileSearch01, CheckCircle, AlertTriangle, XClose } from '@untitledui/icons';

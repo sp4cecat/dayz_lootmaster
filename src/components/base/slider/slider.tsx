@@ -48,7 +48,7 @@ export const Slider = <T extends number | number[] = number>({
             {...rest} 
             {...{ minValue, maxValue }} 
             formatOptions={formatOptions ?? defaultFormatOptions} 
-            className={cx(!hasLayoutClass(className) && "w-full", className)}
+            className={cx(!hasLayoutClass(typeof className === "string" ? className : undefined) && "w-full", className)}
         >
             <div className="flex flex-col gap-3">
                 {labelPosition !== "hidden" && (label || labelPosition === "default") && (

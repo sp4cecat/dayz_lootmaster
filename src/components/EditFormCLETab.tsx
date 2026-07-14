@@ -1,12 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateTypeAgainstDefinitions } from '@/utils/validation';
 import { formatLifetime } from '@/utils/time';
 import { Badge } from '@/components/base/badges/badges';
 import { Input } from '@/components/base/input/input';
 import { Select } from '@/components/base/select/select';
 import { Button } from '@/components/base/button/button';
-import { Clock, Info, AlertCircle, AlertTriangle } from 'lucide-react';
-import { Checkbox } from '@/components/base/checkbox/checkbox';
+import { Clock, Info, AlertCircle } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import type { Type } from '@/utils/xml';
 

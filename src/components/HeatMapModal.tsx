@@ -4,7 +4,7 @@ import { Select } from './base/select/select';
 import { Button } from './base/button/button';
 import { Slider } from './base/slider/slider';
 import { Modal } from './base/modal/modal';
-import { Map as MapIcon, Calendar, Filter, Maximize2, Zap, AlertCircle } from 'lucide-react';
+import { Map as MapIcon, Maximize2, Zap, AlertCircle } from 'lucide-react';
 import moment from 'moment';
 import { useMapMetadata } from '../hooks/useMapMetadata';
 import { cx } from '@/utils/cx';

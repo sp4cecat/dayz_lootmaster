@@ -48,6 +48,8 @@ export interface TypeDetail {
 export interface CatalogValue {
   /** True when the companion mod is connected (metadata is live). */
   connected: boolean;
+  /** ms epoch of the mod's last live snapshot push (heartbeat); 0 when never synced. */
+  lastSyncAt: number;
   catalogByName: Map<string, { displayName: string | null }>;
   /** Synchronous displayName lookup; undefined when unknown. */
   displayNameFor: (name?: string) => string | undefined;
@@ -61,6 +63,7 @@ export interface CatalogValue {
 
 const noopCatalog: CatalogValue = {
   connected: false,
+  lastSyncAt: 0,
   catalogByName: new Map(),
   displayNameFor: () => undefined,
   getTypeDetail: async () => null,

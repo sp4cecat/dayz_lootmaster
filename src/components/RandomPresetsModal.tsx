@@ -4,7 +4,7 @@ import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
 import { Slider } from '@/components/base/slider/slider';
-import { Plus, Trash2, Copy, Layers, Search, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Copy, Layers, Search, AlertTriangle, ChevronRight, Package } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { XMLNodeKind } from '@/types/xml';
 
@@ -100,31 +100,35 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   };
 
   const itemsToNodes = (items: PresetItem[]): LoadoutNode[] => {
-    return (items || []).map(item => ({
-      id: crypto.randomUUID(),
-      type: item.preset ? 'template' : 'item',
-      templateSource: item.preset ? 'preset' : undefined,
-      name: item.preset || item.name,
-      chance: item.chance ?? 1.0,
-      attachments: item.attachments || [],
-      cargo: item.cargo || [],
-      isExpanded: false
-    }));
+    return (items || []).map(item => {
+      // A nested `<preset .../>` reference (kind === 'preset') maps to a template node;
+      // a plain `<item .../>` maps to an item node. (The name attribute holds either name.)
+      const isPreset = item.kind === 'preset';
+      return {
+        id: crypto.randomUUID(),
+        type: isPreset ? 'template' : 'item',
+        templateSource: isPreset ? 'preset' : undefined,
+        name: item.name,
+        chance: item.chance ?? 1.0,
+        attachments: item.attachments || [],
+        cargo: item.cargo || [],
+        isExpanded: false
+      };
+    });
   };
 
   const nodesToItems = (nodes: LoadoutNode[]): PresetItem[] => {
     return nodes.map(node => ({
-      kind: 'item',
-      name: node.type === 'item' ? node.name : '',
-      preset: node.type === 'template' ? node.name : '',
+      // Preserve the item/preset distinction via `kind` — this is what the serializer
+      // (generateRandomPresetsXml) reads to emit <item> vs <preset>. name/chance are
+      // re-applied by the serializer, so attrs can stay empty here.
+      kind: node.type === 'template' ? 'preset' : 'item',
+      name: node.name,
       chance: node.chance,
-      attrs: {
-        ...(node.type === 'item' ? { name: node.name } : { preset: node.name }),
-        chance: node.chance.toFixed(2)
-      },
+      attrs: {},
       attachments: node.attachments,
       cargo: node.cargo
-    } as any));
+    }));
   };
 
   const updatePreset = (index: number, apply: (p: Preset) => Preset) => {
@@ -578,7 +582,6 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                           setTemplateModalOpen(true);
                         }}
                         selectedNodeId={selectedNodeId}
-                        typeOptions={typeOptions}
                         randomPresets={randomPresets}
                         allLoadouts={loadouts}
                       />

@@ -5,6 +5,7 @@ import { CatalogProvider } from './contexts/CatalogContext';
 import Filters from './components/Filters';
 import TypesTable from './components/TypesTable';
 import EditForm from './components/EditForm';
+import { SyncIndicator } from './components/SyncIndicator';
 import ExportModal from './components/ExportModal';
 import UnknownEntriesModal from './components/UnknownEntriesModal';
 import SummaryModal from './components/SummaryModal';
@@ -23,28 +24,21 @@ import ProfileManager from './components/ProfileManager';
 import { SnapshotModal } from './components/SnapshotModal';
 import { LoadoutDesigner } from './components/LoadoutDesigner';
 import { SpawnableTypesManager } from './components/SpawnableTypesManager';
-import AddonEditorModal from './components/AddonEditorModal';
 import HeatMapModal from './components/HeatMapModal';
 import ItemScanModal from './components/ItemScanModal';
 import { Sidebar } from './components/layout/Sidebar';
 import { Breadcrumbs } from './components/layout/Breadcrumbs';
 import { Button } from '@/components/base/button/button';
-import { ADDONS } from './consts/addons';
 import { NAV_ITEMS } from './consts/navigation';
-import { Badge } from '@/components/base/badges/badges';
 import { cx } from './utils/cx';
 import { 
     Undo, 
     Redo, 
     Save, 
     Download, 
-    RefreshCw, 
-    AlertTriangle, 
-    ExternalLink,
-    Search as SearchIcon,
-    Filter,
-    X,
-    Package
+    RefreshCw,
+    AlertTriangle,
+    X
 } from 'lucide-react';
 import type { Type } from './utils/xml';
 
@@ -80,9 +74,7 @@ export default function App() {
         storageDiff,
         setChangeEditorID,
         reloadFromFiles,
-        getBaselineFileTypes,
         persistChangesToServer,
-        refreshBaselineFromAPI,
         spawnableFilesByGroup,
         spawnableTypesByGroup,
         setSpawnableTypesByGroup,
@@ -135,7 +127,6 @@ export default function App() {
         setModal(null);
     }, [navigate]);
     const [manageDefKind, setManageDefKind] = useState<'usage' | 'value' | 'tag' | null>(null);
-    const [saveCLEHandler, setSaveCLEHandler] = useState<null | (() => void)>(null);
 
     const [displayFilteredCount, setDisplayFilteredCount] = useState<number | null>(null);
 
@@ -166,7 +157,7 @@ export default function App() {
             if (filters.flags.length > 0) {
                 if (filters.flags.includes('None')) {
                     if (Object.values(t.flags).some(v => v)) return false;
-                } else if (!filters.flags.some(f => t.flags[f])) {
+                } else if (!filters.flags.some(f => t.flags[f as keyof typeof t.flags])) {
                     return false;
                 }
             }
@@ -189,13 +180,13 @@ export default function App() {
     }, [lootTypes, selection]);
 
     const handleSaveTypes = (apply: (t: Type) => Type) => {
-        const next = lootTypes.map(t => selection.has(t.name) ? apply(t) : t);
+        const next = (lootTypes || []).map(t => selection.has(t.name) ? apply(t) : t);
         pushHistory(next);
         setLootTypes(next);
     };
 
     const handleApplyUnknowns = ({ add, remove }: { add: any, remove: boolean }) => {
-        resolveUnknowns({ add, remove });
+        resolveUnknowns.apply({ add, remove });
         setModal(null);
     };
 
@@ -311,6 +302,7 @@ export default function App() {
                                     <div>
                                         <h1 className="text-3xl font-bold text-gray-900 tracking-tight dark:text-white">CLE Editor</h1>
                                         <p className="text-gray-500 mt-1 dark:text-gray-400">Manage loot types and economic settings for {selectedProfile?.name || 'Current Profile'}.</p>
+                                        <SyncIndicator />
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm p-1 dark:bg-gray-800 dark:border-gray-700">
@@ -351,8 +343,8 @@ export default function App() {
 
                                 <div className="flex-1 flex gap-6 min-h-0">
                                     <aside className="w-80 shrink-0 h-full overflow-y-auto scrollbar-none">
-                                        <Filters 
-                                            definitions={definitions}
+                                        <Filters
+                                            definitions={definitions!}
                                             groups={groups}
                                             filters={filters}
                                             onChange={setFilters}
@@ -387,8 +379,8 @@ export default function App() {
 
                                             {selection.size > 0 && (
                                                 <div className="flex-1 min-w-[500px] shrink-0 min-h-0 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-gray-950/20">
-                                                    <EditForm 
-                                                        definitions={definitions}
+                                                    <EditForm
+                                                        definitions={definitions!}
                                                         selectedTypes={selectedTypes}
                                                         onCancel={() => setSelection(new Set())}
                                                         onSave={handleSaveTypes}
@@ -417,8 +409,6 @@ export default function App() {
                             <TraderEditorModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
-                                getApiBase={getApiBase}
-                                typeOptions={allTypeNames}
                                 isPanel={true}
                             />
                         )}
@@ -426,8 +416,6 @@ export default function App() {
                             <MarketCategoryEditorModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
-                                getApiBase={getApiBase}
-                                typeOptions={allTypeNames}
                                 isPanel={true}
                             />
                         )}
@@ -542,17 +530,6 @@ export default function App() {
                                 missionName={selectedProfile?.missionName}
                             />
                         )}
-                        {view === 'tools:addons' && (
-                            <AddonEditorModal
-                                onClose={() => setView('cle')}
-                                selectedProfile={selectedProfile}
-                                knownAddons={Object.values(ADDONS)}
-                                onSave={(addons: string[]) => {
-                                    console.log('Save addons', addons);
-                                }}
-                                isPanel={true}
-                            />
-                        )}
                     </main>
                 )}
             </div>
@@ -574,12 +551,12 @@ export default function App() {
                 />
             )}
             {summaryOpen && (
-                <SummaryModal summary={summary} onClose={closeSummary} />
+                <SummaryModal summary={summary!} onClose={closeSummary} />
             )}
             {modal === 'manage-definitions' && manageDefKind && (
                 <ManageDefinitionsModal
                     kind={manageDefKind}
-                    entries={definitions[`${manageDefKind}flags` as keyof typeof definitions] || definitions.tags}
+                    entries={definitions![`${manageDefKind}flags` as keyof typeof definitions] || definitions!.tags}
                     countRefs={(kind, entry) => {
                         return lootTypes?.filter(t => {
                             if (kind === 'usage') return t.usage?.includes(entry);
@@ -588,19 +565,8 @@ export default function App() {
                             return false;
                         }).length || 0;
                     }}
-                    removeEntry={(kind, entry) => {
-                        const next = lootTypes?.map(t => {
-                            const nt = { ...t };
-                            if (kind === 'usage') nt.usage = nt.usage?.filter(x => x !== entry);
-                            if (kind === 'value') nt.value = nt.value?.filter(x => x !== entry);
-                            if (kind === 'tag') nt.tag = nt.tag?.filter(x => x !== optToTag(entry));
-                            return nt;
-                        }) || [];
-                        pushHistory(next);
-                        setLootTypes(next);
-                        manage.remove(kind, entry);
-                    }}
-                    addEntry={(kind, entry) => manage.add(kind, entry)}
+                    removeEntry={(kind, entry) => manage.removeEntry(kind, entry)}
+                    addEntry={(kind, entry) => manage.addEntry(kind, entry)}
                     onClose={() => { setModal(null); setManageDefKind(null); }}
                 />
             )}

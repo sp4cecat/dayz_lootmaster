@@ -1,25 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { 
-    FileCode, 
-    Search, 
-    ExternalLink, 
-    ChevronLeft, 
-    Plus, 
-    Trash2, 
-    Settings, 
-    AlertTriangle, 
-    X,
+    FileCode,
+    Search,
+    Plus,
+    Trash2,
+    AlertTriangle,
     Package,
-    Folder,
-    Save
+    Folder
 } from 'lucide-react';
-import { Table, TableCard } from '@/components/application/table/table';
-import { Badge } from '@/components/base/badges/badges';
+import { TableCard } from '@/components/application/table/table';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Modal } from '@/components/base/modal/modal';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
-import { cx } from '@/utils/cx';
 import { ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { formatModName } from '@/utils/format';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
@@ -46,11 +39,9 @@ export function SpawnableTypesManager({
     spawnableTypesByGroup,
     setSpawnableTypesByGroup,
     randomPresets,
-    globalsDefaults,
     typeOptions,
     loadouts,
-    onClose, 
-    onViewCle 
+    onClose,
 }: SpawnableTypesManagerProps) {
     const [searchTerm, setSearchTerm] = React.useState('');
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -310,12 +301,11 @@ export function SpawnableTypesManager({
                                     items={filteredNodes}
                                     onUpdate={handleUpdateAllNodes}
                                     onSelect={(node) => setSelectedNodeId(node.id)}
-                                    onAddTemplate={(nodeId, list) => {
+                                    onAddTemplate={(_nodeId, _list) => {
                                         // TODO: Implement template adding if needed, 
                                         // or reuse existing modals
                                     }}
                                     selectedNodeId={selectedNodeId}
-                                    typeOptions={typeOptions}
                                     randomPresets={randomPresets}
                                     spawnableTypesByGroup={spawnableTypesByGroup}
                                     allLoadouts={loadouts}

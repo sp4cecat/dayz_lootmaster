@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { DatePicker } from './base/datepicker/datepicker';
-import { Archive, BarChart01, AlertTriangle, XClose } from '@untitledui/icons';
-import { 
-  CalendarDateTime, 
-  fromDate, 
-  toCalendarDateTime, 
-  getLocalTimeZone 
+import { Archive, BarChart01, XClose } from '@untitledui/icons';
+import {
+  CalendarDateTime,
+  getLocalTimeZone
 } from '@internationalized/date';
 
 interface PlayerReport {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DatePicker } from './base/datepicker/datepicker';
 import { Input } from './base/input/input';
 import { Button } from './base/button/button';

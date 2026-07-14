@@ -6,7 +6,7 @@
     "description": "Localhost-only REST API exposing the live state of a running DayZ server: online players + stats, the loot/economy catalog with attachment metadata, events, a live-map positions feed, an admin-log (ADM) event feed, and basic admin commands.\n\nLive data is produced by a companion Enforce Script mod that pushes JSON snapshots to this server and polls it for admin commands; static economy data (types.xml/events.xml/cfgspawnabletypes.xml) and the .ADM log are read from disk. Bound to 127.0.0.1 only, no authentication by design.\n\nField values that require the mod (displayName, description, attachments, live players/heartbeat/map, spawnedCount) are null until the mod connects (see /health.modConnected)."
   },
   "servers": [
-    { "url": "http://127.0.0.1:4317", "description": "Local loopback (default port; configurable via API_PORT)" }
+    { "url": "http://127.0.0.1:4317", "description": "Local loopback (default port; configurable via PORT)" }
   ],
   "tags": [
     { "name": "status", "description": "Health and server heartbeat" },

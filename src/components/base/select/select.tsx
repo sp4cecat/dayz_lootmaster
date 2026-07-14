@@ -4,7 +4,7 @@ import { ChevronDown } from 'lucide-react';
 
 export type SelectSize = 'sm' | 'md';
 
-export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
   label?: string;
   error?: string;
   hint?: string;

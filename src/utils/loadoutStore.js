@@ -2,15 +2,7 @@
 // by profile) and persisted in the backend's loadouts.json via the /api/loadouts routes. The
 // server is the source of truth; these replace the former IndexedDB-only persistence.
 
-/** Resolve the API base URL the same way the rest of the app does (localStorage override,
- *  else the current host on port 4317). Mirrors getApiBase in useLootData.js. */
-function apiBase() {
-  const saved = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
-  const def = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:4317`
-    : 'http://localhost:4317';
-  return (saved && saved.trim()) ? saved.trim().replace(/\/+$/, '') : def;
-}
+import { getApiBase as apiBase } from './api';
 
 /**
  * Load all modular loadout templates from the server.

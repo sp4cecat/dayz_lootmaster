@@ -1,19 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flattenCompatibleAttachments } from '../utils/catalog.js';
-
-/**
- * Resolve the app's own backend base URL (same rule as useLootData). The client
- * only ever talks to the 4317 backend and reads type metadata from /api/catalog/*.
- * The companion mod pushes that catalog directly into the 4317 backend's /ingest/*
- * routes (see server/ingest-store.js) — there is no separate upstream API.
- */
-function getApiBase() {
-  const savedBase = typeof window !== 'undefined' ? localStorage.getItem('dayz-editor:apiBase') : null;
-  const defaultBase = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:4317`
-    : 'http://localhost:4317';
-  return (savedBase && savedBase.trim()) ? savedBase.trim().replace(/\/+$/, '') : defaultBase;
-}
+import { getApiBase } from '../utils/api';
 
 /**
  * @typedef {Object} TypeDetail
@@ -41,6 +28,8 @@ function getApiBase() {
  */
 export function useTypeCatalog(selectedProfileId) {
   const [connected, setConnected] = useState(false);
+  // ms epoch of the mod's last live snapshot push (heartbeat); 0 when never synced.
+  const [lastSyncAt, setLastSyncAt] = useState(0);
   const [catalogByName, setCatalogByName] = useState(/** @type {Map<string,{displayName:string|null}>} */(new Map()));
 
   // Per-name detail cache (survives across renders); a version bump nudges consumers.
@@ -62,6 +51,7 @@ export function useTypeCatalog(selectedProfileId) {
         const types = typesRes.ok ? await typesRes.json() : null;
         if (cancelled) return;
         setConnected(!!(health && health.modConnected));
+        setLastSyncAt(health?.snapshotAt || 0);
         const map = new Map();
         for (const t of (types && Array.isArray(types.types) ? types.types : [])) {
           if (t && t.name) map.set(t.name, { displayName: t.displayName ?? null });
@@ -73,6 +63,27 @@ export function useTypeCatalog(selectedProfileId) {
     })();
     return () => { cancelled = true; };
   }, [selectedProfileId]);
+
+  // Lightweight health poll: keeps connected + lastSyncAt current (and flips the
+  // sync indicator to stale when the mod stops pushing) without refetching the
+  // full type list. Runs for the lifetime of the hook.
+  useEffect(() => {
+    let cancelled = false;
+    const base = getApiBase();
+    const poll = async () => {
+      try {
+        const res = await fetch(`${base}/api/catalog/health`);
+        const health = res.ok ? await res.json() : null;
+        if (cancelled) return;
+        setConnected(!!(health && health.modConnected));
+        setLastSyncAt(health?.snapshotAt || 0);
+      } catch {
+        if (!cancelled) setConnected(false);
+      }
+    };
+    const id = setInterval(poll, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   /** Synchronous displayName lookup; undefined when unknown. */
   const displayNameFor = useCallback((name) => {
@@ -125,10 +136,11 @@ export function useTypeCatalog(selectedProfileId) {
 
   return useMemo(() => ({
     connected,
+    lastSyncAt,
     catalogByName,
     displayNameFor,
     getTypeDetail,
     peekTypeDetail,
     getCompatibleAttachments,
-  }), [connected, catalogByName, displayNameFor, getTypeDetail, peekTypeDetail, getCompatibleAttachments]);
+  }), [connected, lastSyncAt, catalogByName, displayNameFor, getTypeDetail, peekTypeDetail, getCompatibleAttachments]);
 }
