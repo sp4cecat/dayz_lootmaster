@@ -1,4 +1,3 @@
-// @ts-nocheck
 export interface Flags {
   count_in_cargo: boolean;
   count_in_hoarder: boolean;
@@ -81,7 +80,7 @@ export function parseTypesXml(xml: string): Type[] {
   const typeNodes = Array.from(doc.getElementsByTagName('type'));
   return typeNodes.map(node => {
     const name = node.getAttribute('name') || '';
-    const getNum = (tag, fallback = 0) => {
+    const getNum = (tag: string, fallback = 0) => {
       const el = node.getElementsByTagName(tag)[0];
       if (!el || !el.textContent) return fallback;
       const n = Number(el.textContent.trim());
@@ -135,7 +134,7 @@ export function parseTypesXml(xml: string): Type[] {
       flags,
       _present: present,
       _edited: {}
-    };
+    } as Type;
   });
 }
 
@@ -144,7 +143,7 @@ export function parseTypesXml(xml: string): Type[] {
  * @param {string} xml
  * @returns {{types: {name: string, sections: {kind: string, chance: number|null, preset: string, attrs: Record<string,string>, items: {kind: string, name: string, chance: number|null, preset: string, attrs: Record<string,string>}[]}[]}[]}}
  */
-export function parseSpawnableTypesXml(xml) {
+export function parseSpawnableTypesXml(xml: string) {
   const doc = safeParseXml(xml || '<spawnabletypes/>');
   const root = doc.documentElement;
   const typeNodes = Array.from(root?.children || []).filter(n => n.tagName === 'type');
@@ -171,7 +170,7 @@ export function parseSpawnableTypesXml(xml) {
  * @param {{types?: {name: string, sections?: {kind: string, chance?: number|null, preset?: string, attrs?: Record<string,string>, items?: {kind?: string, name?: string, chance?: number|null, preset?: string, attrs?: Record<string,string>}[]}[]}[]}|{name: string, sections?: any[]}[]} data
  * @returns {string}
  */
-export function generateSpawnableTypesXml(data) {
+export function generateSpawnableTypesXml(data: any) {
   const types = Array.isArray(data) ? data : (data?.types || []);
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<spawnabletypes>'];
   for (const type of types) {
@@ -190,7 +189,7 @@ export function generateSpawnableTypesXml(data) {
  * @param {string} xml
  * @returns {{presets: {kind: string, name: string, chance: number|null, attrs: Record<string,string>, items: {kind: string, name: string, chance: number|null, attrs: Record<string,string>}[]}[]}}
  */
-export function parseRandomPresetsXml(xml) {
+export function parseRandomPresetsXml(xml: string) {
   const doc = safeParseXml(xml || '<randompresets/>');
   const root = doc.documentElement;
   return {
@@ -216,7 +215,7 @@ export function parseRandomPresetsXml(xml) {
  * @param {{presets?: {kind: string, name: string, chance?: number|null, attrs?: Record<string,string>, items?: {kind?: string, name?: string, chance?: number|null, attrs?: Record<string,string>}[]}[]}|{kind: string, name: string, items?: any[]}[]} data
  * @returns {string}
  */
-export function generateRandomPresetsXml(data) {
+export function generateRandomPresetsXml(data: any) {
   const presets = Array.isArray(data) ? data : (data?.presets || []);
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<randompresets>'];
   for (const preset of presets) {
@@ -242,9 +241,9 @@ export function generateRandomPresetsXml(data) {
  * @param {string} xml
  * @returns {{LootDamageMin: number|null, LootDamageMax: number|null}}
  */
-export function parseGlobalsXml(xml) {
+export function parseGlobalsXml(xml: string) {
   const doc = safeParseXml(xml || '<variables/>');
-  const get = (name) => {
+  const get = (name: string) => {
     const nodes = Array.from(doc.getElementsByTagName('var'));
     const node = nodes.find(n => (n.getAttribute('name') || '') === name);
     if (!node) return null;
@@ -265,9 +264,9 @@ export function parseGlobalsXml(xml) {
  * @param {{presets?: {name:string}[]}} randomPresets
  * @returns {{kind: string, message: string, name?: string}[]}
  */
-export function validateSpawnableReferences(spawnable, types, randomPresets = { presets: [] }) {
+export function validateSpawnableReferences(spawnable: any, types: any[], randomPresets: any = { presets: [] }) {
   const typeNames = new Set((types || []).map(t => String(t.name || '').toLowerCase()));
-  const presetNames = new Set((randomPresets.presets || []).map(p => String(p.name || '').toLowerCase()).filter(Boolean));
+  const presetNames = new Set((randomPresets.presets || []).map((p: any) => String(p.name || '').toLowerCase()).filter(Boolean));
   const warnings = [];
   for (const entry of (spawnable?.types || [])) {
     if (entry.name && !typeNames.has(String(entry.name).toLowerCase())) {
@@ -294,25 +293,25 @@ export function validateSpawnableReferences(spawnable, types, randomPresets = { 
  * @param {string} newName
  * @returns {any}
  */
-export function renameSpawnablePresetReferences(spawnable, oldName, newName) {
+export function renameSpawnablePresetReferences(spawnable: any, oldName: string, newName: string) {
   return {
     ...(spawnable || {}),
-    types: (spawnable?.types || []).map(type => ({
+    types: (spawnable?.types || []).map((type: any) => ({
       ...type,
-      sections: (type.sections || []).map(section => (
+      sections: (type.sections || []).map((section: any) => (
         section.preset === oldName ? { ...section, preset: newName, attrs: { ...(section.attrs || {}), preset: newName } } : section
       ))
     }))
   };
 }
 
-export function findSpawnableEntryForType(spawnableTypesByGroup, group, typeName) {
+export function findSpawnableEntryForType(spawnableTypesByGroup: any, group: string | undefined, typeName: string): any {
   const target = String(typeName || '').toLowerCase();
   if (!target) return null;
-  const findInGroup = (groupKey) => {
+  const findInGroup = (groupKey: any) => {
     const groupFiles = spawnableTypesByGroup?.[groupKey] || {};
     for (const [fileName, fileData] of Object.entries(groupFiles)) {
-      const entry = ((fileData as any)?.types || []).find(t => String(t.name || '').toLowerCase() === target);
+      const entry = ((fileData as any)?.types || []).find((t: any) => String(t.name || '').toLowerCase() === target);
       if (entry) return { entry, group: groupKey, file: fileName };
     }
     return null;
@@ -320,7 +319,7 @@ export function findSpawnableEntryForType(spawnableTypesByGroup, group, typeName
   return findInGroup(group) || findInGroup(ROOT_SPAWNABLE_GROUP);
 }
 
-export function formatChance(value) {
+export function formatChance(value: any) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '0.000';
   return String(Math.min(1, Math.max(0, n)).toFixed(3));
@@ -331,16 +330,13 @@ export function formatChance(value) {
  * @param {string} xml
  * @returns {{ order: string[], filesByGroup: Record<string, string[]>, spawnableFilesByGroup: Record<string, string[]> }}
  */
-export function parseEconomyCoreXml(xml) {
+export function parseEconomyCoreXml(xml: string) {
   const doc = safeParseXml(xml);
   const ceNodes = Array.from(doc.getElementsByTagName('ce'));
 
-  /** @type {string[]} */
-  const order = [];
-  /** @type {Record<string, string[]>} */
-  const filesByGroup = {};
-  /** @type {Record<string, string[]>} */
-  const spawnableFilesByGroup = {};
+  const order: string[] = [];
+  const filesByGroup: Record<string, string[]> = {};
+  const spawnableFilesByGroup: Record<string, string[]> = {};
 
   for (const ce of ceNodes) {
     const folder = ce.getAttribute('folder');
@@ -378,16 +374,16 @@ export function parseEconomyCoreXml(xml) {
  * Generate types.xml string from array of Type
  * @param {Type[]} types
  */
-export function generateTypesXml(types) {
+export function generateTypesXml(types: Type[]) {
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<types>'];
   // Ensure case-insensitive alphabetical order by type name
   const sorted = [...types].sort((a, b) =>
     String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
   );
   for (const t of sorted) {
-    const present = t._present || {};
-    const edited = t._edited || {};
-    const shouldEmit = (key) => !!(edited[key] || present[key]);
+    const present: Record<string, boolean> = t._present || {};
+    const edited: Record<string, boolean> = t._edited || {};
+    const shouldEmit = (key: string) => !!(edited[key] || present[key]);
 
     lines.push(`  <type name="${escapeAttr(t.name)}">`);
     if (shouldEmit('nominal')) lines.push(`    <nominal>${t.nominal}</nominal>`);
@@ -414,8 +410,8 @@ export function generateTypesXml(types) {
  * @param {{categories: string[], usageflags: string[], valueflags: string[], tags: string[]}} defs
  * @returns {string}
  */
-export function generateLimitsXml(defs) {
-  const esc = (s) => escapeAttr(s);
+export function generateLimitsXml(defs: { categories: string[], usageflags: string[], valueflags: string[], tags: string[] }) {
+  const esc = (s: any) => escapeAttr(s);
   const lines = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<lists>',
@@ -441,7 +437,7 @@ export function generateLimitsXml(defs) {
  * @param {{file: string, types: Type[]}[]} files
  * @returns {string}
  */
-export function generateTypesXmlFromFilesWithComments(files) {
+export function generateTypesXmlFromFilesWithComments(files: { file: string, types: Type[] }[]) {
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<types>'];
   // Sort files by name for deterministic output
   const sorted = [...files].sort((a, b) => String(a.file).localeCompare(String(b.file)));
@@ -451,9 +447,9 @@ export function generateTypesXmlFromFilesWithComments(files) {
       String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
     );
     for (const t of perFileSorted) {
-      const present = t._present || {};
-      const edited = t._edited || {};
-      const shouldEmit = (key) => !!(edited[key] || present[key]);
+      const present: Record<string, boolean> = t._present || {};
+      const edited: Record<string, boolean> = t._edited || {};
+      const shouldEmit = (key: string) => !!(edited[key] || present[key]);
 
       lines.push(`  <type name="${escapeAttr(t.name)}">`);
       if (shouldEmit('nominal')) lines.push(`    <nominal>${t.nominal}</nominal>`);
@@ -482,43 +478,42 @@ export function generateTypesXmlFromFilesWithComments(files) {
  * @param {string[]} childTags
  * @returns {string[]}
  */
-function readNamedChildren(doc, parentTag, childTags) {
+function readNamedChildren(doc: any, parentTag: string, childTags: string[]) {
   const parent = doc.getElementsByTagName(parentTag)[0];
   if (!parent) return [];
-  const arr = [];
+  const arr: any[] = [];
   childTags.forEach(tag => {
-    arr.push(...Array.from(parent.getElementsByTagName(tag)).map(n => n.getAttribute('name')).filter(Boolean));
+    arr.push(...Array.from(parent.getElementsByTagName(tag)).map((n: any) => n.getAttribute('name')).filter(Boolean));
   });
   return arr;
 }
 
-function toBool(attrVal) {
+function toBool(attrVal: string | null) {
   if (attrVal == null) return false;
   return attrVal === '1' || attrVal.toLowerCase() === 'true';
 }
-function to01(b) {
+function to01(b: boolean) {
   return b ? '1' : '0';
 }
-export function escapeAttr(s) {
+export function escapeAttr(s: any) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
-function parseChance(value) {
+function parseChance(value: any) {
   if (value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : null;
 }
 
-function attrsObject(node) {
-  /** @type {Record<string,string>} */
-  const attrs = {};
-  for (const attr of Array.from(node.attributes || [])) {
+function attrsObject(node: any) {
+  const attrs: Record<string, string> = {};
+  for (const attr of Array.from(node.attributes || []) as any[]) {
     attrs[attr.name] = attr.value;
   }
   return attrs;
 }
 
-function buildAttrs(attrs) {
+function buildAttrs(attrs: any) {
   const parts = [];
   for (const [key, value] of Object.entries(attrs || {})) {
     if (value == null || value === '') continue;
@@ -528,13 +523,13 @@ function buildAttrs(attrs) {
   return parts.length ? ` ${parts.join(' ')}` : '';
 }
 
-function parseSpawnableNode(node) {
+function parseSpawnableNode(node: any) {
   return {
     kind: node.tagName,
     chance: parseChance(node.getAttribute('chance')),
     preset: node.getAttribute('preset') || '',
     attrs: attrsObject(node),
-    items: Array.from(node.children || []).map(child => ({
+    items: Array.from(node.children || []).map((child: any) => ({
       kind: child.tagName,
       name: child.getAttribute('name') || '',
       chance: parseChance(child.getAttribute('chance')),
@@ -544,7 +539,7 @@ function parseSpawnableNode(node) {
   };
 }
 
-function renderSpawnableSection(section, indent) {
+function renderSpawnableSection(section: any, indent: number) {
   const space = ' '.repeat(indent);
   const attrs = buildAttrs({ ...(section.attrs || {}), chance: section.chance, preset: section.preset });
   const items = section.items || [];
@@ -558,7 +553,7 @@ function renderSpawnableSection(section, indent) {
   return lines;
 }
 
-function uniq(arr) {
+function uniq(arr: any[]) {
   return Array.from(new Set(arr));
 }
 
@@ -568,7 +563,7 @@ function uniq(arr) {
  * @param {string} xml
  * @returns {Document}
  */
-function safeParseXml(xml) {
+function safeParseXml(xml: string) {
   let doc = new DOMParser().parseFromString(xml, 'application/xml');
   if (hasParserError(doc)) {
     // Strip XML declaration (prolog) and retry
@@ -587,7 +582,7 @@ function safeParseXml(xml) {
  * @param {Document} doc
  * @returns {boolean}
  */
-function hasParserError(doc) {
+function hasParserError(doc: Document) {
   const errs = doc.getElementsByTagName('parsererror');
   return errs && errs.length > 0;
 }

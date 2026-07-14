@@ -51,9 +51,6 @@ export default defineConfig([
       '@typescript-eslint/no-explicit-any': 'off',
       // HMR-hygiene rule (many components co-export constants); informational, not a defect.
       'react-refresh/only-export-components': 'warn',
-      // Allow `@ts-nocheck` — src/utils/xml.ts is intentionally untyped for now (large, loosely
-      // typed serializer). Still flag bare `@ts-ignore` (prefer `@ts-expect-error`).
-      '@typescript-eslint/ban-ts-comment': ['error', { 'ts-nocheck': false }],
     },
   },
 ])
