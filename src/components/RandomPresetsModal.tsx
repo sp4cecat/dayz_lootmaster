@@ -59,8 +59,9 @@ import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { LoadoutNode } from '@/types/loadouts';
 
-import { updateNodeInList, findNode, findParent } from '@/utils/tree';
+import { updateNodeInList, findNode, findParent, repairItemClassNames } from '@/utils/tree';
 import {
+  useCatalog,
   useAttachmentSlots,
   useMagazines,
   useCompatibleAttachments,
@@ -68,6 +69,7 @@ import {
   useCommonSlotsForItems,
   useSlotVocabulary,
   useItemsForSlot,
+  sanitizeClassName,
   MAGAZINE_SLOT,
 } from '@/contexts/CatalogContext';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
@@ -187,6 +189,39 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       }));
     }
   }, [randomPresets, setRandomPresets]);
+
+  // One-time cleanup: repair item classnames polluted by the old classname-picker bug (which
+  // stored "<Class> <DisplayName>" instead of the bare class). Runs whenever the catalog resolves
+  // (displayNameFor changes); idempotent, so once names are clean it stops writing.
+  const { displayNameFor } = useCatalog();
+  useEffect(() => {
+    const list = randomPresets?.presets || [];
+    const repair = (n: string) => sanitizeClassName(n, displayNameFor);
+    let anyChanged = false;
+    const nextPresets = list.map((p: Preset) => {
+      let presetChanged = false;
+      const items = (p.items || []).map(it => {
+        const att = repairItemClassNames(it.attachments || [], repair);
+        const car = repairItemClassNames(it.cargo || [], repair);
+        // 'preset'-kind items are template refs whose name is a preset name (may contain spaces) —
+        // never touch those; only real item classnames.
+        const name = it.kind === 'item' ? repair(it.name) : it.name;
+        if (name !== it.name || att.changed || car.changed) {
+          presetChanged = true;
+          return {
+            ...it,
+            name,
+            attachments: att.changed ? att.nodes : it.attachments,
+            cargo: car.changed ? car.nodes : it.cargo,
+          };
+        }
+        return it;
+      });
+      if (presetChanged) { anyChanged = true; return { ...p, items }; }
+      return p;
+    });
+    if (anyChanged) setRandomPresets((prev: any) => ({ ...prev, presets: nextPresets }));
+  }, [randomPresets, displayNameFor, setRandomPresets]);
 
   const handleUpdateNode = (updatedNode: LoadoutNode, presetIndex: number) => {
     updatePreset(presetIndex, p => ({

@@ -95,6 +95,20 @@ export function useCatalog(): CatalogValue {
   return useContext(CatalogContext);
 }
 
+/** Repair an item classname polluted by the old classname-picker bug, which stored the combined
+ *  "<Class> <DisplayName>" textValue instead of the bare class. DayZ classnames never contain
+ *  spaces, so a spaced name is suspect — but we only rewrite it when it EXACTLY equals
+ *  "<firstToken> <displayNameFor(firstToken)>" (a confirmed pollution), leaving anything else
+ *  (legitimate free-typed values, unknown classes) untouched. Exported for testing. */
+export function sanitizeClassName(name: string | undefined, displayNameFor: (n?: string) => string | undefined): string {
+  if (!name) return name ?? '';
+  const sp = name.indexOf(' ');
+  if (sp < 0) return name;
+  const candidate = name.slice(0, sp);
+  const dn = displayNameFor(candidate);
+  return dn && `${candidate} ${dn}` === name ? candidate : name;
+}
+
 /** Case-insensitive lookup into an AttachmentGraph's bySlot map (server slot keys can
  *  differ in case from the raw attachments[] casing). Exported for testing. */
 export function bySlotCaseInsensitive(graph: AttachmentGraph | null | undefined, slot: string): AttachmentRef[] | null {

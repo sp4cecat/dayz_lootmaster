@@ -138,6 +138,35 @@ export function materializeLinkedClones(
   });
 }
 
+// Repairs item classnames polluted by the old classname-picker bug (which stored the combined
+// "<Class> <DisplayName>" textValue instead of the bare class). Applies `repair` to every item
+// node's name, recursing through attachments/cargo, and leaves template/group node names alone
+// (those hold preset/template refs and group labels, not classnames). Returns the SAME array
+// reference when nothing changed so callers can skip a state write; only rebuilds touched nodes.
+export function repairItemClassNames(
+  nodes: LoadoutNode[],
+  repair: (name: string) => string
+): { nodes: LoadoutNode[]; changed: boolean } {
+  let changed = false;
+  const mapped = nodes.map(node => {
+    const att = repairItemClassNames(node.attachments || [], repair);
+    const car = repairItemClassNames(node.cargo || [], repair);
+    const name = node.type === 'item' ? repair(node.name) : node.name;
+    if (name !== node.name || att.changed || car.changed) {
+      changed = true;
+      return {
+        ...node,
+        name,
+        // Preserve the original (possibly undefined) child arrays when untouched.
+        attachments: att.changed ? att.nodes : node.attachments,
+        cargo: car.changed ? car.nodes : node.cargo,
+      };
+    }
+    return node;
+  });
+  return { nodes: changed ? mapped : nodes, changed };
+}
+
 export function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
   const result = Array.from(list);
   const [removed] = result.splice(startIndex, 1);

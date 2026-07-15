@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel, occupiesSlotOptions, commonOccupiedSlots } from '../../src/contexts/CatalogContext';
+import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel, occupiesSlotOptions, commonOccupiedSlots, sanitizeClassName } from '../../src/contexts/CatalogContext';
 import type { AttachmentGraph, TypeDetail } from '../../src/contexts/CatalogContext';
 
 const graph: AttachmentGraph = {
@@ -257,6 +257,33 @@ describe('commonOccupiedSlots', () => {
       { slot: 'B', count: 2 },
       { slot: 'C', count: 2 },
     ]);
+  });
+});
+
+describe('sanitizeClassName', () => {
+  // Catalog stub: ReflexOptic -> "Baraka Sights", M4A1 -> "M4-A1", others unknown.
+  const displayNameFor = (n?: string) =>
+    ({ ReflexOptic: 'Baraka Sights', M4A1: 'M4-A1' } as Record<string, string>)[n || ''] || undefined;
+
+  it('strips the "<Class> <DisplayName>" pollution back to the bare class', () => {
+    expect(sanitizeClassName('ReflexOptic Baraka Sights', displayNameFor)).toBe('ReflexOptic');
+    expect(sanitizeClassName('M4A1 M4-A1', displayNameFor)).toBe('M4A1');
+  });
+
+  it('leaves an already-clean classname untouched', () => {
+    expect(sanitizeClassName('ReflexOptic', displayNameFor)).toBe('ReflexOptic');
+    expect(sanitizeClassName('SomeModdedClass', displayNameFor)).toBe('SomeModdedClass');
+  });
+
+  it('does not rewrite a spaced value that is not a confirmed pollution', () => {
+    // First token unknown to the catalog, or the tail does not match its display name.
+    expect(sanitizeClassName('Unknown Thing', displayNameFor)).toBe('Unknown Thing');
+    expect(sanitizeClassName('ReflexOptic Wrong Name', displayNameFor)).toBe('ReflexOptic Wrong Name');
+  });
+
+  it('handles empty/undefined input', () => {
+    expect(sanitizeClassName('', displayNameFor)).toBe('');
+    expect(sanitizeClassName(undefined, displayNameFor)).toBe('');
   });
 });
 

@@ -329,7 +329,14 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
                 <ComboBox
                   items={itemOptions}
                   inputValue={node.name}
-                  onInputChange={value => onUpdate({ ...node, name: value })}
+                  onInputChange={value => {
+                    // Items carry a combined "Class DisplayName" textValue so display names are
+                    // searchable, but on selection react-aria pushes that whole textValue into the
+                    // input. Map it back to the bare class name (else `name` gets polluted with the
+                    // display name and stops resolving in the catalog); free-typed text is stored as-is.
+                    const match = itemOptions.find(o => `${o.name} ${o.displayName}`.trim() === value.trim());
+                    onUpdate({ ...node, name: match ? match.name : value });
+                  }}
                   onSelectionChange={key => key && onUpdate({ ...node, name: key as string })}
                   placeholder="Search classname..."
                   aria-label="Item Classname"

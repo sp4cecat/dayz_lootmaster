@@ -9,8 +9,8 @@ import { cx } from '@/utils/cx';
 import { Badge } from '@/components/base/badges/badges';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
-import { updateNodeInList, findNode, findParent } from '@/utils/tree';
-import { useCompatibleAttachments, useAttachmentSlots, useMagazines, useCatalog, inferGroupSlot, MAGAZINE_SLOT } from '@/contexts/CatalogContext';
+import { updateNodeInList, findNode, findParent, repairItemClassNames } from '@/utils/tree';
+import { useCompatibleAttachments, useAttachmentSlots, useMagazines, useCatalog, inferGroupSlot, sanitizeClassName, MAGAZINE_SLOT } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
 import { ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
@@ -69,7 +69,19 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const [bulkImporting, setBulkImporting] = useState(false);
 
   // Catalog accessor for imperative slot inference during bulk import.
-  const { getTypeDetail } = useCatalog();
+  const { getTypeDetail, displayNameFor } = useCatalog();
+
+  // One-time cleanup: repair item classnames in the open loadout polluted by the old
+  // classname-picker bug (which stored "<Class> <DisplayName>" instead of the bare class).
+  // Runs when a loadout is opened or the catalog resolves; idempotent, so it stops once clean.
+  useEffect(() => {
+    if (!editingLoadout) return;
+    const { nodes, changed } = repairItemClassNames(
+      editingLoadout.items || [],
+      n => sanitizeClassName(n, displayNameFor)
+    );
+    if (changed) setEditingLoadout({ ...editingLoadout, items: nodes });
+  }, [editingLoadout, displayNameFor]);
 
   // Bulk selection in the sidebar list (ids of checked loadouts) for bulk actions (delete, ...).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
