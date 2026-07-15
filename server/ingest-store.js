@@ -28,7 +28,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // eslint-disable-next-line no-undef
 const MOD_STALE_MS = Number(process.env.DAYZ_MOD_STALE_MS || 15000);
 
-const CATALOG_CACHE_FILE = resolve(join(__dirname, '.cache', 'ingest-catalog.json'));
+// eslint-disable-next-line no-undef
+const CATALOG_CACHE_FILE = process.env.DAYZ_CATALOG_CACHE
+    // eslint-disable-next-line no-undef
+    ? resolve(process.env.DAYZ_CATALOG_CACHE)
+    : resolve(join(__dirname, '.cache', 'ingest-catalog.json'));
+
+// Never touch the on-disk cache from a test runner: setCatalog() is called with
+// fixture data in unit tests, and persisting it would clobber the real catalog the
+// dev/prod backend loads at startup. Detect Vitest (VITEST / NODE_ENV=test).
+// eslint-disable-next-line no-undef
+const PERSIST_DISABLED = !!process.env.VITEST || process.env.NODE_ENV === 'test';
 
 let snapshot = null;   // latest live state pushed by the mod
 let snapshotAt = 0;    // ms epoch of last snapshot
@@ -44,6 +54,8 @@ const now = () => Date.now();
 
 let saveTimer = null;
 function persistCatalog() {
+    // Guard: under a test runner, fixture catalogs must not overwrite the real cache.
+    if (PERSIST_DISABLED) return;
     // Debounce: a burst of chunk POSTs collapses into a single disk write.
     if (saveTimer) return;
     saveTimer = setTimeout(async () => {
