@@ -743,6 +743,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     groupSlotOptions={groupSlotOptions}
                     randomPresets={randomPresets}
                     expansionAirdrops={expansionAirdrops}
+                    spawnableTypesByGroup={spawnableTypesByGroup}
                   />
                 )}
               </div>

@@ -42,7 +42,22 @@ interface HierarchicalPropertiesProps {
   // For template resolution context (optional)
   randomPresets?: { presets: any[] };
   expansionAirdrops?: any;
+
+  /**
+   * Spawnable types keyed by group -> file -> { types: [{ name, sections }] }. Populates the
+   * "Spawnable Type" option of the inline template-source picker. Optional; when absent, the
+   * spawnable source shows an empty picker.
+   */
+  spawnableTypesByGroup?: Record<string, Record<string, any>>;
 }
+
+// The four sources a template node can live-link to. Order matches the import modal.
+const TEMPLATE_SOURCES: { id: NonNullable<LoadoutNode['templateSource']>; label: string }[] = [
+  { id: 'loadout', label: 'Saved Loadout' },
+  { id: 'preset', label: 'Random Preset' },
+  { id: 'airdrop', label: 'Expansion Airdrop' },
+  { id: 'spawnable', label: 'Spawnable Type' },
+];
 
 // Sentinel option for clearing a group's linked slot back to a generic group.
 const NO_SLOT = '__none__';
@@ -60,9 +75,44 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   },
   compatibleClasses,
   groupSlotOptions,
+  availableTemplates,
+  randomPresets,
+  expansionAirdrops,
+  spawnableTypesByGroup,
 }) => {
   const { displayNameFor } = useCatalog();
   const [newVariant, setNewVariant] = React.useState('');
+
+  // Picker options for the currently-selected template source. Each entry maps a display
+  // label to the value stored in node.name — which is the loadout id for 'loadout' and the
+  // source's own name for the other three (see resolveLoadoutNode in utils/loadouts.ts).
+  const templateSource = node.templateSource ?? 'loadout';
+  const templateItems = React.useMemo<{ id: string; name: string }[]>(() => {
+    switch (templateSource) {
+      case 'preset':
+        return (randomPresets?.presets ?? []).map((p: any) => ({ id: p.name, name: p.name }));
+      case 'airdrop':
+        return (expansionAirdrops?.Containers ?? []).map((c: any) => ({ id: c.Container, name: c.Container }));
+      case 'spawnable': {
+        const seen = new Set<string>();
+        const out: { id: string; name: string }[] = [];
+        for (const files of Object.values(spawnableTypesByGroup ?? {})) {
+          for (const data of Object.values(files as Record<string, any>)) {
+            for (const t of (data?.types ?? [])) {
+              if (t?.name && !seen.has(t.name)) {
+                seen.add(t.name);
+                out.push({ id: t.name, name: t.name });
+              }
+            }
+          }
+        }
+        return out;
+      }
+      case 'loadout':
+      default:
+        return (availableTemplates ?? []).map(l => ({ id: l.id, name: l.label }));
+    }
+  }, [templateSource, availableTemplates, randomPresets, expansionAirdrops, spawnableTypesByGroup]);
 
   const slotComboItems = React.useMemo(() => {
     const opts = groupSlotOptions || [];
@@ -142,8 +192,14 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
               >
                 Group
               </button>
-              <button 
-                onClick={() => onUpdate({ ...node, type: 'template' })}
+              <button
+                onClick={() => onUpdate({
+                  ...node,
+                  type: 'template',
+                  // Seed a usable source and drop the stale item classname on first conversion.
+                  templateSource: node.templateSource ?? 'loadout',
+                  name: node.type === 'template' ? node.name : '',
+                })}
                 className={cx(
                   "flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all",
                   node.type === 'template' 
@@ -215,12 +271,55 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
               </div>
             ) : node.type === 'template' ? (
               <div className="space-y-3">
-                <Badge color="warning" size="md" className="w-full justify-center">
-                  Live Linked: {node.templateSource === 'preset' ? 'Random Preset' : node.templateSource === 'airdrop' ? 'Expansion Airdrop' : node.templateSource === 'spawnable' ? 'Spawnable Type' : 'Saved Loadout'}
-                </Badge>
-                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 font-mono text-xs break-all">
-                  {node.name}
+                {/* Source type: which kind of saved thing this template live-links to. */}
+                <div className="grid grid-cols-2 gap-2">
+                  {TEMPLATE_SOURCES.map(src => (
+                    <button
+                      key={src.id}
+                      onClick={() => onUpdate({ ...node, templateSource: src.id, name: '' })}
+                      className={cx(
+                        "py-1.5 px-2 rounded-lg text-xs font-medium border transition-all",
+                        templateSource === src.id
+                          ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300"
+                          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:text-gray-400"
+                      )}
+                    >
+                      {src.label}
+                    </button>
+                  ))}
                 </div>
+
+                {/* Target picker: the specific source to link to. Controlled selection (not
+                    inputValue) so react-aria manages search text and node.name only holds a
+                    committed id/name — never a partial search string. */}
+                <ComboBox
+                  items={templateItems}
+                  selectedKey={node.name || null}
+                  onSelectionChange={key => key && onUpdate({ ...node, name: key as string })}
+                  placeholder={`Search ${TEMPLATE_SOURCES.find(s => s.id === templateSource)?.label.toLowerCase()}...`}
+                  aria-label="Template source"
+                >
+                  {(item) => (
+                    <ComboBoxItem id={item.id} textValue={item.name}>
+                      <span>{item.name}</span>
+                    </ComboBoxItem>
+                  )}
+                </ComboBox>
+
+                {templateSource === 'airdrop' && (expansionAirdrops?.Containers ?? []).length === 0 && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    No airdrop containers loaded. Open “+ Template → Expansion Airdrop” once to load airdrop settings.
+                  </p>
+                )}
+
+                {node.name ? (
+                  <Badge color="warning" size="md" className="w-full justify-center">
+                    Live Linked: {TEMPLATE_SOURCES.find(s => s.id === templateSource)?.label}
+                  </Badge>
+                ) : (
+                  <p className="text-[11px] text-gray-400">Select a source above to link this template.</p>
+                )}
+
                 <p className="text-[10px] text-gray-500 italic">
                   This node's children are dynamically loaded from the source template. Changes to the source will reflect here automatically.
                 </p>
