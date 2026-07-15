@@ -253,6 +253,32 @@ export function occupiesSlotOptions(details: Array<{ occupiesSlots?: string[] | 
   return Array.from(byKey.values());
 }
 
+/** Intersection of the attachment slots a set of items occupy: only slots that EVERY resolved
+ *  detail occupies (i.e. a slot compatible with all the items), case-insensitive, keeping the
+ *  first-seen casing. `count` is the number of resolved items (all of which occupy the slot).
+ *  Unresolved (null/undefined) details are skipped, not treated as failing. Returns [] when no
+ *  detail resolves OR when the resolved items share no common slot — callers distinguish the two
+ *  by whether any detail resolved. Exported for testing. */
+export function commonOccupiedSlots(details: Array<{ occupiesSlots?: string[] | null } | null | undefined>): { slot: string; count: number }[] {
+  const resolved = details.filter((d): d is { occupiesSlots?: string[] | null } => !!d);
+  if (!resolved.length) return [];
+  // First-seen casing across all resolved details (lowercased key -> original casing).
+  const casing = new Map<string, string>();
+  const sets = resolved.map(d => {
+    const set = new Set<string>();
+    for (const s of d.occupiesSlots || []) {
+      if (!s) continue;
+      const key = s.toLowerCase();
+      if (!casing.has(key)) casing.set(key, s);
+      set.add(key);
+    }
+    return set;
+  });
+  const [first, ...rest] = sets;
+  const common = [...first].filter(key => rest.every(set => set.has(key)));
+  return common.map(key => ({ slot: casing.get(key) || key, count: resolved.length }));
+}
+
 /**
  * Resolve candidate linked slots from a group's member item class names (the slots those
  * members occupy), loading each member's detail on demand. Returns null when disabled, the
@@ -271,6 +297,35 @@ export function useSlotsForItems(names: string[], enabled = true): { slot: strin
       const details = names.map(n => peekTypeDetail(n));
       const resolved = occupiesSlotOptions(details);
       setOpts(resolved.length ? resolved : null);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled, getTypeDetail, peekTypeDetail]);
+  return opts;
+}
+
+/**
+ * Resolve the slots compatible with ALL of the given item class names — the intersection of
+ * each item's `occupiesSlots`, loading details on demand. Returns:
+ *   - null  → disabled, empty input, or nothing resolved (catalog can't answer → don't restrict)
+ *   - []    → items resolved but share no common slot (no single slot accepts them all)
+ *   - [...] → the common slots
+ * so a caller can restrict its slot picker to the intersection yet fall back to the full
+ * vocabulary when the catalog is silent.
+ */
+export function useCommonSlotsForItems(names: string[], enabled = true): { slot: string; count: number }[] | null {
+  const { getTypeDetail, peekTypeDetail } = useCatalog();
+  const [opts, setOpts] = useState<{ slot: string; count: number }[] | null>(null);
+  const key = names.map(n => (n || '').toLowerCase()).join('|');
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !names.length) { setOpts(null); return; }
+    Promise.all(names.map(n => getTypeDetail(n))).then(() => {
+      if (cancelled) return;
+      const details = names.map(n => peekTypeDetail(n)).filter(Boolean);
+      // Nothing resolved ⇒ unknown ⇒ null (don't over-restrict). At least one resolved ⇒ the
+      // intersection (possibly [], meaning "no slot fits them all").
+      setOpts(details.length ? commonOccupiedSlots(details) : null);
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

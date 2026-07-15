@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel, occupiesSlotOptions } from '../../src/contexts/CatalogContext';
+import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel, occupiesSlotOptions, commonOccupiedSlots } from '../../src/contexts/CatalogContext';
 import type { AttachmentGraph, TypeDetail } from '../../src/contexts/CatalogContext';
 
 const graph: AttachmentGraph = {
@@ -199,6 +199,64 @@ describe('occupiesSlotOptions', () => {
   it('returns an empty array when nothing resolves', () => {
     expect(occupiesSlotOptions([])).toEqual([]);
     expect(occupiesSlotOptions([{ occupiesSlots: [] }, null])).toEqual([]);
+  });
+});
+
+describe('commonOccupiedSlots', () => {
+  it('keeps only slots that EVERY resolved item occupies (intersection)', () => {
+    const opts = commonOccupiedSlots([
+      { occupiesSlots: ['weaponOpticsAuto', 'weaponOptics'] },
+      { occupiesSlots: ['weaponOpticsAuto'] },
+    ]);
+    // weaponOptics is dropped (only the first item occupies it); count is the resolved-item count.
+    expect(opts).toEqual([{ slot: 'weaponOpticsAuto', count: 2 }]);
+  });
+
+  it('intersects case-insensitively, keeping the first-seen casing', () => {
+    const opts = commonOccupiedSlots([
+      { occupiesSlots: ['WeaponButtstockAK'] },
+      { occupiesSlots: ['weaponbuttstockak'] },
+    ]);
+    expect(opts).toEqual([{ slot: 'WeaponButtstockAK', count: 2 }]);
+  });
+
+  it('returns [] when the resolved items share no common slot', () => {
+    expect(commonOccupiedSlots([
+      { occupiesSlots: ['weaponOpticsAuto'] },
+      { occupiesSlots: ['weaponButtstockAK'] },
+    ])).toEqual([]);
+  });
+
+  it('skips unresolved (null/undefined) details instead of failing on them', () => {
+    // A single resolved item among unknowns still constrains to its own slots.
+    const opts = commonOccupiedSlots([
+      null,
+      { occupiesSlots: ['weaponOpticsAuto'] },
+      undefined,
+    ]);
+    expect(opts).toEqual([{ slot: 'weaponOpticsAuto', count: 1 }]);
+  });
+
+  it('returns [] when nothing resolves (empty input or all null)', () => {
+    expect(commonOccupiedSlots([])).toEqual([]);
+    expect(commonOccupiedSlots([null, undefined])).toEqual([]);
+  });
+
+  it('ignores empty slot names within a detail', () => {
+    expect(commonOccupiedSlots([
+      { occupiesSlots: ['', 'Vest'] },
+      { occupiesSlots: ['Vest'] },
+    ])).toEqual([{ slot: 'Vest', count: 2 }]);
+  });
+
+  it('supports multi-slot items — keeps every slot common to all', () => {
+    expect(commonOccupiedSlots([
+      { occupiesSlots: ['A', 'B', 'C'] },
+      { occupiesSlots: ['B', 'C', 'D'] },
+    ])).toEqual([
+      { slot: 'B', count: 2 },
+      { slot: 'C', count: 2 },
+    ]);
   });
 });
 

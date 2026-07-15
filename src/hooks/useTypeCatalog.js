@@ -42,7 +42,15 @@ export function useTypeCatalog(selectedProfileId) {
   const slotItemsCache = useRef(/** @type {Map<string, string[]>} */(new Map()));
   const slotInflight = useRef(/** @type {Map<string, Promise<string[]>>} */(new Map()));
 
-  // Bulk load: health + summaries.
+  // ms epoch of the catalog import the caches were populated against. When the mod re-imports
+  // (e.g. reconnects after being offline), catalogAt changes and we must drop the per-name and
+  // per-slot caches — otherwise stale details fetched while disconnected (e.g. all-null, so no
+  // occupiesSlots) are served forever. The health poll bumps reloadTick when it sees a new one.
+  const catalogAtRef = useRef(0);
+  const [reloadTick, setReloadTick] = useState(0);
+
+  // Bulk load: health + summaries. Re-runs on profile change and whenever a fresh catalog import
+  // is detected (reloadTick), clearing the detail/slot caches so stale entries don't survive.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -58,24 +66,31 @@ export function useTypeCatalog(selectedProfileId) {
         if (cancelled) return;
         setConnected(!!(health && health.modConnected));
         setLastSyncAt(health?.snapshotAt || 0);
+        catalogAtRef.current = health?.catalogAt || 0;
         const map = new Map();
         for (const t of (types && Array.isArray(types.types) ? types.types : [])) {
           if (t && t.name) map.set(t.name, { displayName: t.displayName ?? null });
         }
         setCatalogByName(map);
-        // Per-slot item lists change with the catalog; drop the stale cache on (re)load.
+        // Per-name details and per-slot item lists change with the catalog; drop the stale caches
+        // on (re)load and nudge consumers (detailVersion) so they refetch against fresh data.
+        detailCache.current.clear();
+        inflight.current.clear();
         slotItemsCache.current.clear();
+        slotInflight.current.clear();
+        setDetailVersion(v => v + 1);
         setSlotVocabulary(slots && Array.isArray(slots.slots) ? slots.slots : []);
       } catch {
         if (!cancelled) { setConnected(false); setCatalogByName(new Map()); setSlotVocabulary([]); }
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedProfileId]);
+  }, [selectedProfileId, reloadTick]);
 
   // Lightweight health poll: keeps connected + lastSyncAt current (and flips the
   // sync indicator to stale when the mod stops pushing) without refetching the
-  // full type list. Runs for the lifetime of the hook.
+  // full type list. Also detects a fresh catalog import (catalogAt change) and triggers
+  // a bulk reload so caches populated against an older/empty catalog are dropped.
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -85,6 +100,11 @@ export function useTypeCatalog(selectedProfileId) {
         if (cancelled) return;
         setConnected(!!(health && health.modConnected));
         setLastSyncAt(health?.snapshotAt || 0);
+        const at = health?.catalogAt || 0;
+        if (at && at !== catalogAtRef.current) {
+          catalogAtRef.current = at;
+          setReloadTick(t => t + 1);
+        }
       } catch {
         if (!cancelled) setConnected(false);
       }

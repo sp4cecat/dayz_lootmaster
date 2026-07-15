@@ -65,6 +65,7 @@ import {
   useMagazines,
   useCompatibleAttachments,
   useSlotsForItems,
+  useCommonSlotsForItems,
   useSlotVocabulary,
   useItemsForSlot,
   MAGAZINE_SLOT,
@@ -74,11 +75,12 @@ import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 interface SlotComboItem { id: string; name: string; count: number; suggested: boolean }
 
 /**
- * "Accepted Attachment Slot" picker for an attachments-kind preset. The list is the full slot
- * vocabulary (so it auto-completes as you type even before any items exist). When the field is
- * empty AND the preset already has items, the slots those items occupy are surfaced first as
- * "suggested" — inferred from the members' compatibility. Its own component so the per-preset
- * useSlotsForItems hook isn't called inside a render loop.
+ * "Accepted Attachment Slot" picker for an attachments-kind preset. When the preset has items,
+ * the list is restricted to the slots compatible with ALL of them (the intersection of each
+ * item's occupiesSlots) so you can only designate a slot every item actually fits. When there
+ * are no items yet — or the catalog can't resolve them (offline/unknown) — it falls back to the
+ * full slot vocabulary so the field still auto-completes as you type. Its own component so the
+ * per-preset useCommonSlotsForItems hook isn't called inside a render loop.
  */
 const PresetSlotField: React.FC<{
   slot?: string;
@@ -86,18 +88,30 @@ const PresetSlotField: React.FC<{
   onChange: (slot?: string) => void;
 }> = ({ slot, itemNames, onChange }) => {
   const vocabulary = useSlotVocabulary();
-  // Only infer from members while the field is empty — once a slot is chosen there's nothing to suggest.
-  const memberSlots = useSlotsForItems(slot ? [] : itemNames);
+  // Slots compatible with every preset item: null = catalog can't answer (fall back to full
+  // vocab), [] = items resolved but share no common slot (offer nothing), [...] = the intersection.
+  const commonSlots = useCommonSlotsForItems(itemNames);
   const items = useMemo<SlotComboItem[]>(() => {
-    const vocab: SlotComboItem[] = vocabulary.map(v => ({ id: v.slot, name: v.slot, count: v.count, suggested: false }));
-    if (!slot && memberSlots?.length) {
-      const suggestedKeys = new Set(memberSlots.map(s => s.slot.toLowerCase()));
-      const suggested: SlotComboItem[] = memberSlots.map(s => ({ id: s.slot, name: s.slot, count: s.count, suggested: true }));
-      const rest = vocab.filter(v => !suggestedKeys.has(v.name.toLowerCase()));
-      return [...suggested, ...rest];
+    // Drop the empty-slot bucket (items with a blank inventorySlot) — it's not a selectable slot.
+    const vocab: SlotComboItem[] = vocabulary
+      .filter(v => v.slot)
+      .map(v => ({ id: v.slot, name: v.slot, count: v.count, suggested: false }));
+    // With items present and the catalog able to answer, restrict to the compatible-with-all set.
+    // (commonSlots may be [], which correctly yields an empty list.) Otherwise show the full vocab.
+    if (itemNames.length && commonSlots) {
+      const vocabByKey = new Map(vocabulary.map(v => [v.slot.toLowerCase(), v]));
+      return commonSlots.map(s => ({
+        id: s.slot,
+        name: s.slot,
+        // Prefer the catalog-wide "how many items fit this slot" count when known.
+        count: vocabByKey.get(s.slot.toLowerCase())?.count ?? s.count,
+        suggested: true,
+      }));
     }
     return vocab;
-  }, [slot, memberSlots, vocabulary]);
+  }, [itemNames.length, commonSlots, vocabulary]);
+  // Distinguish "restricted but empty" (items share no slot) from "unrestricted" for the hint.
+  const restrictedEmpty = itemNames.length > 0 && !!commonSlots && commonSlots.length === 0;
 
   return (
     <div className="space-y-1.5 max-w-sm">
@@ -116,7 +130,7 @@ const PresetSlotField: React.FC<{
             <span className="flex items-center justify-between w-full gap-2">
               <span className="font-mono text-xs">{item.name}</span>
               <span className="flex items-center gap-2">
-                {item.suggested && <Badge color="success" size="sm">suggested</Badge>}
+                {item.suggested && <Badge color="success" size="sm">fits all</Badge>}
                 <span className="text-xs text-gray-400">{item.count}</span>
               </span>
             </span>
@@ -124,7 +138,9 @@ const PresetSlotField: React.FC<{
         )}
       </ComboBox>
       <p className="text-[11px] text-gray-400">
-        Restricts items in this preset to those that fit this slot. Leave blank to accept any item.
+        {restrictedEmpty
+          ? 'These items share no common attachment slot — no single slot accepts them all.'
+          : 'Only slots compatible with every item in this preset are offered. Leave blank to accept any item.'}
       </p>
     </div>
   );
