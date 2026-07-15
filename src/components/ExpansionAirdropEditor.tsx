@@ -568,7 +568,7 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
                     selectedContainerIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
                       : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold truncate">{c.Container}</span>
+                    <span className="text-xs font-semibold truncate min-w-0 flex-1">{c.Container}</span>
                     <Badge size="sm" color="gray">{c.Loot?.length || 0}</Badge>
                   </div>
                 </TooltipTrigger>
