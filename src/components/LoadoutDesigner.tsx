@@ -639,7 +639,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                       : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
                   )}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <span onClick={e => e.stopPropagation()}>
                       <Checkbox
                         isSelected={selectedIds.has(l.id)}
@@ -648,7 +648,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                       />
                     </span>
                     <FileCode size={18} className="text-gray-400" />
-                    <span className="font-medium truncate max-w-[120px]">{l.label}</span>
+                    <span title={l.label} className="font-medium text-xs truncate">{l.label}</span>
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(l.id); }}
@@ -664,7 +664,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         {/* Main Content: Editor */}
         <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950/20 p-6">
           {editingLoadout ? (
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="mx-auto space-y-6">
               <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1 max-w-md">
