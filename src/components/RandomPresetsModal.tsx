@@ -556,7 +556,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       footer={inline ? undefined : <Button variant="primary" onClick={onClose}>Done</Button>}
       inline={inline}
     >
-      <div className="space-y-6 relative">
+      <div className={cx("space-y-6 relative", inline && "flex flex-col h-full min-h-0")}>
         {selectedNodeId && editingNode && editingPresetIndex !== null && (
           <div className="fixed top-0 right-0 bottom-0 z-[100] animate-in slide-in-from-right duration-300">
             <HierarchicalProperties 
@@ -659,7 +659,11 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
           </div>
         )}
 
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin">
+        <div className={cx(
+          "space-y-3 overflow-y-auto pr-2 scrollbar-thin",
+          // Inline (full-panel) usage fills the remaining vertical space; a floating modal keeps a cap.
+          inline ? "flex-1 min-h-0" : "max-h-[60vh]"
+        )}>
           {filteredPresets.map((preset) => {
             const index = preset.originalIndex;
             const refs = countReferences(preset.name);
