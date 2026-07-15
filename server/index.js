@@ -1418,6 +1418,21 @@ async function handleCatalogRoute(pathname, req, res) {
         return true;
     }
 
+    // /api/catalog/slots — occupiable attachment-slot vocabulary (union of items' inventorySlot[]).
+    if (parts.length === 3 && parts[2] === 'slots') {
+        const slots = ingest.listOccupiableSlots();
+        send(res, 200, JSON.stringify({ count: slots.length, slots }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // /api/catalog/slots/:slot — items that occupy the given slot (what fits a slot-scoped pool).
+    if (parts.length === 4 && parts[2] === 'slots') {
+        const slot = decodeURIComponent(parts[3]);
+        const items = ingest.getItemsForSlot(slot);
+        send(res, 200, JSON.stringify({ slot, count: items.length, items }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
     notFound(res);
     return true;
 }

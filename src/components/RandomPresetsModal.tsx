@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/base/modal/modal';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
@@ -11,6 +11,9 @@ import { XMLNodeKind } from '@/types/xml';
 import { Select } from '@/components/base/select/select';
 
 interface PresetItem {
+  // Stable design-time id so tree node identity survives re-renders (id-based edits/lookups in
+  // HierarchicalProperties and the template-add modal). Not emitted to cfgrandompresets.xml.
+  id?: string;
   kind: string;
   name: string;
   chance: number | null;
@@ -25,6 +28,10 @@ interface Preset {
   chance: number | null;
   attrs: Record<string, string>;
   items: PresetItem[];
+  // Design-time attachment slot this pool targets (e.g. "weaponButtstockAK"). A preset has no
+  // owning weapon, so this designates the slot directly and restricts the items it accepts to
+  // those that occupy it. Persists in native JSON; not emitted to cfgrandompresets.xml.
+  slot?: string;
 }
 
 interface RandomPresetsModalProps {
@@ -52,7 +59,76 @@ import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { LoadoutNode } from '@/types/loadouts';
 
-import { updateNodeInList, findNode } from '@/utils/tree';
+import { updateNodeInList, findNode, findParent } from '@/utils/tree';
+import {
+  useAttachmentSlots,
+  useMagazines,
+  useCompatibleAttachments,
+  useSlotsForItems,
+  useSlotVocabulary,
+  useItemsForSlot,
+  MAGAZINE_SLOT,
+} from '@/contexts/CatalogContext';
+import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
+
+interface SlotComboItem { id: string; name: string; count: number; suggested: boolean }
+
+/**
+ * "Accepted Attachment Slot" picker for an attachments-kind preset. The list is the full slot
+ * vocabulary (so it auto-completes as you type even before any items exist). When the field is
+ * empty AND the preset already has items, the slots those items occupy are surfaced first as
+ * "suggested" — inferred from the members' compatibility. Its own component so the per-preset
+ * useSlotsForItems hook isn't called inside a render loop.
+ */
+const PresetSlotField: React.FC<{
+  slot?: string;
+  itemNames: string[];
+  onChange: (slot?: string) => void;
+}> = ({ slot, itemNames, onChange }) => {
+  const vocabulary = useSlotVocabulary();
+  // Only infer from members while the field is empty — once a slot is chosen there's nothing to suggest.
+  const memberSlots = useSlotsForItems(slot ? [] : itemNames);
+  const items = useMemo<SlotComboItem[]>(() => {
+    const vocab: SlotComboItem[] = vocabulary.map(v => ({ id: v.slot, name: v.slot, count: v.count, suggested: false }));
+    if (!slot && memberSlots?.length) {
+      const suggestedKeys = new Set(memberSlots.map(s => s.slot.toLowerCase()));
+      const suggested: SlotComboItem[] = memberSlots.map(s => ({ id: s.slot, name: s.slot, count: s.count, suggested: true }));
+      const rest = vocab.filter(v => !suggestedKeys.has(v.name.toLowerCase()));
+      return [...suggested, ...rest];
+    }
+    return vocab;
+  }, [slot, memberSlots, vocabulary]);
+
+  return (
+    <div className="space-y-1.5 max-w-sm">
+      <label className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">Accepted Attachment Slot</label>
+      <ComboBox
+        items={items}
+        inputValue={slot || ''}
+        onInputChange={value => onChange(value || undefined)}
+        onSelectionChange={key => onChange((key as string) || undefined)}
+        placeholder="e.g. weaponButtstockAK"
+        aria-label="Accepted Attachment Slot"
+        allowsCustomValue
+      >
+        {(item: SlotComboItem) => (
+          <ComboBoxItem id={item.id} textValue={item.name}>
+            <span className="flex items-center justify-between w-full gap-2">
+              <span className="font-mono text-xs">{item.name}</span>
+              <span className="flex items-center gap-2">
+                {item.suggested && <Badge color="success" size="sm">suggested</Badge>}
+                <span className="text-xs text-gray-400">{item.count}</span>
+              </span>
+            </span>
+          </ComboBoxItem>
+        )}
+      </ComboBox>
+      <p className="text-[11px] text-gray-400">
+        Restricts items in this preset to those that fit this slot. Leave blank to accept any item.
+      </p>
+    </div>
+  );
+};
 
 export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   onClose,
@@ -80,6 +156,22 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateModalTarget, setTemplateModalTarget] = useState<{index: number, nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
 
+  // Backfill stable ids onto preset items lacking one (e.g. parsed from XML, which carries no
+  // id). Without this, itemsToNodes would mint a fresh id every render and id-based edits/lookups
+  // (properties panel, template-add modal) would miss the top-level item.
+  useEffect(() => {
+    const list = randomPresets?.presets || [];
+    if (list.some((p: Preset) => (p.items || []).some(it => !it.id))) {
+      setRandomPresets((prev: any) => ({
+        ...prev,
+        presets: (prev?.presets || []).map((p: Preset) => ({
+          ...p,
+          items: (p.items || []).map(it => (it.id ? it : { ...it, id: crypto.randomUUID() }))
+        }))
+      }));
+    }
+  }, [randomPresets, setRandomPresets]);
+
   const handleUpdateNode = (updatedNode: LoadoutNode, presetIndex: number) => {
     updatePreset(presetIndex, p => ({
       ...p,
@@ -105,7 +197,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       // a plain `<item .../>` maps to an item node. (The name attribute holds either name.)
       const isPreset = item.kind === 'preset';
       return {
-        id: crypto.randomUUID(),
+        id: item.id ?? crypto.randomUUID(),
         type: isPreset ? 'template' : 'item',
         templateSource: isPreset ? 'preset' : undefined,
         name: item.name,
@@ -122,6 +214,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       // Preserve the item/preset distinction via `kind` — this is what the serializer
       // (generateRandomPresetsXml) reads to emit <item> vs <preset>. name/chance are
       // re-applied by the serializer, so attrs can stay empty here.
+      id: node.id,
       kind: node.type === 'template' ? 'preset' : 'item',
       name: node.name,
       chance: node.chance,
@@ -343,7 +436,61 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
     setTransferOnDelete(false);
   };
 
-  const filteredPresets = searchTerm 
+  // --- Attachment-slot context for the selected node (mirrors LoadoutDesigner) ---------------
+  // Rebuild the editing preset's node tree so we can locate the selected node's parent chain.
+  // With stable preset-item ids (see backfill effect) the selectedNodeId resolves reliably here.
+  const editingPreset = editingPresetIndex !== null ? presets[editingPresetIndex] : null;
+  const editingTreeNodes = useMemo(
+    () => (editingPreset ? itemsToNodes(editingPreset.items) : []),
+    [editingPreset]
+  );
+  const selectedNode = selectedNodeId ? findNode(editingTreeNodes, selectedNodeId) : null;
+  const parentInfo = selectedNodeId ? findParent(editingTreeNodes, selectedNodeId) : null;
+  const parentNode = parentInfo?.parent;
+
+  // Restrict the selected node's classname picker. For a group member, restrict by the group's
+  // linked slot on the item that exposes it (the grandparent); otherwise by the attachment parent.
+  let attachmentParentName: string | undefined;
+  let attachmentSlot: string | undefined;
+  if (parentNode?.type === 'group') {
+    attachmentParentName = findParent(editingTreeNodes, parentNode.id)?.parent?.name || undefined;
+    attachmentSlot = parentNode.slot;
+  } else if (parentInfo?.list === 'attachments') {
+    attachmentParentName = parentNode?.name || undefined;
+  }
+  const parentCompatibleClasses = useCompatibleAttachments(attachmentParentName, !!attachmentParentName, attachmentSlot);
+  // A preset has no owning weapon: its root items are restricted by the slot the preset itself
+  // designates (the pool accepts only items that occupy that slot).
+  const rootPresetSlot = parentInfo?.list === 'root' ? (editingPreset?.slot || undefined) : undefined;
+  const rootSlotItems = useItemsForSlot(rootPresetSlot);
+  const compatibleClasses = rootPresetSlot ? rootSlotItems : parentCompatibleClasses;
+
+  // When a group is selected, offer its parent item's exposed slots; when the parent exposes
+  // none, fall back to slots inferred from the group's own member items (their occupiesSlots).
+  const activeGroup = selectedNode?.type === 'group' ? selectedNode : null;
+  const groupParentName = activeGroup
+    ? (findParent(editingTreeNodes, activeGroup.id)?.parent?.name || undefined)
+    : undefined;
+  const groupSlotGraph = useAttachmentSlots(groupParentName);
+  const groupParentMagazines = useMagazines(groupParentName);
+  const groupMemberNames = activeGroup
+    ? (activeGroup.attachments || []).filter(m => m.type === 'item').map(m => m.name).filter(Boolean)
+    : [];
+  const memberSlotOptions = useSlotsForItems(groupMemberNames);
+  const groupSlotOptions = useMemo(() => {
+    const parentOpts: { slot: string; count: number }[] = [];
+    if (groupSlotGraph) {
+      const slots = groupSlotGraph.slots?.length ? groupSlotGraph.slots : Object.keys(groupSlotGraph.bySlot || {});
+      for (const s of slots) parentOpts.push({ slot: s, count: (groupSlotGraph.bySlot?.[s] || []).length });
+    }
+    // Offer magazines as a synthetic linked slot when the parent weapon has compatible magazines.
+    if (groupParentMagazines?.length) parentOpts.push({ slot: MAGAZINE_SLOT, count: groupParentMagazines.length });
+    if (parentOpts.length) return parentOpts;
+    // Fallback: slots inferred from the group's member items when the parent exposes none.
+    return memberSlotOptions?.length ? memberSlotOptions : null;
+  }, [groupSlotGraph, groupParentMagazines, memberSlotOptions]);
+
+  const filteredPresets = searchTerm
     ? presets.map((p, i) => ({ ...p, originalIndex: i })).filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
     : presets.map((p, i) => ({ ...p, originalIndex: i }));
 
@@ -368,6 +515,8 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
               typeOptions={typeOptions}
               availableTemplates={loadouts}
               randomPresets={randomPresets}
+              compatibleClasses={compatibleClasses}
+              groupSlotOptions={groupSlotOptions}
               config={{
                 title: 'Preset Item Properties',
                 showQuantity: false,
@@ -539,6 +688,17 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                         suffix="%"
                       />
                     </div>
+
+                    {preset.kind === XMLNodeKind.ATTACHMENTS && (
+                      <PresetSlotField
+                        slot={preset.slot}
+                        itemNames={(preset.items || [])
+                          .filter(it => it.kind !== 'preset')
+                          .map(it => it.name)
+                          .filter(Boolean)}
+                        onChange={next => updatePreset(index, p => ({ ...p, slot: next }))}
+                      />
+                    )}
 
                     <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-950/20 rounded-xl border border-gray-100 dark:border-gray-800">
                       <div className="flex items-center justify-between mb-2">

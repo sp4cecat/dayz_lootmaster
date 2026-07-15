@@ -31,23 +31,30 @@ export function useTypeCatalog(selectedProfileId) {
   // ms epoch of the mod's last live snapshot push (heartbeat); 0 when never synced.
   const [lastSyncAt, setLastSyncAt] = useState(0);
   const [catalogByName, setCatalogByName] = useState(/** @type {Map<string,{displayName:string|null}>} */(new Map()));
+  // Occupiable attachment-slot vocabulary (union of items' inventorySlot[]); [] when unknown.
+  const [slotVocabulary, setSlotVocabulary] = useState(/** @type {{slot:string,count:number}[]} */([]));
 
   // Per-name detail cache (survives across renders); a version bump nudges consumers.
   const detailCache = useRef(/** @type {Map<string, TypeDetail>} */(new Map()));
   const inflight = useRef(/** @type {Map<string, Promise<TypeDetail>>} */(new Map()));
   const [detailVersion, setDetailVersion] = useState(0);
+  // Per-slot "items that occupy this slot" cache (keyed lowercase), survives across renders.
+  const slotItemsCache = useRef(/** @type {Map<string, string[]>} */(new Map()));
+  const slotInflight = useRef(/** @type {Map<string, Promise<string[]>>} */(new Map()));
 
   // Bulk load: health + summaries.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [healthRes, typesRes] = await Promise.all([
+        const [healthRes, typesRes, slotsRes] = await Promise.all([
           apiFetch('/api/catalog/health'),
           apiFetch('/api/catalog/types'),
+          apiFetch('/api/catalog/slots'),
         ]);
         const health = healthRes.ok ? await healthRes.json() : null;
         const types = typesRes.ok ? await typesRes.json() : null;
+        const slots = slotsRes.ok ? await slotsRes.json() : null;
         if (cancelled) return;
         setConnected(!!(health && health.modConnected));
         setLastSyncAt(health?.snapshotAt || 0);
@@ -56,8 +63,11 @@ export function useTypeCatalog(selectedProfileId) {
           if (t && t.name) map.set(t.name, { displayName: t.displayName ?? null });
         }
         setCatalogByName(map);
+        // Per-slot item lists change with the catalog; drop the stale cache on (re)load.
+        slotItemsCache.current.clear();
+        setSlotVocabulary(slots && Array.isArray(slots.slots) ? slots.slots : []);
       } catch {
-        if (!cancelled) { setConnected(false); setCatalogByName(new Map()); }
+        if (!cancelled) { setConnected(false); setCatalogByName(new Map()); setSlotVocabulary([]); }
       }
     })();
     return () => { cancelled = true; };
@@ -131,13 +141,42 @@ export function useTypeCatalog(selectedProfileId) {
     return flattenCompatibleAttachments(detail);
   }, [detailVersion]);
 
+  /**
+   * Async list of class names that occupy a given attachment slot (case-insensitive), cached.
+   * Returns [] when the catalog can't answer (disconnected/unknown) so callers can decide to
+   * fall back to an unrestricted picker.
+   */
+  const getItemsForSlot = useCallback(async (slot) => {
+    if (!slot) return [];
+    const key = String(slot).toLowerCase();
+    if (slotItemsCache.current.has(key)) return slotItemsCache.current.get(key);
+    if (slotInflight.current.has(key)) return slotInflight.current.get(key);
+    const p = (async () => {
+      try {
+        const res = await apiFetch(`/api/catalog/slots/${encodeURIComponent(slot)}`);
+        const data = res.ok ? await res.json() : null;
+        const names = data && Array.isArray(data.items) ? data.items.map(i => i.name).filter(Boolean) : [];
+        slotItemsCache.current.set(key, names);
+        return names;
+      } catch {
+        return [];
+      } finally {
+        slotInflight.current.delete(key);
+      }
+    })();
+    slotInflight.current.set(key, p);
+    return p;
+  }, []);
+
   return useMemo(() => ({
     connected,
     lastSyncAt,
     catalogByName,
+    slotVocabulary,
     displayNameFor,
     getTypeDetail,
     peekTypeDetail,
     getCompatibleAttachments,
-  }), [connected, lastSyncAt, catalogByName, displayNameFor, getTypeDetail, peekTypeDetail, getCompatibleAttachments]);
+    getItemsForSlot,
+  }), [connected, lastSyncAt, catalogByName, slotVocabulary, displayNameFor, getTypeDetail, peekTypeDetail, getCompatibleAttachments, getItemsForSlot]);
 }

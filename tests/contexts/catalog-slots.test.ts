@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel } from '../../src/contexts/CatalogContext';
+import { bySlotCaseInsensitive, inferGroupSlot, MAGAZINE_SLOT, deriveItemCapabilities, dedupeGraphByLabel, occupiesSlotOptions } from '../../src/contexts/CatalogContext';
 import type { AttachmentGraph, TypeDetail } from '../../src/contexts/CatalogContext';
 
 const graph: AttachmentGraph = {
@@ -153,6 +153,52 @@ describe('dedupeGraphByLabel', () => {
     };
     // Body's only entry shares the "Infected" label already kept under Vest, so Body is dropped.
     expect(dedupeGraphByLabel(g)).toEqual([['Vest', [{ name: 'ZmbM_A', displayName: 'Infected' }]]]);
+  });
+});
+
+describe('occupiesSlotOptions', () => {
+  it('unions the slots members occupy with per-slot member counts', () => {
+    const opts = occupiesSlotOptions([
+      { occupiesSlots: ['weaponHandguardAK'] },
+      { occupiesSlots: ['weaponHandguardAK'] },
+      { occupiesSlots: ['weaponMuzzleAK'] },
+    ]);
+    expect(opts).toEqual([
+      { slot: 'weaponHandguardAK', count: 2 },
+      { slot: 'weaponMuzzleAK', count: 1 },
+    ]);
+  });
+
+  it('dedupes case-insensitively, keeping the first-seen casing', () => {
+    const opts = occupiesSlotOptions([
+      { occupiesSlots: ['WeaponHandguardAK'] },
+      { occupiesSlots: ['weaponhandguardak'] },
+    ]);
+    expect(opts).toEqual([{ slot: 'WeaponHandguardAK', count: 2 }]);
+  });
+
+  it('counts every slot a single item occupies', () => {
+    const opts = occupiesSlotOptions([{ occupiesSlots: ['Vest', 'Body'] }]);
+    expect(opts).toEqual([
+      { slot: 'Vest', count: 1 },
+      { slot: 'Body', count: 1 },
+    ]);
+  });
+
+  it('ignores empty slot names and skips null/undefined/empty details', () => {
+    const opts = occupiesSlotOptions([
+      null,
+      undefined,
+      { occupiesSlots: null },
+      { occupiesSlots: [] },
+      { occupiesSlots: ['', 'Vest'] },
+    ]);
+    expect(opts).toEqual([{ slot: 'Vest', count: 1 }]);
+  });
+
+  it('returns an empty array when nothing resolves', () => {
+    expect(occupiesSlotOptions([])).toEqual([]);
+    expect(occupiesSlotOptions([{ occupiesSlots: [] }, null])).toEqual([]);
   });
 });
 

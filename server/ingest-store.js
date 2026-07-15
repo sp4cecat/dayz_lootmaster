@@ -170,6 +170,43 @@ export function getCompatibleAttachments(name) {
     return { slots, itemCount: total, bySlot };
 }
 
+// Items that occupy a given attachment slot (case-insensitive), sorted by label. Answers
+// "what fits this slot" directly — used to restrict a slot-scoped pool (e.g. a random loot
+// preset designated for weaponButtstockAK) to the items that belong in it. [] when unknown.
+export function getItemsForSlot(slot) {
+    if (!slot) return [];
+    const idx = buildAttachIndex();
+    const items = idx[String(slot).toLowerCase()] || [];
+    return items.slice().sort((a, b) =>
+        (a.displayName || a.name).localeCompare(b.displayName || b.name));
+}
+
+// The vocabulary of attachment slots that some item can occupy (union of every item's
+// inventorySlot[]), each with a member count. Preserves the first-seen original casing
+// (engine slot casing is inconsistent). Memoized against catalogAt. Used to populate the
+// slot picker where a pool designates the slot it accepts.
+let slotVocab = null;
+let slotVocabAt = -1;
+export function listOccupiableSlots() {
+    if (slotVocab && slotVocabAt === catalogAt) return slotVocab;
+    const byKey = new Map(); // lowercased slot -> { slot, count }
+    if (catalog) {
+        for (const name of Object.keys(catalog)) {
+            const slots = catalog[name] && catalog[name].inventorySlot;
+            if (!Array.isArray(slots)) continue;
+            for (const slot of slots) {
+                const key = String(slot).toLowerCase();
+                const existing = byKey.get(key);
+                if (existing) existing.count += 1;
+                else byKey.set(key, { slot: String(slot), count: 1 });
+            }
+        }
+    }
+    slotVocab = Array.from(byKey.values()).sort((a, b) => a.slot.localeCompare(b.slot));
+    slotVocabAt = catalogAt;
+    return slotVocab;
+}
+
 // Reverse index: attachment-slot name -> [objects that EXPOSE it in attachments[]].
 // The mirror of attachIndex; answers "which objects have this slot".
 let exposeIndex = null;

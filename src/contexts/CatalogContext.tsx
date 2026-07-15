@@ -51,6 +51,8 @@ export interface CatalogValue {
   /** ms epoch of the mod's last live snapshot push (heartbeat); 0 when never synced. */
   lastSyncAt: number;
   catalogByName: Map<string, { displayName: string | null }>;
+  /** Occupiable attachment-slot vocabulary (union of items' inventorySlot[]); [] when unknown. */
+  slotVocabulary: { slot: string; count: number }[];
   /** Synchronous displayName lookup; undefined when unknown. */
   displayNameFor: (name?: string) => string | undefined;
   /** Async normalized detail for one class (cached); null on failure. */
@@ -59,16 +61,20 @@ export interface CatalogValue {
   peekTypeDetail: (name?: string) => TypeDetail | undefined;
   /** Class names that can attach ONTO parentName; null when catalog can't answer. */
   getCompatibleAttachments: (parentName?: string) => string[] | null;
+  /** Async class names that occupy `slot` (cached); [] when catalog can't answer. */
+  getItemsForSlot: (slot?: string) => Promise<string[]>;
 }
 
 const noopCatalog: CatalogValue = {
   connected: false,
   lastSyncAt: 0,
   catalogByName: new Map(),
+  slotVocabulary: [],
   displayNameFor: () => undefined,
   getTypeDetail: async () => null,
   peekTypeDetail: () => undefined,
   getCompatibleAttachments: () => null,
+  getItemsForSlot: async () => [],
 };
 
 const CatalogContext = createContext<CatalogValue>(noopCatalog);
@@ -227,6 +233,75 @@ export function useMagazines(name?: string, enabled = true): string[] | null {
     return () => { cancelled = true; };
   }, [name, enabled, getTypeDetail, peekTypeDetail]);
   return mags;
+}
+
+/** Union of the attachment slots a set of items occupy (their `occupiesSlots`, from the raw
+ *  inventorySlot[] feed) with per-slot member counts. Case-insensitive dedupe, keeping the
+ *  first-seen casing. Used to offer candidate linked slots for a group from its member items
+ *  when the parent exposes none. Exported for testing. */
+export function occupiesSlotOptions(details: Array<{ occupiesSlots?: string[] | null } | null | undefined>): { slot: string; count: number }[] {
+  const byKey = new Map<string, { slot: string; count: number }>();
+  for (const d of details) {
+    for (const s of d?.occupiesSlots || []) {
+      if (!s) continue;
+      const key = s.toLowerCase();
+      const existing = byKey.get(key);
+      if (existing) existing.count += 1;
+      else byKey.set(key, { slot: s, count: 1 });
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+/**
+ * Resolve candidate linked slots from a group's member item class names (the slots those
+ * members occupy), loading each member's detail on demand. Returns null when disabled, the
+ * list is empty, or nothing resolves — so callers can fall back to the parent's exposed slots.
+ */
+export function useSlotsForItems(names: string[], enabled = true): { slot: string; count: number }[] | null {
+  const { getTypeDetail, peekTypeDetail } = useCatalog();
+  const [opts, setOpts] = useState<{ slot: string; count: number }[] | null>(null);
+  // Stable dependency key so identical member lists don't re-fetch every render.
+  const key = names.map(n => (n || '').toLowerCase()).join('|');
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !names.length) { setOpts(null); return; }
+    Promise.all(names.map(n => getTypeDetail(n))).then(() => {
+      if (cancelled) return;
+      const details = names.map(n => peekTypeDetail(n));
+      const resolved = occupiesSlotOptions(details);
+      setOpts(resolved.length ? resolved : null);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled, getTypeDetail, peekTypeDetail]);
+  return opts;
+}
+
+/** The occupiable attachment-slot vocabulary (union of items' inventorySlot[]) with counts.
+ *  Used to populate a slot picker where a pool designates the slot it accepts. */
+export function useSlotVocabulary(): { slot: string; count: number }[] {
+  return useCatalog().slotVocabulary;
+}
+
+/**
+ * Resolve the class names that occupy `slot` (what fits a slot-scoped pool), loading on demand.
+ * Returns null when disabled, no slot is given, or the catalog can't answer — so callers can
+ * fall back to an unrestricted picker (the `null = unknown → don't restrict` convention).
+ */
+export function useItemsForSlot(slot?: string, enabled = true): string[] | null {
+  const { getItemsForSlot } = useCatalog();
+  const [list, setList] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !slot) { setList(null); return; }
+    getItemsForSlot(slot).then(names => {
+      if (cancelled) return;
+      setList(names && names.length ? names : null);
+    });
+    return () => { cancelled = true; };
+  }, [slot, enabled, getItemsForSlot]);
+  return list;
 }
 
 export interface ItemCapabilities {
