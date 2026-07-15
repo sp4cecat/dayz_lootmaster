@@ -551,7 +551,7 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
+      <aside className="w-[380px] border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Containers</span>
