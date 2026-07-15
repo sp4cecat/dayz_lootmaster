@@ -369,7 +369,7 @@ export default function MarketCategoryEditorModal({ onClose, selectedProfileId, 
       className="h-[95vh]"
       footer={
         <div className="flex gap-3">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          {!isPanel && <Button variant="secondary" onClick={onClose}>Close</Button>}
           <Button variant="primary" onClick={onSave} disabled={busy || !selectedCategory} icon={Save01}>
             {busy ? 'Saving...' : 'Save Category'}
           </Button>

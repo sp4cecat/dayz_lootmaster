@@ -21,7 +21,6 @@ import { apiFetch } from '@/utils/api';
 
 
 interface LoadoutDesignerProps {
-  onClose: () => void;
   typeOptions: string[];
   randomPresets?: { presets: any[] };
   spawnableTypesByGroup?: Record<string, Record<string, any>>;
@@ -30,8 +29,7 @@ interface LoadoutDesignerProps {
   setLoadouts?: (l: Loadout[]) => void;
 }
 
-export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({ 
-  onClose, 
+export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   typeOptions,
   randomPresets,
   spawnableTypesByGroup,
@@ -590,7 +588,6 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               Save Loadout
             </Button>
           )}
-          <Button onClick={onClose} variant="secondary" size="sm">Close</Button>
         </div>
       </header>
 

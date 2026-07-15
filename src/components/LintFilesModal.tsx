@@ -71,7 +71,7 @@ export default function LintFilesModal({ onClose, selectedProfileId, isPanel = f
       icon={FileSearch01}
       maxWidth="max-w-5xl"
       inline={isPanel}
-      footer={<Button variant="secondary" onClick={onClose} type="button">Close</Button>}
+      footer={isPanel ? undefined : <Button variant="secondary" onClick={onClose} type="button">Close</Button>}
     >
       <div className="space-y-6">
         {error && (

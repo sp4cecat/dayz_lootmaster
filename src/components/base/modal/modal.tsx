@@ -61,12 +61,14 @@ export const Modal: React.FC<ModalProps> = ({
             {description && <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{description}</p>}
           </div>
         </div>
-        <button 
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors p-2 dark:hover:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
-        >
-          <X size={20} />
-        </button>
+        {!inline && (
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2 dark:hover:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            <X size={20} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6 scrollbar-thin">

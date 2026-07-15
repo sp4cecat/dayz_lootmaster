@@ -553,7 +553,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
       description="Define groups of items that can be referenced by spawnable types configuration."
       icon={Layers}
       maxWidth="max-w-4xl"
-      footer={<Button variant="primary" onClick={onClose}>Done</Button>}
+      footer={inline ? undefined : <Button variant="primary" onClick={onClose}>Done</Button>}
       inline={inline}
     >
       <div className="space-y-6 relative">

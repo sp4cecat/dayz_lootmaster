@@ -131,7 +131,7 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
         }
     };
 
-    const footer = (
+    const footer = inline ? undefined : (
         <Button variant="secondary-gray" onClick={onClose}>Close</Button>
     );
 

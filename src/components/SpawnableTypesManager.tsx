@@ -30,7 +30,6 @@ interface SpawnableTypesManagerProps {
     globalsDefaults: { LootDamageMin: number | null; LootDamageMax: number | null };
     typeOptions: string[];
     loadouts: any[];
-    onClose: () => void;
     onViewCle?: (group: string) => void;
 }
 
@@ -41,7 +40,6 @@ export function SpawnableTypesManager({
     randomPresets,
     typeOptions,
     loadouts,
-    onClose,
 }: SpawnableTypesManagerProps) {
     const [searchTerm, setSearchTerm] = React.useState('');
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -272,7 +270,6 @@ export function SpawnableTypesManager({
                             Add Root Type
                         </Button>
                     )}
-                    <Button variant="secondary" onClick={onClose}>Close</Button>
                 </div>
             </div>
 

@@ -72,7 +72,7 @@ export default function StashReportModal({ onClose, selectedProfileId, isPanel =
       icon={Archive}
       maxWidth="max-w-5xl"
       inline={isPanel}
-      footer={<Button variant="secondary" onClick={onClose} type="button">Close</Button>}
+      footer={isPanel ? undefined : <Button variant="secondary" onClick={onClose} type="button">Close</Button>}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-800">

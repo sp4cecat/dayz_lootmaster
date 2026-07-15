@@ -452,7 +452,6 @@ export default function App() {
                                 globalsDefaults={globalsDefaults}
                                 typeOptions={allTypeNames}
                                 loadouts={loadouts}
-                                onClose={() => setView('cle')}
                                 onViewCle={(group) => {
                                     setFilters(prev => ({
                                         ...prev,
@@ -463,8 +462,7 @@ export default function App() {
                             />
                         )}
                         {view === 'loadout-designer' && (
-                            <LoadoutDesigner 
-                                onClose={() => setView('cle')}
+                            <LoadoutDesigner
                                 typeOptions={allTypeNames}
                                 randomPresets={randomPresets}
                                 spawnableTypesByGroup={spawnableTypesByGroup}

@@ -305,7 +305,7 @@ export default function TraderEditorModal({ onClose, selectedProfileId, isPanel 
       maxWidth="max-w-5xl"
       footer={
         <div className="flex gap-3">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          {!isPanel && <Button variant="secondary" onClick={onClose}>Close</Button>}
           <Button variant="primary" onClick={onSave} disabled={busy || !selectedTrader || !traderFileName} icon={Save01}>
             {busy ? 'Saving...' : 'Save Changes'}
           </Button>
