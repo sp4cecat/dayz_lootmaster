@@ -1565,7 +1565,30 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
   );
 };
 
-const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void; customInfected?: string[] }> = ({ values, onChange, customInfected = [] }) => {
+// A config whose Infected list can be copied into another (other missions / core
+// containers). `values` is the source Infected classname list.
+interface InfectedCopySource { key: string; label: string; values: string[] }
+
+// Split an Infected list into infected (Zmb*) vs Expansion-AI (eAI_*) counts for the
+// copy-source hint. eAI classnames are prefixed `eAI_`; everything else is a zombie.
+const infectedTotals = (list: string[]): { infected: number; ai: number } => {
+  let infected = 0, ai = 0;
+  for (const n of list) {
+    if (n.toLowerCase().startsWith('eai')) ai++; else infected++;
+  }
+  return { infected, ai };
+};
+
+// "5 infected · 2 AI" — omits a zero side; used in copy-source option labels.
+const infectedSummary = (list: string[]): string => {
+  const { infected, ai } = infectedTotals(list);
+  const parts: string[] = [];
+  if (infected) parts.push(`${infected} infected`);
+  if (ai) parts.push(`${ai} AI`);
+  return parts.join(' · ') || 'empty';
+};
+
+const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void; customInfected?: string[]; copySources?: InfectedCopySource[] }> = ({ values, onChange, customInfected = [], copySources = [] }) => {
   const [draft, setDraft] = useState('');
   const [open, setOpen] = useState(false); // collapsed accordion by default
 
@@ -1613,6 +1636,24 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
       </div>
       {open && (
         <>
+          {copySources.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 shrink-0">Copy from</span>
+              <Select
+                size="sm"
+                aria-label="Copy Infected / AI list from another mission or container"
+                value=""
+                options={[
+                  { value: '', label: 'another mission or container…' },
+                  ...copySources.map((s) => ({ value: s.key, label: `${s.label} — ${infectedSummary(s.values)}` })),
+                ]}
+                onChange={(e) => {
+                  const src = copySources.find((s) => s.key === e.target.value);
+                  if (src) onChange([...src.values]);
+                }}
+              />
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="flex-1">
               <ComboBox
@@ -1994,6 +2035,23 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     };
   }, [settings, mission?.data?.Container]);
 
+  // Sources the Infected/AI list can be copied from: every OTHER mission plus each
+  // core-settings container that has infected configured. Empty lists are skipped
+  // (nothing to copy); each carries its zombie/AI totals for the picker hint.
+  const infectedCopySources = useMemo(() => {
+    const sources: InfectedCopySource[] = [];
+    missions.forEach((m, i) => {
+      if (i === selectedMissionIdx || m.corrupt) return;
+      const vals: string[] = m.data?.Infected || [];
+      if (vals.length) sources.push({ key: `m:${m.file}`, label: `Mission: ${m.data?.MissionName?.trim() || m.file}`, values: vals });
+    });
+    (settings?.Containers || []).forEach((c: any, i: number) => {
+      const vals: string[] = c?.Infected || [];
+      if (vals.length) sources.push({ key: `c:${i}`, label: `Container: ${c?.Container || `#${i + 1}`}`, values: vals });
+    });
+    return sources;
+  }, [missions, selectedMissionIdx, settings]);
+
   return (
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
@@ -2168,7 +2226,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
               </div>
             </section>
 
-            <InfectedList values={mission.data.Infected || []} customInfected={map.customInfected} onChange={(v) => patchData({ Infected: v })} />
+            <InfectedList values={mission.data.Infected || []} customInfected={map.customInfected} copySources={infectedCopySources} onChange={(v) => patchData({ Infected: v })} />
 
             {isUnique && (
               <div className="border-t border-gray-100 dark:border-gray-800 pt-6 space-y-3">
