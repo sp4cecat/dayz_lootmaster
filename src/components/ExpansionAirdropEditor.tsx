@@ -603,17 +603,20 @@ interface LootConnectorProps {
   randomPresets: any;
   loadouts: Loadout[];
   editorKey: string;                  // remount key (target identity)
+  linkOnly?: boolean;                 // missions: reference a list (live link) only — no copy, no inline editing
 }
 
 /**
  * Wraps the loot editor for a container/mission with Loot-List connection. When the
  * target is linked to a list, the editor is replaced by a read-only banner (the list is
- * the source of truth — edit it in the Loot Lists tab). Otherwise the normal editor is
- * shown alongside a picker offering "Copy in" (one-time snapshot) or "Link" (live).
+ * the source of truth — edit it in the Loot Lists tab). Otherwise:
+ *  - default (containers): the inline editor plus a picker offering "Copy in" or "Link".
+ *  - linkOnly (missions): only a list picker that live-links the chosen list; custom loot
+ *    is authored in the Loot Lists tab, not inline on the mission.
  */
 const LootConnector: React.FC<LootConnectorProps> = ({
   targetType, targetKey, loot, onChangeLoot, lootLists, lootLinks, persistLootLinks,
-  setTab, typeOptions, randomPresets, loadouts, editorKey,
+  setTab, typeOptions, randomPresets, loadouts, editorKey, linkOnly = false,
 }) => {
   const link = lootLinks.find((l) => l.targetType === targetType && l.targetKey === targetKey);
   const linkedList = link ? lootLists.find((ll) => ll.id === link.listId) : undefined;
@@ -623,7 +626,10 @@ const LootConnector: React.FC<LootConnectorProps> = ({
 
   if (link) {
     const preview = (loot || []).map((x) => x?.Name).filter(Boolean);
-    const unlink = () =>
+    // Remove the link record. For containers the copied loot is kept (becomes editable
+    // inline); for missions (linkOnly) it's kept too, so the picker reappears to choose
+    // another list. Turning unique loot fully off on a mission is done via its toggle.
+    const removeLink = () =>
       persistLootLinks(lootLinks.filter((l) => !(l.targetType === targetType && l.targetKey === targetKey)));
     return (
       <div className="rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/40 dark:bg-primary-950/20 p-4 space-y-3">
@@ -636,13 +642,15 @@ const LootConnector: React.FC<LootConnectorProps> = ({
             <Button size="xs" variant="secondary-gray" icon={LayersThree01} onClick={() => setTab('lootlists')}>
               Edit in Loot Lists
             </Button>
-            <Button size="xs" variant="secondary-gray" icon={LinkBroken01} onClick={unlink}>Unlink</Button>
+            <Button size="xs" variant="secondary-gray" icon={LinkBroken01} onClick={removeLink}>
+              {linkOnly ? 'Change list' : 'Unlink'}
+            </Button>
           </div>
         </div>
         <p className="text-xs text-gray-500">
           This {targetType === 'container' ? 'container' : 'mission'} uses a shared loot list. Its loot is
-          read-only here and re-flattened from the list when you save the Loot Lists tab. Unlink to edit inline
-          (the current loot is kept).
+          read-only here and re-flattened from the list when you save the Loot Lists tab.
+          {linkOnly ? ' Use “Change list” to reference a different one.' : ' Unlink to edit inline (the current loot is kept).'}
         </p>
         <div className="flex flex-wrap gap-1.5">
           {preview.length === 0 ? (
@@ -670,6 +678,32 @@ const LootConnector: React.FC<LootConnectorProps> = ({
     }
     setPickListId('');
   };
+
+  // Missions reference a custom list (live link only) — no copy, no inline editing.
+  if (linkOnly) {
+    if (lootLists.length === 0) {
+      return (
+        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 flex items-center justify-between gap-3">
+          <p className="text-sm text-gray-500">No loot lists exist yet. Create one in the Loot Lists tab, then reference it here.</p>
+          <Button size="sm" variant="secondary-gray" icon={LayersThree01} onClick={() => setTab('lootlists')}>Open Loot Lists</Button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-3">
+        <div className="min-w-[240px]">
+          <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Reference a Loot List</label>
+          <ComboBox aria-label="Reference a Loot List" items={lootLists.map((ll) => ({ id: ll.id, label: `${ll.Name} · ${ll.Loot.length}` }))}
+            selectedKey={pickListId || null}
+            onSelectionChange={(k) => setPickListId(k ? String(k) : '')}>
+            {(item: { id: string; label: string }) => <ComboBoxItem id={item.id}>{item.label}</ComboBoxItem>}
+          </ComboBox>
+        </div>
+        <Button size="sm" variant="primary" icon={Link01} disabled={!pickListId} onClick={() => applyList('link')}>Link list</Button>
+        <span className="text-[11px] text-gray-400 basis-full">The mission's loot stays in sync with this list on save. Edit the loot in the Loot Lists tab.</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -1766,6 +1800,10 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     while (existing.has(name.toLowerCase())) { name = src.file.replace(/\.json$/i, `_Copy${n++}.json`); }
     setMissions((prev) => [...prev, { file: name, data: JSON.parse(JSON.stringify(src.data)), isNew: true }]);
     setSelectedMissionIdx(missions.length);
+    // Carry a loot-list link onto the copy (keyed by file name) so the duplicate stays
+    // linked rather than stranding the copied inline loot.
+    const srcLink = lootLinks.find((l) => l.targetType === 'mission' && l.targetKey === src.file);
+    if (srcLink) persistLootLinks([...lootLinks, { listId: srcLink.listId, targetType: 'mission', targetKey: name }]);
   };
 
   const saveMission = async () => {
@@ -1817,18 +1855,33 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     setSelectedMissionIdx(null);
   };
 
-  const isUnique = mission && !mission.corrupt ? (mission.data.Container !== 'Random' || (mission.data.Loot || []).length > 0) : false;
+  // Unique loot is decoupled from the Container field: a mission ALWAYS has a Container
+  // (a core container class or "Random"), and "unique loot" means it references a custom
+  // list from the Loot Lists tab instead of inheriting that container's core loot. So
+  // uniqueness is driven by the loot-list link (not by which container is selected).
+  const missionLink = mission && !mission.corrupt
+    ? lootLinks.find((l) => l.targetType === 'mission' && l.targetKey === mission.file)
+    : undefined;
+  // Local flag so toggling "unique loot" on reveals the list picker before a list is
+  // chosen (there's no link/loot yet at that instant). Reset when switching missions.
+  const [expandUnique, setExpandUnique] = useState(false);
+  useEffect(() => { setExpandUnique(false); }, [selectedMissionIdx]);
+  const isUnique = mission && !mission.corrupt
+    ? (!!missionLink || (mission.data.Loot || []).length > 0 || expandUnique)
+    : false;
 
   const setMode = (unique: boolean) => {
+    if (!mission) return;
     if (unique) {
-      patchData({ Container: containerNames[0] || mission?.data?.Container || 'Container_Base' });
+      // Reveal the loot-list picker. Container is independent — leave it untouched.
+      setExpandUnique(true);
     } else {
-      // Dropping unique loot also breaks any loot-list link (its loot is being cleared),
-      // so prune the stale link to avoid resurrecting the loot on the next Loot Lists save.
-      if (mission && lootLinks.some((l) => l.targetType === 'mission' && l.targetKey === mission.file)) {
+      // Back to inheriting the container's core loot: drop the link and clear the loot.
+      setExpandUnique(false);
+      if (missionLink) {
         persistLootLinks(lootLinks.filter((l) => !(l.targetType === 'mission' && l.targetKey === mission.file)));
       }
-      patchData({ Container: 'Random', Loot: [] });
+      patchData({ Loot: [] });
     }
   };
 
@@ -1992,26 +2045,24 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 onChange={(v) => patchData({ Enabled: v ? 1 : 0 })} />
               <Toggle label="Show Notification" isSelected={!!mission.data.ShowNotification}
                 onChange={(v) => patchData({ ShowNotification: v ? 1 : 0 })} />
-              <Toggle label="Unique loot (override container)" isSelected={isUnique} onChange={setMode} />
+              <Toggle label="Unique loot (use a custom list)" isSelected={isUnique} onChange={setMode} />
             </div>
 
-            <div className="max-w-sm">
-              <Input label="Airdrop Plane Class" placeholder="(inherit from settings)"
-                value={mission.data.AirdropPlaneClassName ?? ''} onChange={(e) => patchData({ AirdropPlaneClassName: e.target.value })} />
-            </div>
-
-            {isUnique && (
-              <div className="max-w-sm">
+            <div className="grid grid-cols-2 gap-4 max-w-lg">
+              <div>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Container</label>
-                <ComboBox aria-label="Container" allowsCustomValue items={containerOptions}
-                  selectedKey={mission.data.Container}
-                  inputValue={mission.data.Container}
-                  onInputChange={(v) => patchData({ Container: v })}
+                <ComboBox aria-label="Container" items={containerOptions}
+                  selectedKey={mission.data.Container ?? 'Random'}
                   onSelectionChange={(k) => k && patchData({ Container: String(k) })}>
                   {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
                 </ComboBox>
+                <p className="text-xs text-gray-400 mt-1">
+                  The core container this drop uses (its crate — and, unless unique loot is set, its loot). "Random" picks one at spawn.
+                </p>
               </div>
-            )}
+              <Input label="Airdrop Plane Class" placeholder="(inherit from settings)"
+                value={mission.data.AirdropPlaneClassName ?? ''} onChange={(e) => patchData({ AirdropPlaneClassName: e.target.value })} />
+            </div>
 
             <section className="space-y-3">
               <div className="flex items-center justify-between">
@@ -2064,7 +2115,15 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
             <InfectedList values={mission.data.Infected || []} customInfected={map.customInfected} onChange={(v) => patchData({ Infected: v })} />
 
             {isUnique && (
-              <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
+              <div className="border-t border-gray-100 dark:border-gray-800 pt-6 space-y-3">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                    <LayersThree01 size={14} /> Unique Loot
+                  </span>
+                  <p className="text-xs text-gray-400 mt-1">
+                    This mission uses a custom loot list instead of {mission.data.Container && mission.data.Container !== 'Random' ? `«${mission.data.Container}»'s` : 'the container'} core loot.
+                  </p>
+                </div>
                 <LootConnector
                   targetType="mission"
                   targetKey={mission.file}
@@ -2078,6 +2137,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                   typeOptions={typeOptions}
                   randomPresets={randomPresets}
                   loadouts={loadouts}
+                  linkOnly
                 />
               </div>
             )}
