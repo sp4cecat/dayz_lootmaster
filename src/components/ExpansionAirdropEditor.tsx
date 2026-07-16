@@ -179,6 +179,33 @@ const BOOL_CORE_FIELDS: { key: string; label: string }[] = [
   { key: 'ExplodeAirVehiclesOnCollision', label: 'Explode Air Vehicles on Collision' },
 ];
 
+// Complete VERSION-8 AirdropSettings.json seed, mirroring the mod's
+// ExpansionAirdropSettings.Defaults() (values verified against
+// ExpansionAirdropSettings.c). Used when the file doesn't exist yet so the first
+// save writes a full, mod-accurate file instead of a sparse one the mod would
+// backfill with zeroed class defaults. Booleans are 1/0 (Expansion JSON convention).
+const DEFAULT_SETTINGS = {
+  m_Version: 8,
+  ServerMarkerOnDropLocation: 1,
+  Server3DMarkerOnDropLocation: 1,
+  ShowAirdropTypeOnMarker: 1,
+  HideCargoWhileParachuteIsDeployed: 1,
+  HeightIsRelativeToGroundLevel: 1,
+  Height: 450,
+  DropZoneHeight: 450,
+  FollowTerrainFraction: 0.5,
+  Speed: 35,
+  DropZoneSpeed: 35,
+  Radius: 1,
+  InfectedSpawnRadius: 50,
+  InfectedSpawnInterval: 250,
+  ItemCount: 50,
+  AirdropPlaneClassName: '',
+  DropZoneProximityDistance: 1500,
+  ExplodeAirVehiclesOnCollision: 0,
+  Containers: [] as any[],
+};
+
 // Container Usage: which drop kinds this container is eligible for.
 const USAGE_OPTIONS = [
   { value: '0', label: 'Missions & player-called' },
@@ -304,7 +331,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         setSettings(data);
         setSavedSettings(data);
       } else {
-        const fallback = { Enabled: 1, Containers: [] };
+        const fallback = { ...DEFAULT_SETTINGS };
         setSettings(fallback);
         setSavedSettings(fallback);
       }
@@ -550,7 +577,9 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         profileId: selectedProfileId,
-        body: JSON.stringify(settings),
+        // Always stamp the current schema version so the mod never runs its legacy
+        // migration converters against our current-shape data.
+        body: JSON.stringify({ ...settings, m_Version: 8 }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
       setSavedSettings(settings);
@@ -581,7 +610,7 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         profileId: selectedProfileId,
-        body: JSON.stringify(missionSettings),
+        body: JSON.stringify({ ...missionSettings, m_Version: 2 }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
       setSavedMissionSettings(missionSettings);
@@ -856,7 +885,9 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         profileId: selectedProfileId,
-        body: JSON.stringify(settings),
+        // Always stamp the current schema version so the mod never runs its legacy
+        // migration converters against our current-shape data.
+        body: JSON.stringify({ ...settings, m_Version: 8 }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
       setSavedSettings(settings);
@@ -1710,15 +1741,15 @@ const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.t
 // Minify a drop-location name to a filename-safe token (alphanumerics only).
 const minifyName = (s: string) => (s || '').replace(/[^A-Za-z0-9]/g, '');
 
-// Derive an `Airdrop_<MinifiedLocation>.json` file name, suffixing with a number
-// (2, 3, …) when another mission already uses that file. `excludeIdx` skips the
+// Derive an `Airdrop_<MinifiedLocation>.json` file name, suffixing with `_<n>`
+// (_2, _3, …) when another mission already uses that file. `excludeIdx` skips the
 // mission being renamed so it doesn't collide with itself.
 const fileNameForLocation = (locName: string, missions: Mission[], excludeIdx: number): string => {
   const base = minifyName(locName) || 'Drop';
   const taken = new Set(missions.filter((_, i) => i !== excludeIdx).map((m) => m.file.toLowerCase()));
   let name = `Airdrop_${base}.json`;
   let n = 2;
-  while (taken.has(name.toLowerCase())) name = `Airdrop_${base}${n++}.json`;
+  while (taken.has(name.toLowerCase())) name = `Airdrop_${base}_${n++}.json`;
   return name;
 };
 
@@ -1793,10 +1824,6 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
 
   const saveMission = async () => {
     if (!mission) return;
-    if (!isValidMissionFile(mission.file)) {
-      setSaveState({ kind: 'error', message: 'File must match Airdrop_*.json' });
-      return;
-    }
     // Expansion allows one DropLocation per mission file, written as a single
     // object (ref ExpansionAirdropLocation) — the canonical Expansion shape.
     const dl = mission.data.DropLocation;
@@ -1805,17 +1832,34 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
       setSaveState({ kind: 'error', message: 'Set a drop location' });
       return;
     }
+    // Mission files are named automatically from the drop location on first save:
+    // Airdrop_<MinifiedLocation>[_n].json. Already-saved files keep their on-disk
+    // name so we never orphan a file.
+    const targetFile = mission.isNew
+      ? fileNameForLocation(drop.Name || '', missions, selectedMissionIdx ?? -1)
+      : mission.file;
+    if (!isValidMissionFile(targetFile)) {
+      setSaveState({ kind: 'error', message: 'File must match Airdrop_*.json' });
+      return;
+    }
 
     setSaveState({ kind: 'saving' });
     try {
-      const res = await apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(mission.file)}`, {
+      const res = await apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(targetFile)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         profileId: selectedProfileId,
-        body: JSON.stringify({ ...mission.data, DropLocation: drop }),
+        body: JSON.stringify({ ...mission.data, m_Version: 3, DropLocation: drop }),
       });
-      if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${mission.file}`);
-      patchMission({ isNew: false });
+      if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${targetFile}`);
+      // If auto-naming renamed the file, migrate any loot-list link that was keyed on
+      // the placeholder name so the mission keeps its unique loot.
+      if (mission.isNew && targetFile !== mission.file &&
+          lootLinks.some((l) => l.targetType === 'mission' && l.targetKey === mission.file)) {
+        persistLootLinks(lootLinks.map((l) =>
+          l.targetType === 'mission' && l.targetKey === mission.file ? { ...l, targetKey: targetFile } : l));
+      }
+      patchMission({ file: targetFile, isNew: false });
       setSaveState({ kind: 'ok' });
       setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
     } catch (e: any) {
@@ -1873,6 +1917,12 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const dl = mission?.data?.DropLocation;
   const drop: DropLocation | null = (Array.isArray(dl) ? dl[0] : dl) || null;
 
+  // Unsaved missions are auto-named from the drop location (finalized on first save);
+  // this is the read-only preview of that name. Saved missions show their on-disk file.
+  const previewFile = mission && mission.isNew && !mission.corrupt
+    ? fileNameForLocation(drop?.Name || '', missions, selectedMissionIdx ?? -1)
+    : mission?.file ?? '';
+
   const updateDrop = (patch: Partial<DropLocation>) =>
     patchData({ DropLocation: { ...(drop || { x: 0, z: 0 }), ...patch } });
 
@@ -1904,9 +1954,14 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
 
   const containerOptions = useMemo(() => {
     const set = new Set<string>(['Random', ...containerNames]);
+    // With unique loot the container only supplies the crate model (its loot is
+    // overridden by the custom list), so any Expansion crate type is valid — offer the
+    // full set. Without it the mission inherits the container's core loot, so it must
+    // stay restricted to the containers configured in the Containers tab.
+    if (isUnique) CONTAINER_CLASS_OPTIONS.forEach((c) => set.add(c));
     if (mission?.data?.Container) set.add(mission.data.Container);
     return Array.from(set).map((c) => ({ id: c }));
-  }, [containerNames, mission?.data?.Container]);
+  }, [containerNames, mission?.data?.Container, isUnique]);
 
   // Resolved defaults shown when a mission field is set to inherit (see
   // ExpansionMissionEventAirdrop.Event_OnStart): ItemCount/InfectedCount inherit
@@ -1998,9 +2053,8 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
           <div className="space-y-6 max-w-5xl">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
-                <Input label="File Name" value={mission.file} disabled={!mission.isNew}
-                  error={mission.isNew && !isValidMissionFile(mission.file) ? 'Must match Airdrop_*.json' : undefined}
-                  onChange={(e) => patchMission({ file: e.target.value })} />
+                <Input label="File Name" value={previewFile} disabled
+                  hint={mission.isNew ? 'Auto-named from the drop location; set on first save.' : undefined} />
               </div>
               <div className="flex items-center gap-2 pt-6">
                 <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateMission(selectedMissionIdx!)}>Duplicate</Button>
@@ -2043,6 +2097,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 </ComboBox>
                 <p className="text-xs text-gray-400 mt-1">
                   The core container this drop uses (its crate — and, unless unique loot is set, its loot). "Random" picks one at spawn.
+                  {isUnique && ' With unique loot, any crate type can be picked.'}
                 </p>
               </div>
               <Input label="Airdrop Plane Class" placeholder="(inherit from settings)"
