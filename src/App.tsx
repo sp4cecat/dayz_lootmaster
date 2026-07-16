@@ -224,7 +224,11 @@ export default function App() {
 
     return (
         <CatalogProvider selectedProfileId={selectedProfileId}>
-        <div className="flex h-screen bg-gray-50 overflow-hidden font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+        {/* contain:layout isolates descendant scroll containers' layout overflow from the
+            viewport scroller. Without it, a large inner overflow-auto list (e.g. the Loadout
+            Designer sidebar with hundreds of items) leaks its scrollHeight up to <html> in
+            Chromium, producing a phantom document scrollbar past the fixed h-screen shell. */}
+        <div className="flex h-screen bg-gray-50 overflow-hidden [contain:layout] font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
             <Sidebar
                 activeTab={view}
                 onTabChange={setView}
