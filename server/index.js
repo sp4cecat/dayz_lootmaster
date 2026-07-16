@@ -186,6 +186,7 @@ function getPaths(profile) {
         missionSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'MissionSettings.json'),
         airdropMissionsDirPath: join(missionPath, 'expansion', 'missions'),
         airdropLocationsPath: join(missionPath, '.lootmaster', 'airdrop-locations.json'),
+        airdropLootListsPath: join(missionPath, '.lootmaster', 'airdrop-loot-lists.json'),
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
         expansionLogsDirPath: join(profilesPath, 'ExpansionMod', 'Logs'),
@@ -2327,6 +2328,44 @@ const server = http.createServer(async (req, res) => {
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid airdrop-locations payload: ${e.message}`);
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // GET/PUT Lootmaster Airdrop Loot Lists library (Lootmaster-owned, not read by the game).
+        // Reusable named ExpansionLoot[] lists plus link records that bind a list to a
+        // container/mission; the list's loot is flattened into those targets on save. Stored
+        // under .lootmaster/. Body shape: { lists: [{ id, Name, Loot[] }], links: [{ listId, targetType, targetKey }] }.
+        if (pathname === '/api/expansion/airdrop-loot-lists') {
+            const profileId = req.headers['x-profile-id'];
+            const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
+            if (!profile) { notFound(res); return; }
+            const paths = getPaths(profile);
+            const target = paths.airdropLootListsPath;
+            if (req.method === 'GET') {
+                try {
+                    const content = await readValidJsonFile(target);
+                    send(res, 200, content, {'Content-Type': 'application/json'});
+                } catch {
+                    // File missing OR corrupt (empty/NUL/garbage) — client seeds an empty library.
+                    send(res, 404, JSON.stringify({ error: 'airdrop-loot-lists.json not found' }), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                try {
+                    const body = await readBody(req);
+                    // Validate JSON before writing to disk
+                    const parsed = JSON.parse(body || '{}');
+                    const out = JSON.stringify(parsed, null, 4);
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, out);
+                    send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid airdrop-loot-lists payload: ${e.message}`);
                 }
                 return;
             }

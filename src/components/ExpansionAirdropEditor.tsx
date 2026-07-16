@@ -8,10 +8,11 @@ import { Checkbox } from '@/components/base/checkbox/checkbox';
 import { Select } from '@/components/base/select/select';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
+import { Modal } from '@/components/base/modal/modal';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
   Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, ClockRefresh, Map01, Link01,
-  Maximize01, Minimize01, ChevronDown, ChevronRight,
+  Maximize01, Minimize01, ChevronDown, ChevronRight, LayersThree01, LinkBroken01,
 } from '@untitledui/icons';
 import { Loadout } from '@/types/loadouts';
 import { cx } from '@/utils/cx';
@@ -30,12 +31,44 @@ interface ExpansionAirdropEditorProps {
 }
 
 type SaveState = { kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string };
-type TabId = 'core' | 'containers' | 'scheduling' | 'missions' | 'locations';
+type TabId = 'core' | 'containers' | 'scheduling' | 'missions' | 'locations' | 'lootlists';
+
+// A reusable, named loot list. Stored in its native Expansion Loot[] shape (identical
+// to container.Loot) so it drops straight into a container/mission with no conversion.
+export interface LootList {
+  id: string;   // Lootmaster-internal, stable across renames; never written to game files
+  Name: string;
+  Loot: any[];  // ExpansionLoot[]
+}
+
+// Binds a loot list to a container/mission. Lives only in the Lootmaster sidecar — the
+// engine has no external loot reference, so on save the list's Loot is flattened into
+// the target's Loot[]. targetKey = container ClassName (unique) or mission file name.
+export interface LootListLink {
+  listId: string;
+  targetType: 'container' | 'mission';
+  targetKey: string;
+}
 
 // Stable-ish id generator for Lootmaster-owned location entries (crypto.randomUUID
 // where available, else a random suffix). Never written to Expansion mission files.
 const genLocationId = (): string =>
   `loc_${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10)).replace(/-/g, '').slice(0, 8)}`;
+
+// Stable-ish id generator for Lootmaster-owned loot lists. Never written to game files.
+const genLootListId = (): string =>
+  `list_${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10)).replace(/-/g, '').slice(0, 8)}`;
+
+// Persist the Loot Lists sidecar ({lists, links}) to disk. Throws on failure.
+async function putLootLists(profileId: string, lists: LootList[], links: LootListLink[]) {
+  const res = await apiFetch('/api/expansion/airdrop-loot-lists', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    profileId,
+    body: JSON.stringify({ lists, links }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+}
 
 // Match tolerance when de-duplicating drop locations into the library: same Name
 // (case-insensitive) and identical rounded coordinates/radius.
@@ -225,7 +258,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   loadouts,
   missionName,
 }) => {
-  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'containers', 'scheduling', 'missions', 'locations']);
+  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'containers', 'scheduling', 'missions', 'locations', 'lootlists']);
   const [loading, setLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' });
   const map = useMapMetadata(missionName);
@@ -248,15 +281,23 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   const [savedLocations, setSavedLocations] = useState<AirdropLocation[]>([]);
   const [selectedLocationIdx, setSelectedLocationIdx] = useState<number | null>(null);
 
+  // Loot Lists library (Lootmaster-owned; containers/missions consume these by copy or live link)
+  const [lootLists, setLootLists] = useState<LootList[]>([]);
+  const [savedLootLists, setSavedLootLists] = useState<LootList[]>([]);
+  const [lootLinks, setLootLinks] = useState<LootListLink[]>([]);
+  const [savedLootLinks, setSavedLootLinks] = useState<LootListLink[]>([]);
+  const [selectedLootListIdx, setSelectedLootListIdx] = useState<number | null>(null);
+
   const load = async () => {
     if (!selectedProfileId) return;
     setLoading(true);
     try {
-      const [sRes, mRes, msRes, lRes] = await Promise.all([
+      const [sRes, mRes, msRes, lRes, llRes] = await Promise.all([
         apiFetch('/api/expansion/airdrop-settings', { profileId: selectedProfileId }),
         apiFetch('/api/expansion/airdrop-missions', { profileId: selectedProfileId }),
         apiFetch('/api/expansion/mission-settings', { profileId: selectedProfileId }),
         apiFetch('/api/expansion/airdrop-locations', { profileId: selectedProfileId }),
+        apiFetch('/api/expansion/airdrop-loot-lists', { profileId: selectedProfileId }),
       ]);
       if (sRes.ok) {
         const data = await sRes.json();
@@ -296,6 +337,21 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
         setLocations(seeded);
         setSavedLocations(loadedLocations ? loadedLocations : []);
       }
+      // Loot Lists library: Lootmaster-owned; empty when the file doesn't exist yet
+      // (the first save creates it). No auto-seeding — lists are authored explicitly.
+      let loadedLists: LootList[] = [];
+      let loadedLinks: LootListLink[] = [];
+      if (llRes.ok) {
+        try {
+          const data = await llRes.json();
+          if (Array.isArray(data?.lists)) loadedLists = data.lists;
+          if (Array.isArray(data?.links)) loadedLinks = data.links;
+        } catch { /* leave empty */ }
+      }
+      setLootLists(loadedLists);
+      setSavedLootLists(loadedLists);
+      setLootLinks(loadedLinks);
+      setSavedLootLinks(loadedLinks);
     } catch (e) {
       console.error('Failed to load airdrop data', e);
       setSaveState({ kind: 'error', message: 'Failed to load airdrop data' });
@@ -309,6 +365,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
     setSelectedContainerIdx(null);
     setSelectedMissionIdx(null);
     setSelectedLocationIdx(null);
+    setSelectedLootListIdx(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProfileId]);
 
@@ -316,6 +373,20 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
     () => (settings?.Containers || []).map((c: any) => c.Container).filter(Boolean),
     [settings]
   );
+
+  // Persist a link-set change (link/unlink from the Containers/Missions editors) to the
+  // sidecar immediately, so a link is durable regardless of which tab's Save is used.
+  // Writes the current in-memory lists too, but leaves savedLootLists untouched so the
+  // Loot Lists tab keeps its own dirty state.
+  const persistLootLinks = async (nextLinks: LootListLink[]) => {
+    setLootLinks(nextLinks);
+    try {
+      await putLootLists(selectedProfileId, lootLists, nextLinks);
+      setSavedLootLinks(nextLinks);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message || 'Failed to save loot-list link' });
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-gray-950">
@@ -336,7 +407,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           </div>
         </div>
         <nav className="flex gap-1 mt-4">
-          {([['core', 'Core Settings', Settings01], ['containers', 'Containers', Package], ['scheduling', 'Scheduling', ClockRefresh], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
+          {([['core', 'Core Settings', Settings01], ['containers', 'Containers', Package], ['scheduling', 'Scheduling', ClockRefresh], ['lootlists', 'Loot Lists', LayersThree01], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -380,6 +451,32 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           savedSettings={savedSettings}
           setSavedSettings={setSavedSettings}
           customInfected={map.customInfected}
+          lootLists={lootLists}
+          lootLinks={lootLinks}
+          persistLootLinks={persistLootLinks}
+          setTab={setTab}
+        />
+      ) : tab === 'lootlists' ? (
+        <LootListsTab
+          lootLists={lootLists}
+          setLootLists={setLootLists}
+          savedLootLists={savedLootLists}
+          setSavedLootLists={setSavedLootLists}
+          lootLinks={lootLinks}
+          savedLootLinks={savedLootLinks}
+          setSavedLootLinks={setSavedLootLinks}
+          selectedLootListIdx={selectedLootListIdx}
+          setSelectedLootListIdx={setSelectedLootListIdx}
+          settings={settings}
+          setSettings={setSettings}
+          setSavedSettings={setSavedSettings}
+          missions={missions}
+          setMissions={setMissions}
+          typeOptions={typeOptions}
+          randomPresets={randomPresets}
+          loadouts={loadouts}
+          selectedProfileId={selectedProfileId}
+          setSaveState={setSaveState}
         />
       ) : tab === 'scheduling' ? (
         <SchedulingTab
@@ -419,6 +516,10 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           loadouts={loadouts}
           selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
+          lootLists={lootLists}
+          lootLinks={lootLinks}
+          persistLootLinks={persistLootLinks}
+          setTab={setTab}
         />
       )}
     </div>
@@ -486,6 +587,119 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
   );
 };
 
+// Deep-clone a native Expansion Loot[] so a copied/linked list can't alias the stored one.
+const cloneLoot = (loot: any[]): any[] => JSON.parse(JSON.stringify(loot || []));
+
+interface LootConnectorProps {
+  targetType: 'container' | 'mission';
+  targetKey: string;                  // container ClassName or mission file name
+  loot: any[];                        // the target's current Loot[]
+  onChangeLoot: (loot: any[]) => void;
+  lootLists: LootList[];
+  lootLinks: LootListLink[];
+  persistLootLinks: (next: LootListLink[]) => void | Promise<void>;
+  setTab: (t: TabId) => void;
+  typeOptions: string[];
+  randomPresets: any;
+  loadouts: Loadout[];
+  editorKey: string;                  // remount key (target identity)
+}
+
+/**
+ * Wraps the loot editor for a container/mission with Loot-List connection. When the
+ * target is linked to a list, the editor is replaced by a read-only banner (the list is
+ * the source of truth — edit it in the Loot Lists tab). Otherwise the normal editor is
+ * shown alongside a picker offering "Copy in" (one-time snapshot) or "Link" (live).
+ */
+const LootConnector: React.FC<LootConnectorProps> = ({
+  targetType, targetKey, loot, onChangeLoot, lootLists, lootLinks, persistLootLinks,
+  setTab, typeOptions, randomPresets, loadouts, editorKey,
+}) => {
+  const link = lootLinks.find((l) => l.targetType === targetType && l.targetKey === targetKey);
+  const linkedList = link ? lootLists.find((ll) => ll.id === link.listId) : undefined;
+  const [pickListId, setPickListId] = useState<string>('');
+  // Bumped on "Copy in" to remount AirdropLootEditor so it re-seeds from the new loot.
+  const [copyNonce, setCopyNonce] = useState(0);
+
+  if (link) {
+    const preview = (loot || []).map((x) => x?.Name).filter(Boolean);
+    const unlink = () =>
+      persistLootLinks(lootLinks.filter((l) => !(l.targetType === targetType && l.targetKey === targetKey)));
+    return (
+      <div className="rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/40 dark:bg-primary-950/20 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-sm font-semibold text-primary-700 dark:text-primary-300">
+            <Link01 size={16} />
+            {linkedList ? <>Linked to «{linkedList.Name}»</> : <>Linked to a deleted list</>}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="xs" variant="secondary-gray" icon={LayersThree01} onClick={() => setTab('lootlists')}>
+              Edit in Loot Lists
+            </Button>
+            <Button size="xs" variant="secondary-gray" icon={LinkBroken01} onClick={unlink}>Unlink</Button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          This {targetType === 'container' ? 'container' : 'mission'} uses a shared loot list. Its loot is
+          read-only here and re-flattened from the list when you save the Loot Lists tab. Unlink to edit inline
+          (the current loot is kept).
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {preview.length === 0 ? (
+            <span className="text-xs text-gray-400">List has no loot yet.</span>
+          ) : (
+            <>
+              {preview.slice(0, 16).map((n, i) => (
+                <span key={i} className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300">{n}</span>
+              ))}
+              {preview.length > 16 && <span className="text-[11px] text-gray-400 self-center">+{preview.length - 16} more</span>}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const applyList = (mode: 'copy' | 'link') => {
+    const list = lootLists.find((ll) => ll.id === pickListId);
+    if (!list) return;
+    onChangeLoot(cloneLoot(list.Loot));
+    setCopyNonce((n) => n + 1);
+    if (mode === 'link') {
+      persistLootLinks([...lootLinks, { listId: list.id, targetType, targetKey }]);
+    }
+    setPickListId('');
+  };
+
+  return (
+    <div className="space-y-3">
+      {lootLists.length > 0 && (
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-3">
+          <div className="min-w-[220px]">
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Use a Loot List</label>
+            <ComboBox aria-label="Use a Loot List" items={lootLists.map((ll) => ({ id: ll.id, label: `${ll.Name} · ${ll.Loot.length}` }))}
+              selectedKey={pickListId || null}
+              onSelectionChange={(k) => setPickListId(k ? String(k) : '')}>
+              {(item: { id: string; label: string }) => <ComboBoxItem id={item.id}>{item.label}</ComboBoxItem>}
+            </ComboBox>
+          </div>
+          <Button size="sm" variant="secondary-gray" icon={Copy01} disabled={!pickListId} onClick={() => applyList('copy')}>Copy in</Button>
+          <Button size="sm" variant="secondary-gray" icon={Link01} disabled={!pickListId} onClick={() => applyList('link')}>Link</Button>
+          <span className="text-[11px] text-gray-400 basis-full">Copy = one-time snapshot. Link = stays in sync with the list on save (loot becomes read-only here).</span>
+        </div>
+      )}
+      <AirdropLootEditor
+        key={`${editorKey}-${copyNonce}`}
+        initialLoot={loot}
+        onChange={onChangeLoot}
+        typeOptions={typeOptions}
+        randomPresets={randomPresets}
+        loadouts={loadouts}
+      />
+    </div>
+  );
+};
+
 interface ContainersTabProps {
   settings: any;
   setSettings: (s: any) => void;
@@ -499,12 +713,17 @@ interface ContainersTabProps {
   savedSettings: any;
   setSavedSettings: (s: any) => void;
   customInfected?: string[];
+  lootLists: LootList[];
+  lootLinks: LootListLink[];
+  persistLootLinks: (next: LootListLink[]) => void | Promise<void>;
+  setTab: (t: TabId) => void;
 }
 
 const ContainersTab: React.FC<ContainersTabProps> = ({
   settings, setSettings, selectedContainerIdx, setSelectedContainerIdx,
   typeOptions, randomPresets, loadouts, selectedProfileId, setSaveState,
   savedSettings, setSavedSettings, customInfected,
+  lootLists, lootLinks, persistLootLinks, setTab,
 }) => {
   const containers = settings?.Containers || [];
 
@@ -524,6 +743,11 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
   };
 
   const deleteContainer = (idx: number) => {
+    // Prune any loot-list link that targeted this container class (link key = ClassName).
+    const cls = containers[idx]?.Container;
+    if (cls && lootLinks.some((l) => l.targetType === 'container' && l.targetKey === cls)) {
+      persistLootLinks(lootLinks.filter((l) => !(l.targetType === 'container' && l.targetKey === cls)));
+    }
     setSettings({ ...settings, Containers: containers.filter((_: any, i: number) => i !== idx) });
     // Keep the selection pointing at the same visual position (or clear it if the
     // selected container was the one removed / the list becomes empty).
@@ -655,10 +879,16 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
             <InfectedList values={selected.Infected || []} customInfected={customInfected} onChange={(v) => updateContainer(selectedContainerIdx!, { Infected: v })} />
 
             <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
-              <AirdropLootEditor
-                key={`container-${selectedContainerIdx}`}
-                initialLoot={selected.Loot || []}
-                onChange={(loot) => updateContainer(selectedContainerIdx!, { Loot: loot })}
+              <LootConnector
+                targetType="container"
+                targetKey={selected.Container}
+                editorKey={`container-${selectedContainerIdx}`}
+                loot={selected.Loot || []}
+                onChangeLoot={(loot) => updateContainer(selectedContainerIdx!, { Loot: loot })}
+                lootLists={lootLists}
+                lootLinks={lootLinks}
+                persistLootLinks={persistLootLinks}
+                setTab={setTab}
                 typeOptions={typeOptions}
                 randomPresets={randomPresets}
                 loadouts={loadouts}
@@ -1016,6 +1246,275 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
   );
 };
 
+interface LootListsTabProps {
+  lootLists: LootList[];
+  setLootLists: React.Dispatch<React.SetStateAction<LootList[]>>;
+  savedLootLists: LootList[];
+  setSavedLootLists: (l: LootList[]) => void;
+  lootLinks: LootListLink[];
+  savedLootLinks: LootListLink[];
+  setSavedLootLinks: (l: LootListLink[]) => void;
+  selectedLootListIdx: number | null;
+  setSelectedLootListIdx: (i: number | null) => void;
+  settings: any;
+  setSettings: (s: any) => void;
+  setSavedSettings: (s: any) => void;
+  missions: { file: string; data: any }[];
+  setMissions: React.Dispatch<React.SetStateAction<{ file: string; data: any }[]>>;
+  typeOptions: string[];
+  randomPresets: any;
+  loadouts: Loadout[];
+  selectedProfileId: string;
+  setSaveState: (s: SaveState) => void;
+}
+
+// Lootmaster-owned reusable loot-list library. A list stores a native Expansion Loot[]
+// (see LootList) that containers/missions consume by copy or live link. On save, every
+// linked target's Loot[] is re-flattened from its list (Expansion always inlines loot).
+const LootListsTab: React.FC<LootListsTabProps> = ({
+  lootLists, setLootLists, savedLootLists, setSavedLootLists,
+  lootLinks, savedLootLinks, setSavedLootLinks,
+  selectedLootListIdx, setSelectedLootListIdx,
+  settings, setSettings, setSavedSettings, missions, setMissions,
+  typeOptions, randomPresets, loadouts, selectedProfileId, setSaveState,
+}) => {
+  const selected = selectedLootListIdx !== null ? lootLists[selectedLootListIdx] : null;
+  const containers: any[] = useMemo(() => settings?.Containers || [], [settings]);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newSource, setNewSource] = useState('empty');
+
+  const isDirty = useMemo(
+    () => JSON.stringify({ lists: lootLists, links: lootLinks }) !== JSON.stringify({ lists: savedLootLists, links: savedLootLinks }),
+    [lootLists, lootLinks, savedLootLists, savedLootLinks]
+  );
+
+  const linkCount = (list: LootList) => lootLinks.filter((l) => l.listId === list.id).length;
+
+  const updateList = (patch: Partial<LootList>) => {
+    if (selectedLootListIdx === null) return;
+    setLootLists(lootLists.map((l, i) => (i === selectedLootListIdx ? { ...l, ...patch } : l)));
+  };
+
+  const sourceOptions = useMemo(() => [
+    { value: 'empty', label: 'Empty list' },
+    ...containers.map((c: any) => ({ value: `container:${c.Container}`, label: `From container: ${c.Container} (${c.Loot?.length || 0})` })),
+    ...lootLists.map((ll) => ({ value: `list:${ll.id}`, label: `From list: ${ll.Name} (${ll.Loot.length})` })),
+  ], [containers, lootLists]);
+
+  const createList = () => {
+    let Loot: any[] = [];
+    let name = newName.trim();
+    if (newSource.startsWith('container:')) {
+      const cls = newSource.slice('container:'.length);
+      Loot = cloneLoot(containers.find((c: any) => c.Container === cls)?.Loot || []);
+      if (!name) name = `${cls} Loot`;
+    } else if (newSource.startsWith('list:')) {
+      const src = lootLists.find((ll) => ll.id === newSource.slice('list:'.length));
+      Loot = cloneLoot(src?.Loot || []);
+      if (!name) name = `${src?.Name || 'List'} Copy`;
+    }
+    if (!name) name = `Loot List ${lootLists.length + 1}`;
+    setLootLists([...lootLists, { id: genLootListId(), Name: name, Loot }]);
+    setSelectedLootListIdx(lootLists.length);
+    setModalOpen(false);
+    setNewName('');
+    setNewSource('empty');
+  };
+
+  const duplicateList = (idx: number) => {
+    const src = lootLists[idx];
+    setLootLists([...lootLists, { id: genLootListId(), Name: `${src.Name} Copy`, Loot: cloneLoot(src.Loot) }]);
+    setSelectedLootListIdx(lootLists.length);
+  };
+
+  const deleteList = (idx: number) => {
+    const list = lootLists[idx];
+    const links = lootLinks.filter((l) => l.listId === list.id);
+    if (links.length > 0) {
+      const names = links.map((l) => `  • ${l.targetType}: ${l.targetKey}`).join('\n');
+      window.alert(
+        `Can't delete «${list.Name}» — ${links.length} linked target${links.length === 1 ? '' : 's'} still use it:\n\n${names}\n\nUnlink them first (in the Containers/Missions tab), then delete.`
+      );
+      return;
+    }
+    setLootLists(lootLists.filter((_, i) => i !== idx));
+    const nextIdx =
+      selectedLootListIdx === null || selectedLootListIdx === idx ? null
+        : selectedLootListIdx > idx ? selectedLootListIdx - 1
+          : selectedLootListIdx;
+    setSelectedLootListIdx(nextIdx);
+  };
+
+  const save = async () => {
+    setSaveState({ kind: 'saving' });
+    try {
+      // 1) Persist the library sidecar (lists + links).
+      await putLootLists(selectedProfileId, lootLists, lootLinks);
+
+      // 2) Live-sync: re-flatten each list's loot into its linked targets. Only targets
+      //    whose on-disk loot actually differs are rewritten.
+      const listById = new Map(lootLists.map((l) => [l.id, l]));
+      const changedContainers: string[] = [];
+      const nextContainers = containers.map((c: any) => {
+        const link = lootLinks.find((l) => l.targetType === 'container' && l.targetKey === c.Container);
+        const list = link && listById.get(link.listId);
+        if (list && JSON.stringify(c.Loot || []) !== JSON.stringify(list.Loot)) {
+          changedContainers.push(c.Container);
+          return { ...c, Loot: cloneLoot(list.Loot) };
+        }
+        return c;
+      });
+      const missionUpdates: { file: string; data: any }[] = [];
+      for (const m of missions) {
+        if ((m as any).corrupt || (m as any).isNew) continue;
+        const link = lootLinks.find((l) => l.targetType === 'mission' && l.targetKey === m.file);
+        const list = link && listById.get(link.listId);
+        if (list && JSON.stringify(m.data?.Loot || []) !== JSON.stringify(list.Loot)) {
+          missionUpdates.push({ file: m.file, data: { ...m.data, Loot: cloneLoot(list.Loot) } });
+        }
+      }
+
+      const changeCount = changedContainers.length + missionUpdates.length;
+      if (changeCount > 0 &&
+        confirm(`${changeCount} linked target${changeCount === 1 ? '' : 's'} will be updated on disk to match ${changeCount === 1 ? 'its' : 'their'} loot list. Continue?`)) {
+        if (changedContainers.length > 0) {
+          const nextSettings = { ...settings, Containers: nextContainers };
+          const res = await apiFetch(`/api/expansion/airdrop-settings`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            profileId: selectedProfileId, body: JSON.stringify(nextSettings),
+          });
+          if (!res.ok) throw new Error((await res.json()).error || 'Failed to update containers');
+          setSettings(nextSettings);
+          setSavedSettings(nextSettings);
+        }
+        if (missionUpdates.length > 0) {
+          await Promise.all(missionUpdates.map((u) =>
+            apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(u.file)}`, {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              profileId: selectedProfileId, body: JSON.stringify(u.data),
+            })
+          ));
+          setMissions((prev) => prev.map((m) => {
+            const u = missionUpdates.find((x) => x.file === m.file);
+            return u ? { ...m, data: u.data } : m;
+          }));
+        }
+      }
+
+      setSavedLootLists(lootLists);
+      setSavedLootLinks(lootLinks);
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
+    }
+  };
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
+        <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Loot Lists</span>
+          <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => { setNewName(''); setNewSource('empty'); setModalOpen(true); }} />
+        </div>
+        <div className="p-2 space-y-1">
+          {lootLists.length === 0 && (
+            <p className="p-3 text-xs text-gray-400">No loot lists yet. Click + to create a reusable list from a container or from scratch.</p>
+          )}
+          {lootLists.map((list, i) => {
+            const links = linkCount(list);
+            return (
+              <button key={list.id} onClick={() => setSelectedLootListIdx(i)}
+                className={cx('w-full text-left p-3 rounded-lg border transition-all',
+                  selectedLootListIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                    : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold truncate min-w-0 flex-1">{list.Name || 'Unnamed'}</span>
+                  <Badge size="sm" color="gray">{list.Loot.length}</Badge>
+                </div>
+                <span className="text-xs text-gray-400 truncate block">
+                  {links > 0 ? `Linked to ${links} target${links === 1 ? '' : 's'}` : 'Not linked'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <div className="flex-1 overflow-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Loot Lists</h3>
+            <p className="text-sm text-gray-500 max-w-xl">
+              Reusable loot tables. Attach one to a container or mission from the
+              <span className="font-medium"> Containers</span> / <span className="font-medium">Missions</span> tabs
+              as a copy or a live link; saving here re-flattens linked loot into every target.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {selected && (
+              <>
+                <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateList(selectedLootListIdx!)}>Duplicate</Button>
+                <Button variant="error-secondary" icon={Trash01} onClick={() => deleteList(selectedLootListIdx!)}>Delete</Button>
+              </>
+            )}
+            <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Loot Lists</Button>
+          </div>
+        </div>
+
+        {selected ? (
+          <div className="space-y-6 max-w-5xl">
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="List Name" value={selected.Name} onChange={(e) => updateList({ Name: e.target.value })} />
+              <div className="flex items-end pb-2">
+                <p className="text-xs text-gray-400">
+                  {linkCount(selected) > 0
+                    ? `Linked to ${linkCount(selected)} target${linkCount(selected) === 1 ? '' : 's'} — saving updates them on disk.`
+                    : 'Not linked to any container or mission yet.'}
+                </p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
+              <AirdropLootEditor
+                key={selected.id}
+                initialLoot={selected.Loot}
+                onChange={(loot) => updateList({ Loot: loot })}
+                typeOptions={typeOptions}
+                randomPresets={randomPresets}
+                loadouts={loadouts}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-center">
+            <LayersThree01 size={48} className="text-gray-200 mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Select a loot list</h3>
+            <p className="text-sm text-gray-500 max-w-xs">Choose a list to edit, or click + to create one from a core container or from scratch.</p>
+          </div>
+        )}
+      </div>
+
+      {modalOpen && (
+        <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="New Loot List" maxWidth="max-w-md">
+          <div className="space-y-4">
+            <Input label="Name" placeholder="(auto-named from source)" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+            <Select label="Start from" options={sourceOptions} value={newSource} onChange={(e) => setNewSource(e.target.value)} />
+            <p className="text-xs text-gray-500">
+              Copying a container or another list snapshots its loot; the new list is fully independent afterwards.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary-gray" onClick={() => setModalOpen(false)}>Cancel</Button>
+              <Button variant="primary" icon={Plus} onClick={createList}>Create</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
 const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void; customInfected?: string[] }> = ({ values, onChange, customInfected = [] }) => {
   const [draft, setDraft] = useState('');
   const [open, setOpen] = useState(false); // collapsed accordion by default
@@ -1145,6 +1644,10 @@ interface MissionsTabProps {
   loadouts: Loadout[];
   selectedProfileId: string;
   setSaveState: (s: SaveState) => void;
+  lootLists: LootList[];
+  lootLinks: LootListLink[];
+  persistLootLinks: (next: LootListLink[]) => void | Promise<void>;
+  setTab: (t: TabId) => void;
 }
 
 // Matches ExpansionMissionEventAirdrop (VERSION 3) defaults (see OnDefaultMission):
@@ -1213,6 +1716,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   missions, setMissions, selectedMissionIdx, setSelectedMissionIdx,
   containerNames, settings, locations, map,
   typeOptions, randomPresets, loadouts, selectedProfileId, setSaveState,
+  lootLists, lootLinks, persistLootLinks, setTab,
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
 
@@ -1305,6 +1809,10 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
         console.error('Failed to delete mission file', m.file, e);
       }
     }
+    // Prune any loot-list link that targeted this mission file so it can't resurrect loot.
+    if (lootLinks.some((l) => l.targetType === 'mission' && l.targetKey === m.file)) {
+      persistLootLinks(lootLinks.filter((l) => !(l.targetType === 'mission' && l.targetKey === m.file)));
+    }
     setMissions((prev) => prev.filter((_, i) => i !== idx));
     setSelectedMissionIdx(null);
   };
@@ -1315,6 +1823,11 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     if (unique) {
       patchData({ Container: containerNames[0] || mission?.data?.Container || 'Container_Base' });
     } else {
+      // Dropping unique loot also breaks any loot-list link (its loot is being cleared),
+      // so prune the stale link to avoid resurrecting the loot on the next Loot Lists save.
+      if (mission && lootLinks.some((l) => l.targetType === 'mission' && l.targetKey === mission.file)) {
+        persistLootLinks(lootLinks.filter((l) => !(l.targetType === 'mission' && l.targetKey === mission.file)));
+      }
       patchData({ Container: 'Random', Loot: [] });
     }
   };
@@ -1552,10 +2065,16 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
 
             {isUnique && (
               <div className="border-t border-gray-100 dark:border-gray-800 pt-6">
-                <AirdropLootEditor
-                  key={`mission-${selectedMissionIdx}`}
-                  initialLoot={mission.data.Loot || []}
-                  onChange={(loot) => patchData({ Loot: loot })}
+                <LootConnector
+                  targetType="mission"
+                  targetKey={mission.file}
+                  editorKey={`mission-${selectedMissionIdx}`}
+                  loot={mission.data.Loot || []}
+                  onChangeLoot={(loot) => patchData({ Loot: loot })}
+                  lootLists={lootLists}
+                  lootLinks={lootLinks}
+                  persistLootLinks={persistLootLinks}
+                  setTab={setTab}
                   typeOptions={typeOptions}
                   randomPresets={randomPresets}
                   loadouts={loadouts}

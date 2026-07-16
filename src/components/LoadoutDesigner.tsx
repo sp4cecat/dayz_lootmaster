@@ -19,6 +19,18 @@ import { Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
 import { apiFetch } from '@/utils/api';
 
+const DEFAULT_NEW_LABEL = 'New Loadout';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+// Classname → unique loadout label. Plain classname when free; `_01`, `_02`… on collision.
+function makeUniqueLoadoutLabel(base: string, loadouts: Loadout[], selfId: string): string {
+  const existing = new Set(loadouts.filter(l => l.id !== selfId).map(l => l.label));
+  if (!existing.has(base)) return base;
+  let n = 1;
+  while (existing.has(`${base}_${pad2(n)}`)) n++;
+  return `${base}_${pad2(n)}`;
+}
 
 interface LoadoutDesignerProps {
   typeOptions: string[];
@@ -93,7 +105,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const handleCreate = () => {
     const newLoadout: Loadout = {
       id: crypto.randomUUID(),
-      label: 'New Loadout',
+      label: DEFAULT_NEW_LABEL,
       items: [],
       updatedAt: Date.now()
     };
@@ -179,10 +191,20 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
 
   const handleUpdateNode = (updated: LoadoutNode) => {
     if (!editingLoadout) return;
-    setEditingLoadout({
-      ...editingLoadout,
-      items: updateNodeInList(editingLoadout.items, updated)
-    });
+    const items = updateNodeInList(editingLoadout.items, updated);
+    let label = editingLoadout.label;
+    // At creation only: when the root item's classname is first set and the label is
+    // still the untouched default, default the label to the classname (deduped).
+    const isRootNode = editingLoadout.items.some(n => n.id === updated.id);
+    if (
+      label === DEFAULT_NEW_LABEL &&
+      isRootNode &&
+      updated.type === 'item' &&
+      updated.name.trim()
+    ) {
+      label = makeUniqueLoadoutLabel(updated.name.trim(), loadouts, editingLoadout.id);
+    }
+    setEditingLoadout({ ...editingLoadout, label, items });
   };
 
   const handleAddRootItem = () => {

@@ -115,6 +115,7 @@ Snapshots are stored in `<missionPath>/.lootmaster/snapshots/` and capture `cfge
 | `/api/expansion/mission-settings` | GET, PUT | `MissionSettings.json` — the airdrop scheduler (airdrops are the only Expansion mission type) |
 | `/api/expansion/airdrop-missions` | GET, PUT, DELETE | Per-drop `Airdrop_*.json` files; `GET` lists `[{file, data}]`, `PUT`/`DELETE` take `?file=Airdrop_*.json` |
 | `/api/expansion/airdrop-locations` | GET, PUT | Lootmaster-owned drop-zone library under `.lootmaster/` (not read by the game); missions reference these by Name |
+| `/api/expansion/airdrop-loot-lists` | GET, PUT | Lootmaster-owned reusable loot-list library under `.lootmaster/` (not read by the game); `{lists, links}` — a list's loot is flattened into linked containers/missions on save |
 
 ### Expansion — market & traders
 
