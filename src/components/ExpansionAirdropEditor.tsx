@@ -508,6 +508,16 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
 }) => {
   const containers = settings?.Containers || [];
 
+  // Core container classes may each appear at most once in AirdropSettings.json.
+  // Track which are already taken so we only offer unused ones (this restriction
+  // is intentionally NOT applied to the per-mission editor).
+  const usedContainerClasses = new Set<string>(
+    containers.map((c: any) => c.Container).filter(Boolean)
+  );
+  const firstUnusedClass = CONTAINER_CLASS_OPTIONS.find(
+    (cls) => !usedContainerClasses.has(cls)
+  );
+
   const updateContainer = (idx: number, patch: any) => {
     const next = { ...settings, Containers: containers.map((c: any, i: number) => (i === idx ? { ...c, ...patch } : c)) };
     setSettings(next);
@@ -549,16 +559,42 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
 
   const selected = selectedContainerIdx !== null ? containers[selectedContainerIdx] : null;
 
+  // Options for the selected container's Container Class field: every known class
+  // not already used by another container, plus the selected container's own value
+  // (including a legacy/unknown class) so it stays visible and selectable.
+  const containerClassOptions = [
+    ...CONTAINER_CLASS_OPTIONS.filter(
+      (cls) => !usedContainerClasses.has(cls) || cls === selected?.Container
+    ),
+    ...(selected?.Container && !CONTAINER_CLASS_OPTIONS.includes(selected.Container)
+      ? [selected.Container]
+      : []),
+  ];
+
   return (
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-[380px] border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Containers</span>
-            <Button size="xs" variant="secondary-gray" icon={Plus} onClick={() => {
-              setSettings({ ...settings, Containers: [...containers, { Container: 'NewContainer', Usage: 0, Weight: 1, FallSpeed: 4.5, ItemCount: -1, InfectedCount: 15, SpawnInfectedForPlayerCalledDrops: 0, ExplodeAirVehiclesOnCollision: -1, Loot: [], Infected: [] }] });
-              setSelectedContainerIdx(containers.length);
-            }} />
+            <Tooltip
+              title={firstUnusedClass ? 'Add container' : 'All container classes are already in use'}
+              placement="left" delay={400}>
+              <TooltipTrigger
+                isDisabled={!firstUnusedClass}
+                onPress={() => {
+                  if (!firstUnusedClass) return;
+                  setSettings({ ...settings, Containers: [...containers, { Container: firstUnusedClass, Usage: 0, Weight: 1, FallSpeed: 4.5, ItemCount: -1, InfectedCount: 15, SpawnInfectedForPlayerCalledDrops: 0, ExplodeAirVehiclesOnCollision: -1, Loot: [], Infected: [] }] });
+                  setSelectedContainerIdx(containers.length);
+                }}
+                className={cx(
+                  'inline-flex items-center justify-center rounded-lg px-2 py-1.5 border shadow-sm transition-all',
+                  'bg-white text-gray-700 hover:bg-gray-50 border-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700',
+                  !firstUnusedClass && 'opacity-50 cursor-not-allowed'
+                )}>
+                <Plus size={14} className="shrink-0" />
+              </TooltipTrigger>
+            </Tooltip>
           </div>
           <div className="space-y-1">
             {containers.map((c: any, i: number) => (
@@ -591,11 +627,9 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Container Class</label>
-                <ComboBox aria-label="Container Class" allowsCustomValue
-                  items={CONTAINER_CLASS_OPTIONS.map((id) => ({ id }))}
+                <ComboBox aria-label="Container Class"
+                  items={containerClassOptions.map((id) => ({ id }))}
                   selectedKey={selected.Container || ''}
-                  inputValue={selected.Container || ''}
-                  onInputChange={(v) => updateContainer(selectedContainerIdx!, { Container: v })}
                   onSelectionChange={(k) => k && updateContainer(selectedContainerIdx!, { Container: String(k) })}>
                   {(item: { id: string }) => <ComboBoxItem id={item.id}>{item.id}</ComboBoxItem>}
                 </ComboBox>

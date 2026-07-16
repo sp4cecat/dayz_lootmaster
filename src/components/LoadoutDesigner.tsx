@@ -671,10 +671,10 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
         </aside>
 
         {/* Main Content: Editor */}
-        <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950/20 p-6">
+        <main className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950/20 p-6">
           {editingLoadout ? (
-            <div className="mx-auto space-y-6">
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
+            <div className="flex flex-col gap-6 flex-1 min-h-0">
+              <div className="shrink-0 bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1 max-w-md">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Loadout Label</label>
@@ -709,12 +709,12 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
               </div>
 
               {/* Tree View for Items */}
-              <div className="flex gap-6 items-start">
-                <div className="flex-1 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+              <div className="flex gap-6 items-stretch flex-1 min-h-0">
+                <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                     <h3 className="font-bold text-gray-900 dark:text-white">Hierarchical Structure</h3>
                   </div>
-                  <div className="p-6 space-y-4 min-h-[400px]">
+                  <div className="p-6 space-y-4 flex-1 overflow-auto min-h-0">
                     <HierarchicalTree 
                       items={editingLoadout.items}
                       onUpdate={(newNodes) => setEditingLoadout({ ...editingLoadout, items: newNodes })}
