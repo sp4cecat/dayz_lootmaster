@@ -1786,6 +1786,15 @@ const isValidMissionFile = (name: string) => /^Airdrop_[A-Za-z0-9._-]+\.json$/.t
 // Minify a drop-location name to a filename-safe token (alphanumerics only).
 const minifyName = (s: string) => (s || '').replace(/[^A-Za-z0-9]/g, '');
 
+// Sidebar display for a mission's Container: show only the part after the shared
+// "ExpansionAirdropContainer" prefix (e.g. "ExpansionAirdropContainer_Medical" →
+// "Medical"). Non-Expansion values (e.g. "Random") and the bare prefix pass through.
+const shortContainerName = (name?: string): string => {
+  if (!name) return '—';
+  const stripped = name.replace(/^ExpansionAirdropContainer[_-]?/i, '');
+  return stripped || name;
+};
+
 // Derive an `Airdrop_<MinifiedLocation>.json` file name, suffixing with `_<n>`
 // (_2, _3, …) when another mission already uses that file. `excludeIdx` skips the
 // mission being renamed so it doesn't collide with itself.
@@ -2097,7 +2106,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                             <span className="text-xs text-gray-400 truncate block">Invalid JSON</span>
                           ) : (
                             <>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate block">{m.data?.Container || '—'}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate block">{shortContainerName(m.data?.Container)}</span>
                               <span className="text-[11px] text-gray-400 truncate block">{stats.join(' · ')}</span>
                             </>
                           )}
