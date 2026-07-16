@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Modal } from '@/components/base/modal/modal';
 import { Input } from '@/components/base/input/input';
@@ -58,6 +58,34 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   const [templateTarget, setTemplateTarget] = useState<{ nodeId: string; list: 'attachments' | 'cargo' } | null>(null);
   const [loadoutPickerOpen, setLoadoutPickerOpen] = useState(false);
   const [loadoutSearch, setLoadoutSearch] = useState('');
+
+  // The properties panel is a fixed-width drawer (HierarchicalProperties, w-[400px])
+  // that scrolls its own body internally (its flex-1 overflow-auto region). We give the
+  // sticky wrapper a DEFINITE height so that internal scroll engages; capping it with a
+  // viewport-relative value (100vh - Xrem) is wrong because the host scroll container
+  // starts well below the window top (editor header, tab nav, app chrome), so a viewport
+  // value overshoots the visible area and the drawer's bottom is clipped where the parent
+  // hides overflow — unreachable because the drawer is pinned. Instead we measure the
+  // nearest scrollable ancestor and size the wrapper to its visible height, so the drawer
+  // fits (and scrolls internally) regardless of how far down the page it sits.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [stickyHeight, setStickyHeight] = useState<string>('calc(100vh - 7rem)');
+  useEffect(() => {
+    let scrollParent: HTMLElement | null = rootRef.current?.parentElement ?? null;
+    while (scrollParent) {
+      const oy = getComputedStyle(scrollParent).overflowY;
+      if (oy === 'auto' || oy === 'scroll') break;
+      scrollParent = scrollParent.parentElement;
+    }
+    if (!scrollParent) return;
+    const sp = scrollParent;
+    // top-4 (1rem) sticky offset + 1rem bottom breathing room = 32px.
+    const update = () => setStickyHeight(`${Math.max(240, sp.clientHeight - 32)}px`);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(sp);
+    return () => ro.disconnect();
+  }, []);
 
   const commit = (next: LoadoutNode[]) => {
     setNodes(next);
@@ -124,7 +152,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   };
 
   return (
-    <div className="flex gap-4">
+    <div ref={rootRef} className="flex gap-4">
       <div className="flex-1 min-w-0 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Loot Contents</span>
@@ -172,10 +200,13 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
       </div>
 
       {selectedNodeId && editingNode && (
-        // self-start + sticky keeps the properties panel in view while the (potentially long)
-        // loot list scrolls inside the editor's overflow-auto container. self-start stops the
-        // flex row from stretching the panel to full height (which would defeat position:sticky).
-        <div className="w-[360px] shrink-0 self-start sticky top-4 max-h-[calc(100vh-7rem)] overflow-y-auto">
+        // self-start + sticky keeps the properties drawer in view while the (potentially long)
+        // loot list scrolls in the host's overflow container. self-start stops the flex row from
+        // stretching the drawer to the row's full height (which would defeat position:sticky).
+        // Width matches the drawer (w-[400px]) so its right edge isn't clipped; the definite
+        // height (stickyHeight, measured from the scroll container) lets the drawer scroll its
+        // own body internally rather than overflowing the visible area.
+        <div className="w-[400px] shrink-0 self-start sticky top-4" style={{ height: stickyHeight }}>
           <HierarchicalProperties
             node={editingNode}
             onUpdate={handleUpdateNode}
