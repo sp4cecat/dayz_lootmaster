@@ -11,7 +11,7 @@ import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import { Modal } from '@/components/base/modal/modal';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
-  Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, ClockRefresh, Map01, Link01,
+  Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, Map01, Link01,
   Maximize01, Minimize01, ChevronDown, ChevronRight, LayersThree01, LinkBroken01,
 } from '@untitledui/icons';
 import { Loadout } from '@/types/loadouts';
@@ -31,7 +31,7 @@ interface ExpansionAirdropEditorProps {
 }
 
 type SaveState = { kind: 'idle' | 'saving' | 'ok' | 'error'; message?: string };
-type TabId = 'core' | 'containers' | 'scheduling' | 'missions' | 'locations' | 'lootlists';
+type TabId = 'core' | 'containers' | 'missions' | 'locations' | 'lootlists';
 
 // A reusable, named loot list. Stored in its native Expansion Loot[] shape (identical
 // to container.Loot) so it drops straight into a container/mission with no conversion.
@@ -258,7 +258,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
   loadouts,
   missionName,
 }) => {
-  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'containers', 'scheduling', 'missions', 'locations', 'lootlists']);
+  const [tab, setTab] = useTabParam<TabId>('core', ['core', 'containers', 'missions', 'locations', 'lootlists']);
   const [loading, setLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' });
   const map = useMapMetadata(missionName);
@@ -407,7 +407,7 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           </div>
         </div>
         <nav className="flex gap-1 mt-4">
-          {([['core', 'Core Settings', Settings01], ['containers', 'Containers', Package], ['scheduling', 'Scheduling', ClockRefresh], ['lootlists', 'Loot Lists', LayersThree01], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
+          {([['core', 'Core Settings', Settings01], ['containers', 'Containers', Package], ['lootlists', 'Loot Lists', LayersThree01], ['locations', 'Locations', Map01], ['missions', 'Missions', MarkerPin01]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -436,6 +436,10 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           setSaveState={setSaveState}
           savedSettings={savedSettings}
           setSavedSettings={setSavedSettings}
+          missionSettings={missionSettings}
+          setMissionSettings={setMissionSettings}
+          savedMissionSettings={savedMissionSettings}
+          setSavedMissionSettings={setSavedMissionSettings}
         />
       ) : tab === 'containers' ? (
         <ContainersTab
@@ -475,15 +479,6 @@ export const ExpansionAirdropEditor: React.FC<ExpansionAirdropEditorProps> = ({
           typeOptions={typeOptions}
           randomPresets={randomPresets}
           loadouts={loadouts}
-          selectedProfileId={selectedProfileId}
-          setSaveState={setSaveState}
-        />
-      ) : tab === 'scheduling' ? (
-        <SchedulingTab
-          missionSettings={missionSettings}
-          setMissionSettings={setMissionSettings}
-          savedMissionSettings={savedMissionSettings}
-          setSavedMissionSettings={setSavedMissionSettings}
           selectedProfileId={selectedProfileId}
           setSaveState={setSaveState}
         />
@@ -533,11 +528,18 @@ interface CoreTabProps {
   setSaveState: (s: SaveState) => void;
   savedSettings: any;
   setSavedSettings: (s: any) => void;
+  // Mission scheduling (MissionSettings.json) — shown as a second column here,
+  // saved independently from the core airdrop settings.
+  missionSettings: any;
+  setMissionSettings: (s: any) => void;
+  savedMissionSettings: any;
+  setSavedMissionSettings: (s: any) => void;
 }
 
 const CoreSettingsTab: React.FC<CoreTabProps> = ({
   settings, setSettings, selectedProfileId, setSaveState,
   savedSettings, setSavedSettings,
+  missionSettings, setMissionSettings, savedMissionSettings, setSavedMissionSettings,
 }) => {
   const updateField = (key: string, value: any) => setSettings({ ...settings, [key]: value });
 
@@ -564,23 +566,78 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
     [settings, savedSettings]
   );
 
+  // Mission scheduling: separate file/endpoint, so its own updater, dirty-state and save.
+  const updateMission = (key: string, value: any) => setMissionSettings({ ...missionSettings, [key]: value });
+
+  const missionDirty = useMemo(
+    () => JSON.stringify(missionSettings) !== JSON.stringify(savedMissionSettings),
+    [missionSettings, savedMissionSettings]
+  );
+
+  const saveScheduling = async () => {
+    setSaveState({ kind: 'saving' });
+    try {
+      const res = await apiFetch(`/api/expansion/mission-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        profileId: selectedProfileId,
+        body: JSON.stringify(missionSettings),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      setSavedMissionSettings(missionSettings);
+      setSaveState({ kind: 'ok' });
+      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
+    } catch (e: any) {
+      setSaveState({ kind: 'error', message: e.message });
+    }
+  };
+
   return (
     <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-end mb-4">
-          <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Core Settings</Button>
+      <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Left column — global airdrop settings (AirdropSettings.json) */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Global Settings</h3>
+            <Button variant="primary" icon={Save01} onClick={save} disabled={!isDirty}>Save Core Settings</Button>
+          </div>
+          <div className="p-4 space-y-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+            {BOOL_CORE_FIELDS.map(({ key, label }) => (
+              <Toggle key={key} label={label} isSelected={!!settings?.[key]} onChange={(v) => updateField(key, v ? 1 : 0)} />
+            ))}
+            {NUMERIC_CORE_FIELDS.map(({ key, label, suffix, hint }) => (
+              <Input key={key} size="sm" label={label} type="number" suffix={suffix} hint={hint}
+                value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
+            ))}
+            <Input size="sm" label="Airdrop Plane Class" placeholder="(default plane)"
+              value={settings?.AirdropPlaneClassName ?? ''} onChange={(e) => updateField('AirdropPlaneClassName', e.target.value)} />
+          </div>
         </div>
-        <div className="p-4 space-y-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Global Settings</span>
-          {BOOL_CORE_FIELDS.map(({ key, label }) => (
-            <Toggle key={key} label={label} isSelected={!!settings?.[key]} onChange={(v) => updateField(key, v ? 1 : 0)} />
-          ))}
-          {NUMERIC_CORE_FIELDS.map(({ key, label, suffix, hint }) => (
-            <Input key={key} size="sm" label={label} type="number" suffix={suffix} hint={hint}
-              value={settings?.[key] ?? ''} onChange={(e) => updateField(key, Number(e.target.value))} />
-          ))}
-          <Input size="sm" label="Airdrop Plane Class" placeholder="(default plane)"
-            value={settings?.AirdropPlaneClassName ?? ''} onChange={(e) => updateField('AirdropPlaneClassName', e.target.value)} />
+
+        {/* Right column — mission scheduling (MissionSettings.json) */}
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Mission Scheduling</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Airdrops are the only Expansion mission type, so these settings control when and how
+                often airdrops spawn. Stored in <code>MissionSettings.json</code>.
+              </p>
+            </div>
+            <Button variant="primary" icon={Save01} onClick={saveScheduling} disabled={!missionDirty}>Save Scheduling</Button>
+          </div>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-4 space-y-4">
+            {MISSION_BOOL_FIELDS.map(({ key, label }) => (
+              <Toggle key={key} label={label} isSelected={!!missionSettings?.[key]} onChange={(v) => updateMission(key, v ? 1 : 0)} />
+            ))}
+            <div className="grid grid-cols-2 gap-4">
+              {MISSION_NUMERIC_FIELDS.map(({ key, label, ms }) => (
+                <Input key={key} size="sm" label={label} type="number" suffix={ms ? 'ms' : undefined}
+                  hint={ms ? formatMs(Number(missionSettings?.[key] ?? 0)) : undefined}
+                  value={missionSettings?.[key] ?? ''} onChange={(e) => updateMission(key, Number(e.target.value))} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -936,78 +993,6 @@ const ContainersTab: React.FC<ContainersTabProps> = ({
             <p className="text-sm text-gray-500 max-w-xs">Choose an airdrop container to configure its loot and settings.</p>
           </div>
         )}
-      </div>
-    </div>
-  );
-};
-
-interface SchedulingTabProps {
-  missionSettings: any;
-  setMissionSettings: (s: any) => void;
-  savedMissionSettings: any;
-  setSavedMissionSettings: (s: any) => void;
-  selectedProfileId: string;
-  setSaveState: (s: SaveState) => void;
-}
-
-// Mission scheduling (MissionSettings.json). Airdrops are the only Expansion
-// mission type, so these settings are what actually control when/how often
-// airdrops spawn — separate file/endpoint from the airdrop core settings.
-const SchedulingTab: React.FC<SchedulingTabProps> = ({
-  missionSettings, setMissionSettings, savedMissionSettings, setSavedMissionSettings,
-  selectedProfileId, setSaveState,
-}) => {
-  const updateMission = (key: string, value: any) => setMissionSettings({ ...missionSettings, [key]: value });
-
-  const missionDirty = useMemo(
-    () => JSON.stringify(missionSettings) !== JSON.stringify(savedMissionSettings),
-    [missionSettings, savedMissionSettings]
-  );
-
-  const save = async () => {
-    setSaveState({ kind: 'saving' });
-    try {
-      const res = await apiFetch(`/api/expansion/mission-settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        profileId: selectedProfileId,
-        body: JSON.stringify(missionSettings),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
-      setSavedMissionSettings(missionSettings);
-      setSaveState({ kind: 'ok' });
-      setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
-    } catch (e: any) {
-      setSaveState({ kind: 'error', message: e.message });
-    }
-  };
-
-  return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Mission Scheduling</h3>
-            <p className="text-sm text-gray-500 max-w-lg mt-1">
-              Airdrops are the only Expansion mission type, so these settings control when and how
-              often airdrops spawn. Stored in <code>MissionSettings.json</code>.
-            </p>
-          </div>
-          <Button variant="primary" icon={Save01} onClick={save} disabled={!missionDirty}>Save Scheduling</Button>
-        </div>
-
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-6 space-y-4">
-          {MISSION_BOOL_FIELDS.map(({ key, label }) => (
-            <Toggle key={key} label={label} isSelected={!!missionSettings?.[key]} onChange={(v) => updateMission(key, v ? 1 : 0)} />
-          ))}
-          <div className="grid grid-cols-2 gap-4">
-            {MISSION_NUMERIC_FIELDS.map(({ key, label, ms }) => (
-              <Input key={key} label={label} type="number" suffix={ms ? 'ms' : undefined}
-                hint={ms ? formatMs(Number(missionSettings?.[key] ?? 0)) : undefined}
-                value={missionSettings?.[key] ?? ''} onChange={(e) => updateMission(key, Number(e.target.value))} />
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
