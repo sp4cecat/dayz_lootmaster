@@ -373,8 +373,14 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const VANILLA_BULK_SOURCES = [ROOT_SPAWNABLE_GROUP, 'vanilla', 'vanilla_overrides'];
   const VANILLA_BULK_KEY = ROOT_SPAWNABLE_GROUP;
 
+  // A top-level type is importable as a loadout only if it has at least one attachments
+  // or cargo section — the only kinds vanillaSpawnableToLoadout turns into content.
+  // Hoarder/damage-only types would import as empty loadouts, so they are excluded.
+  const isImportableType = (t: any): boolean =>
+    (t?.sections || []).some((s: any) => s.kind === 'attachments' || s.kind === 'cargo');
+
   const hasImportableTypes = (data: any): boolean =>
-    (data?.types || []).some((t: any) => t.sections?.length > 1);
+    (data?.types || []).some((t: any) => isImportableType(t));
 
   // Files eligible for bulk import within a real group. Dedicated spawnabletypes files always
   // qualify; the vanilla source groups additionally accept the mission-root spawnabletypes file
@@ -435,7 +441,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
           : bulkImportableFiles(group);
         for (const fileName of fileNames) {
           (files[fileName]?.types || [])
-            .filter((t: any) => t.sections?.length > 1)
+            .filter((t: any) => isImportableType(t))
             .forEach((t: any) => result.push({ group, file: fileName, type: t }));
         }
       }
@@ -818,9 +824,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     )
                     .flatMap(([fileName, data]) => 
                     (data.types || [])
-                    .filter((t: any) => 
-                      t.name.toLowerCase().includes(importSearch.toLowerCase()) && 
-                      (t.sections?.length > 1)
+                    .filter((t: any) =>
+                      t.name.toLowerCase().includes(importSearch.toLowerCase()) &&
+                      isImportableType(t)
                     )
                     .map((t: any) => (
                       <div 
@@ -1049,7 +1055,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                 .filter(group => {
                   if (group === 'vanilla' || group === 'vanilla_overrides' || group === '__root') return false;
                   const groupFiles = spawnableTypesByGroup[group];
-                  return Object.values(groupFiles).some((data: any) => data?.types?.some((t: any) => t.sections?.length > 1));
+                  return Object.values(groupFiles).some((data: any) => (data?.types || []).some(isImportableType));
                 })
                 .sort()
                 .map(group => (
