@@ -1180,7 +1180,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
         ));
         setMissions((prev) => prev.map((m) => {
           const u = updates.find((x) => x.file === m.file);
-          return u ? { ...m, data: u.data } : m;
+          return u ? { ...m, data: u.data, savedData: JSON.parse(JSON.stringify(u.data)) } : m;
         }));
       }
 
@@ -1448,7 +1448,7 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
           ));
           setMissions((prev) => prev.map((m) => {
             const u = missionUpdates.find((x) => x.file === m.file);
-            return u ? { ...m, data: u.data } : m;
+            return u ? { ...m, data: u.data, savedData: JSON.parse(JSON.stringify(u.data)) } : m;
           }));
         }
       }
@@ -1655,7 +1655,10 @@ const InfectedList: React.FC<{ values: string[]; onChange: (v: string[]) => void
   );
 };
 
-interface Mission { file: string; data: any; isNew?: boolean; corrupt?: boolean; parseError?: string; }
+// `savedData` is a deep snapshot of `data` as it was last persisted (on load, save,
+// or a propagation push). The Missions Save button diffs `data` against it to gate
+// on dirtiness; a new mission has no snapshot so it always reads dirty.
+interface Mission { file: string; data: any; savedData?: any; isNew?: boolean; corrupt?: boolean; parseError?: string; }
 
 // Expansion requires exactly ONE DropLocation per mission file, so each file maps
 // to exactly one mission with a single drop location. On disk DropLocation is a
@@ -1676,7 +1679,8 @@ function buildMissions(raw: { file: string; data: any; error?: string }[], world
     // Expansion's mission class declares DropLocation as a single object
     // (ref ExpansionAirdropLocation), so we normalise to an object on disk.
     // Reads stay tolerant of legacy 1-element-array files.
-    return { file, data: { ...data, DropLocation: drop } } as Mission;
+    const normalized = { ...data, DropLocation: drop };
+    return { file, data: normalized, savedData: JSON.parse(JSON.stringify(normalized)) } as Mission;
   });
 }
 
@@ -1770,6 +1774,14 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
 }) => {
   const mission = selectedMissionIdx !== null ? missions[selectedMissionIdx] : null;
 
+  // A mission is dirty (Save enabled) when it's new/unsaved or its data has diverged
+  // from the last-persisted snapshot. Corrupt files have no editor, so never dirty.
+  const missionDirty = useMemo(
+    () => !!mission && !mission.corrupt &&
+      (!!mission.isNew || JSON.stringify(mission.data) !== JSON.stringify(mission.savedData)),
+    [mission]
+  );
+
   // Sidebar accordion: missions grouped by drop location, default collapsed.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
@@ -1844,12 +1856,14 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     }
 
     setSaveState({ kind: 'saving' });
+    // The exact shape written to disk: current schema version + single-object DropLocation.
+    const savedShape = { ...mission.data, m_Version: 3, DropLocation: drop };
     try {
       const res = await apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(targetFile)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         profileId: selectedProfileId,
-        body: JSON.stringify({ ...mission.data, m_Version: 3, DropLocation: drop }),
+        body: JSON.stringify(savedShape),
       });
       if (!res.ok) throw new Error((await res.json()).error || `Failed to save ${targetFile}`);
       // If auto-naming renamed the file, migrate any loot-list link that was keyed on
@@ -1859,7 +1873,9 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
         persistLootLinks(lootLinks.map((l) =>
           l.targetType === 'mission' && l.targetKey === mission.file ? { ...l, targetKey: targetFile } : l));
       }
-      patchMission({ file: targetFile, isNew: false });
+      // Sync in-memory data to the persisted shape and snapshot it so the Save
+      // button reads clean until the next edit.
+      patchMission({ file: targetFile, isNew: false, data: savedShape, savedData: JSON.parse(JSON.stringify(savedShape)) });
       setSaveState({ kind: 'ok' });
       setTimeout(() => setSaveState({ kind: 'idle' }), 2500);
     } catch (e: any) {
@@ -2059,7 +2075,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
               <div className="flex items-center gap-2 pt-6">
                 <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateMission(selectedMissionIdx!)}>Duplicate</Button>
                 <Button variant="error-secondary" icon={Trash01} onClick={() => deleteMission(selectedMissionIdx!)}>Delete</Button>
-                <Button variant="primary" icon={Save01} onClick={saveMission}>Save</Button>
+                <Button variant="primary" icon={Save01} onClick={saveMission} disabled={!missionDirty}>Save</Button>
               </div>
             </div>
 
