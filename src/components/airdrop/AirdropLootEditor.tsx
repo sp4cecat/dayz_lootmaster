@@ -96,7 +96,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
     const lootItems = loadoutToExpansionAirdrop(loadout, loadouts, randomPresets?.presets);
     const cloned = expansionAirdropToLoadout(loadout.label, lootItems).items;
     if (cloned.length === 0) return;
-    commit([...nodes, ...cloned]);
+    commit([...cloned, ...nodes]);
     setSelectedNodeId(cloned[0].id);
     setEditingNode(cloned[0]);
   };
