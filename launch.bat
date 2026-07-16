@@ -2,6 +2,10 @@
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
+REM --- Detect whether we were launched from a shortcut / double-click (vs. an open console) ---
+set "FROM_SHORTCUT="
+echo %cmdcmdline% | find /i "%~0" >nul && set "FROM_SHORTCUT=1"
+
 echo ========================================
 echo   Lootmaster Launcher
 echo ========================================
@@ -178,4 +182,9 @@ start "Lootmaster Client [%APP_ENV%]" cmd /k "set NODE_ENV=%APP_ENV%&& npm run p
 exit /b
 
 :end
+if defined FROM_SHORTCUT (
+    echo.
+    echo This window will close in 5 seconds...
+    timeout /t 5 /nobreak >nul
+)
 endlocal
