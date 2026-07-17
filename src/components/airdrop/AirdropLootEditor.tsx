@@ -6,7 +6,8 @@ import { Plus, Package, PlusCircle, Settings01, SearchMd, AlertTriangle } from '
 import { HierarchicalTree } from '../hierarchical/HierarchicalTree';
 import { ChildListConfig } from '../hierarchical/HierarchicalNodeItem';
 import { HierarchicalProperties } from '../hierarchical/HierarchicalProperties';
-import { loadoutToExpansionAirdrop, expansionAirdropToLoadout } from '@/utils/loadouts';
+import { loadoutToExpansionAirdrop, expansionAirdropToLoadout, nodeToStandaloneLoadout } from '@/utils/loadouts';
+import { saveLoadout } from '@/utils/loadoutStore';
 import { updateNodeInList, findNode } from '@/utils/tree';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
 
@@ -211,6 +212,15 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
             node={editingNode}
             onUpdate={handleUpdateNode}
             onClose={() => setSelectedNodeId(null)}
+            onExportAsLoadout={async (node) => {
+              try {
+                const lo = nodeToStandaloneLoadout(node, [node], loadouts);
+                await saveLoadout(lo);
+                alert(`Saved "${lo.label}" to the loadout library.`);
+              } catch (e) {
+                alert(`Failed to save loadout: ${e instanceof Error ? e.message : e}`);
+              }
+            }}
             typeOptions={typeOptions}
             availableTemplates={loadouts}
             randomPresets={randomPresets}

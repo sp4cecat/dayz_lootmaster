@@ -2378,6 +2378,25 @@ const server = http.createServer(async (req, res) => {
         //  - PUT  ?file=Airdrop_X.json  -> write a single mission file
         //  - DELETE ?file=Airdrop_X.json-> remove a single mission file
         if (pathname === '/api/expansion/airdrop-missions') {
+            // Expansion declares DropLocation as a single object (ref ExpansionAirdropLocation).
+            // Legacy Lootmaster/hand-authored files stored it as a 1-element array, which the
+            // engine rejects ("Expecting instance / Is not json object"). Coerce array -> object.
+            // Returns { data, changed } so callers can decide whether to rewrite the file.
+            const normalizeMissionDropLocation = (data) => {
+                if (!data || typeof data !== 'object') return { data, changed: false };
+                const dl = data.DropLocation;
+                if (Array.isArray(dl)) {
+                    const first = dl[0];
+                    if (first && typeof first === 'object') {
+                        return { data: { ...data, DropLocation: first }, changed: true };
+                    }
+                    // Empty/degenerate array: no coordinates to recover — leave untouched
+                    // rather than fabricate a drop point.
+                    return { data, changed: false };
+                }
+                return { data, changed: false };
+            };
+
             const profileId = req.headers['x-profile-id'];
             const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
             if (!profile) { notFound(res); return; }
@@ -2394,7 +2413,19 @@ const server = http.createServer(async (req, res) => {
                         if (!entry.isFile() || !/^Airdrop_.+\.json$/i.test(entry.name)) continue;
                         try {
                             const raw = await readFile(join(dir, entry.name), 'utf8');
-                            missions.push({ file: entry.name, data: JSON.parse(raw) });
+                            const { data: norm, changed } = normalizeMissionDropLocation(JSON.parse(raw));
+                            if (changed) {
+                                // Self-heal legacy array-form DropLocation on disk so the engine
+                                // stops rejecting the file. Back up first; never let a write
+                                // failure break the listing.
+                                try {
+                                    await createBackupIfExists(join(dir, entry.name));
+                                    await writeFileAtomic(join(dir, entry.name), JSON.stringify(norm, null, 4));
+                                } catch (e) {
+                                    console.error(`Failed to self-heal DropLocation in ${entry.name}: ${e.message}`);
+                                }
+                            }
+                            missions.push({ file: entry.name, data: norm });
                         } catch {
                             missions.push({ file: entry.name, data: null, error: 'Failed to parse' });
                         }
@@ -2417,9 +2448,11 @@ const server = http.createServer(async (req, res) => {
                 try {
                     const body = await readBody(req);
                     const parsed = JSON.parse(body || '{}');
+                    // Guard: no save path may ever persist an array-form DropLocation.
+                    const { data: norm } = normalizeMissionDropLocation(parsed);
                     const missionTarget = join(dir, fileName);
                     await createBackupIfExists(missionTarget);
-                    await writeFileAtomic(missionTarget, JSON.stringify(parsed, null, 4));
+                    await writeFileAtomic(missionTarget, JSON.stringify(norm, null, 4));
                     send(res, 200, JSON.stringify({ ok: true, file: fileName }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid mission payload: ${e.message}`);

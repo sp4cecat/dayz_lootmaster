@@ -17,7 +17,8 @@ import { Modal } from '@/components/base/modal/modal';
 import { SpawnableSlotModal } from './SpawnableSlotModal';
 import { XMLNodeKind } from '@/types/xml';
 import { LoadoutNode } from '@/types/loadouts';
-import { loadoutNodeToSpawnableSection } from '@/utils/loadouts';
+import { loadoutNodeToSpawnableSection, nodeToStandaloneLoadout } from '@/utils/loadouts';
+import { saveLoadout } from '@/utils/loadoutStore';
 
 interface EditFormSpawnableTabProps {
   selectedTypes: Type[];
@@ -475,6 +476,15 @@ export default function EditFormSpawnableTab({
                 node={editingNode}
                 onUpdate={handleUpdateNode}
                 onClose={() => setSelectedNodeId(null)}
+                onExportAsLoadout={async (node) => {
+                  try {
+                    const lo = nodeToStandaloneLoadout(node, [node], loadouts);
+                    await saveLoadout(lo);
+                    alert(`Saved "${lo.label}" to the loadout library.`);
+                  } catch (e) {
+                    alert(`Failed to save loadout: ${e instanceof Error ? e.message : e}`);
+                  }
+                }}
                 typeOptions={typeOptions}
                 availableTemplates={loadouts}
                 compatibleClasses={compatibleClasses}

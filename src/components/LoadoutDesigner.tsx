@@ -13,24 +13,13 @@ import { updateNodeInList, findNode, findParent, repairItemClassNames } from '@/
 import { useCompatibleAttachments, useAttachmentSlots, useMagazines, useCatalog, inferGroupSlot, sanitizeClassName, MAGAZINE_SLOT } from '@/contexts/CatalogContext';
 import { formatModName } from '@/utils/format';
 import { ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
-import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout } from '@/utils/loadouts';
+import { loadoutToExpansionAirdrop, loadoutToVanillaXml, vanillaSpawnableToLoadout, vanillaPresetToLoadout, expansionAirdropToLoadout, makeUniqueLoadoutLabel, nodeToStandaloneLoadout } from '@/utils/loadouts';
 import { Dropdown } from '@/components/base/dropdown/dropdown';
 import { Button as AriaButton } from 'react-aria-components';
 import { Modal } from '@/components/base/modal/modal';
 import { apiFetch } from '@/utils/api';
 
 const DEFAULT_NEW_LABEL = 'New Loadout';
-
-const pad2 = (n: number) => String(n).padStart(2, '0');
-
-// Classname → unique loadout label. Plain classname when free; `_01`, `_02`… on collision.
-function makeUniqueLoadoutLabel(base: string, loadouts: Loadout[], selfId: string): string {
-  const existing = new Set(loadouts.filter(l => l.id !== selfId).map(l => l.label));
-  if (!existing.has(base)) return base;
-  let n = 1;
-  while (existing.has(`${base}_${pad2(n)}`)) n++;
-  return `${base}_${pad2(n)}`;
-}
 
 interface LoadoutDesignerProps {
   typeOptions: string[];
@@ -774,6 +763,16 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     node={findNode(editingLoadout.items, selectedNodeId)!}
                     onUpdate={handleUpdateNode}
                     onClose={() => setSelectedNodeId(null)}
+                    onExportAsLoadout={async (node) => {
+                      try {
+                        const lo = nodeToStandaloneLoadout(node, editingLoadout.items, loadouts);
+                        await saveLoadout(lo);
+                        setLoadouts(await loadAllLoadouts());
+                        alert(`Saved "${lo.label}" to the loadout library.`);
+                      } catch (e) {
+                        alert(`Failed to save loadout: ${e instanceof Error ? e.message : e}`);
+                      }
+                    }}
                     typeOptions={typeOptions}
                     availableTemplates={loadouts.filter(l => l.id !== editingLoadout.id)}
                     compatibleClasses={compatibleClasses}

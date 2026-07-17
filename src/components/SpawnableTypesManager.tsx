@@ -17,7 +17,8 @@ import { ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { formatModName } from '@/utils/format';
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
-import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry } from '@/utils/loadouts';
+import { vanillaSpawnableToLoadout, loadoutToSpawnableEntry, nodeToStandaloneLoadout } from '@/utils/loadouts';
+import { saveLoadout } from '@/utils/loadoutStore';
 import { LoadoutNode } from '@/types/loadouts';
 import { updateNodeInList, findNode, findParent } from '@/utils/tree';
 import { useCompatibleAttachments } from '@/contexts/CatalogContext';
@@ -338,6 +339,15 @@ export function SpawnableTypesManager({
                             node={findNode(nodes, selectedNodeId)!}
                             onUpdate={handleUpdateNode}
                             onClose={() => setSelectedNodeId(null)}
+                            onExportAsLoadout={async (node) => {
+                                try {
+                                    const lo = nodeToStandaloneLoadout(node, [node], loadouts);
+                                    await saveLoadout(lo);
+                                    alert(`Saved "${lo.label}" to the loadout library.`);
+                                } catch (e) {
+                                    alert(`Failed to save loadout: ${e instanceof Error ? e.message : e}`);
+                                }
+                            }}
                             typeOptions={typeOptions}
                             compatibleClasses={compatibleClasses}
                             randomPresets={randomPresets}

@@ -58,6 +58,8 @@ function fromPercent(value: any) {
 import { HierarchicalTree } from './hierarchical/HierarchicalTree';
 import { HierarchicalProperties } from './hierarchical/HierarchicalProperties';
 import { LoadoutNode } from '@/types/loadouts';
+import { nodeToStandaloneLoadout } from '@/utils/loadouts';
+import { saveLoadout } from '@/utils/loadoutStore';
 
 import { updateNodeInList, findNode, findParent, repairItemClassNames } from '@/utils/tree';
 import {
@@ -563,6 +565,15 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
               node={editingNode}
               onUpdate={(updated) => handleUpdateNode(updated, editingPresetIndex)}
               onClose={() => setSelectedNodeId(null)}
+              onExportAsLoadout={async (node) => {
+                try {
+                  const lo = nodeToStandaloneLoadout(node, [node], loadouts);
+                  await saveLoadout(lo);
+                  alert(`Saved "${lo.label}" to the loadout library.`);
+                } catch (e) {
+                  alert(`Failed to save loadout: ${e instanceof Error ? e.message : e}`);
+                }
+              }}
               typeOptions={typeOptions}
               availableTemplates={loadouts}
               randomPresets={randomPresets}

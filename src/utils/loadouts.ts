@@ -1,7 +1,7 @@
 import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
 import { escapeAttr } from '@/utils/xml';
-import { buildNodeIndex, materializeLinkedClones } from '@/utils/tree';
+import { buildNodeIndex, materializeLinkedClones, cloneNodeWithNewIds } from '@/utils/tree';
 
 /**
  * Coerce an Expansion attachment/variant entry that may be a bare classname string
@@ -521,5 +521,43 @@ export function loadoutToSpawnableEntry(loadout: Loadout): any {
   return {
     name: root.name,
     sections
+  };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * Classname → unique loadout label. Returns the plain base when it's free; otherwise appends
+ * `_01`, `_02`… until unused. `selfId` excludes a loadout from the collision set (pass '' for a
+ * brand-new loadout).
+ */
+export function makeUniqueLoadoutLabel(base: string, loadouts: Loadout[], selfId: string): string {
+  const existing = new Set(loadouts.filter(l => l.id !== selfId).map(l => l.label));
+  if (!existing.has(base)) return base;
+  let n = 1;
+  while (existing.has(`${base}_${pad2(n)}`)) n++;
+  return `${base}_${pad2(n)}`;
+}
+
+/**
+ * Builds a standalone, self-contained Loadout from a single node's subtree, ready to persist as
+ * its own library entry. Link-mirrors (`linkedTo`) are flattened against `contextNodes` (the
+ * node's full sibling tree) so the copy carries baked-in content, and every id is regenerated so
+ * the new loadout never collides with the source tree. Pure — the caller persists + refreshes.
+ */
+export function nodeToStandaloneLoadout(
+  node: LoadoutNode,
+  contextNodes: LoadoutNode[],
+  existingLoadouts: Loadout[]
+): Loadout {
+  const index = buildNodeIndex(contextNodes);
+  const [materialized] = materializeLinkedClones([node], index);
+  const clone = cloneNodeWithNewIds(materialized);
+  const label = makeUniqueLoadoutLabel(node.name?.trim() || 'Loadout', existingLoadouts, '');
+  return {
+    id: crypto.randomUUID(),
+    label,
+    items: [clone],
+    updatedAt: Date.now()
   };
 }

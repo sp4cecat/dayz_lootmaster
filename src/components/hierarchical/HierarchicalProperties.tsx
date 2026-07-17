@@ -3,7 +3,7 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 import { Input } from '@/components/base/input/input';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Slider } from '@/components/base/slider/slider';
-import { X, Layers, Package, Plus, Trash2, Boxes } from 'lucide-react';
+import { X, Layers, Package, Plus, Trash2, Boxes, Save } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
 import { cx } from '@/utils/cx';
@@ -21,6 +21,14 @@ interface HierarchicalPropertiesProps {
   node: LoadoutNode;
   onUpdate: (updated: LoadoutNode) => void;
   onClose: () => void;
+
+  /**
+   * When provided, and this node is a non-template item/group with child elements
+   * (attachments/cargo), a "Save as loadout" action appears in the header. The callback
+   * receives the node and is responsible for persisting its subtree as a new library loadout.
+   */
+  onExportAsLoadout?: (node: LoadoutNode) => void;
+
   typeOptions: string[];
   availableTemplates: Loadout[];
   config?: HierarchicalPropertiesConfig;
@@ -66,6 +74,7 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   node,
   onUpdate,
   onClose,
+  onExportAsLoadout,
   typeOptions,
   config = {
     showQuantity: true,
@@ -159,9 +168,21 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
             <p className="text-xs text-gray-500 dark:text-gray-400">Configure spawn settings</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full text-gray-400">
-          <X size={20} />
-        </button>
+        <div className="flex items-center gap-1">
+          {onExportAsLoadout && node.type !== 'template' &&
+            ((node.attachments?.length ?? 0) + (node.cargo?.length ?? 0) > 0) && (
+            <button
+              onClick={() => onExportAsLoadout(node)}
+              title="Save this item and its children as a new loadout"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full text-gray-400 hover:text-primary-600"
+            >
+              <Save size={18} />
+            </button>
+          )}
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full text-gray-400">
+            <X size={20} />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-auto p-6 space-y-8">
