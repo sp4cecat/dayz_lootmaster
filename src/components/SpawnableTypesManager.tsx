@@ -52,6 +52,7 @@ export function SpawnableTypesManager({
     const [nodeToDelete, setNodeToDelete] = useState<string | null>(null);
     const [newTypeName, setNewTypeName] = useState('');
     const lastSavedDataRef = React.useRef<any>(null);
+    const listContainerRef = React.useRef<HTMLDivElement>(null);
 
     const availableGroups = useMemo(() => {
         return Object.keys(spawnableFilesByGroup).sort((a, b) => {
@@ -179,6 +180,15 @@ export function SpawnableTypesManager({
         setIsAddModalOpen(false);
         setNewTypeName('');
         setSelectedNodeId(newNode.id);
+
+        // The new root is appended to the end of the list; scroll it into view once the
+        // updated tree has painted (double rAF so the appended row exists in the DOM).
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                const el = listContainerRef.current;
+                if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            });
+        });
     };
 
     const handleDeleteNode = () => {
@@ -275,7 +285,7 @@ export function SpawnableTypesManager({
             </div>
 
             <div className="flex-1 flex overflow-hidden">
-                <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900/50">
+                <div ref={listContainerRef} className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900/50">
                     {selectedGroup && selectedFile ? (
                         <TableCard>
                             <TableCard.Header 
@@ -385,9 +395,10 @@ export function SpawnableTypesManager({
                         label="Item Name"
                         placeholder="Search for an item..."
                         items={filteredTypeOptions.map(name => ({ id: name, name }))}
-                        selectedKey={newTypeName}
-                        onSelectionChange={(key) => setNewTypeName(key as string)}
+                        inputValue={newTypeName}
+                        allowsCustomValue
                         onInputChange={setNewTypeName}
+                        onSelectionChange={(key) => { if (key) setNewTypeName(key as string); }}
                     >
                         {(item) => <ComboBoxItem id={item.id}>{item.name}</ComboBoxItem>}
                     </ComboBox>
