@@ -660,11 +660,18 @@ const CoreSettingsTab: React.FC<CoreTabProps> = ({
               <Toggle key={key} label={label} isSelected={!!missionSettings?.[key]} onChange={(v) => updateMission(key, v ? 1 : 0)} />
             ))}
             <div className="grid grid-cols-2 gap-4">
-              {MISSION_NUMERIC_FIELDS.map(({ key, label, ms }) => (
-                <Input key={key} size="sm" label={label} type="number" suffix={ms ? 'ms' : undefined}
-                  hint={ms ? formatMs(Number(missionSettings?.[key] ?? 0)) : undefined}
-                  value={missionSettings?.[key] ?? ''} onChange={(e) => updateMission(key, Number(e.target.value))} />
-              ))}
+              {MISSION_NUMERIC_FIELDS.map(({ key, label, ms }) => {
+                const raw = missionSettings?.[key];
+                return (
+                  <Input key={key} size="sm" label={label} type="number" suffix={ms ? 'sec' : undefined}
+                    hint={ms ? formatMs(Number(raw ?? 0)) : undefined}
+                    value={ms ? (raw != null && raw !== '' ? Number(raw) / 1000 : '') : (raw ?? '')}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      updateMission(key, ms ? Math.round(n * 1000) : n);
+                    }} />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1426,9 +1433,11 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
         }
       }
 
+      // A live link means the target's on-disk loot must always mirror its list, so
+      // propagate unconditionally on save — no cancellable prompt (a cancel used to leave
+      // linked missions/containers stale on disk while still marking the tab "Saved").
       const changeCount = changedContainers.length + missionUpdates.length;
-      if (changeCount > 0 &&
-        confirm(`${changeCount} linked target${changeCount === 1 ? '' : 's'} will be updated on disk to match ${changeCount === 1 ? 'its' : 'their'} loot list. Continue?`)) {
+      if (changeCount > 0) {
         if (changedContainers.length > 0) {
           const nextSettings = { ...settings, Containers: nextContainers };
           const res = await apiFetch(`/api/expansion/airdrop-settings`, {
