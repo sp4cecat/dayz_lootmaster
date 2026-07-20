@@ -11,7 +11,7 @@ import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip';
 import { Modal } from '@/components/base/modal/modal';
 import {
   Plus, Save01, Package, RefreshCcw01, Trash01, Copy01,
-  Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, Map01, Link01,
+  Settings01, MarkerPin01, AlertCircle, AlertTriangle, CheckCircle, Target04, Map01, Link01,
   Maximize01, Minimize01, ChevronDown, ChevronRight, LayersThree01, LinkBroken01,
 } from '@untitledui/icons';
 import { Loadout, LoadoutNode } from '@/types/loadouts';
@@ -1798,11 +1798,43 @@ const DEFAULT_MISSION = (worldSize: number) => ({
   Loot: [],
 });
 
+// Coerce a mission to the exact V3 on-disk schema per the Expansion engine
+// (ExpansionMissionEventAirdrop.c). Canonical key order, full field set, engine-correct
+// types, bools as 1/0. Unknown/stray keys are dropped — the app force-stamps m_Version: 3,
+// so we treat every save as strictly V3. NOTE: MissionMaxTime is SECONDS (1200 = 20 min),
+// not milliseconds — the dayzexpansion.com docs mislabel it; the .c source is authoritative.
+const num = (v: any, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
+const int = (v: any, d: number) => (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : d);
+const str = (v: any) => (v == null ? '' : String(v));
+const normalizeMissionForSave = (data: any, drop: any) => ({
+  m_Version: 3,
+  Enabled: data.Enabled ? 1 : 0,
+  Weight: num(data.Weight, 100),
+  MissionMaxTime: int(data.MissionMaxTime, 1200),
+  MissionName: str(data.MissionName),
+  Difficulty: int(data.Difficulty, 0),
+  Objective: int(data.Objective, 0),
+  Reward: str(data.Reward),
+  ShowNotification: data.ShowNotification ? 1 : 0,
+  Height: num(data.Height, 450),
+  DropZoneHeight: num(data.DropZoneHeight, 450),
+  Speed: num(data.Speed, -1),
+  DropZoneSpeed: num(data.DropZoneSpeed, -1),
+  Container: str(data.Container) || 'Random',
+  FallSpeed: num(data.FallSpeed, 4.5),
+  DropLocation: { Name: str(drop.Name), x: num(drop.x, 0), z: num(drop.z, 0), Radius: num(drop.Radius, 0) },
+  Infected: Array.isArray(data.Infected) ? data.Infected.map(str) : [],
+  ItemCount: int(data.ItemCount, -1),
+  InfectedCount: int(data.InfectedCount, -1),
+  AirdropPlaneClassName: str(data.AirdropPlaneClassName),
+  Loot: Array.isArray(data.Loot) ? data.Loot : [],
+});
+
 // Plain per-mission numeric fields (no inheritance). Speed/DropZoneSpeed/ItemCount/
 // InfectedCount are rendered separately with DefaultableNumber.
-const MISSION_NUMERIC: { key: string; label: string; suffix?: string }[] = [
+const MISSION_NUMERIC: { key: string; label: string; suffix?: string; hint?: string }[] = [
   { key: 'Weight', label: 'Weight' },
-  { key: 'MissionMaxTime', label: 'Max Time', suffix: 'sec' },
+  { key: 'MissionMaxTime', label: 'Max Time', suffix: 'sec', hint: 'In seconds (1200 = 20 min)' },
   { key: 'Height', label: 'Plane Height', suffix: 'm' },
   { key: 'DropZoneHeight', label: 'Drop Zone Height', suffix: 'm' },
 ];
@@ -1932,8 +1964,9 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     }
 
     setSaveState({ kind: 'saving' });
-    // The exact shape written to disk: current schema version + single-object DropLocation.
-    const savedShape = { ...mission.data, m_Version: 3, DropLocation: drop };
+    // The exact shape written to disk: the canonical, complete, correctly-typed V3 schema
+    // (see normalizeMissionForSave) with the single-object DropLocation.
+    const savedShape = normalizeMissionForSave(mission.data, drop);
     try {
       const res = await apiFetch(`/api/expansion/airdrop-missions?file=${encodeURIComponent(targetFile)}`, {
         method: 'PUT',
@@ -2055,6 +2088,27 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     return Array.from(set).map((c) => ({ id: c }));
   }, [containerNames, mission?.data?.Container, isUnique]);
 
+  // Predict the runtime "no compatible container" failure from ExpansionMissionEventAirdrop
+  // .Event_OnStart: when a mission's Loot OR Infected is empty it falls back to a container
+  // in AirdropSettings.json, and errors if none matches (Usage 0/1 AND name==Container, or
+  // Container=="Random"). Surface that at edit time so it's caught before deploy.
+  const missionSpawnWarning = useMemo(() => {
+    if (!mission || mission.corrupt) return null;
+    const d = mission.data || {};
+    const lootEmpty = !Array.isArray(d.Loot) || d.Loot.length === 0;
+    const infectedEmpty = !Array.isArray(d.Infected) || d.Infected.length === 0;
+    if (!lootEmpty && !infectedEmpty) return null; // self-contained: no container lookup at spawn
+    const cont = String(d.Container ?? '').trim();
+    const isRandom = cont.toLowerCase() === 'random';
+    const hasMatch = (settings?.Containers || []).some(
+      (c: any) => (c?.Usage === 0 || c?.Usage === 1) && (isRandom || c?.Container === cont)
+    );
+    if (hasMatch) return null;
+    const reason = [lootEmpty && 'its Loot list is empty', infectedEmpty && 'its Infected list is empty']
+      .filter(Boolean).join(' and ');
+    return { isRandom, cont, reason };
+  }, [mission, settings]);
+
   // Resolved defaults shown when a mission field is set to inherit (see
   // ExpansionMissionEventAirdrop.Event_OnStart): ItemCount/InfectedCount inherit
   // from the selected container (ItemCount then falls back to global), and
@@ -2172,10 +2226,33 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
               </div>
             </div>
 
+            {missionSpawnWarning && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-3">
+                <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-amber-800 dark:text-amber-200">
+                  <p className="text-sm font-semibold">This mission will fail when it spawns</p>
+                  <p className="text-xs mt-0.5">
+                    {missionSpawnWarning.isRandom ? (
+                      <>Because {missionSpawnWarning.reason}, it draws its crate and contents from a core
+                        container, but <span className="font-medium">no container in Core Settings has Usage “Missions
+                        &amp; player-called” or “Only missions”.</span> Add or enable one in the Containers tab, or give
+                        this mission its own Loot and Infected.</>
+                    ) : (
+                      <>Because {missionSpawnWarning.reason}, it inherits from a container named
+                        «{missionSpawnWarning.cont}», but <span className="font-medium">Core Settings has no such
+                        container with Usage “Missions &amp; player-called” or “Only missions”.</span> Fix it in the
+                        Containers tab (add or rename «{missionSpawnWarning.cont}», or change its Usage), pick a configured
+                        container, or give this mission its own Loot and Infected.</>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-4">
               <Input label="Mission Name" value={mission.data.MissionName ?? ''} onChange={(e) => patchData({ MissionName: e.target.value })} />
-              {MISSION_NUMERIC.map(({ key, label, suffix }) => (
-                <Input key={key} label={label} type="number" suffix={suffix}
+              {MISSION_NUMERIC.map(({ key, label, suffix, hint }) => (
+                <Input key={key} label={label} type="number" suffix={suffix} hint={hint}
                   value={mission.data[key] ?? ''} onChange={(e) => patchData({ [key]: Number(e.target.value) })} />
               ))}
               <DefaultableNumber label="Plane Speed" suffix="m/s" value={mission.data.Speed} resolvedDefault={missionDefaults.Speed}

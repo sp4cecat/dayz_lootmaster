@@ -2252,6 +2252,22 @@ const server = http.createServer(async (req, res) => {
                     const body = await readBody(req);
                     // Validate JSON before writing to disk
                     const parsed = JSON.parse(body || '{}');
+                    // Guard against wiping containers: if the editor fell back to empty
+                    // defaults (e.g. a transient failed load) and the user saves, an empty
+                    // Containers[] would clobber a populated file — leaving every airdrop
+                    // mission with "no compatible container" at spawn. Refuse that write.
+                    const incomingContainers = Array.isArray(parsed.Containers) ? parsed.Containers : [];
+                    if (incomingContainers.length === 0) {
+                        let existingContainers = [];
+                        try {
+                            const existing = JSON.parse(await readValidJsonFile(target));
+                            existingContainers = Array.isArray(existing.Containers) ? existing.Containers : [];
+                        } catch { /* no readable existing file — nothing to protect */ }
+                        if (existingContainers.length > 0) {
+                            send(res, 409, JSON.stringify({ error: `Refusing to save — this would wipe ${existingContainers.length} existing airdrop container(s) from AirdropSettings.json (every mission would then fail with "no compatible container"). Reload the editor so it re-reads the current containers, then save again.` }), {'Content-Type': 'application/json'});
+                            return;
+                        }
+                    }
                     const out = JSON.stringify(parsed, null, 4);
                     await createBackupIfExists(target);
                     await writeFileAtomic(target, out);
