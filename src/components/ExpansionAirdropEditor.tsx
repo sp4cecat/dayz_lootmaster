@@ -14,7 +14,8 @@ import {
   Settings01, MarkerPin01, AlertCircle, CheckCircle, Target04, Map01, Link01,
   Maximize01, Minimize01, ChevronDown, ChevronRight, LayersThree01, LinkBroken01,
 } from '@untitledui/icons';
-import { Loadout } from '@/types/loadouts';
+import { Loadout, LoadoutNode } from '@/types/loadouts';
+import { expansionAirdropToLoadout } from '@/utils/loadouts';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
@@ -35,10 +36,16 @@ type TabId = 'core' | 'containers' | 'missions' | 'locations' | 'lootlists';
 
 // A reusable, named loot list. Stored in its native Expansion Loot[] shape (identical
 // to container.Loot) so it drops straight into a container/mission with no conversion.
+// `Nodes` is the Lootmaster-owned editor tree (LoadoutNode[]) kept alongside `Loot`:
+// it preserves editor-only concepts that Expansion loot can't carry — chiefly linked
+// clones (`linkedTo`) — so links survive switching lists and reloads. `Loot` remains the
+// derived, materialized export form used for flattening into containers/missions. Older
+// sidecars have no `Nodes`; it's derived from `Loot` on first edit.
 export interface LootList {
   id: string;   // Lootmaster-internal, stable across renames; never written to game files
   Name: string;
-  Loot: any[];  // ExpansionLoot[]
+  Loot: any[];  // ExpansionLoot[] — derived export form
+  Nodes?: LoadoutNode[];  // editor source-of-truth tree (preserves linkedTo); Lootmaster-only
 }
 
 // Binds a loot list to a container/mission. Lives only in the Lootmaster sidecar — the
@@ -1349,9 +1356,11 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
 
   const linkCount = (list: LootList) => lootLinks.filter((l) => l.listId === list.id).length;
 
+  // Functional update so a single commit can patch Loot and Nodes back-to-back without
+  // the second call clobbering the first (the editor emits both on every change).
   const updateList = (patch: Partial<LootList>) => {
     if (selectedLootListIdx === null) return;
-    setLootLists(lootLists.map((l, i) => (i === selectedLootListIdx ? { ...l, ...patch } : l)));
+    setLootLists((prev) => prev.map((l, i) => (i === selectedLootListIdx ? { ...l, ...patch } : l)));
   };
 
   const sourceOptions = useMemo(() => [
@@ -1362,18 +1371,23 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
 
   const createList = () => {
     let Loot: any[] = [];
+    // Editor tree kept in lockstep with Loot. Copying from another list carries its tree
+    // (preserving linked clones); a container has none, so derive from its Loot.
+    let Nodes: LoadoutNode[] = [];
     let name = newName.trim();
     if (newSource.startsWith('container:')) {
       const cls = newSource.slice('container:'.length);
       Loot = cloneLoot(containers.find((c: any) => c.Container === cls)?.Loot || []);
+      Nodes = expansionAirdropToLoadout('loot', Loot).items;
       if (!name) name = `${cls} Loot`;
     } else if (newSource.startsWith('list:')) {
       const src = lootLists.find((ll) => ll.id === newSource.slice('list:'.length));
       Loot = cloneLoot(src?.Loot || []);
+      Nodes = src?.Nodes ? cloneLoot(src.Nodes) : expansionAirdropToLoadout('loot', Loot).items;
       if (!name) name = `${src?.Name || 'List'} Copy`;
     }
     if (!name) name = `Loot List ${lootLists.length + 1}`;
-    setLootLists([...lootLists, { id: genLootListId(), Name: name, Loot }]);
+    setLootLists([...lootLists, { id: genLootListId(), Name: name, Loot, Nodes }]);
     setSelectedLootListIdx(lootLists.length);
     setModalOpen(false);
     setNewName('');
@@ -1382,7 +1396,8 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
 
   const duplicateList = (idx: number) => {
     const src = lootLists[idx];
-    setLootLists([...lootLists, { id: genLootListId(), Name: `${src.Name} Copy`, Loot: cloneLoot(src.Loot) }]);
+    const Nodes = src.Nodes ? cloneLoot(src.Nodes) : expansionAirdropToLoadout('loot', src.Loot || []).items;
+    setLootLists([...lootLists, { id: genLootListId(), Name: `${src.Name} Copy`, Loot: cloneLoot(src.Loot), Nodes }]);
     setSelectedLootListIdx(lootLists.length);
   };
 
@@ -1539,7 +1554,9 @@ const LootListsTab: React.FC<LootListsTabProps> = ({
               <AirdropLootEditor
                 key={selected.id}
                 initialLoot={selected.Loot}
+                initialNodes={selected.Nodes ?? expansionAirdropToLoadout('loot', selected.Loot || []).items}
                 onChange={(loot) => updateList({ Loot: loot })}
+                onChangeNodes={(nodes) => updateList({ Nodes: nodes })}
                 typeOptions={typeOptions}
                 randomPresets={randomPresets}
                 loadouts={loadouts}

@@ -36,13 +36,22 @@ interface AirdropLootEditorProps {
   typeOptions: string[];
   randomPresets: any;
   loadouts: Loadout[];
+  // Optional LoadoutNode-tree seed + change callback. Expansion's Loot[] format can't
+  // represent linked clones (`linkedTo`) — they're materialized away on export — so a
+  // consumer that persists in a Lootmaster-owned store (the Loot Lists sidecar) passes
+  // the tree directly to keep links alive across remounts/reloads. When `initialNodes`
+  // is given it seeds from the tree instead of re-deriving from `initialLoot`, and every
+  // edit is emitted both as Expansion loot (`onChange`) and as the raw tree (`onChangeNodes`).
+  initialNodes?: LoadoutNode[];
+  onChangeNodes?: (nodes: LoadoutNode[]) => void;
 }
 
 /**
  * Self-contained loot editor for an Airdrop container or mission. Holds the
- * normalized LoadoutNode tree in local state (seeded once from `initialLoot`)
- * so node ids stay stable across renders. Remount via a `key` to reset for a
- * different source. Converts back to Expansion loot format on every change.
+ * normalized LoadoutNode tree in local state (seeded once from `initialNodes` when
+ * provided, else derived from `initialLoot`) so node ids stay stable across renders.
+ * Remount via a `key` to reset for a different source. Converts back to Expansion loot
+ * format on every change (and, when wired, also emits the raw tree via `onChangeNodes`).
  */
 export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   initialLoot,
@@ -50,9 +59,11 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   typeOptions,
   randomPresets,
   loadouts,
+  initialNodes,
+  onChangeNodes,
 }) => {
   const [nodes, setNodes] = useState<LoadoutNode[]>(
-    () => expansionAirdropToLoadout('loot', initialLoot || []).items
+    () => initialNodes ?? expansionAirdropToLoadout('loot', initialLoot || []).items
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
@@ -92,6 +103,8 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
     setNodes(next);
     const tempLoadout: Loadout = { id: 'temp', label: 'loot', items: next, updatedAt: Date.now() };
     onChange(loadoutToExpansionAirdrop(tempLoadout, loadouts, randomPresets?.presets));
+    // Persist the raw tree too (with linkedTo) when the consumer keeps a node-tree store.
+    onChangeNodes?.(next);
   };
 
   const handleUpdateNode = (updated: LoadoutNode) => {
