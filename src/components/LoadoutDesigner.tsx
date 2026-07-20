@@ -87,9 +87,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
 
   useEffect(() => {
     if (!propLoadouts) {
-      loadAllLoadouts().then(setInternalLoadouts).catch(() => setInternalLoadouts([]));
+      loadAllLoadouts(selectedProfileId).then(setInternalLoadouts).catch(() => setInternalLoadouts([]));
     }
-  }, [propLoadouts]);
+  }, [propLoadouts, selectedProfileId]);
 
   const handleCreate = () => {
     const newLoadout: Loadout = {
@@ -105,8 +105,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const handleSave = async () => {
     if (!editingLoadout) return;
     try {
-      await saveLoadout(editingLoadout);
-      const all = await loadAllLoadouts();
+      await saveLoadout(editingLoadout, selectedProfileId);
+      const all = await loadAllLoadouts(selectedProfileId);
       setLoadouts(all);
       setEditingLoadout(null);
       setSelectedLoadoutId(null);
@@ -118,8 +118,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this loadout?')) return;
     try {
-      await deleteLoadout(id);
-      const all = await loadAllLoadouts();
+      await deleteLoadout(id, selectedProfileId);
+      const all = await loadAllLoadouts(selectedProfileId);
       setLoadouts(all);
       if (selectedLoadoutId === id) {
         setEditingLoadout(null);
@@ -136,12 +136,12 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
     if (ids.length === 0) return;
     if (!confirm(`Delete ${ids.length} loadout${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
     try {
-      for (const id of ids) await deleteLoadout(id);
+      for (const id of ids) await deleteLoadout(id, selectedProfileId);
     } catch (e) {
       alert(`Failed to delete some loadouts from the server: ${e instanceof Error ? e.message : e}`);
     } finally {
       // Some deletes may have succeeded before a failure; reload to reflect the real state.
-      const all = await loadAllLoadouts().catch(() => null);
+      const all = await loadAllLoadouts(selectedProfileId).catch(() => null);
       if (all) setLoadouts(all);
       setSelectedIds(new Set());
       if (selectedLoadoutId && ids.includes(selectedLoadoutId)) {
@@ -524,10 +524,10 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
           }
         }
 
-        await saveLoadout(loadout);
+        await saveLoadout(loadout, selectedProfileId);
         created++;
       }
-      const all = await loadAllLoadouts();
+      const all = await loadAllLoadouts(selectedProfileId);
       setLoadouts(all);
       setBulkModalOpen(false);
       alert(`Imported ${created} loadout${created === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} already existing` : ''}${linkedTotal ? `; linked ${linkedTotal} group slot${linkedTotal === 1 ? '' : 's'}` : ''}.`);
@@ -766,8 +766,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     onExportAsLoadout={async (node) => {
                       try {
                         const lo = nodeToStandaloneLoadout(node, editingLoadout.items, loadouts);
-                        await saveLoadout(lo);
-                        setLoadouts(await loadAllLoadouts());
+                        await saveLoadout(lo, selectedProfileId);
+                        setLoadouts(await loadAllLoadouts(selectedProfileId));
                         alert(`Saved "${lo.label}" to the loadout library.`);
                       } catch (e) {
                         alert(`Failed to save loadout: ${e instanceof Error ? e.message : e}`);

@@ -113,9 +113,10 @@ export function useLootData() {
   }, [randomPresets]);
 
   useEffect(() => {
-    // Server is the source of truth; degrade to an empty list if it's unreachable.
-    loadAllLoadouts().then(setLoadouts).catch(() => setLoadouts([]));
-  }, []);
+    // Loadouts are per-map; reload when the selected profile changes. Server is the source of
+    // truth; degrade to an empty list if it's unreachable or no profile is selected.
+    loadAllLoadouts(selectedProfileId).then(setLoadouts).catch(() => setLoadouts([]));
+  }, [selectedProfileId]);
 
   useEffect(() => {
     if (selectedProfileId) {

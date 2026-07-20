@@ -34,11 +34,15 @@ const TEST_PROFILE_ID = 'example-dev-data';
 const PROFILES_FILE = resolve(join(__dirname, 'profiles.json'));
 let profiles = [];
 
-// Shared, profile-independent modular loadout templates, persisted alongside profiles.json.
-const LOADOUTS_FILE = resolve(join(__dirname, 'loadouts.json'));
-// Read-modify-write on a single JSON file; writes are serialized through this chain so that
-// overlapping saves (e.g. a bulk import firing many PUTs in quick succession) can't lose updates.
-let loadoutsWriteChain = Promise.resolve();
+// Legacy global loadouts file. Loadouts are now stored per-map under
+// mpmissions/<missionName>/.lootmaster/loadouts.json (see getPaths().loadoutsPath); this file is
+// retained ONLY as a seed source: the first time a map's loadouts file is accessed and missing,
+// its contents are copied in. It is never written to anymore — it stays as an untouched backup.
+const LEGACY_LOADOUTS_FILE = resolve(join(__dirname, 'loadouts.json'));
+// Read-modify-write on each map's loadouts.json; writes are serialized per target path through
+// these chains so that overlapping saves (e.g. a bulk import firing many PUTs in quick succession)
+// can't lose updates. Keyed by absolute target path so different maps serialize independently.
+const loadoutsWriteChains = new Map();
 
 const KNOWN_ADDONS = [
     { 
@@ -124,28 +128,52 @@ async function saveProfiles() {
     await writeFileAtomic(PROFILES_FILE, JSON.stringify(toSave, null, 2));
 }
 
-// Modular loadout templates are shared/global (not keyed by profile). Missing/corrupt file
-// reads as an empty list.
-async function loadLoadouts() {
+// Load one map's loadout list from `target`. On a missing/corrupt file, seed it from the legacy
+// global loadouts file (if present) so every existing map inherits the old shared library on first
+// access; the seed write goes through the per-path chain to avoid a double-seed race between
+// concurrent GETs. Returns [] when neither the target nor the legacy file yields valid JSON.
+async function loadLoadouts(target) {
     try {
-        return JSON.parse(await readFile(LOADOUTS_FILE, 'utf8'));
+        return JSON.parse(await readValidJsonFile(target));
     } catch {
-        return [];
+        // Target missing or corrupt — attempt a one-time seed from the legacy global file.
+        let seed;
+        try {
+            seed = JSON.parse(await readFile(LEGACY_LOADOUTS_FILE, 'utf8'));
+        } catch {
+            return [];
+        }
+        if (!Array.isArray(seed)) return [];
+        await enqueueLoadoutWrite(target, async () => {
+            // Re-check under the chain: another request may have seeded/written since we missed.
+            try {
+                await readValidJsonFile(target);
+                return; // already present — don't clobber
+            } catch { /* still missing/corrupt — write the seed */ }
+            await writeFileAtomic(target, JSON.stringify(seed, null, 2));
+        });
+        return seed;
     }
 }
 
-// Apply `mutator` to the current list and persist the result, serialized behind any in-flight
-// write. The returned promise resolves/rejects for this specific mutation, while the shared
-// chain swallows rejections so a single failed write never blocks later ones.
-function mutateLoadouts(mutator) {
-    const run = loadoutsWriteChain.then(async () => {
-        const list = await loadLoadouts();
+// Serialize `work` behind any in-flight write for `target`. The returned promise resolves/rejects
+// for this specific unit of work, while the stored chain swallows rejections so a single failed
+// write never blocks later ones.
+function enqueueLoadoutWrite(target, work) {
+    const prev = loadoutsWriteChains.get(target) || Promise.resolve();
+    const run = prev.then(work);
+    loadoutsWriteChains.set(target, run.catch(() => {}));
+    return run;
+}
+
+// Apply `mutator` to `target`'s current list and persist the result, serialized per target path.
+function mutateLoadouts(target, mutator) {
+    return enqueueLoadoutWrite(target, async () => {
+        const list = await loadLoadouts(target);
         const next = mutator(list);
-        await writeFileAtomic(LOADOUTS_FILE, JSON.stringify(next, null, 2));
+        await writeFileAtomic(target, JSON.stringify(next, null, 2));
         return next;
     });
-    loadoutsWriteChain = run.catch(() => {});
-    return run;
 }
 
 // Ensure profiles are loaded on start
@@ -187,6 +215,7 @@ function getPaths(profile) {
         airdropMissionsDirPath: join(missionPath, 'expansion', 'missions'),
         airdropLocationsPath: join(missionPath, '.lootmaster', 'airdrop-locations.json'),
         airdropLootListsPath: join(missionPath, '.lootmaster', 'airdrop-loot-lists.json'),
+        loadoutsPath: join(missionPath, '.lootmaster', 'loadouts.json'),
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
         expansionLogsDirPath: join(profilesPath, 'ExpansionMod', 'Logs'),
@@ -1907,44 +1936,6 @@ const server = http.createServer(async (req, res) => {
         }
 
 
-        // Modular loadout templates (shared/global; profile-independent, stored in loadouts.json).
-        // Registered before the X-Profile-ID gate so the list is not tied to a selected profile.
-        if (pathname === '/api/loadouts' || pathname.startsWith('/api/loadouts/')) {
-            const idMatch = pathname.match(/^\/api\/loadouts\/(.+)$/);
-            const id = idMatch ? decodeURIComponent(idMatch[1]) : null;
-
-            if (req.method === 'GET' && !id) {
-                const list = await loadLoadouts();
-                send(res, 200, JSON.stringify(list), {'Content-Type': 'application/json'});
-                return;
-            }
-            if (req.method === 'PUT' && id) {
-                try {
-                    const loadout = JSON.parse((await readBody(req)) || '{}');
-                    if (!loadout || loadout.id !== id) {
-                        badRequest(res, 'Loadout id in body must match the URL');
-                        return;
-                    }
-                    await mutateLoadouts((list) => {
-                        const idx = list.findIndex((l) => l.id === id);
-                        if (idx >= 0) list[idx] = loadout; else list.push(loadout);
-                        return list;
-                    });
-                    send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
-                } catch (e) {
-                    badRequest(res, `Invalid loadout payload: ${e.message}`);
-                }
-                return;
-            }
-            if (req.method === 'DELETE' && id) {
-                await mutateLoadouts((list) => list.filter((l) => l.id !== id));
-                send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
-                return;
-            }
-            methodNotAllowed(res);
-            return;
-        }
-
         // Helper to scan missions for a raw path (used when creating a new profile)
         if (pathname === '/api/scan-missions' && req.method === 'POST') {
             const body = await readBody(req);
@@ -2309,6 +2300,45 @@ const server = http.createServer(async (req, res) => {
                 } catch (e) {
                     badRequest(res, `Invalid MissionSettings payload: ${e.message}`);
                 }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // Modular loadout templates, stored per-map under .lootmaster/loadouts.json. The profile
+        // gate above guarantees `paths` here (a request with no valid X-Profile-ID got a 400).
+        if (pathname === '/api/loadouts' || pathname.startsWith('/api/loadouts/')) {
+            const target = paths.loadoutsPath;
+            const idMatch = pathname.match(/^\/api\/loadouts\/(.+)$/);
+            const id = idMatch ? decodeURIComponent(idMatch[1]) : null;
+
+            if (req.method === 'GET' && !id) {
+                const list = await loadLoadouts(target);
+                send(res, 200, JSON.stringify(list), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method === 'PUT' && id) {
+                try {
+                    const loadout = JSON.parse((await readBody(req)) || '{}');
+                    if (!loadout || loadout.id !== id) {
+                        badRequest(res, 'Loadout id in body must match the URL');
+                        return;
+                    }
+                    await mutateLoadouts(target, (list) => {
+                        const idx = list.findIndex((l) => l.id === id);
+                        if (idx >= 0) list[idx] = loadout; else list.push(loadout);
+                        return list;
+                    });
+                    send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid loadout payload: ${e.message}`);
+                }
+                return;
+            }
+            if (req.method === 'DELETE' && id) {
+                await mutateLoadouts(target, (list) => list.filter((l) => l.id !== id));
+                send(res, 200, JSON.stringify({ok: true}), {'Content-Type': 'application/json'});
                 return;
             }
             methodNotAllowed(res);
