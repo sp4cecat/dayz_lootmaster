@@ -16,11 +16,13 @@ import {
 } from '@untitledui/icons';
 import { Loadout, LoadoutNode } from '@/types/loadouts';
 import { expansionAirdropToLoadout } from '@/utils/loadouts';
+import { missionSelectionOdds } from '@/utils/airdropSimulator';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
 import { MapMetadata } from '@/consts/maps';
 import { AirdropLootEditor } from './airdrop/AirdropLootEditor';
+import { AirdropContainerSimulator } from './airdrop/AirdropContainerSimulator';
 import { AirdropDropLocationMap, DropLocation, AirdropLocation } from './AirdropDropLocationMap';
 
 interface ExpansionAirdropEditorProps {
@@ -1890,6 +1892,9 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     [mission]
   );
 
+  // Container Simulator modal (emulates the mod's mission/container/loot rolls at runtime).
+  const [simOpen, setSimOpen] = useState(false);
+
   // Sidebar accordion: missions grouped by drop location, default collapsed.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => {
@@ -1900,6 +1905,14 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
       byKey.get(key)!.items.push({ m, idx });
     });
     return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [missions]);
+
+  // Per-mission selection likelihood (share of total Weight among enabled missions) — the
+  // exact weighted-pick odds the engine uses to choose which airdrop fires. Keyed by file
+  // so each sidebar row can show its own figure. See ExpansionMissionModule.FindNewMission.
+  const missionOddsByFile = useMemo(() => {
+    const { rows } = missionSelectionOdds(missions);
+    return new Map(rows.map((r) => [r.file, r]));
   }, [missions]);
 
   // Reveal the selected mission by opening its group (after add/duplicate/select, or
@@ -2173,6 +2186,9 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                       const stats = [`W${m.data?.Weight ?? 0}`];
                       if (ic != null && ic !== -1) stats.push(`${ic} items`);
                       if (inf != null && inf !== -1) stats.push(`${inf} inf`);
+                      // Selection likelihood chip: the % chance this mission is the one
+                      // picked when an airdrop fires (0 / "off" when disabled).
+                      const odd = m.corrupt ? undefined : missionOddsByFile.get(m.file);
                       return (
                         <button key={idx} onClick={() => setSelectedMissionIdx(idx)}
                           className={cx('w-full text-left p-3 rounded-lg border transition-all',
@@ -2180,7 +2196,15 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                               : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
                           <div className="flex items-center justify-between gap-2">
                             <span className={cx('text-sm font-semibold truncate', m.corrupt && 'text-error-600')}>{m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, '')}</span>
-                            {m.corrupt ? <Badge size="sm" color="error">Corrupt</Badge> : m.isNew && <Badge size="sm" color="warning">New</Badge>}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {odd && (
+                                <span title="Chance this mission is the one picked when an airdrop fires"
+                                  className={cx('text-xs font-semibold tabular-nums', odd.enabled ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400')}>
+                                  {odd.enabled ? `${(odd.prob * 100).toFixed(1)}%` : 'off'}
+                                </span>
+                              )}
+                              {m.corrupt ? <Badge size="sm" color="error">Corrupt</Badge> : m.isNew && <Badge size="sm" color="warning">New</Badge>}
+                            </div>
                           </div>
                           {m.corrupt ? (
                             <span className="text-xs text-gray-400 truncate block">Invalid JSON</span>
@@ -2220,11 +2244,18 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                   hint={mission.isNew ? 'Auto-named from the drop location; set on first save.' : undefined} />
               </div>
               <div className="flex items-center gap-2 pt-6">
+                <Button variant="secondary-gray" icon={Package} onClick={() => setSimOpen(true)}>Simulate</Button>
                 <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateMission(selectedMissionIdx!)}>Duplicate</Button>
                 <Button variant="error-secondary" icon={Trash01} onClick={() => deleteMission(selectedMissionIdx!)}>Delete</Button>
                 <Button variant="primary" icon={Save01} onClick={saveMission} disabled={!missionDirty}>Save</Button>
               </div>
             </div>
+
+            {simOpen && (
+              <AirdropContainerSimulator isOpen onClose={() => setSimOpen(false)}
+                mission={mission} settings={settings}
+                lootLists={lootLists} lootLinks={lootLinks} />
+            )}
 
             {missionSpawnWarning && (
               <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-3">
