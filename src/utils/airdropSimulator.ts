@@ -325,18 +325,28 @@ function addItem(loot: ExpansionLoot, remaining: number[], index: number, rng: R
   return spawnItem(name, loot.QuantityPercent ?? -1, attachments, rng);
 }
 
+/** A single crate roll, tracking which loot entry produced each item. */
+export interface EntryRoll {
+  items: SpawnedItem[];
+  /** Copies placed per loot entry (index-aligned with the input `loot` array). */
+  perEntryCount: number[];
+}
+
 /**
  * Mirrors ExpansionLootSpawner.SpawnLoot: place exactly `itemCount` items into the crate.
  * Phase 1 force-spawns each entry's Min copies; phase 2 fills the rest via weighted
  * random over each entry's Chance-as-weight, dropping entries whose Max is exhausted.
+ * Also reports how many copies each entry contributed (`perEntryCount`) so callers can
+ * surface the effect of per-entry Min/Max copy counts.
  */
-export function rollLoot(loot: ExpansionLoot[], itemCount: number, rng: Rng = Math.random): SpawnedItem[] {
+export function rollLootWithEntries(loot: ExpansionLoot[], itemCount: number, rng: Rng = Math.random): EntryRoll {
   let count = itemCount;
   if (count < 0) count = randInt(1, -count, rng);
 
   const out: SpawnedItem[] = [];
   const chances: number[] = [];
   const remaining: number[] = loot.map((l) => l.Max ?? -1);
+  const perEntryCount: number[] = loot.map(() => 0);
   let spawned = 0;
 
   // Phase 1 — guaranteed Min copies.
@@ -345,6 +355,7 @@ export function rollLoot(loot: ExpansionLoot[], itemCount: number, rng: Rng = Ma
     while (min > 0 && spawned < count) {
       spawned++;
       min--;
+      perEntryCount[i]++;
       out.push(addItem(l, remaining, i, rng));
     }
     // m_RemainingChance seeded from Chance, but zeroed if the Min pass exhausted Max.
@@ -356,11 +367,17 @@ export function rollLoot(loot: ExpansionLoot[], itemCount: number, rng: Rng = Ma
     const idx = getWeightedRandom(chances, rng);
     if (idx < 0) break; // all weights 0 → nothing left to place
     spawned++;
+    perEntryCount[idx]++;
     out.push(addItem(loot[idx], remaining, idx, rng));
     if (remaining[idx] === 0) chances[idx] = 0; // Max reached → remove from pool
   }
 
-  return out;
+  return { items: out, perEntryCount };
+}
+
+/** Convenience wrapper — a crate roll as a flat item list (see rollLootWithEntries). */
+export function rollLoot(loot: ExpansionLoot[], itemCount: number, rng: Rng = Math.random): SpawnedItem[] {
+  return rollLootWithEntries(loot, itemCount, rng).items;
 }
 
 // ---------------------------------------------------------------------------
@@ -408,4 +425,66 @@ export function aggregateLoot(
   }));
   rows.sort((a, b) => b.avgCount - a.avgCount);
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Per-entry statistics (surfaces copy-count Min/Max)
+// ---------------------------------------------------------------------------
+
+export interface EntryStat {
+  /** The entry's Name, suffixed with " (+N variants)" when it carries Variants. */
+  label: string;
+  /** Configured selection weight (Chance ?? 1). */
+  chance: number;
+  /** Configured guaranteed copies (Min ?? 0). */
+  min: number;
+  /** Configured copy cap (Max ?? -1; -1 = unlimited). */
+  max: number;
+  /** Percentage of rolls in which the entry placed at least one copy. */
+  frequencyPct: number;
+  /** Average copies of this entry across all rolls. */
+  avgCount: number;
+  /** Most copies of this entry seen in any single roll. */
+  maxObserved: number;
+}
+
+/** Build the display label for a loot entry (adds a variant-count suffix when present). */
+function entryLabel(l: ExpansionLoot): string {
+  const n = l.Variants?.length ?? 0;
+  return n > 0 ? `${l.Name} (+${n} variant${n === 1 ? '' : 's'})` : l.Name;
+}
+
+/**
+ * Run `iterations` crate rolls and tally, per configured loot entry (index-aligned with
+ * `loot`), how many copies it placed — so the editor can confirm each entry's Min floor
+ * and Max cap took effect. Rows preserve the input loot order.
+ */
+export function aggregateLootByEntry(
+  loot: ExpansionLoot[],
+  itemCount: number,
+  iterations: number,
+  rng: Rng = Math.random,
+): EntryStat[] {
+  const appear = loot.map(() => 0);
+  const total = loot.map(() => 0);
+  const maxObs = loot.map(() => 0);
+
+  for (let r = 0; r < iterations; r++) {
+    const { perEntryCount } = rollLootWithEntries(loot, itemCount, rng);
+    perEntryCount.forEach((c, i) => {
+      if (c > 0) appear[i]++;
+      total[i] += c;
+      if (c > maxObs[i]) maxObs[i] = c;
+    });
+  }
+
+  return loot.map((l, i) => ({
+    label: entryLabel(l),
+    chance: l.Chance ?? 1,
+    min: l.Min ?? 0,
+    max: l.Max ?? -1,
+    frequencyPct: iterations > 0 ? (appear[i] / iterations) * 100 : 0,
+    avgCount: iterations > 0 ? total[i] / iterations : 0,
+    maxObserved: maxObs[i],
+  }));
 }

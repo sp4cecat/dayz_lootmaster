@@ -11,13 +11,13 @@ import {
   rollContainer,
   resolveLootSource,
   rollLoot,
-  aggregateLoot,
+  aggregateLootByEntry,
   type MissionInput,
   type SimSettings,
   type SimContainer,
   type SpawnedItem,
   type QuantityDisplay,
-  type LootStat,
+  type EntryStat,
 } from '@/utils/airdropSimulator';
 
 interface AirdropContainerSimulatorProps {
@@ -115,7 +115,7 @@ export const AirdropContainerSimulator: React.FC<AirdropContainerSimulatorProps>
 
   const [chosen, setChosen] = useState<SimContainer | null>(null);
   const [crate, setCrate] = useState<SpawnedItem[]>([]);
-  const [stats, setStats] = useState<LootStat[] | null>(null);
+  const [stats, setStats] = useState<EntryStat[] | null>(null);
 
   const resolved = useMemo(() => resolveLootSource(effMission, chosen, settings), [effMission, chosen, settings]);
 
@@ -134,9 +134,28 @@ export const AirdropContainerSimulator: React.FC<AirdropContainerSimulatorProps>
 
   const rerollContainer = () => rollAll(rollContainer(effMission, candidates));
   const rerollLoot = () => setCrate(rollLoot(resolved.loot, resolved.itemCount));
-  const runAggregate = () => setStats(aggregateLoot(resolved.loot, resolved.itemCount, AGGREGATE_ITERATIONS));
+  const runAggregate = () => setStats(aggregateLootByEntry(resolved.loot, resolved.itemCount, AGGREGATE_ITERATIONS));
 
   const grouped = useMemo(() => groupCrate(crate), [crate]);
+
+  // The configured loot entries, shown as a table immediately (Chance/Min/Max visible on
+  // open); observed Appears/Avg fill in after Run ×N. Min = guaranteed copies, Max = copy
+  // cap (-1 = unlimited), rolled by the engine's SpawnLoot copy-count logic.
+  const entryRows: EntryStat[] = useMemo(
+    () =>
+      stats ??
+      resolved.loot.map((l) => ({
+        label: (l.Variants?.length ?? 0) > 0 ? `${l.Name} (+${l.Variants!.length} variant${l.Variants!.length === 1 ? '' : 's'})` : l.Name,
+        chance: l.Chance ?? 1,
+        min: l.Min ?? 0,
+        max: l.Max ?? -1,
+        frequencyPct: 0,
+        avgCount: 0,
+        maxObserved: 0,
+      })),
+    [stats, resolved.loot],
+  );
+  const maxLabel = (max: number) => (max < 0 ? '∞' : String(max));
 
   // The crate model that flies in: for a self-contained mission the engine uses the
   // mission's Container verbatim; otherwise it's the rolled settings container.
@@ -208,37 +227,44 @@ export const AirdropContainerSimulator: React.FC<AirdropContainerSimulatorProps>
                 </div>
               </div>
 
-              {/* Aggregate */}
+              {/* Per-entry copy-count table (Chance/Min/Max shown on open; Appears/Avg after Run) */}
               <div>
                 <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-                  {stats ? `Aggregate over ${AGGREGATE_ITERATIONS.toLocaleString()} rolls` : 'Aggregate statistics'}
+                  {stats ? `Per-entry copy counts over ${AGGREGATE_ITERATIONS.toLocaleString()} rolls` : 'Loot entries — copy counts'}
                 </p>
-                {stats ? (
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-800 max-h-80 overflow-auto">
-                    <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
-                      <span className="flex-1">Item</span>
-                      <span className="w-16 text-right">Appears</span>
-                      <span className="w-16 text-right">Avg/crate</span>
+                <div className="rounded-lg border border-gray-200 dark:border-gray-800 max-h-80 overflow-auto">
+                  <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
+                    <span className="flex-1">Entry</span>
+                    <span className="w-10 text-right">Chc</span>
+                    <span className="w-10 text-right">Min</span>
+                    <span className="w-10 text-right">Max</span>
+                    <span className="w-14 text-right">Appears</span>
+                    <span className="w-12 text-right">Avg</span>
+                  </div>
+                  {entryRows.map((s, i) => (
+                    <div key={`${s.label}-${i}`} className="flex items-center gap-2 px-3 py-1.5 text-sm border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                      <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{s.label}</span>
+                      <span className="w-10 text-right tabular-nums text-gray-400">{s.chance}</span>
+                      <span className={cx('w-10 text-right tabular-nums', s.min > 0 ? 'font-semibold text-primary-600 dark:text-primary-400' : 'text-gray-400')}>{s.min}</span>
+                      <span className={cx('w-10 text-right tabular-nums', s.max >= 0 ? 'font-semibold text-amber-600 dark:text-amber-400' : 'text-gray-400')}>{maxLabel(s.max)}</span>
+                      <span className="w-14 text-right tabular-nums text-gray-500 dark:text-gray-400">{stats ? `${s.frequencyPct.toFixed(0)}%` : '—'}</span>
+                      <span className="w-12 text-right tabular-nums text-gray-500 dark:text-gray-400">{stats ? s.avgCount.toFixed(2) : '—'}</span>
                     </div>
-                    {stats.map((s) => (
-                      <div key={s.name} className="flex items-center gap-2 px-3 py-1.5 text-sm border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                        <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{s.name}</span>
-                        <span className="w-16 text-right tabular-nums text-gray-500 dark:text-gray-400">{s.frequencyPct.toFixed(0)}%</span>
-                        <span className="w-16 text-right tabular-nums text-gray-500 dark:text-gray-400">{s.avgCount.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-800 p-4 text-center text-sm text-gray-400 h-40 flex items-center justify-center">
-                    Run {AGGREGATE_ITERATIONS.toLocaleString()} rolls to see per-item appearance frequency and average count.
-                  </div>
+                  ))}
+                </div>
+                {!stats && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    Run {AGGREGATE_ITERATIONS.toLocaleString()} rolls to see each entry’s appearance frequency and average copies.
+                  </p>
                 )}
               </div>
             </div>
           )}
 
           <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">
-            Quantities are shown symbolically (the browser has no item-economy data to resolve absolute counts).
+            <span className="font-medium text-primary-600 dark:text-primary-400">Min</span> = guaranteed copies per crate ·{' '}
+            <span className="font-medium text-amber-600 dark:text-amber-400">Max</span> = copy cap (∞ = unlimited).
+            Stack quantity is shown symbolically (the browser has no item-economy data to resolve absolute counts).
             Attachments spawn one level deep only, matching the engine — an attachment's own nested attachments never spawn.
           </p>
         </section>

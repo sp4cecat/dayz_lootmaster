@@ -7,7 +7,9 @@ import {
   rollContainer,
   resolveLootSource,
   rollLoot,
+  rollLootWithEntries,
   aggregateLoot,
+  aggregateLootByEntry,
   type ExpansionLoot,
   type MissionInput,
   type SimSettings,
@@ -255,5 +257,69 @@ describe('aggregateLoot', () => {
     const byName = Object.fromEntries(stats.map((s) => [s.name, s]));
     expect(byName['Always'].frequencyPct).toBe(100);
     expect(byName['Heavy'].avgCount).toBeGreaterThan(byName['Light'].avgCount);
+  });
+});
+
+describe('rollLootWithEntries', () => {
+  it('reports per-entry copy counts index-aligned with the loot array, summing to the crate size', () => {
+    const loot: ExpansionLoot[] = [
+      { Name: 'A', Chance: 1 },
+      { Name: 'B', Chance: 1 },
+      { Name: 'C', Chance: 1 },
+    ];
+    const { items, perEntryCount } = rollLootWithEntries(loot, 9, mulberry32(11));
+    expect(perEntryCount).toHaveLength(loot.length);
+    expect(perEntryCount.reduce((a, b) => a + b, 0)).toBe(items.length);
+    expect(items).toHaveLength(9);
+  });
+
+  it('keeps a Min/Max-constrained entry within its configured bounds', () => {
+    const loot: ExpansionLoot[] = [
+      { Name: 'Capped', Chance: 5, Min: 1, Max: 2 },
+      { Name: 'Filler', Chance: 1 },
+    ];
+    for (let seed = 0; seed < 50; seed++) {
+      const { perEntryCount } = rollLootWithEntries(loot, 8, mulberry32(seed));
+      expect(perEntryCount[0]).toBeGreaterThanOrEqual(1); // Min floor
+      expect(perEntryCount[0]).toBeLessThanOrEqual(2); // Max cap
+    }
+  });
+});
+
+describe('aggregateLootByEntry', () => {
+  it('shows a Min>0 entry always appears with avg copies at least Min', () => {
+    const loot: ExpansionLoot[] = [
+      { Name: 'Guaranteed', Chance: 0.01, Min: 2 },
+      { Name: 'Filler', Chance: 5 },
+    ];
+    const rows = aggregateLootByEntry(loot, 8, 2000, mulberry32(7));
+    expect(rows[0].frequencyPct).toBe(100);
+    expect(rows[0].avgCount).toBeGreaterThanOrEqual(2);
+    expect(rows[0].min).toBe(2);
+  });
+
+  it('never exceeds a Max cap in any observed roll', () => {
+    const loot: ExpansionLoot[] = [
+      { Name: 'Capped', Chance: 10, Min: 0, Max: 1 },
+      { Name: 'Filler', Chance: 1 },
+    ];
+    const rows = aggregateLootByEntry(loot, 6, 2000, mulberry32(31));
+    expect(rows[0].max).toBe(1);
+    expect(rows[0].maxObserved).toBeLessThanOrEqual(1);
+  });
+
+  it('labels variant-bearing entries with a variant count and preserves input order', () => {
+    const loot: ExpansionLoot[] = [
+      { Name: 'Plain', Chance: 1 },
+      { Name: 'WithVariants', Chance: 1, Variants: [{ Name: 'V1' }, { Name: 'V2' }] },
+    ];
+    const rows = aggregateLootByEntry(loot, 4, 10, mulberry32(1));
+    expect(rows.map((r) => r.label)).toEqual(['Plain', 'WithVariants (+2 variants)']);
+  });
+
+  it('defaults an unset Max to -1 (unlimited)', () => {
+    const rows = aggregateLootByEntry([{ Name: 'Solo', Chance: 1 }], 3, 10, mulberry32(2));
+    expect(rows[0].max).toBe(-1);
+    expect(rows[0].min).toBe(0);
   });
 });
