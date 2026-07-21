@@ -119,6 +119,24 @@ describe('spawnabletypes utilities', () => {
     expect(out).toContain('<cargo preset="MedicalPreset"/>');
   });
 
+  it('omits chance on preset-backed sections and items', () => {
+    const parsed = parseSpawnableTypesXml(xml);
+    // A preset reference that carries a chance in the model must serialize without one —
+    // the chance lives on the sourced cfgrandompresets entry.
+    parsed.types[0].sections[1].chance = 0.75;
+    parsed.types[0].sections[1].attrs.chance = '0.75';
+    // An inline group containing an item preset ref (with a chance) must also drop it.
+    parsed.types[0].sections[0].items[0] = { kind: XMLNodeKind.ITEM, preset: 'ScopePreset', chance: 0.5, attrs: {} };
+
+    const out = generateSpawnableTypesXml(parsed);
+    expect(out).toContain('<cargo preset="MedicalPreset"/>');
+    expect(out).not.toContain('preset="MedicalPreset" chance');
+    expect(out).toContain('<item preset="ScopePreset"/>');
+    expect(out).not.toContain('preset="ScopePreset" chance');
+    // The inline group's own chance and plain-item chances are untouched.
+    expect(out).toContain('<attachments chance="0.500">');
+  });
+
   it('parses and generates damage min/max attributes', () => {
     const damageXml = `
 <spawnabletypes>

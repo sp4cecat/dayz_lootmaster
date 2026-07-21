@@ -288,9 +288,10 @@ export function loadoutToVanillaXml(
   // <attachments>/<cargo> block. A child can be a group (inline block), a preset
   // template (named reference), or a legacy bare item (wrapped in its own block).
   const renderBlock = (tag: 'attachments' | 'cargo', node: LoadoutNode, space: string) => {
-    // Named group reference, e.g. <attachments preset="MyPreset" chance="0.5" />
+    // Named group reference, e.g. <attachments preset="MyPreset" />. No chance attribute —
+    // it lives on the sourced cfgrandompresets entry, not on the reference.
     if (node.type === 'template' && node.templateSource === 'preset') {
-      lines.push(`${space}<${tag} preset="${escapeAttr(node.name)}" chance="${node.chance.toFixed(2)}" />`);
+      lines.push(`${space}<${tag} preset="${escapeAttr(node.name)}" />`);
       return;
     }
 
@@ -299,7 +300,7 @@ export function loadoutToVanillaXml(
       lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
       (node.attachments || []).forEach(child => {
         if (child.type === 'template' && child.templateSource === 'preset') {
-          lines.push(`${space}  <item preset="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
+          lines.push(`${space}  <item preset="${escapeAttr(child.name)}"/>`);
         } else {
           lines.push(`${space}  <item name="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
         }
@@ -315,7 +316,7 @@ export function loadoutToVanillaXml(
       lines.push(`${space}<${tag} chance="${node.chance.toFixed(2)}">`);
       members.forEach(child => {
         if (child.type === 'template' && child.templateSource === 'preset') {
-          lines.push(`${space}  <item preset="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
+          lines.push(`${space}  <item preset="${escapeAttr(child.name)}"/>`);
         } else {
           lines.push(`${space}  <item name="${escapeAttr(child.name)}" chance="${child.chance.toFixed(2)}"/>`);
         }

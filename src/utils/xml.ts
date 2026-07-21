@@ -550,14 +550,22 @@ function parseSpawnableNode(node: any) {
   };
 }
 
+// A section/item that references a preset must NOT carry a chance attribute — the roll
+// chance lives on the sourced cfgrandompresets entry, not on the reference.
+function spawnableAttrs(base: any) {
+  const merged = { ...base };
+  if (merged.preset) delete merged.chance;
+  return buildAttrs(merged);
+}
+
 function renderSpawnableSection(section: any, indent: number) {
   const space = ' '.repeat(indent);
-  const attrs = buildAttrs({ ...(section.attrs || {}), chance: section.chance, preset: section.preset });
+  const attrs = spawnableAttrs({ ...(section.attrs || {}), chance: section.chance, preset: section.preset });
   const items = section.items || [];
   if (!items.length) return [`${space}<${section.kind}${attrs}/>`];
   const lines = [`${space}<${section.kind}${attrs}>`];
   for (const item of items) {
-    const itemAttrs = buildAttrs({ ...(item.attrs || {}), name: item.name, chance: item.chance, preset: item.preset });
+    const itemAttrs = spawnableAttrs({ ...(item.attrs || {}), name: item.name, chance: item.chance, preset: item.preset });
     lines.push(`${space}  <${item.kind || XMLNodeKind.ITEM}${itemAttrs}/>`);
   }
   lines.push(`${space}</${section.kind}>`);
