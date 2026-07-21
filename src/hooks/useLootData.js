@@ -33,6 +33,9 @@ import { validateUnknowns } from '../utils/validation.js';
  * @typedef {Record<string, Record<string, Type[]>>} TypeFiles
  */
 
+const RESERVED_GROUPS = ['vanilla', 'vanilla_overrides', '__root'];
+const SAFE_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
 const STORAGE_KEY_GROUPS = 'dayz-types-editor:lootGroups';
 const LEGACY_STORAGE_KEY_TYPES = 'dayz-types-editor:lootTypes';
 const STORAGE_KEY_SUMMARY_SHOWN = 'dayz-types-editor:summaryShown';
@@ -1358,6 +1361,96 @@ export function useLootData() {
     currentEditorIdRef.current = id || '';
   }, []);
 
+  // Apply a new file-level structure and refresh all derived views (grouped, merged, unknowns).
+  // Mirrors the tail of setFromMergedTypes / removeDefinitionEntry. Returns the merged view.
+  const applyFiles = useCallback((nextFiles) => {
+    setLootFiles(nextFiles);
+    setLootGroups(combineFilesToGroups(nextFiles));
+    const merged = mergeFromFiles(nextFiles);
+    _setLootTypes(merged);
+    if (definitions) setUnknowns(validateUnknowns(merged, definitions));
+    return merged;
+  }, [definitions]);
+
+  /**
+   * Create a new custom types group (a db/<name> folder registered in cfgeconomycore.xml
+   * with an empty types.xml + spawnabletypes.xml). Requires the server to declare it before
+   * any types can be persisted there. Returns { ok, group?, file?, error? }.
+   * @param {string} rawName
+   */
+  const addGroup = useCallback(async (rawName) => {
+    const group = String(rawName || '').trim();
+    if (!group) return { ok: false, error: 'Group name is required' };
+    if (!SAFE_NAME_RE.test(group)) return { ok: false, error: 'Only letters, numbers, dot, dash and underscore are allowed' };
+    if (RESERVED_GROUPS.includes(group.toLowerCase())) return { ok: false, error: `"${group}" is a reserved group name` };
+    const existing = lootFiles ? Object.keys(lootFiles) : [];
+    if (existing.some(k => k.toLowerCase() === group.toLowerCase())) return { ok: false, error: `Group "${group}" already exists` };
+
+    try {
+      const res = await fetchWithProfile(`${getApiBase()}/api/types-group`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: group }),
+      });
+      if (!res.ok) {
+        let msg = 'Failed to create group';
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* non-JSON */ }
+        return { ok: false, error: msg };
+      }
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || 'Network error creating group' };
+    }
+
+    // Add an empty types bucket so the group appears immediately in the Groups filter.
+    const next = { ...(lootFiles || {}) };
+    next[group] = { ...(next[group] || {}), types: (next[group]?.types || []) };
+    applyFiles(next);
+    void saveManyTypeFiles([{ group, file: 'types', types: [] }]);
+    // Refresh baseline from disk so a fresh, empty group reads as "not dirty".
+    await refreshBaselineFromAPI();
+    return { ok: true, group, file: 'types' };
+  }, [lootFiles, applyFiles, fetchWithProfile, refreshBaselineFromAPI]);
+
+  /**
+   * Add a new <type> entry into an existing group/file (client-side staged; persisted on
+   * "Set Changes Live"). Type names are globally unique in the DayZ CLE. Returns { ok, type?, error? }.
+   * @param {{name: string, group: string, file?: string, category?: string}} params
+   */
+  const addType = useCallback(({ name, group, file, category }) => {
+    const typeName = String(name || '').trim();
+    if (!typeName) return { ok: false, error: 'Type name is required' };
+    if (!SAFE_NAME_RE.test(typeName)) return { ok: false, error: 'Only letters, numbers, dot, dash and underscore are allowed' };
+    const lower = typeName.toLowerCase();
+    if ((lootTypes || []).some(t => String(t.name).toLowerCase() === lower)) {
+      return { ok: false, error: `A type named "${typeName}" already exists` };
+    }
+    if (!lootFiles || !group || !lootFiles[group]) return { ok: false, error: 'Choose a valid group' };
+    if (group === 'vanilla') return { ok: false, error: 'Cannot add types to the vanilla base group' };
+    const fileBase = file || Object.keys(lootFiles[group])[0] || 'types';
+
+    /** @type {Type & {group: string, file: string}} */
+    const t = {
+      name: typeName,
+      category: category || undefined,
+      nominal: 0, min: 0, lifetime: 3600, restock: 0, quantmin: -1, quantmax: -1,
+      usage: [], value: [], tag: [],
+      flags: { count_in_cargo: false, count_in_hoarder: false, count_in_map: true, count_in_player: false, crafted: false, deloot: false },
+      _present: { nominal: true, min: true, lifetime: true, restock: false, quantmin: false, quantmax: false, flags: true, category: !!category, usage: false, value: false, tag: false },
+      _edited: {},
+      group, file: fileBase,
+    };
+
+    const next = { ...lootFiles };
+    next[group] = { ...next[group] };
+    next[group][fileBase] = [...(next[group][fileBase] || []), t];
+    const merged = applyFiles(next);
+    void saveManyTypeFiles([{ group, file: fileBase, types: next[group][fileBase] }]);
+    appendChangeLogs([{ ts: Date.now(), editorID: currentEditorIdRef.current || 'unknown', group, file: fileBase, typeName, action: 'added' }])
+      .catch(err => console.error('Failed to append logs:', err));
+    historyRef.current.push(merged);
+    return { ok: true, type: t };
+  }, [lootTypes, lootFiles, applyFiles]);
+
   // One-time manual change logging for differences between parsed files (baseline) and IndexedDB state
   const manualLoggedRef = useRef(false);
   useEffect(() => {
@@ -1436,6 +1529,8 @@ export function useLootData() {
     groups: groupsList,
     getGroupTypes,
     getGroupFiles,
+    addGroup,
+    addType,
     storageDirty,
     storageDiff,
     // Summary modal

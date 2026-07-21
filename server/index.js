@@ -621,6 +621,80 @@ async function ensureSpawnableTypeFileInEconomyCore(profile, paths, group, fileN
     }
 }
 
+/**
+ * Ensure cfgeconomycore.xml declares `folder` with the given files.
+ * Unlike ensureSpawnableTypeFileInEconomyCore, this also creates a brand-new
+ * <ce folder="..."> block when one does not exist yet (the new-group path).
+ * `files` is an array of { name, type } e.g.
+ *   [{name:'types.xml', type:'types'}, {name:'spawnabletypes.xml', type:'spawnabletypes'}]
+ */
+async function ensureTypesGroupInEconomyCore(profile, paths, folder, files) {
+    const economyCore = paths.economyCorePath;
+    let xml;
+    let fromDisk = true;
+    try {
+        xml = await readFile(economyCore, 'utf8');
+        if (!String(xml || '').trim()) throw new Error('empty');
+    } catch {
+        // File missing/empty: materialize from filesystem scan first, since the
+        // GET route synthesizes on the fly but never persists to disk.
+        xml = await synthesizeEconomyCoreXml(paths);
+        fromDisk = false;
+    }
+
+    const escapedFolder = folder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const ceRe = new RegExp(`(<ce\\s+folder="${escapedFolder}"[^>]*>)([\\s\\S]*?)(<\\/ce>)`, 'i');
+    const match = xml.match(ceRe);
+
+    const fileTag = (f) => `<file name="${f.name}" type="${f.type}"/>`;
+
+    if (match) {
+        // Block exists: insert any missing <file> entries after the last <file/>.
+        const [full, openTag, inner, closeTag] = match;
+        let newInner = inner;
+        for (const f of files) {
+            const fileRe = new RegExp(`<file\\b[^>]*\\bname="${f.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*\\btype="${f.type}"[^>]*\\/?>`, 'i');
+            if (fileRe.test(newInner)) continue;
+            const insertion = `\n        ${fileTag(f)}`;
+            const lastFileMatch = Array.from(newInner.matchAll(/<file\b[^>]*\/>/gi)).pop();
+            if (lastFileMatch) {
+                const idx = lastFileMatch.index + lastFileMatch[0].length;
+                newInner = newInner.substring(0, idx) + insertion + newInner.substring(idx);
+            } else {
+                newInner = newInner.trimEnd() + insertion + '\n    ';
+            }
+        }
+        if (newInner !== inner) {
+            const newXml = xml.replace(full, openTag + newInner + closeTag);
+            if (fromDisk) await createBackupIfExists(economyCore);
+            await writeFileAtomic(economyCore, newXml);
+        } else if (!fromDisk) {
+            // economycore was synthesized (not persisted) but already declares this
+            // block/files — still write it so the declaration survives on disk.
+            await writeFileAtomic(economyCore, xml);
+        }
+    } else {
+        // No block: insert a whole new <ce folder> block before </economycore>.
+        const block = `\t<ce folder="${folder}">\n` +
+            files.map(f => `\t\t${fileTag(f)}`).join('\n') +
+            `\n\t</ce>\n`;
+        let newXml;
+        if (/<\/economycore>/i.test(xml)) {
+            newXml = xml.replace(/<\/economycore>/i, block + '</economycore>');
+        } else {
+            // Malformed/missing root close: append defensively.
+            newXml = xml.trimEnd() + '\n' + block + '</economycore>\n';
+        }
+        if (fromDisk) await createBackupIfExists(economyCore);
+        await writeFileAtomic(economyCore, newXml);
+    }
+
+    // Clear caches to force reload so declaredTypesFilePath resolves the new group.
+    groupFolderCaches.delete(profile.id);
+    groupFilesCaches.delete(profile.id);
+    groupSpawnableFilesCaches.delete(profile.id);
+}
+
 async function createBackupIfExists(target) {
     try {
         await stat(target);
@@ -2038,6 +2112,76 @@ const server = http.createServer(async (req, res) => {
                 const synth = await synthesizeEconomyCoreXml(paths);
                 send(res, 200, synth, {'Content-Type': 'application/xml; charset=utf-8'});
             }
+            return;
+        }
+
+        // POST create a new custom types group (a <ce folder="db/<name>"> block with
+        // an empty types.xml + spawnabletypes.xml on disk). Distinct from the types PUT
+        // so that "create structure" and "write content" stay separate concerns.
+        if (pathname === '/api/types-group' || pathname === '/api/types-group/') {
+            if (req.method !== 'POST') {
+                methodNotAllowed(res);
+                return;
+            }
+            let data;
+            try {
+                data = JSON.parse(await readBody(req) || '{}');
+            } catch {
+                badRequest(res, 'Invalid JSON body');
+                return;
+            }
+            const group = String(data.name || '').trim();
+            if (!isSafeName(group)) {
+                badRequest(res, 'Invalid group name (letters, numbers, dot, dash, underscore only)');
+                return;
+            }
+            const reserved = new Set(['vanilla', 'vanilla_overrides', '__root']);
+            if (reserved.has(group.toLowerCase())) {
+                badRequest(res, `"${group}" is a reserved group name`);
+                return;
+            }
+            const folder = `db/${group}`;
+            const seedFiles = [
+                { name: 'types.xml', type: 'types' },
+                { name: 'spawnabletypes.xml', type: 'spawnabletypes' },
+            ];
+
+            // Idempotent: if the group is already declared, report it rather than erroring.
+            const existingFolders = await getGroupFolderMap(profile, paths);
+            const alreadyExists = Object.prototype.hasOwnProperty.call(existingFolders, group);
+
+            // Create the folder + empty seed files on disk (only if absent).
+            const dir = join(paths.missionPath, folder);
+            await mkdir(dir, {recursive: true});
+            const seeds = {
+                'types.xml': '<?xml version="1.0" encoding="UTF-8"?>\n<types>\n</types>\n',
+                'spawnabletypes.xml': '<?xml version="1.0" encoding="UTF-8"?>\n<spawnabletypes>\n</spawnabletypes>\n',
+            };
+            for (const [name, content] of Object.entries(seeds)) {
+                const target = join(dir, name);
+                let exists = false;
+                try {
+                    await stat(target);
+                    exists = true;
+                } catch {
+                    // absent
+                }
+                if (!exists) {
+                    await writeFileAtomic(target, content);
+                }
+            }
+
+            // Register the group + files in cfgeconomycore.xml and invalidate caches.
+            await ensureTypesGroupInEconomyCore(profile, paths, folder, seedFiles);
+
+            send(res, 200, JSON.stringify({
+                ok: true,
+                group,
+                folder,
+                file: 'types',
+                spawnableFile: 'spawnabletypes',
+                alreadyExists,
+            }), {'Content-Type': 'application/json'});
             return;
         }
 

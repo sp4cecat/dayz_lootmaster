@@ -10,6 +10,8 @@ import ExportModal from './components/ExportModal';
 import UnknownEntriesModal from './components/UnknownEntriesModal';
 import SummaryModal from './components/SummaryModal';
 import { ManageDefinitionsModal } from './components/ManageDefinitionsModal';
+import { NewGroupModal } from './components/NewGroupModal';
+import { NewTypeModal } from './components/NewTypeModal';
 import StorageStatusModal from './components/StorageStatusModal';
 import { RandomPresetsModal } from './components/RandomPresetsModal';
 import EditorLogin from './components/EditorLogin';
@@ -38,6 +40,8 @@ import {
     Download, 
     RefreshCw,
     AlertTriangle,
+    FolderPlus,
+    FilePlus,
     X
 } from 'lucide-react';
 import type { Type } from './utils/xml';
@@ -70,6 +74,8 @@ export default function App() {
         manage,
         getGroupTypes,
         getGroupFiles,
+        addGroup,
+        addType,
         storageDirty,
         storageDiff,
         setChangeEditorID,
@@ -120,7 +126,7 @@ export default function App() {
     const [editorID, setEditorID] = useState(() => localStorage.getItem('dayz-editor:id') || '');
     // Navigation is driven by the URL hash so a refresh / deep link restores the screen.
     const { view, navigate } = useHashRoute(); // e.g. 'cle', 'profiles', 'addons:expansion:airdrops'
-    const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'diff', 'manage-definitions'
+    const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'diff', 'manage-definitions', 'new-group', 'new-type'
     const setView = useCallback((id: string) => {
         navigate(id);
         setModal(null);
@@ -329,6 +335,8 @@ export default function App() {
                                                 <Redo size={18} />
                                             </Button>
                                         </div>
+                                        <Button variant="secondary-gray" icon={FolderPlus} onClick={() => setModal('new-group')}>New group</Button>
+                                        <Button variant="secondary-gray" icon={FilePlus} onClick={() => setModal('new-type')}>New type</Button>
                                         <Button variant="secondary-gray" icon={Download} onClick={() => setModal('export')}>Export</Button>
                                         <Button variant="secondary-gray" icon={RefreshCw} onClick={reloadFromFiles}>Reload</Button>
                                         <Button 
@@ -560,10 +568,37 @@ export default function App() {
                 />
             )}
             {modal === 'diff' && (
-                <StorageStatusModal 
-                    diff={storageDiff} 
-                    onClose={() => setModal(null)} 
+                <StorageStatusModal
+                    diff={storageDiff}
+                    onClose={() => setModal(null)}
                     onApply={persistChangesToServer}
+                />
+            )}
+            {modal === 'new-group' && (
+                <NewGroupModal
+                    groups={groups}
+                    onCreate={addGroup}
+                    onCreated={(group) => {
+                        setModal(null);
+                        setFilters(prev => ({ ...prev, groups: [group] }));
+                    }}
+                    onClose={() => setModal(null)}
+                />
+            )}
+            {modal === 'new-type' && (
+                <NewTypeModal
+                    groups={groups.filter(g => g !== 'vanilla' && g !== 'vanilla_overrides')}
+                    getGroupFiles={getGroupFiles}
+                    categories={definitions?.categories || []}
+                    existingNames={(lootTypes || []).map(t => t.name)}
+                    initialGroup={filters.groups.length === 1 ? filters.groups[0] : undefined}
+                    onCreate={addType}
+                    onCreated={(type) => {
+                        setModal(null);
+                        setFilters(prev => ({ ...prev, name: '', groups: type.group ? [type.group] : prev.groups }));
+                        setSelection(new Set([type.name]));
+                    }}
+                    onClose={() => setModal(null)}
                 />
             )}
         </div>
