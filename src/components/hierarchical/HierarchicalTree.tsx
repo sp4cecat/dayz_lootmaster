@@ -43,6 +43,8 @@ interface HierarchicalTreeProps {
   items: LoadoutNode[];
   onUpdate: (items: LoadoutNode[]) => void;
   onSelect: (node: LoadoutNode) => void;
+  /** Fired when a new child node is added inside the tree, so the caller can focus its classname. */
+  onNodeCreated?: (node: LoadoutNode) => void;
   onAddTemplate: (nodeId: string, list: 'attachments' | 'cargo') => void;
   selectedNodeId: string | null;
   childLists?: ChildListConfig[];
@@ -61,6 +63,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
   items,
   onUpdate,
   onSelect,
+  onNodeCreated,
   onAddTemplate,
   selectedNodeId,
   childLists,
@@ -297,6 +300,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
               onDelete={() => deleteItem(idx)}
               onDuplicate={allowRootDuplicate ? () => duplicateItem(idx) : undefined}
               onSelect={onSelect}
+              onNodeCreated={onNodeCreated}
               onAddTemplate={(list) => onAddTemplate(item.id, list)}
               selectedNodeId={selectedNodeId}
               childLists={childLists}

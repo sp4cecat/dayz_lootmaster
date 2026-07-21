@@ -52,6 +52,15 @@ interface HierarchicalPropertiesProps {
   expansionAirdrops?: any;
 
   /**
+   * When this equals the current node's id, the "Item Classname" input is focused and its
+   * text selected once (used to make a freshly-added item immediately typeable). Only genuine
+   * adds should set this — normal click-selection must leave it null so focus isn't stolen.
+   */
+  autoFocusNodeId?: string | null;
+  /** Fired after the classname input has been focused+selected, so the caller can clear autoFocusNodeId. */
+  onAutoFocusConsumed?: () => void;
+
+  /**
    * Spawnable types keyed by group -> file -> { types: [{ name, sections }] }. Populates the
    * "Spawnable Type" option of the inline template-source picker. Optional; when absent, the
    * spawnable source shows an empty picker.
@@ -88,9 +97,31 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   randomPresets,
   expansionAirdrops,
   spawnableTypesByGroup,
+  autoFocusNodeId,
+  onAutoFocusConsumed,
 }) => {
   const { displayNameFor } = useCatalog();
   const [newVariant, setNewVariant] = React.useState('');
+  const nameInputRef = React.useRef<HTMLInputElement>(null);
+
+  // When this node was just created (autoFocusNodeId matches), focus the classname input and
+  // select its placeholder text so the user can type straight over it. The double rAF waits for
+  // the drawer/ComboBox to be committed and laid out (the drawer stays mounted across selections,
+  // so a plain autoFocus wouldn't re-fire). Only item nodes render the classname ComboBox, so the
+  // ref is null for groups/templates and this safely no-ops.
+  React.useEffect(() => {
+    if (!autoFocusNodeId || autoFocusNodeId !== node.id || node.type !== 'item') return;
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        nameInputRef.current?.focus();
+        nameInputRef.current?.select();
+        // Clear only after focusing: doing it earlier would re-run this effect and the cleanup
+        // below would cancel the still-pending rAF before focus lands.
+        onAutoFocusConsumed?.();
+      });
+    });
+    return () => cancelAnimationFrame(raf1);
+  }, [autoFocusNodeId, node.id, node.type, onAutoFocusConsumed]);
 
   // Picker options for the currently-selected template source. Each entry maps a display
   // label to the value stored in node.name — which is the loadout id for 'loadout' and the
@@ -349,6 +380,7 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
               <div className="space-y-1.5">
                 <ComboBox
                   items={itemOptions}
+                  inputRef={nameInputRef}
                   inputValue={node.name}
                   onInputChange={value => {
                     // Items carry a combined "Class DisplayName" textValue so display names are

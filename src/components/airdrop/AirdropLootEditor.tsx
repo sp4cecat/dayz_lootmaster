@@ -67,6 +67,9 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
+  // Set to a node id only when that node was just created, so the properties drawer focuses+selects
+  // its classname input once. Cleared as soon as the drawer consumes it.
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [templateTarget, setTemplateTarget] = useState<{ nodeId: string; list: 'attachments' | 'cargo' } | null>(null);
   const [loadoutPickerOpen, setLoadoutPickerOpen] = useState(false);
   const [loadoutSearch, setLoadoutSearch] = useState('');
@@ -124,6 +127,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
     commit([newNode, ...nodes]);
     setSelectedNodeId(newNode.id);
     setEditingNode(newNode);
+    setPendingFocusId(newNode.id);
   };
 
   // Copy a saved loadout's items in as individual, editable loot entries. Round-trip
@@ -205,6 +209,7 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
               setSelectedNodeId(node.id);
               setEditingNode(node);
             }}
+            onNodeCreated={(node) => setPendingFocusId(node.id)}
             onAddTemplate={(nodeId, list) => setTemplateTarget({ nodeId, list })}
             selectedNodeId={selectedNodeId}
             randomPresets={randomPresets}
@@ -225,6 +230,8 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
             node={editingNode}
             onUpdate={handleUpdateNode}
             onClose={() => setSelectedNodeId(null)}
+            autoFocusNodeId={pendingFocusId}
+            onAutoFocusConsumed={() => setPendingFocusId(null)}
             onExportAsLoadout={async (node) => {
               try {
                 const lo = nodeToStandaloneLoadout(node, [node], loadouts);

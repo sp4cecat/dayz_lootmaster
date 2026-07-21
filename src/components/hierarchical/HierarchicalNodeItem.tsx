@@ -35,6 +35,9 @@ interface HierarchicalNodeItemProps {
   /** Insert a fresh-ID copy of this node as a sibling. Omitted -> no Duplicate button. */
   onDuplicate?: () => void;
   onSelect: (node: LoadoutNode) => void;
+  /** Fired when a brand-new child node is added (in addition to onSelect), so a caller can
+   *  focus+select its classname input. */
+  onNodeCreated?: (node: LoadoutNode) => void;
   onAddTemplate: (list: 'attachments' | 'cargo') => void;
   selectedNodeId: string | null;
   depth?: number;
@@ -72,6 +75,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   onDelete,
   onDuplicate,
   onSelect,
+  onNodeCreated,
   onAddTemplate,
   selectedNodeId,
   depth = 0,
@@ -205,6 +209,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
       isExpanded: true
     });
     onSelect(newNode);
+    onNodeCreated?.(newNode);
   };
 
   const updateChild = (list: 'attachments' | 'cargo', index: number, updatedChild: LoadoutNode) => {
@@ -263,6 +268,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
       isExpanded: true
     });
     onSelect(newGroup);
+    onNodeCreated?.(newGroup);
   };
 
   return (
@@ -458,6 +464,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                           onDelete={() => deleteChild(listConfig.key, idx)}
                           onDuplicate={() => duplicateChild(listConfig.key, idx)}
                           onSelect={onSelect}
+                          onNodeCreated={onNodeCreated}
                           onAddTemplate={onAddTemplate}
                           selectedNodeId={selectedNodeId}
                           depth={depth + 1}

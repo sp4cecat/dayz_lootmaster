@@ -57,6 +57,9 @@ export default function EditFormSpawnableTab({
   const [viewMode, setViewMode] = useState<'tiles' | 'tree'>('tree');
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Set to a node id only when just created, so the properties drawer focuses+selects its
+  // classname input once (cleared as soon as the drawer consumes it).
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateModalTarget, setTemplateModalTarget] = useState<{nodeId: string, list: 'attachments' | 'cargo'} | null>(null);
@@ -459,6 +462,7 @@ export default function EditFormSpawnableTab({
                 setSelectedNodeId(node.id);
                 setEditingNode(node);
               }}
+              onNodeCreated={(node) => setPendingFocusId(node.id)}
               onAddTemplate={(nodeId, list) => {
                 setTemplateModalTarget({ nodeId, list });
                 setTemplateModalOpen(true);
@@ -476,6 +480,8 @@ export default function EditFormSpawnableTab({
                 node={editingNode}
                 onUpdate={handleUpdateNode}
                 onClose={() => setSelectedNodeId(null)}
+                autoFocusNodeId={pendingFocusId}
+                onAutoFocusConsumed={() => setPendingFocusId(null)}
                 onExportAsLoadout={async (node) => {
                   try {
                     const lo = nodeToStandaloneLoadout(node, [node], loadouts);

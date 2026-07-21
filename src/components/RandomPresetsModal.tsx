@@ -171,6 +171,9 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set());
   
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Set to a node id only when just created, so the properties drawer focuses+selects its
+  // classname input once (cleared as soon as the drawer consumes it).
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
   const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -565,6 +568,8 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
               node={editingNode}
               onUpdate={(updated) => handleUpdateNode(updated, editingPresetIndex)}
               onClose={() => setSelectedNodeId(null)}
+              autoFocusNodeId={pendingFocusId}
+              onAutoFocusConsumed={() => setPendingFocusId(null)}
               onExportAsLoadout={async (node) => {
                 try {
                   const lo = nodeToStandaloneLoadout(node, [node], loadouts);
@@ -785,6 +790,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                           setSelectedNodeId(newNode.id);
                           setEditingNode(newNode);
                           setEditingPresetIndex(index);
+                          setPendingFocusId(newNode.id);
                         }}>
                           Add Item
                         </Button>
@@ -803,6 +809,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
                           setEditingNode(node);
                           setEditingPresetIndex(index);
                         }}
+                        onNodeCreated={(node) => setPendingFocusId(node.id)}
                         onAddTemplate={(nodeId, list) => {
                           setTemplateModalTarget({ index, nodeId, list });
                           setTemplateModalOpen(true);

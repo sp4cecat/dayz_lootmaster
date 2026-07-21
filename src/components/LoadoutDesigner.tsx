@@ -46,6 +46,9 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
   const [editingLoadout, setEditingLoadout] = useState<Loadout | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Set to a node id only when just created, so the properties drawer focuses+selects its
+  // classname input once (cleared as soon as the drawer consumes it).
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   
   // Import from existing state
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -218,6 +221,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
       items: [...updatedItems, newNode]
     });
     setSelectedNodeId(newNode.id);
+    setPendingFocusId(newNode.id);
   };
 
   const handleExport = (format: 'json' | 'expansion' | 'keycards' | 'vanilla') => {
@@ -736,6 +740,7 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                       items={editingLoadout.items}
                       onUpdate={(newNodes) => setEditingLoadout({ ...editingLoadout, items: newNodes })}
                       onSelect={(node) => setSelectedNodeId(node.id)}
+                      onNodeCreated={(node) => setPendingFocusId(node.id)}
                       onAddTemplate={(nodeId, list) => {
                         setTemplateModalTarget({ nodeId, list });
                         setTemplateModalOpen(true);
@@ -763,6 +768,8 @@ export const LoadoutDesigner: React.FC<LoadoutDesignerProps> = ({
                     node={findNode(editingLoadout.items, selectedNodeId)!}
                     onUpdate={handleUpdateNode}
                     onClose={() => setSelectedNodeId(null)}
+                    autoFocusNodeId={pendingFocusId}
+                    onAutoFocusConsumed={() => setPendingFocusId(null)}
                     onExportAsLoadout={async (node) => {
                       try {
                         const lo = nodeToStandaloneLoadout(node, editingLoadout.items, loadouts);

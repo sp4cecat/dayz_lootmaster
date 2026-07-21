@@ -20,17 +20,20 @@ export interface ComboBoxProps<T extends object> extends Omit<AriaComboBoxProps<
     placeholder?: string;
     items: T[];
     children: React.ReactNode | ((item: T) => React.ReactNode);
+    /** Forwarded to the inner text input so callers can focus()/select() it. */
+    inputRef?: React.Ref<HTMLInputElement>;
 }
 
-export function ComboBox<T extends object>({ 
-    label, 
-    description, 
-    errorMessage, 
-    placeholder, 
-    items, 
-    children, 
+export function ComboBox<T extends object>({
+    label,
+    description,
+    errorMessage,
+    placeholder,
+    items,
+    children,
     className,
-    ...props 
+    inputRef,
+    ...props
 }: ComboBoxProps<T>) {
     return (
         <AriaComboBox 
@@ -39,7 +42,8 @@ export function ComboBox<T extends object>({
         >
             {label && <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>}
             <div className="relative">
-                <AriaInput 
+                <AriaInput
+                    ref={inputRef}
                     placeholder={placeholder}
                     className="flex w-full rounded-lg border border-gray-300 bg-white px-3 h-10 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-300 disabled:cursor-not-allowed disabled:opacity-50 transition-all dark:bg-gray-950 dark:border-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:ring-primary-900/30 dark:focus:border-primary-500 pr-10"
                 />
