@@ -112,6 +112,10 @@ export const AirdropContainerSimulator: React.FC<AirdropContainerSimulatorProps>
   const candidates = useMemo(() => containerCandidates(effMission, settings), [effMission, settings]);
   const odds = useMemo(() => containerSelectionOdds(effMission, candidates), [effMission, candidates]);
   const noCompatibleContainer = needsLookup && candidates.length === 0;
+  // A self-contained mission uses its Container verbatim as the crate — but "Random" is a
+  // roll wildcard, not a real crate class, so it fails to spawn. Mirrors the editor warning.
+  const invalidSelfContainedCrate =
+    selfContained && String(missionData.Container ?? '').trim().toLowerCase() === 'random';
 
   const [chosen, setChosen] = useState<SimContainer | null>(null);
   const [crate, setCrate] = useState<SpawnedItem[]>([]);
@@ -285,13 +289,21 @@ export const AirdropContainerSimulator: React.FC<AirdropContainerSimulatorProps>
           </SectionHeader>
 
           {selfContained ? (
-            <div className="flex items-center gap-2 text-sm rounded-lg border border-gray-200 dark:border-gray-800 p-3">
-              <Link01 size={16} className="text-primary-500 shrink-0" />
-              <span className="text-gray-600 dark:text-gray-300">
-                Crate model <span className="font-semibold">«{crateModel}»</span> · loot &amp; infected from {lootSourceLabel} ·
-                ItemCount inherits the global setting ({settings?.ItemCount ?? 0}).
-              </span>
-            </div>
+            invalidSelfContainedCrate ? (
+              <WarningBanner>
+                It supplies its own loot &amp; infected, so the engine spawns its Container as the crate directly — but{' '}
+                <span className="font-medium">the Container is “Random”, which isn’t a real crate class.</span>{' '}
+                Pick a specific crate class; this mission will fail when it spawns.
+              </WarningBanner>
+            ) : (
+              <div className="flex items-center gap-2 text-sm rounded-lg border border-gray-200 dark:border-gray-800 p-3">
+                <Link01 size={16} className="text-primary-500 shrink-0" />
+                <span className="text-gray-600 dark:text-gray-300">
+                  Crate model <span className="font-semibold">«{crateModel}»</span> · loot &amp; infected from {lootSourceLabel} ·
+                  ItemCount inherits the global setting ({settings?.ItemCount ?? 0}).
+                </span>
+              </div>
+            )
           ) : noCompatibleContainer ? (
             <WarningBanner>
               {usesOwnLoot ? 'Its Infected list is empty' : 'Its Loot list is empty'}, so it falls back to a core container,

@@ -2037,6 +2037,17 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     ? (!!missionLink || (mission.data.Loot || []).length > 0 || expandUnique)
     : false;
 
+  // A mission's custom loot may be inline (mission.data.Loot) OR a live link to a shared
+  // list — resolve both exactly like the simulator (AirdropContainerSimulator). When a
+  // mission supplies BOTH custom loot AND infected it's "self-contained": the engine skips
+  // the container roll and uses the Container string verbatim as the crate model, so
+  // "Random" (a roll wildcard, not a real crate class) would fail to spawn.
+  const linkedList = missionLink ? lootLists.find((ll) => ll.id === missionLink.listId) : undefined;
+  const resolvedLoot = (mission?.data?.Loot?.length ? mission.data.Loot : linkedList?.Loot) ?? [];
+  const hasCustomLoot = resolvedLoot.length > 0;
+  const infectedNonEmpty = Array.isArray(mission?.data?.Infected) && mission.data.Infected.length > 0;
+  const selfContained = !!mission && !mission.corrupt && hasCustomLoot && infectedNonEmpty;
+
   const setMode = (unique: boolean) => {
     if (!mission) return;
     if (unique) {
@@ -2091,7 +2102,9 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   );
 
   const containerOptions = useMemo(() => {
-    const set = new Set<string>(['Random', ...containerNames]);
+    // Self-contained missions (own loot + infected) use the Container verbatim as the crate,
+    // so "Random" isn't a valid choice — omit it from the options.
+    const set = new Set<string>(selfContained ? containerNames : ['Random', ...containerNames]);
     // With unique loot the container only supplies the crate model (its loot is
     // overridden by the custom list), so any Expansion crate type is valid — offer the
     // full set. Without it the mission inherits the container's core loot, so it must
@@ -2099,7 +2112,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
     if (isUnique) CONTAINER_CLASS_OPTIONS.forEach((c) => set.add(c));
     if (mission?.data?.Container) set.add(mission.data.Container);
     return Array.from(set).map((c) => ({ id: c }));
-  }, [containerNames, mission?.data?.Container, isUnique]);
+  }, [containerNames, mission?.data?.Container, isUnique, selfContained]);
 
   // Predict the runtime "no compatible container" failure from ExpansionMissionEventAirdrop
   // .Event_OnStart: when a mission's Loot OR Infected is empty it falls back to a container
@@ -2108,19 +2121,23 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
   const missionSpawnWarning = useMemo(() => {
     if (!mission || mission.corrupt) return null;
     const d = mission.data || {};
-    const lootEmpty = !Array.isArray(d.Loot) || d.Loot.length === 0;
-    const infectedEmpty = !Array.isArray(d.Infected) || d.Infected.length === 0;
-    if (!lootEmpty && !infectedEmpty) return null; // self-contained: no container lookup at spawn
+    const lootEmpty = !hasCustomLoot;
+    const infectedEmpty = !infectedNonEmpty;
     const cont = String(d.Container ?? '').trim();
     const isRandom = cont.toLowerCase() === 'random';
+    if (!lootEmpty && !infectedEmpty) {
+      // Self-contained: engine uses Container verbatim as the crate (no roll). "Random" is
+      // a roll wildcard, not a real crate class, so it fails to spawn.
+      return isRandom ? { kind: 'random-crate' as const } : null;
+    }
     const hasMatch = (settings?.Containers || []).some(
       (c: any) => (c?.Usage === 0 || c?.Usage === 1) && (isRandom || c?.Container === cont)
     );
     if (hasMatch) return null;
     const reason = [lootEmpty && 'its Loot list is empty', infectedEmpty && 'its Infected list is empty']
       .filter(Boolean).join(' and ');
-    return { isRandom, cont, reason };
-  }, [mission, settings]);
+    return { kind: 'no-container' as const, isRandom, cont, reason };
+  }, [mission, settings, hasCustomLoot, infectedNonEmpty]);
 
   // Resolved defaults shown when a mission field is set to inherit (see
   // ExpansionMissionEventAirdrop.Event_OnStart): ItemCount/InfectedCount inherit
@@ -2263,7 +2280,11 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 <div className="text-amber-800 dark:text-amber-200">
                   <p className="text-sm font-semibold">This mission will fail when it spawns</p>
                   <p className="text-xs mt-0.5">
-                    {missionSpawnWarning.isRandom ? (
+                    {missionSpawnWarning.kind === 'random-crate' ? (
+                      <>It supplies its own Loot and Infected, so it spawns its Container as the crate directly (no
+                        random pick). But the Container is set to <span className="font-medium">“Random”</span>, which
+                        isn’t a real crate class. Choose a specific crate class in the Container field.</>
+                    ) : missionSpawnWarning.isRandom ? (
                       <>Because {missionSpawnWarning.reason}, it draws its crate and contents from a core
                         container, but <span className="font-medium">no container in Core Settings has Usage “Missions
                         &amp; player-called” or “Only missions”.</span> Add or enable one in the Containers tab, or give
@@ -2315,6 +2336,7 @@ const MissionsTab: React.FC<MissionsTabProps> = ({
                 <p className="text-xs text-gray-400 mt-1">
                   The core container this drop uses (its crate — and, unless unique loot is set, its loot). "Random" picks one at spawn.
                   {isUnique && ' With unique loot, any crate type can be picked.'}
+                  {selfContained && ' Because this mission has its own Loot and Infected, it spawns this crate directly, so a specific class (not "Random") is required.'}
                 </p>
               </div>
               <Input label="Airdrop Plane Class" placeholder="(inherit from settings)"
