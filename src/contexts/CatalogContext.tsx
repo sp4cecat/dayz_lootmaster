@@ -37,6 +37,8 @@ export interface TypeDetail {
   cargoSize: number[] | null;
   /** Descends from Container_Base; holds cargo even when cargoSize is empty (grid lives in the p3d). */
   isContainer?: boolean | null;
+  /** Can be placed/deployed into the world (base-building kits, tents, traps, deployable containers). */
+  isDeployable?: boolean | null;
   /** Compatible magazine classes (CfgWeapons magazines[]); null/empty for non-weapons. */
   magazines: string[] | null;
   /** Base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none. */
@@ -51,10 +53,14 @@ export interface CatalogValue {
   /** ms epoch of the mod's last live snapshot push (heartbeat); 0 when never synced. */
   lastSyncAt: number;
   catalogByName: Map<string, { displayName: string | null }>;
+  /** Class names the mod flagged as deployable; empty when the mod predates the flag. */
+  deployableNames: Set<string>;
   /** Occupiable attachment-slot vocabulary (union of items' inventorySlot[]); [] when unknown. */
   slotVocabulary: { slot: string; count: number }[];
   /** Synchronous displayName lookup; undefined when unknown. */
   displayNameFor: (name?: string) => string | undefined;
+  /** Synchronous deployable check against the bulk summary; false when unknown/not-loaded. */
+  isDeployable: (name?: string) => boolean;
   /** Async normalized detail for one class (cached); null on failure. */
   getTypeDetail: (name: string) => Promise<TypeDetail | null>;
   /** Read a detail already in cache without fetching; undefined if not loaded. */
@@ -69,8 +75,10 @@ const noopCatalog: CatalogValue = {
   connected: false,
   lastSyncAt: 0,
   catalogByName: new Map(),
+  deployableNames: new Set(),
   slotVocabulary: [],
   displayNameFor: () => undefined,
+  isDeployable: () => false,
   getTypeDetail: async () => null,
   peekTypeDetail: () => undefined,
   getCompatibleAttachments: () => null,

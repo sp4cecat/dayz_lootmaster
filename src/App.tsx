@@ -22,6 +22,7 @@ import TraderEditorModal from './components/TraderEditorModal';
 import LintFilesModal from './components/LintFilesModal';
 import MarketCategoryEditorModal from './components/MarketCategoryEditorModal';
 import { ExpansionAirdropEditor } from './components/ExpansionAirdropEditor';
+import { ExpansionBasesEditor } from './components/ExpansionBasesEditor';
 import ProfileManager from './components/ProfileManager';
 import { SnapshotModal } from './components/SnapshotModal';
 import { LoadoutDesigner } from './components/LoadoutDesigner';
@@ -519,11 +520,18 @@ export default function App() {
                             />
                         )}
                         {view === 'addons:expansion:airdrops' && (
-                            <ExpansionAirdropEditor 
+                            <ExpansionAirdropEditor
                                 selectedProfileId={selectedProfileId!}
                                 typeOptions={allTypeNames}
                                 randomPresets={randomPresets}
                                 loadouts={loadouts}
+                                missionName={selectedProfile?.missionName}
+                            />
+                        )}
+                        {view === 'addons:expansion:bases-territories' && (
+                            <ExpansionBasesEditor
+                                selectedProfileId={selectedProfileId!}
+                                typeOptions={allTypeNames}
                                 missionName={selectedProfile?.missionName}
                             />
                         )}

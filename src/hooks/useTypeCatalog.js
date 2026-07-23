@@ -13,6 +13,7 @@ import { apiFetch } from '../utils/api';
  * @property {string[]|null} occupiesSlots
  * @property {number[]|null} cargoSize
  * @property {boolean|null} isContainer
+ * @property {boolean|null} isDeployable
  * @property {string[]|null} magazines
  * @property {number|null} hitpoints
  * @property {{ammo:string,health:number,blood:number,shock:number}[]|null} armor
@@ -31,6 +32,11 @@ export function useTypeCatalog(selectedProfileId) {
   // ms epoch of the mod's last live snapshot push (heartbeat); 0 when never synced.
   const [lastSyncAt, setLastSyncAt] = useState(0);
   const [catalogByName, setCatalogByName] = useState(/** @type {Map<string,{displayName:string|null}>} */(new Map()));
+  // Class names the mod flagged as deployable (base-building kits, tents, traps, deployable
+  // containers). Carried on the bulk summary so deployable-scoped pickers can filter the full
+  // list without fetching per-item detail. Empty when the mod predates the flag ⇒ callers fall
+  // back to an unfiltered list.
+  const [deployableNames, setDeployableNames] = useState(/** @type {Set<string>} */(new Set()));
   // Occupiable attachment-slot vocabulary (union of items' inventorySlot[]); [] when unknown.
   const [slotVocabulary, setSlotVocabulary] = useState(/** @type {{slot:string,count:number}[]} */([]));
 
@@ -68,10 +74,15 @@ export function useTypeCatalog(selectedProfileId) {
         setLastSyncAt(health?.snapshotAt || 0);
         catalogAtRef.current = health?.catalogAt || 0;
         const map = new Map();
+        const deployable = new Set();
         for (const t of (types && Array.isArray(types.types) ? types.types : [])) {
-          if (t && t.name) map.set(t.name, { displayName: t.displayName ?? null });
+          if (t && t.name) {
+            map.set(t.name, { displayName: t.displayName ?? null });
+            if (t.isDeployable) deployable.add(t.name);
+          }
         }
         setCatalogByName(map);
+        setDeployableNames(deployable);
         // Per-name details and per-slot item lists change with the catalog; drop the stale caches
         // on (re)load and nudge consumers (detailVersion) so they refetch against fresh data.
         detailCache.current.clear();
@@ -81,7 +92,7 @@ export function useTypeCatalog(selectedProfileId) {
         setDetailVersion(v => v + 1);
         setSlotVocabulary(slots && Array.isArray(slots.slots) ? slots.slots : []);
       } catch {
-        if (!cancelled) { setConnected(false); setCatalogByName(new Map()); setSlotVocabulary([]); }
+        if (!cancelled) { setConnected(false); setCatalogByName(new Map()); setDeployableNames(new Set()); setSlotVocabulary([]); }
       }
     })();
     return () => { cancelled = true; };
@@ -188,15 +199,20 @@ export function useTypeCatalog(selectedProfileId) {
     return p;
   }, []);
 
+  /** Synchronous deployable check against the bulk summary; false when unknown/not-loaded. */
+  const isDeployable = useCallback((name) => !!name && deployableNames.has(name), [deployableNames]);
+
   return useMemo(() => ({
     connected,
     lastSyncAt,
     catalogByName,
+    deployableNames,
     slotVocabulary,
     displayNameFor,
+    isDeployable,
     getTypeDetail,
     peekTypeDetail,
     getCompatibleAttachments,
     getItemsForSlot,
-  }), [connected, lastSyncAt, catalogByName, slotVocabulary, displayNameFor, getTypeDetail, peekTypeDetail, getCompatibleAttachments, getItemsForSlot]);
+  }), [connected, lastSyncAt, catalogByName, deployableNames, slotVocabulary, displayNameFor, isDeployable, getTypeDetail, peekTypeDetail, getCompatibleAttachments, getItemsForSlot]);
 }

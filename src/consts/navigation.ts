@@ -30,7 +30,8 @@ export const NAV_ITEMS: NavItem[] = [
         subItems: [
           { id: 'traders', label: 'Traders' },
           { id: 'market-categories', label: 'Categories' },
-          { id: 'airdrops', label: 'Air Drops' }
+          { id: 'airdrops', label: 'Air Drops' },
+          { id: 'bases-territories', label: 'Bases & Territories' }
         ]
       }
     ] 

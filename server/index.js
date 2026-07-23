@@ -212,6 +212,8 @@ function getPaths(profile) {
         traderProfilesDirPath: join(profilesPath, 'ExpansionMod', 'Traders'),
         airdropSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'AirdropSettings.json'),
         missionSettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'MissionSettings.json'),
+        territorySettingsPath: join(profilesPath, 'ExpansionMod', 'Settings', 'TerritorySettings.json'),
+        baseBuildingSettingsPath: join(missionPath, 'expansion', 'settings', 'BaseBuildingSettings.json'),
         airdropMissionsDirPath: join(missionPath, 'expansion', 'missions'),
         airdropLocationsPath: join(missionPath, '.lootmaster', 'airdrop-locations.json'),
         airdropLootListsPath: join(missionPath, '.lootmaster', 'airdrop-loot-lists.json'),
@@ -1483,6 +1485,10 @@ function buildCatalogDetail(name) {
         // (storage containers' grids live in the p3d, not itemsCargoSize). The mod's Enforce
         // JsonSerializer emits bool as 1/0 (number), so coerce truthiness; absent ⇒ null (unknown).
         isContainer: detail && detail.isContainer != null ? !!detail.isContainer : null,
+        // isDeployable: item that can be placed/deployed into the world (base-building kits, tents,
+        // traps, fireplaces, garden plots, deployable containers). Emitted by the mod as bool 1/0;
+        // absent ⇒ null (unknown). Used to scope Expansion base-building deployable pickers.
+        isDeployable: detail && detail.isDeployable != null ? !!detail.isDeployable : null,
         // magazines: compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons.
         magazines: detail && Array.isArray(detail.magazines) ? detail.magazines : null,
         // hitpoints: base durability (DamageSystem GlobalHealth Health hitpoints); 0/null if none.
@@ -1510,7 +1516,14 @@ async function handleCatalogRoute(pathname, req, res) {
     // /api/catalog/types — bulk summaries for the displayName lookup.
     if (parts.length === 3 && parts[2] === 'types') {
         const { types } = ingest.getCatalog();
-        const list = Object.keys(types).map(name => ({ name, displayName: types[name].displayName || null }));
+        // isDeployable is carried on the bulk summary (unlike the other detail fields) so the
+        // client can filter the full type list to deployable items during search without fetching
+        // every per-item detail. Emitted by the mod as bool 1/0; absent ⇒ null (unknown).
+        const list = Object.keys(types).map(name => ({
+            name,
+            displayName: types[name].displayName || null,
+            isDeployable: types[name].isDeployable != null ? !!types[name].isDeployable : null,
+        }));
         send(res, 200, JSON.stringify({ count: list.length, types: list }), { 'Content-Type': 'application/json' });
         return true;
     }
@@ -2443,6 +2456,45 @@ const server = http.createServer(async (req, res) => {
                     send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
                 } catch (e) {
                     badRequest(res, `Invalid MissionSettings payload: ${e.message}`);
+                }
+                return;
+            }
+            methodNotAllowed(res);
+            return;
+        }
+
+        // GET/PUT Expansion Territory Settings (server-global, under profiles/ExpansionMod/Settings).
+        // GET/PUT Expansion Base Building Settings (per-map, under mpmissions/<map>/expansion/settings).
+        // Both are edited whole-object so m_Version and any fields the UI doesn't surface are preserved.
+        if (pathname === '/api/expansion/territory-settings' || pathname === '/api/expansion/basebuilding-settings') {
+            const profileId = req.headers['x-profile-id'];
+            const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
+            if (!profile) { notFound(res); return; }
+            const paths = getPaths(profile);
+            const isTerritory = pathname === '/api/expansion/territory-settings';
+            const target = isTerritory ? paths.territorySettingsPath : paths.baseBuildingSettingsPath;
+            const label = isTerritory ? 'TerritorySettings.json' : 'BaseBuildingSettings.json';
+            if (req.method === 'GET') {
+                try {
+                    const content = await readValidJsonFile(target);
+                    send(res, 200, content, {'Content-Type': 'application/json'});
+                } catch {
+                    // File missing OR corrupt — client seeds a default object.
+                    send(res, 404, JSON.stringify({ error: `${label} not found` }), {'Content-Type': 'application/json'});
+                }
+                return;
+            }
+            if (req.method === 'PUT') {
+                try {
+                    const body = await readBody(req);
+                    // Validate JSON before writing to disk
+                    const parsed = JSON.parse(body || '{}');
+                    const out = JSON.stringify(parsed, null, 4);
+                    await createBackupIfExists(target);
+                    await writeFileAtomic(target, out);
+                    send(res, 200, JSON.stringify({ ok: true }), {'Content-Type': 'application/json'});
+                } catch (e) {
+                    badRequest(res, `Invalid ${label} payload: ${e.message}`);
                 }
                 return;
             }

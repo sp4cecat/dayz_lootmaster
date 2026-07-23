@@ -37,6 +37,8 @@ interface AirdropDropLocationMapProps {
    * a flex container with a bounded height. Default false = full-width square.
    */
   fill?: boolean;
+  /** Prefix for the default marker label when a location has no Name (e.g. "Drop 1", "Zone 1"). */
+  labelPrefix?: string;
 }
 
 type DragMode = 'center' | 'radius' | null;
@@ -58,6 +60,7 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
   onSelect,
   onChange,
   fill = false,
+  labelPrefix = 'Drop',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ mode: DragMode; index: number }>({ mode: null, index: -1 });
@@ -203,7 +206,7 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
             {/* Center handle */}
             <div
               onPointerDown={startDrag('center', i)}
-              title={loc.Name || `Drop ${i + 1}`}
+              title={loc.Name || `${labelPrefix} ${i + 1}`}
               style={{ left: `${cxPct}%`, top: `${cyPct}%` }}
               className={cx(
                 'absolute z-20 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border-2 border-white shadow-md',
@@ -224,7 +227,7 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
                 style={{ left: `${cxPct}%`, top: `${cyPct}%` }}
                 className="absolute z-10 -translate-x-1/2 translate-y-3 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white pointer-events-none"
               >
-                {loc.Name || `Drop ${i + 1}`}
+                {loc.Name || `${labelPrefix} ${i + 1}`}
               </div>
             )}
           </React.Fragment>
