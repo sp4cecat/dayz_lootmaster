@@ -24,10 +24,12 @@ export interface LoadoutNode {
   };
   attachments: LoadoutNode[];
   cargo: LoadoutNode[];
-  // Expansion loot variants. Each is an ExpansionLootVariant object ({ Name, Chance,
-  // Attachments }); legacy data may still hold bare classname strings, so consumers
-  // must tolerate both shapes.
-  variants?: (string | ExpansionLootVariant)[];
+  // Expansion loot variants: alternate versions of this item, authored inline in the tree as
+  // their own item nodes (each with its own `name`, `chance`, and `attachments`/Contents).
+  // On export they become the slim ExpansionLootVariant shape ({ Name, Chance, Attachments });
+  // on import each Variants entry is mapped back to a LoadoutNode. Legacy stored data may still
+  // hold the old object/string shape — migrateVariantNodes (utils/loadouts.ts) upgrades it.
+  variants?: LoadoutNode[];
   attributes?: Record<string, string>; // XML attribute compatibility
   isExpanded?: boolean;
   // When set, this node is a live, read-only mirror of the sibling node with this id (its

@@ -237,7 +237,7 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
           : cloneNodeWithNewIds(sourceNode);
 
         let targetParent: LoadoutNode | null = null;
-        let targetListKey: 'attachments' | 'cargo' | 'root' = 'root';
+        let targetListKey: 'attachments' | 'cargo' | 'variants' | 'root' = 'root';
         let targetIndex = 0;
 
         if (over.id.toString().startsWith('droppable:')) {
@@ -277,7 +277,8 @@ export const HierarchicalTree: React.FC<HierarchicalTreeProps> = ({
     return {
       ...root,
       attachments: (root.attachments || []).map(a => findAndReplaceNode(a, updated)),
-      cargo: (root.cargo || []).map(c => findAndReplaceNode(c, updated))
+      cargo: (root.cargo || []).map(c => findAndReplaceNode(c, updated)),
+      ...(root.variants ? { variants: root.variants.map(v => findAndReplaceNode(v, updated)) } : {})
     };
   };
 

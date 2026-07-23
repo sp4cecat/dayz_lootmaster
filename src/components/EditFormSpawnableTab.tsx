@@ -499,8 +499,7 @@ export default function EditFormSpawnableTab({
                 config={{
                   title: 'Spawnable Item Properties',
                   showQuantity: false,
-                  showDamage: true,
-                  showVariants: false
+                  showDamage: true
                 }}
               />
             </div>

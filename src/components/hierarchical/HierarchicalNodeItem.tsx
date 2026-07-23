@@ -17,7 +17,7 @@ import { Button as AriaButton } from 'react-aria-components';
 const UNASSIGNED_SLOT = '__unassigned__';
 
 export interface ChildListConfig {
-  key: 'attachments' | 'cargo';
+  key: 'attachments' | 'cargo' | 'variants';
   label: string;
   icon: any;
   /** Which catalog capability decides whether this list is offered. Defaults to `key`.
@@ -136,9 +136,12 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   // default Attachments + Cargo lists. Its kind (attachments vs cargo) is implied by
   // which parent list it lives in.
   const isGroup = displayNode.type === 'group';
+  // The Variants list (Expansion item-level select-one alternatives) only makes sense on a
+  // root loot item — a variant, and any attachment, must not itself nest a Variants list — so
+  // strip it below depth 0. A group renders only its members list.
   const effectiveChildLists: ChildListConfig[] = isGroup
     ? [{ key: 'attachments', label: 'Items', icon: Package }]
-    : childLists;
+    : childLists.filter(c => c.key !== 'variants' || depth === 0);
 
   // Companion-mod catalog capabilities for this class. Only item nodes map to a real
   // class; group/template nodes are structural, so we skip them. null capability means
@@ -162,6 +165,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   }, [slotGraph]);
   const listOffered = (cfg: ChildListConfig): boolean => {
     if (isGroup) return true; // group members list is not catalog-gated
+    if (cfg.key === 'variants') return true; // variants are always available on a root item
     const gate = cfg.gate ?? cfg.key;
     if (gate === 'either') return acceptsAttachments !== false || holdsCargo !== false;
     return gate === 'cargo' ? holdsCargo !== false : acceptsAttachments !== false;
@@ -179,10 +183,16 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
   const noChildCapacity = !isGroup && displayNode.type === 'item'
     && acceptsAttachments === false && holdsCargo === false;
   const hasChildren = (resolvedChildren.attachments?.length || 0) > 0
-    || (resolvedChildren.cargo?.length || 0) > 0;
-  const canExpand = !noChildCapacity || hasChildren;
+    || (resolvedChildren.cargo?.length || 0) > 0
+    || (displayNode.variants?.length || 0) > 0;
+  // A root item always exposes the Variants list, so it must stay expandable even when the
+  // catalog says it holds no attachments/cargo.
+  const hasVariantsList = effectiveChildLists.some(c => c.key === 'variants');
+  const canExpand = !noChildCapacity || hasChildren || hasVariantsList;
 
-  const handleAddChild = (list: 'attachments' | 'cargo') => {
+  type ChildKey = 'attachments' | 'cargo' | 'variants';
+
+  const handleAddChild = (list: ChildKey) => {
     const newNode: LoadoutNode = {
       id: crypto.randomUUID(),
       type: 'item',
@@ -193,43 +203,49 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
       isExpanded: false
     };
 
-    const updatedAttachments = node.attachments.map(child => ({
-      ...child,
-      isExpanded: child.id === selectedNodeId ? false : child.isExpanded
-    }));
-    const updatedCargo = node.cargo.map(child => ({
+    // Collapse the currently-selected sibling in the target list so the new row is visible.
+    const collapsed = (node[list] || []).map(child => ({
       ...child,
       isExpanded: child.id === selectedNodeId ? false : child.isExpanded
     }));
 
-    onUpdate({
-      ...node,
-      attachments: list === 'attachments' ? [...updatedAttachments, newNode] : updatedAttachments,
-      cargo: list === 'cargo' ? [...updatedCargo, newNode] : updatedCargo,
-      isExpanded: true
-    });
+    onUpdate({ ...node, [list]: [...collapsed, newNode], isExpanded: true });
     onSelect(newNode);
     onNodeCreated?.(newNode);
   };
 
-  const updateChild = (list: 'attachments' | 'cargo', index: number, updatedChild: LoadoutNode) => {
-    const newList = [...node[list]];
+  // Seed a new variant from the base item itself: a fresh-id deep copy of this item (its
+  // Contents included) minus its own variants. Reuses cloneNodeWithNewIds — no serialization.
+  const cloneItemToVariant = () => {
+    // Type the base explicitly as LoadoutNode: cloneNodeWithNewIds' recursive generic
+    // constraint won't infer cleanly through an inline spread literal.
+    const base: LoadoutNode = { ...node, variants: [], isExpanded: false };
+    const seed = cloneNodeWithNewIds(base);
+    onUpdate({ ...node, variants: [...(node.variants || []), seed], isExpanded: true });
+    onSelect(seed);
+    onNodeCreated?.(seed);
+  };
+
+  const updateChild = (list: ChildKey, index: number, updatedChild: LoadoutNode) => {
+    const newList = [...(node[list] || [])];
     newList[index] = updatedChild;
     onUpdate({ ...node, [list]: newList });
   };
 
-  const deleteChild = (list: 'attachments' | 'cargo', index: number) => {
-    const newList = [...node[list]];
+  const deleteChild = (list: ChildKey, index: number) => {
+    const newList = [...(node[list] || [])];
     newList.splice(index, 1);
     onUpdate({ ...node, [list]: newList });
   };
 
-  // Duplicating a child item inserts a live, read-only linked clone directly after it;
-  // groups/templates keep the old independent-copy behavior.
-  const duplicateChild = (list: 'attachments' | 'cargo', index: number) => {
-    const source = node[list][index];
-    const newList = [...node[list]];
-    if (source.type === 'item') {
+  // Duplicating an attachment/cargo item inserts a live, read-only linked clone directly after
+  // it (groups/templates keep the independent-copy behavior). Variants instead clone as an
+  // INDEPENDENT copy — they're meant to diverge — matching the "clone as sibling" action.
+  const duplicateChild = (list: ChildKey, index: number) => {
+    const arr = node[list] || [];
+    const source = arr[index];
+    const newList = [...arr];
+    if (list !== 'variants' && source.type === 'item') {
       newList.splice(index + 1, 0, cloneNodeAsLink(source));
       onUpdate({ ...node, [list]: newList });
       return;
@@ -251,7 +267,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
 
   // Adds an inline group (one <attachments>/<cargo> block) to the given list, optionally
   // linked to an exposed attachment slot so its members can be restricted to that slot.
-  const handleAddGroup = (list: 'attachments' | 'cargo', slot?: string) => {
+  const handleAddGroup = (list: ChildKey, slot?: string) => {
     const newGroup: LoadoutNode = {
       id: crypto.randomUUID(),
       type: 'group',
@@ -264,7 +280,7 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     };
     onUpdate({
       ...node,
-      [list]: [...node[list], newGroup],
+      [list]: [...(node[list] || []), newGroup],
       isExpanded: true
     });
     onSelect(newGroup);
@@ -333,6 +349,9 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
             <Badge color="gray" size="sm">{(displayNode.chance * 100).toFixed(0)}%</Badge>
             {displayNode.type === 'template' && <Badge color="warning" size="sm">Template</Badge>}
             {isGroup && <Badge color="purple" size="sm">Group{displayNode.slot ? ` · ${displayNode.slot}` : ''} · one of {(displayNode.attachments || []).length}</Badge>}
+            {displayNode.type === 'item' && depth === 0 && (displayNode.variants?.length ?? 0) > 0 && (
+              <Badge color="blue" size="sm">+{displayNode.variants!.length} variant{displayNode.variants!.length === 1 ? '' : 's'}</Badge>
+            )}
             {(isReadOnly || isLinked) && <Badge color="gray" size="sm">Linked</Badge>}
           </div>
           {rootDisplayName && rootDisplayName !== node.name && (
@@ -393,13 +412,34 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
       {canExpand && isExpanded && (
         <div className="ml-6 pl-4 border-l-2 border-gray-100 dark:border-gray-800 space-y-4 py-2">
           {effectiveChildLists.map((listConfig) => {
-             const children = resolvedChildren[listConfig.key] || [];
+             // Variants are authored directly on the node (never resolved from a template),
+             // so read them straight from displayNode; other lists come from resolvedChildren.
+             const children = listConfig.key === 'variants'
+               ? (displayNode.variants || [])
+               : (resolvedChildren[listConfig.key] || []);
              const offered = listOffered(listConfig);
              return (
               <div key={listConfig.key} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{listConfig.label}</span>
-                  {!editLocked && offered && (
+                  {!editLocked && offered && listConfig.key === 'variants' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={cloneItemToVariant}
+                        title="Add a variant that is a copy of this item (Contents included)"
+                        className="text-xs text-primary-600 hover:underline flex items-center"
+                      >
+                        <Copy size={12} className="mr-1" /> Clone from item
+                      </button>
+                      <button
+                        onClick={() => handleAddChild('variants')}
+                        className="text-xs text-primary-600 hover:underline flex items-center"
+                      >
+                        <Plus size={12} className="mr-1" /> Add
+                      </button>
+                    </div>
+                  )}
+                  {!editLocked && offered && listConfig.key !== 'variants' && (
                     <div className="flex gap-2">
                       {!isGroup && (
                         listConfig.key === 'attachments' && slotOptions.length > 0 ? (
@@ -438,8 +478,8 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
                           </button>
                         )
                       )}
-                      <button 
-                        onClick={() => onAddTemplate(listConfig.key)}
+                      <button
+                        onClick={() => onAddTemplate(listConfig.key as 'attachments' | 'cargo')}
                         className="text-xs text-amber-600 hover:underline flex items-center"
                       >
                         <Layers size={12} className="mr-1" /> Template

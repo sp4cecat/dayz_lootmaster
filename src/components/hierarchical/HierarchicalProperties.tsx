@@ -3,16 +3,14 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 import { Input } from '@/components/base/input/input';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
 import { Slider } from '@/components/base/slider/slider';
-import { X, Layers, Package, Plus, Trash2, Boxes, Save } from 'lucide-react';
+import { X, Layers, Package, Boxes, Save } from 'lucide-react';
 import { Badge } from '@/components/base/badges/badges';
-import { Button } from '@/components/base/button/button';
 import { cx } from '@/utils/cx';
 import { useCatalog } from '@/contexts/CatalogContext';
 
 export interface HierarchicalPropertiesConfig {
   showQuantity?: boolean;
   showDamage?: boolean;
-  showVariants?: boolean;
   showAttributes?: boolean;
   title?: string;
 }
@@ -88,7 +86,6 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   config = {
     showQuantity: true,
     showDamage: true,
-    showVariants: false,
     showAttributes: false,
   },
   compatibleClasses,
@@ -101,7 +98,6 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   onAutoFocusConsumed,
 }) => {
   const { displayNameFor } = useCatalog();
-  const [newVariant, setNewVariant] = React.useState('');
   const nameInputRef = React.useRef<HTMLInputElement>(null);
 
   // When this node was just created (autoFocusNodeId matches), focus the classname input and
@@ -167,20 +163,6 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
     const names = restricted ? compatibleClasses! : typeOptions;
     return names.map(n => ({ id: n, name: n, displayName: displayNameFor(n) || '' }));
   }, [restricted, compatibleClasses, typeOptions, displayNameFor]);
-
-  const addVariant = () => {
-    if (!newVariant) return;
-    // Expansion expects variant objects, not bare strings, or its JSON loader drops them.
-    const variants = [...(node.variants || []), { Name: newVariant, Chance: 1.0, Attachments: [] }];
-    onUpdate({ ...node, variants });
-    setNewVariant('');
-  };
-
-  const removeVariant = (index: number) => {
-    const variants = [...(node.variants || [])];
-    variants.splice(index, 1);
-    onUpdate({ ...node, variants });
-  };
 
   return (
     <div className="flex flex-col h-full shrink-0 min-h-0 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-xl w-[400px]">
@@ -493,35 +475,6 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
                   value={node.damage?.max ?? ''} 
                   onChange={e => onUpdate({ ...node, damage: { ...node.damage, max: parseFloat(e.target.value) || 0, min: node.damage?.min ?? 0 } })}
                 />
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Variants Section (Expansion) */}
-        {config.showVariants && node.type === 'item' && (
-          <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Variants (Expansion)</label>
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input 
-                  size="sm" 
-                  placeholder="Variant classname..." 
-                  value={newVariant}
-                  onChange={e => setNewVariant(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addVariant()}
-                />
-                <Button size="sm" onClick={addVariant}><Plus size={16} /></Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(node.variants || []).map((v, i) => (
-                  <Badge key={i} color="gray" className="pr-1 py-1">
-                    {typeof v === 'string' ? v : v.Name}
-                    <button onClick={() => removeVariant(i)} className="ml-1 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500">
-                      <Trash2 size={10} />
-                    </button>
-                  </Badge>
-                ))}
               </div>
             </div>
           </section>

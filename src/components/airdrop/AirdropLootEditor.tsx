@@ -6,7 +6,7 @@ import { Plus, Package, PlusCircle, Settings01, SearchMd, AlertTriangle } from '
 import { HierarchicalTree } from '../hierarchical/HierarchicalTree';
 import { ChildListConfig } from '../hierarchical/HierarchicalNodeItem';
 import { HierarchicalProperties } from '../hierarchical/HierarchicalProperties';
-import { loadoutToExpansionAirdrop, expansionAirdropToLoadout, nodeToStandaloneLoadout } from '@/utils/loadouts';
+import { loadoutToExpansionAirdrop, expansionAirdropToLoadout, nodeToStandaloneLoadout, migrateVariantNodes } from '@/utils/loadouts';
 import { saveLoadout } from '@/utils/loadoutStore';
 import { updateNodeInList, findNode } from '@/utils/tree';
 import { LoadoutNode, Loadout } from '@/types/loadouts';
@@ -19,6 +19,9 @@ import { LoadoutNode, Loadout } from '@/types/loadouts';
 // cargo-only container (e.g. Bear_Pink) must still accept loot here.
 const AIRDROP_CHILD_LISTS: ChildListConfig[] = [
   { key: 'attachments', label: 'Contents', icon: Settings01, gate: 'either' },
+  // Item-level Expansion Variants (weighted select-one alternatives), authored inline as
+  // their own item rows. Shown on root items only (the tree gates it by depth).
+  { key: 'variants', label: 'Variants', icon: Settings01 },
 ];
 
 // Detect an attachment-level group: a `group` node sitting inside some node's
@@ -63,7 +66,9 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
   onChangeNodes,
 }) => {
   const [nodes, setNodes] = useState<LoadoutNode[]>(
-    () => initialNodes ?? expansionAirdropToLoadout('loot', initialLoot || []).items
+    // Stored trees (initialNodes) may hold variants in the legacy object/string shape — upgrade
+    // them to LoadoutNode[] on seed. Fresh imports already produce variant nodes.
+    () => initialNodes ? migrateVariantNodes(initialNodes) : expansionAirdropToLoadout('loot', initialLoot || []).items
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [editingNode, setEditingNode] = useState<LoadoutNode | null>(null);
@@ -248,7 +253,6 @@ export const AirdropLootEditor: React.FC<AirdropLootEditorProps> = ({
               title: 'Airdrop Item Properties',
               showQuantity: true,
               showDamage: false,
-              showVariants: true,
             }}
           />
         </div>

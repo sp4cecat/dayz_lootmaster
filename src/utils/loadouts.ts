@@ -244,9 +244,9 @@ export function loadoutToExpansionAirdrop(
       QuantityPercent: resolved.quantity?.percent ?? -1.0,
       Max: resolved.quantity?.max ?? -1,
       Min: resolved.quantity?.min ?? 0,
-      // Normalize so legacy bare-string variants (and their string attachments) always
-      // become canonical ExpansionLootVariant objects in the written JSON.
-      Variants: (resolved.variants || []).map(normalizeExpansionVariant)
+      // Variants are authored as item nodes; map each to the slim ExpansionLootVariant shape
+      // (Name/Chance/Attachments, with the variant's own Contents folded in) via mapVariant.
+      Variants: (resolved.variants || []).map(mapVariant)
     };
   };
 
@@ -450,8 +450,9 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
         max: item.Max ?? 0,
         percent: item.QuantityPercent
       } : undefined,
-      // Coerce legacy string variants (and their string attachments) to objects.
-      variants: (item.Variants || []).map(normalizeExpansionVariant),
+      // Variants are alternate items — map each back to an item node (reusing mapNode so a
+      // variant's own Attachments become child Contents nodes).
+      variants: (item.Variants || []).map(mapNode),
       attachments: (item.Attachments || []).map(mapNode),
       cargo: [] // Expansion airdrop loot has no Cargo member; never read it back
     };
@@ -463,6 +464,36 @@ export function expansionAirdropToLoadout(label: string, lootItems: any[]): Load
     items: lootItems.map(mapNode),
     updatedAt: Date.now()
   };
+}
+
+/**
+ * Upgrades a stored node tree whose `variants` still hold the OLD shape (ExpansionLootVariant
+ * objects, or bare classname strings) to the current LoadoutNode[] shape. Variants are now
+ * authored as item nodes, so anything lacking a node `id`/`type` is converted to one (its
+ * Attachments becoming child Contents nodes). Idempotent — a variant that is already a node
+ * passes through — so it is safe to run on every load of stored trees (LootList.Nodes, saved
+ * loadouts). Recurses attachments/cargo/variants.
+ */
+export function migrateVariantNodes(nodes: LoadoutNode[]): LoadoutNode[] {
+  const toNode = (v: any): LoadoutNode => {
+    if (v && typeof v === 'object' && 'id' in v && 'type' in v) return migrateNode(v as LoadoutNode);
+    const norm = normalizeExpansionVariant(v);
+    return {
+      id: crypto.randomUUID(),
+      type: 'item',
+      name: norm.Name,
+      chance: norm.Chance ?? 1.0,
+      attachments: (norm.Attachments || []).map(toNode),
+      cargo: [],
+    };
+  };
+  const migrateNode = (node: LoadoutNode): LoadoutNode => ({
+    ...node,
+    attachments: (node.attachments || []).map(migrateNode),
+    cargo: (node.cargo || []).map(migrateNode),
+    ...(node.variants ? { variants: node.variants.map(toNode) } : {}),
+  });
+  return nodes.map(migrateNode);
 }
 
 /**

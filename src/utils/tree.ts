@@ -1,6 +1,6 @@
 import { LoadoutNode } from '@/types/loadouts';
 
-export function findNode<T extends { id: string, attachments?: T[], cargo?: T[] }>(
+export function findNode<T extends { id: string, attachments?: T[], cargo?: T[], variants?: T[] }>(
   nodes: T[],
   id: string
 ): T | null {
@@ -14,20 +14,24 @@ export function findNode<T extends { id: string, attachments?: T[], cargo?: T[] 
       const found = findNode(node.cargo, id);
       if (found) return found;
     }
+    if (node.variants) {
+      const found = findNode(node.variants, id);
+      if (found) return found;
+    }
   }
   return null;
 }
 
-export function updateNodeInList<T extends { id: string, attachments?: T[], cargo?: T[] }>(
-  nodes: T[], 
+export function updateNodeInList<T extends { id: string, attachments?: T[], cargo?: T[], variants?: T[] }>(
+  nodes: T[],
   updatedNode: T
 ): T[] {
   return nodes.map(node => {
     if (node.id === updatedNode.id) return updatedNode;
-    
+
     const nextNode = { ...node };
     let changed = false;
-    
+
     if (node.attachments) {
       const nextAttachments = updateNodeInList(node.attachments, updatedNode);
       if (nextAttachments !== node.attachments) {
@@ -35,7 +39,7 @@ export function updateNodeInList<T extends { id: string, attachments?: T[], carg
         changed = true;
       }
     }
-    
+
     if (node.cargo) {
       const nextCargo = updateNodeInList(node.cargo, updatedNode);
       if (nextCargo !== node.cargo) {
@@ -43,7 +47,15 @@ export function updateNodeInList<T extends { id: string, attachments?: T[], carg
         changed = true;
       }
     }
-    
+
+    if (node.variants) {
+      const nextVariants = updateNodeInList(node.variants, updatedNode);
+      if (nextVariants !== node.variants) {
+        nextNode.variants = nextVariants;
+        changed = true;
+      }
+    }
+
     return changed ? nextNode : node;
   });
 }
@@ -51,13 +63,16 @@ export function updateNodeInList<T extends { id: string, attachments?: T[], carg
 // Deep-clones a node and assigns a fresh crypto.randomUUID() to it and every
 // attachments/cargo descendant, so a duplicated subtree carries no shared IDs with the
 // original. Used by the Duplicate action and the right-click drag-copy in HierarchicalTree.
-export function cloneNodeWithNewIds<T extends { id: string, attachments?: T[], cargo?: T[] }>(node: T): T {
+export function cloneNodeWithNewIds<T extends { id: string, attachments?: T[], cargo?: T[], variants?: T[] }>(node: T): T {
   const deep = JSON.parse(JSON.stringify(node)) as T;
   const reId = (n: T): T => ({
     ...n,
     id: crypto.randomUUID(),
     attachments: (n.attachments || []).map(reId) as T[],
     cargo: (n.cargo || []).map(reId) as T[],
+    // Only re-attach variants when present so we don't add an empty array to nodes that
+    // never had one (attachments/group members carry no variants).
+    ...(n.variants ? { variants: n.variants.map(reId) as T[] } : {}),
   });
   return reId(deep);
 }
@@ -70,6 +85,7 @@ export function buildNodeIndex(nodes: LoadoutNode[]): Map<string, LoadoutNode> {
       index.set(node.id, node);
       if (node.attachments) walk(node.attachments);
       if (node.cargo) walk(node.cargo);
+      if (node.variants) walk(node.variants);
     }
   };
   walk(nodes);
@@ -134,6 +150,9 @@ export function materializeLinkedClones(
       cargo: resolved.cargo
         ? materializeLinkedClones(resolved.cargo, index, nextSeen)
         : resolved.cargo,
+      variants: resolved.variants
+        ? materializeLinkedClones(resolved.variants, index, nextSeen)
+        : resolved.variants,
     };
   });
 }
@@ -151,8 +170,9 @@ export function repairItemClassNames(
   const mapped = nodes.map(node => {
     const att = repairItemClassNames(node.attachments || [], repair);
     const car = repairItemClassNames(node.cargo || [], repair);
+    const varr = node.variants ? repairItemClassNames(node.variants, repair) : null;
     const name = node.type === 'item' ? repair(node.name) : node.name;
-    if (name !== node.name || att.changed || car.changed) {
+    if (name !== node.name || att.changed || car.changed || varr?.changed) {
       changed = true;
       return {
         ...node,
@@ -160,6 +180,7 @@ export function repairItemClassNames(
         // Preserve the original (possibly undefined) child arrays when untouched.
         attachments: att.changed ? att.nodes : node.attachments,
         cargo: car.changed ? car.nodes : node.cargo,
+        variants: varr?.changed ? varr.nodes : node.variants,
       };
     }
     return node;
@@ -174,24 +195,29 @@ export function reorderList<T>(list: T[], startIndex: number, endIndex: number):
   return result;
 }
 
-export function findParent<T extends { id: string, attachments?: T[], cargo?: T[] }>(
-  nodes: T[], 
+export function findParent<T extends { id: string, attachments?: T[], cargo?: T[], variants?: T[] }>(
+  nodes: T[],
   id: string,
   parent: T | null = null,
-  list: 'attachments' | 'cargo' | 'root' = 'root'
-): { parent: T | null, list: 'attachments' | 'cargo' | 'root', index: number } | null {
+  list: 'attachments' | 'cargo' | 'variants' | 'root' = 'root'
+): { parent: T | null, list: 'attachments' | 'cargo' | 'variants' | 'root', index: number } | null {
   for (let i = 0; i < nodes.length; i++) {
     if (nodes[i].id === id) {
       return { parent, list, index: i };
     }
-    
+
     if (nodes[i].attachments) {
       const found = findParent(nodes[i].attachments!, id, nodes[i], 'attachments');
       if (found) return found;
     }
-    
+
     if (nodes[i].cargo) {
       const found = findParent(nodes[i].cargo!, id, nodes[i], 'cargo');
+      if (found) return found;
+    }
+
+    if (nodes[i].variants) {
+      const found = findParent(nodes[i].variants!, id, nodes[i], 'variants');
       if (found) return found;
     }
   }

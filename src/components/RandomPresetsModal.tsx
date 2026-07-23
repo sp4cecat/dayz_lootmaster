@@ -587,8 +587,7 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
               config={{
                 title: 'Preset Item Properties',
                 showQuantity: false,
-                showDamage: false,
-                showVariants: false
+                showDamage: false
               }}
             />
           </div>

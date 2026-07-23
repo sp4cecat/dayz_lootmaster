@@ -6,8 +6,9 @@ import {
   loadoutToVanillaXml,
   loadoutToExpansionAirdrop,
   expansionAirdropToLoadout,
+  migrateVariantNodes,
 } from '../../src/utils/loadouts.ts';
-import type { Loadout } from '../../src/types/loadouts.ts';
+import type { Loadout, LoadoutNode } from '../../src/types/loadouts.ts';
 
 // The FAL example from the issue: three separate <attachments> groups, each with
 // its own chance, and items with their own chances inside.
@@ -228,6 +229,69 @@ describe('Item-level group -> Expansion Variants (exclusive select-one)', () => 
   });
 });
 
+describe('Variants as item nodes (inline authoring)', () => {
+  // Variants are authored inline as their own item nodes. Import maps each Variants[] entry —
+  // and its own Attachments — into a LoadoutNode; export maps it back to the slim shape.
+  it('imports a variant (with its own attachments) as an item node and round-trips it', () => {
+    const loadout = expansionAirdropToLoadout('t', [
+      {
+        Name: 'AKM',
+        Chance: 1.0,
+        Attachments: [],
+        QuantityPercent: -1,
+        Max: -1,
+        Min: 0,
+        Variants: [{ Name: 'SKS', Chance: 0.3, Attachments: [{ Name: 'PABlackHandguard', Chance: 1.0, Attachments: [] }] }],
+      },
+    ]);
+    // A variant is a real item node with a name and its Attachments as child nodes.
+    const variant = loadout.items[0].variants![0];
+    expect(variant.type).toBe('item');
+    expect(variant.name).toBe('SKS');
+    expect(variant.chance).toBe(0.3);
+    expect(variant.attachments.map((a) => a.name)).toEqual(['PABlackHandguard']);
+
+    // Export folds it back to the slim ExpansionLootVariant shape.
+    const out = loadoutToExpansionAirdrop(loadout, []);
+    expect(out[0].Variants).toHaveLength(1);
+    expect(out[0].Variants[0]).toEqual({
+      Name: 'SKS',
+      Chance: 0.3,
+      Attachments: [{ Name: 'PABlackHandguard', Chance: 1.0, Attachments: [] }],
+    });
+  });
+
+  it('migrateVariantNodes upgrades legacy object/string variants to item nodes (idempotent)', () => {
+    // A stored node whose variants still hold the OLD object + string shapes.
+    const stored = [
+      {
+        id: 'root',
+        type: 'item',
+        name: 'AKM',
+        chance: 1,
+        attachments: [],
+        cargo: [],
+        variants: [
+          { Name: 'SKS', Chance: 0.3, Attachments: [{ Name: 'PABlackHandguard', Chance: 1, Attachments: [] }] },
+          'M4A1',
+        ],
+      },
+    ] as unknown as LoadoutNode[];
+
+    const migrated = migrateVariantNodes(stored);
+    const variants = migrated[0].variants!;
+    expect(variants.map((v) => v.type)).toEqual(['item', 'item']);
+    expect(variants.map((v) => v.name)).toEqual(['SKS', 'M4A1']);
+    expect(variants[0].attachments.map((a) => a.name)).toEqual(['PABlackHandguard']);
+    expect(typeof variants[0].id).toBe('string');
+
+    // Idempotent: re-running on already-migrated nodes keeps them as nodes (same names/ids).
+    const again = migrateVariantNodes(migrated);
+    expect(again[0].variants!.map((v) => v.name)).toEqual(['SKS', 'M4A1']);
+    expect(again[0].variants![0].id).toBe(variants[0].id);
+  });
+});
+
 describe('Expansion airdrop string-vs-object attachment duality', () => {
   it('imports legacy string attachments (m_Version < 5) without corruption', () => {
     const loadout = expansionAirdropToLoadout('t', [
@@ -267,11 +331,11 @@ describe('Expansion airdrop string-vs-object attachment duality', () => {
         Variants: [{ Name: 'SKS', Chance: 0.2, Attachments: ['PABlackHandguard'] }],
       },
     ]);
-    // Import coerces the variant's string attachment to an object.
-    expect((loadout.items[0].variants as any)[0].Attachments).toEqual([
-      { Name: 'PABlackHandguard', Chance: 1.0, Attachments: [] },
-    ]);
-    // Export keeps it as a normalized object.
+    // Import maps the variant to an item node; its string attachment becomes a child item node.
+    const variant = loadout.items[0].variants![0];
+    expect(variant.name).toBe('SKS');
+    expect(variant.attachments.map((a) => a.name)).toEqual(['PABlackHandguard']);
+    // Export normalizes it back to the slim object shape.
     const out = loadoutToExpansionAirdrop(loadout, []);
     expect(out[0].Variants[0].Attachments[0]).toEqual({ Name: 'PABlackHandguard', Chance: 1.0, Attachments: [] });
   });
