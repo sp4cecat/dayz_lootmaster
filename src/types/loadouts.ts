@@ -31,6 +31,12 @@ export interface LoadoutNode {
   // hold the old object/string shape — migrateVariantNodes (utils/loadouts.ts) upgrades it.
   variants?: LoadoutNode[];
   attributes?: Record<string, string>; // XML attribute compatibility
+  // Raw spawnabletypes <type> child sections the tree model doesn't understand
+  // (e.g. <hoarder>, <tag>). Captured verbatim on import so tree-round-trip editing
+  // paths don't silently drop them; re-emitted unchanged on export. Shape matches
+  // parseSpawnableNode's output ({ kind, chance, preset, attrs, items }). Only ever
+  // populated on a root/type node.
+  preservedSections?: any[];
   isExpanded?: boolean;
   // When set, this node is a live, read-only mirror of the sibling node with this id (its
   // source). Display and DayZ export resolve content from the source; the node's own stored

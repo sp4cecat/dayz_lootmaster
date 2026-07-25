@@ -1,6 +1,6 @@
 import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
-import { escapeAttr } from '@/utils/xml';
+import { escapeAttr, renderSpawnableSection } from '@/utils/xml';
 import { buildNodeIndex, materializeLinkedClones, cloneNodeWithNewIds } from '@/utils/tree';
 
 /**
@@ -339,6 +339,8 @@ export function loadoutToVanillaXml(
     }
     (node.attachments || []).forEach(child => renderBlock('attachments', child, `${space}  `));
     (node.cargo || []).forEach(child => renderBlock('cargo', child, `${space}  `));
+    // Re-emit unmodelled sections (e.g. <hoarder>, <tag>) captured on import, verbatim.
+    (node.preservedSections || []).forEach(section => lines.push(...renderSpawnableSection(section, indent + 2)));
     lines.push(`${space}</type>`);
   };
 
@@ -368,10 +370,18 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
     };
   }
 
+  // Sections the tree model doesn't understand (e.g. <hoarder>, <tag>) are stashed verbatim
+  // so the round-trip export paths can re-emit them. <damage> is excluded because it is already
+  // promoted to rootNode.damage and re-emitted from there — keeping it here would duplicate it.
+  const preserved = (spawnableType.sections || []).filter(
+    (s: any) => s.kind !== 'attachments' && s.kind !== 'cargo' && s.kind !== 'damage'
+  );
+  if (preserved.length) rootNode.preservedSections = preserved;
+
   (spawnableType.sections || []).forEach((section: any) => {
-    const list = section.kind === 'attachments' ? rootNode.attachments : 
+    const list = section.kind === 'attachments' ? rootNode.attachments :
                  section.kind === 'cargo' ? rootNode.cargo : null;
-    
+
     if (!list) return;
 
     if (section.preset) {
@@ -549,6 +559,10 @@ export function loadoutToSpawnableEntry(loadout: Loadout): any {
 
   mapToSection(root.attachments, XMLNodeKind.ATTACHMENTS);
   mapToSection(root.cargo, XMLNodeKind.CARGO);
+
+  // Re-emit any sections the tree model preserved but doesn't edit (e.g. <hoarder>, <tag>).
+  // Appended last — DayZ is order-agnostic for <type> children.
+  if (root.preservedSections?.length) sections.push(...root.preservedSections);
 
   return {
     name: root.name,

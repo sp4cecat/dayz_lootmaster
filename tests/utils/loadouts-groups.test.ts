@@ -391,3 +391,75 @@ describe('Cargo folds into Expansion Attachments', () => {
     expect(out[0].Attachments.map((a: any) => a.Name)).toEqual(['AKM_Suppressor', 'Mag_AKM_30Rnd']);
   });
 });
+
+describe('Unmodelled spawnable sections survive the round-trip', () => {
+  // A stash that carries attachments (which the tree model understands) plus a <hoarder>
+  // block and a <tag> (which it does not). The tree-based editing paths must not drop the
+  // latter when they regenerate the type via loadoutToSpawnableEntry.
+  const HOARDER_XML = `<spawnabletypes>
+  <type name="Barrel_Green">
+    <attachments chance="1.00">
+      <item name="CamoNet" chance="0.30"/>
+    </attachments>
+    <hoarder chance="0.80">
+      <item name="Ammo_762x39" chance="0.50"/>
+      <item name="Ammo_556x45" chance="0.50"/>
+    </hoarder>
+    <tag name="floor"/>
+  </type>
+</spawnabletypes>`;
+
+  it('captures <hoarder>/<tag> on the root node as preservedSections (damage excluded)', () => {
+    const parsed = parseSpawnableTypesXml(HOARDER_XML);
+    const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
+    const root = loadout.items[0];
+
+    // Attachments still modelled as a group; hoarder/tag stashed verbatim.
+    expect(root.attachments).toHaveLength(1);
+    expect(root.preservedSections?.map((s: any) => s.kind)).toEqual(['hoarder', 'tag']);
+    const hoarder = root.preservedSections!.find((s: any) => s.kind === 'hoarder');
+    expect(hoarder.chance).toBe(0.8);
+    expect(hoarder.items.map((i: any) => i.name)).toEqual(['Ammo_762x39', 'Ammo_556x45']);
+  });
+
+  it('re-emits <hoarder>/<tag> when converting back to a spawnable entry', () => {
+    const parsed = parseSpawnableTypesXml(HOARDER_XML);
+    const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
+    const entry = loadoutToSpawnableEntry(loadout);
+
+    const kinds = entry.sections.map((s: any) => s.kind);
+    expect(kinds).toContain('attachments');
+    expect(kinds).toContain('hoarder');
+    expect(kinds).toContain('tag');
+    const hoarder = entry.sections.find((s: any) => s.kind === 'hoarder');
+    expect(hoarder.items.map((i: any) => i.name)).toEqual(['Ammo_762x39', 'Ammo_556x45']);
+  });
+
+  it('re-emits preserved sections in vanilla XML export', () => {
+    const parsed = parseSpawnableTypesXml(HOARDER_XML);
+    const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
+    const xml = loadoutToVanillaXml(loadout, []);
+
+    // Preserved sections render via the generic renderSpawnableSection helper (3-decimal
+    // chances), so match the tag/item structure without pinning exact chance formatting.
+    expect(xml).toMatch(/<hoarder chance="0\.8/);
+    expect(xml).toContain('<item name="Ammo_762x39"');
+    expect(xml).toContain('</hoarder>');
+    expect(xml).toContain('<tag name="floor"/>');
+  });
+
+  it('preserves a hoarder-only type instead of collapsing it to an empty <type>', () => {
+    const ONLY = `<spawnabletypes>
+  <type name="Stash_Small">
+    <hoarder preset="StashLoot"/>
+  </type>
+</spawnabletypes>`;
+    const parsed = parseSpawnableTypesXml(ONLY);
+    const loadout = vanillaSpawnableToLoadout(parsed.types[0]);
+    const entry = loadoutToSpawnableEntry(loadout);
+
+    expect(entry.sections).toHaveLength(1);
+    expect(entry.sections[0].kind).toBe('hoarder');
+    expect(entry.sections[0].preset).toBe('StashLoot');
+  });
+});

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
+import { Checkbox } from '@/components/base/checkbox/checkbox';
 import { Badge } from '@/components/base/badges/badges';
 import { Button } from '@/components/base/button/button';
 import { 
@@ -335,6 +336,27 @@ export default function EditFormSpawnableTab({
     handleDamageChange('min', (globalsDefaults.LootDamageMin ?? 0) * 100);
   };
 
+  // A self-closing <hoarder/> child marks the item as a "hoarder" item. It is a flag, so we
+  // model it as presence/absence of an (empty) hoarder section on the type.
+  const makeHoarderSection = () => ({ kind: 'hoarder', chance: null, preset: '', attrs: {}, items: [] });
+  const isHoarder = (entry.sections || []).some((s: any) => s.kind === 'hoarder');
+
+  const handleToggleHoarder = (checked: boolean) => {
+    updateSpawnableEntry(current => {
+      const sections = (current.sections || []).filter((s: any) => s.kind !== 'hoarder');
+      if (checked) sections.push(makeHoarderSection());
+      return { ...current, sections };
+    });
+    // Keep the hierarchical tree's root node in sync so a later tree edit (which re-serialises
+    // sections from treeItems via loadoutToSpawnableEntry) doesn't drop or resurrect the flag.
+    setTreeItems(prev => prev.map((root, i) => {
+      if (i !== 0) return root;
+      const kept = (root.preservedSections || []).filter((s: any) => s.kind !== 'hoarder');
+      const preservedSections = checked ? [...kept, makeHoarderSection()] : kept;
+      return { ...root, preservedSections: preservedSections.length ? preservedSections : undefined };
+    }));
+  };
+
   if (isMulti) {
     return (
       <div className="p-12 text-center bg-gray-50 dark:bg-gray-950/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
@@ -428,6 +450,21 @@ export default function EditFormSpawnableTab({
             </Button>
           </div>
         )}
+      </section>
+
+      {/* Hoarder flag */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Badge color="brand" size="sm" type="modern">Storage</Badge>
+        </div>
+        <div className="bg-gray-50 dark:bg-gray-950/20 p-6 rounded-xl border border-gray-100 dark:border-gray-800">
+          <Checkbox
+            isSelected={isHoarder}
+            onChange={handleToggleHoarder}
+            label="Hoarder"
+            hint="Adds a <hoarder/> child so this item is treated as a hoarder item."
+          />
+        </div>
       </section>
 
       {/* View Toggle */}

@@ -558,7 +558,7 @@ function spawnableAttrs(base: any) {
   return buildAttrs(merged);
 }
 
-function renderSpawnableSection(section: any, indent: number) {
+export function renderSpawnableSection(section: any, indent: number) {
   const space = ' '.repeat(indent);
   const attrs = spawnableAttrs({ ...(section.attrs || {}), chance: section.chance, preset: section.preset });
   const items = section.items || [];

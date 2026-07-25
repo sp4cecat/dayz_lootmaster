@@ -98,4 +98,42 @@ describe('EditFormSpawnableTab', () => {
     expect(entry.sections.some((s: any) => s.kind === XMLNodeKind.DAMAGE)).toBe(true);
     unmount();
   });
+
+  it('checks the Hoarder box when a <hoarder/> section exists', async () => {
+    (findSpawnableEntryForType as any).mockReturnValue({
+      group: 'vanilla',
+      entry: {
+        name: 'TestItem',
+        sections: [{ kind: 'hoarder', chance: null, preset: '', attrs: {}, items: [] }],
+      },
+    });
+
+    const { container, unmount } = await renderComponent();
+
+    expect(container.textContent).toContain('Hoarder');
+    const cb = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(cb?.checked).toBe(true);
+    unmount();
+  });
+
+  it('adds a <hoarder/> section when the Hoarder box is checked', async () => {
+    (findSpawnableEntryForType as any).mockReturnValue(null); // Virtual entry
+
+    const setSpy = vi.fn();
+    const { container, unmount } = await renderComponent({ ...defaultProps, setSpawnableTypesByGroup: setSpy });
+
+    const cb = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(cb).toBeTruthy();
+    expect(cb.checked).toBe(false);
+
+    await act(async () => {
+      cb.click();
+    });
+
+    expect(setSpy).toHaveBeenCalled();
+    const nextGroups = setSpy.mock.calls[setSpy.mock.calls.length - 1][0];
+    const entry = nextGroups['__root']['cfgspawnabletypes.xml'].types[0];
+    expect(entry.sections.some((s: any) => s.kind === 'hoarder')).toBe(true);
+    unmount();
+  });
 });
