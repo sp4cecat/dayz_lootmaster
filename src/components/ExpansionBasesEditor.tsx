@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTabParam } from '@/hooks/useHashRoute';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
 import { Toggle } from '@/components/base/toggle/toggle';
 import { Select } from '@/components/base/select/select';
+import { Modal } from '@/components/base/modal/modal';
 import {
   Save01, RefreshCcw01, Plus, Trash01, Copy01, CheckCircle, AlertCircle,
-  Building07, Home02, MarkerPin01, Map01,
+  Building07, Home02, MarkerPin01, Map01, Maximize01, Minimize01,
 } from '@untitledui/icons';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
@@ -329,6 +330,7 @@ export const ExpansionBasesEditor: React.FC<ExpansionBasesEditorProps> = ({
           setSelectedZoneIdx={setSelectedZoneIdx}
           map={map}
           typeOptions={typeOptions}
+          saveState={saveState}
         />
       )}
     </div>
@@ -346,16 +348,36 @@ interface ZonesTabProps {
   setSelectedZoneIdx: (i: number | null) => void;
   map: ReturnType<typeof useMapMetadata>;
   typeOptions: string[];
+  /** Mirrored into the fullscreen footer — the page-header chip is hidden behind the backdrop. */
+  saveState: SaveState;
 }
 
 const ZonesTab: React.FC<ZonesTabProps> = ({
   baseBuilding, setBaseBuilding, dirty, onSave, selectedZoneIdx, setSelectedZoneIdx, map, typeOptions,
+  saveState,
 }) => {
   const zones: BuildZone[] = useMemo(
     () => (Array.isArray(baseBuilding?.Zones) ? baseBuilding.Zones : []),
     [baseBuilding?.Zones]);
   const selected = selectedZoneIdx !== null ? zones[selectedZoneIdx] : null;
   const noBuild = !!baseBuilding?.ZonesAreNoBuildZones;
+
+  // Fullscreen map editing. Kept local to the tab so it resets when you navigate away.
+  // `selectedZoneIdx` stays the single source of truth for both layouts.
+  const [fullscreen, setFullscreen] = useState(false);
+  const [mapAreaRef, squareSize] = useSquareFit();
+
+  // Esc closes the fullscreen map. Deliberately local rather than added to the shared
+  // Modal — a global Esc-dismiss would change behaviour for every modal in the app,
+  // several of which hold unsaved form state.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
 
   const setZones = (next: BuildZone[]) => setBaseBuilding({ ...baseBuilding, Zones: next });
 
@@ -393,6 +415,39 @@ const ZonesTab: React.FC<ZonesTabProps> = ({
     setSelectedZoneIdx(nextIdx);
   };
 
+  // Rendered in the sidebar OR the fullscreen modal — never both at once.
+  const zoneList = (
+    <>
+      <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
+        <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Build Zones</span>
+        <Button size="xs" variant="secondary-gray" icon={Plus} onClick={addZone} />
+      </div>
+      <div className="p-3 border-b border-gray-200 dark:border-gray-800">
+        <Toggle label="Zones are no-build zones" slim
+          isSelected={noBuild} onChange={(v) => setBaseBuilding({ ...baseBuilding, ZonesAreNoBuildZones: v ? 1 : 0 })} />
+      </div>
+      <div className="p-2 space-y-1">
+        {zones.length === 0 && (
+          <p className="p-3 text-xs text-gray-400">No zones yet. Click + to create a build zone.</p>
+        )}
+        {zones.map((z, i) => (
+          <button key={i} onClick={() => setSelectedZoneIdx(i)}
+            className={cx('w-full text-left p-3 rounded-lg border transition-all',
+              selectedZoneIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
+                : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold truncate">{z.Name || 'Unnamed'}</span>
+              <Badge size="sm" color={z.IsWhitelist ? 'brand' : 'gray'}>{z.IsWhitelist ? 'allow' : 'block'}</Badge>
+            </div>
+            <span className="text-xs text-gray-400 truncate block">
+              {Math.round(z.Center?.[0] ?? 0)}, {Math.round(z.Center?.[2] ?? 0)} · R{Math.round(z.Radius || 0)} · {(z.Items?.length ?? 0)} item{(z.Items?.length ?? 0) === 1 ? '' : 's'}
+            </span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
   const editorPanel = selected ? (
     <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
       <Input label="Zone name" value={selected.Name}
@@ -429,33 +484,7 @@ const ZonesTab: React.FC<ZonesTabProps> = ({
   return (
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 overflow-auto flex flex-col">
-        <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Build Zones</span>
-          <Button size="xs" variant="secondary-gray" icon={Plus} onClick={addZone} />
-        </div>
-        <div className="p-3 border-b border-gray-200 dark:border-gray-800">
-          <Toggle label="Zones are no-build zones" slim
-            isSelected={noBuild} onChange={(v) => setBaseBuilding({ ...baseBuilding, ZonesAreNoBuildZones: v ? 1 : 0 })} />
-        </div>
-        <div className="p-2 space-y-1">
-          {zones.length === 0 && (
-            <p className="p-3 text-xs text-gray-400">No zones yet. Click + to create a build zone.</p>
-          )}
-          {zones.map((z, i) => (
-            <button key={i} onClick={() => setSelectedZoneIdx(i)}
-              className={cx('w-full text-left p-3 rounded-lg border transition-all',
-                selectedZoneIdx === i ? 'bg-white dark:bg-gray-800 border-primary-200 dark:border-primary-800 shadow-sm'
-                  : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold truncate">{z.Name || 'Unnamed'}</span>
-                <Badge size="sm" color={z.IsWhitelist ? 'brand' : 'gray'}>{z.IsWhitelist ? 'allow' : 'block'}</Badge>
-              </div>
-              <span className="text-xs text-gray-400 truncate block">
-                {Math.round(z.Center?.[0] ?? 0)}, {Math.round(z.Center?.[2] ?? 0)} · R{Math.round(z.Radius || 0)} · {(z.Items?.length ?? 0)} item{(z.Items?.length ?? 0) === 1 ? '' : 's'}
-              </span>
-            </button>
-          ))}
-        </div>
+        {zoneList}
       </aside>
 
       <div className="flex-1 p-6 overflow-auto">
@@ -468,6 +497,9 @@ const ZonesTab: React.FC<ZonesTabProps> = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="secondary-gray" icon={Maximize01} onClick={() => setFullscreen(true)}>
+              Fullscreen
+            </Button>
             {selected && (
               <>
                 <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateZone(selectedZoneIdx!)}>Duplicate</Button>
@@ -478,12 +510,105 @@ const ZonesTab: React.FC<ZonesTabProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 max-w-5xl">
-          <AirdropDropLocationMap map={map} locations={drops} selectedIndex={selectedZoneIdx}
-            onSelect={setSelectedZoneIdx} onChange={handleMapChange} labelPrefix="Zone" />
-          <div className="space-y-3">{editorPanel}</div>
-        </div>
+        {/* Unmounted while fullscreen: AirdropDropLocationMap binds window pointer
+            listeners per instance, and two mounted maps would double them. */}
+        {!fullscreen && (
+          <div className="grid grid-cols-2 gap-6 max-w-5xl">
+            <AirdropDropLocationMap map={map} locations={drops} selectedIndex={selectedZoneIdx}
+              onSelect={setSelectedZoneIdx} onChange={handleMapChange} labelPrefix="Zone" />
+            <div className="space-y-3">{editorPanel}</div>
+          </div>
+        )}
       </div>
+
+      <Modal
+        isOpen={fullscreen}
+        onClose={() => setFullscreen(false)}
+        title="Build Zones"
+        description="Click the map to move the selected zone, drag a marker to reposition, or drag its outer handle to resize. Press Esc to exit."
+        icon={Map01}
+        maxWidth="max-w-none w-[98vw]"
+        className="h-[96vh]"
+        footer={
+          <div className="flex items-center gap-3">
+            {saveState.kind === 'ok' && (
+              <span className="flex items-center gap-1.5 text-sm text-success-600"><CheckCircle size={16} /> Saved</span>
+            )}
+            {saveState.kind === 'error' && (
+              <span className="flex items-center gap-1.5 text-sm text-error-600"><AlertCircle size={16} /> {saveState.message}</span>
+            )}
+            {selected && (
+              <>
+                <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateZone(selectedZoneIdx!)}>Duplicate</Button>
+                <Button variant="error-secondary" icon={Trash01} onClick={() => deleteZone(selectedZoneIdx!)}>Delete</Button>
+              </>
+            )}
+            <Button variant="secondary" icon={Minimize01} onClick={() => setFullscreen(false)}>Exit Fullscreen</Button>
+            <Button variant="primary" icon={Save01} onClick={onSave} disabled={!dirty}>Save Base Building</Button>
+          </div>
+        }
+      >
+        <div className="flex h-full min-h-0 gap-6">
+          {/* Side columns narrow on smaller displays so the map — the point of this
+              view — never ends up smaller than it is in the inline layout. */}
+          <aside className="w-56 2xl:w-64 shrink-0 overflow-auto flex flex-col rounded-lg border border-gray-200 dark:border-gray-800">
+            {zoneList}
+          </aside>
+
+          {/* min-w-0 lets this shrink below its content so the observed width is real. */}
+          <div ref={mapAreaRef} className="flex-1 min-w-0 min-h-0 flex items-center justify-center">
+            {squareSize > 0 && (
+              <div style={{ width: squareSize, height: squareSize }}>
+                <AirdropDropLocationMap map={map} locations={drops} selectedIndex={selectedZoneIdx}
+                  onSelect={setSelectedZoneIdx} onChange={handleMapChange} labelPrefix="Zone" />
+              </div>
+            )}
+          </div>
+
+          <div className="w-80 2xl:w-[30rem] shrink-0 overflow-auto">{editorPanel}</div>
+        </div>
+      </Modal>
     </div>
   );
 };
+
+/**
+ * Measures the largest square that fits inside an element, for laying out the
+ * map at maximum size.
+ *
+ * CSS alone can't do this: `aspect-square h-full max-w-full` silently produces a
+ * non-square box whenever width binds (max-width clamps the width while the
+ * definite height stays), and AirdropDropLocationMap derives both axes from
+ * rect.width — so a non-square box would skew the Z axis. Width binds on smaller
+ * displays, so this is not theoretical.
+ *
+ * Callback-ref based so it attaches the moment the modal mounts, and measures
+ * synchronously before observing so there's no zero-sized first paint.
+ */
+function useSquareFit(): [(el: HTMLDivElement | null) => void, number] {
+  const [size, setSize] = useState(0);
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  const measureRef = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!el) return;
+
+    const measure = (w: number, h: number) => setSize(Math.max(0, Math.floor(Math.min(w, h))));
+
+    const rect = el.getBoundingClientRect();
+    measure(rect.width, rect.height);
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect;
+      measure(box.width, box.height);
+    });
+    ro.observe(el);
+    observerRef.current = ro;
+  }, []);
+
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+
+  return [measureRef, size];
+}
