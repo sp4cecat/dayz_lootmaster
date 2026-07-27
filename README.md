@@ -110,10 +110,6 @@ Types that have been edited will now show in the list with a slightly different 
 There's Undo and redo icons at the top of the page.
 
 ## Saving to ./data
-As soon as you make a change, the 'Set Changes Live' button at the top becomes active. Clicking this will save your changes to the `cfgeconomycore.xml` and `cfglimitsdefinition.xml` files as well as any types that have changed.
-
-## Preview current changes
-
-The exclamation icon at the top of the page will show you a preview of the changes that will be made when you save.
+Each editable section has its own **Save** button in its header. As soon as you make a change in a section, that section's Save button becomes active; clicking it writes only that section's changes to disk. In the CLE Editor, Save writes the changed types plus `cfglimitsdefinition.xml`; Spawnable Types and Random Presets each save their own files. A short "Saved" (or error) indicator appears next to the button when the write completes.
 
 

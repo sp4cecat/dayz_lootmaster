@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { TableCard } from '@/components/application/table/table';
 import { Button } from '@/components/base/button/button';
+import { SectionSaveButton } from '@/components/base/SectionSaveButton';
 import { Input } from '@/components/base/input/input';
 import { Modal } from '@/components/base/modal/modal';
 import { ComboBox, ComboBoxItem } from '@/components/base/combobox/combobox';
@@ -32,15 +33,19 @@ interface SpawnableTypesManagerProps {
     typeOptions: string[];
     loadouts: any[];
     onViewCle?: (group: string) => void;
+    onSave?: () => Promise<{ ok: boolean; error?: string }>;
+    dirty?: boolean;
 }
 
-export function SpawnableTypesManager({ 
-    spawnableFilesByGroup, 
+export function SpawnableTypesManager({
+    spawnableFilesByGroup,
     spawnableTypesByGroup,
     setSpawnableTypesByGroup,
     randomPresets,
     typeOptions,
     loadouts,
+    onSave,
+    dirty = false,
 }: SpawnableTypesManagerProps) {
     const [searchTerm, setSearchTerm] = React.useState('');
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -273,14 +278,15 @@ export function SpawnableTypesManager({
                 </div>
                 <div className="flex items-center gap-3">
                     {selectedGroup && selectedFile && (
-                        <Button 
-                            variant="primary" 
+                        <Button
+                            variant="secondary-gray"
                             icon={Plus}
                             onClick={() => setIsAddModalOpen(true)}
                         >
                             Add Root Type
                         </Button>
                     )}
+                    {onSave && <SectionSaveButton dirty={dirty} onSave={onSave} label="Save" />}
                 </div>
             </div>
 

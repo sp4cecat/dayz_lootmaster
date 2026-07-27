@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/base/modal/modal';
 import { Button } from '@/components/base/button/button';
+import { SectionSaveButton } from '@/components/base/SectionSaveButton';
 import { Input } from '@/components/base/input/input';
 import { Badge } from '@/components/base/badges/badges';
 import { Slider } from '@/components/base/slider/slider';
@@ -43,6 +44,8 @@ interface RandomPresetsModalProps {
   inline?: boolean;
   typeOptions?: string[];
   loadouts?: any[];
+  onSave?: () => Promise<{ ok: boolean; error?: string }>;
+  dirty?: boolean;
 }
 
 function chancePercent(value: any) {
@@ -158,7 +161,9 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
   setSpawnableTypesByGroup = () => {},
   inline = false,
   typeOptions = [],
-  loadouts = []
+  loadouts = [],
+  onSave,
+  dirty = false
 }) => {
   const presets = randomPresets?.presets || [];
   const presetNames = new Set(presets.map(p => p.name).filter(Boolean));
@@ -603,9 +608,12 @@ export const RandomPresetsModal: React.FC<RandomPresetsModalProps> = ({
               size="sm"
             />
           </div>
-          <Button variant="primary" size="sm" icon={Plus} onClick={addPreset}>
-            Add Preset Group
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary-gray" size="sm" icon={Plus} onClick={addPreset}>
+              Add Preset Group
+            </Button>
+            {inline && onSave && <SectionSaveButton dirty={dirty} onSave={onSave} size="sm" label="Save" />}
+          </div>
         </div>
 
         {pendingDelete && (

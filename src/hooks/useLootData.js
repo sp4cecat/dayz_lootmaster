@@ -487,16 +487,23 @@ export function useLootData() {
     return diff;
   }, [baselineDefinitions, definitions, baselineFiles, lootFiles, baselineSpawnableTypesByGroup, spawnableTypesByGroup, baselineRandomPresets, randomPresets]);
 
-  const storageDirty = useMemo(() => {
+  // Per-section dirty flags (derived from storageDiff). Each drives its own section's Save button.
+  const cleDirty = useMemo(() => {
     const d = storageDiff;
     if (!d) return false;
     if (d.definitions.categories || d.definitions.usageflags || d.definitions.valueflags || d.definitions.tags) return true;
     for (const g of Object.keys(d.files)) {
+      if (g === 'vanilla') continue; // vanilla overrides are handled elsewhere; never persisted here
       for (const f of Object.keys(d.files[g])) {
         if (d.files[g][f].changed) return true;
       }
     }
-    if (d.mission?.randomPresets) return true;
+    return false;
+  }, [storageDiff]);
+
+  const spawnableDirty = useMemo(() => {
+    const d = storageDiff;
+    if (!d) return false;
     for (const files of Object.values(d.mission?.spawnableGroups || {})) {
       for (const changed of Object.values(files)) {
         if (changed) return true;
@@ -505,78 +512,82 @@ export function useLootData() {
     return false;
   }, [storageDiff]);
 
-  // Write staged changes (from lootFiles/IndexedDB) to server via PUT
-  const persistChangesToServer = useCallback(async () => {
+  const randomPresetsDirty = useMemo(() => !!storageDiff?.mission?.randomPresets, [storageDiff]);
+
+  // Shared helper: PUT xml to the server (profile-scoped, editor-stamped); throws on failure.
+  const putXml = useCallback(async (url, xml, label) => {
+    const editorId = currentEditorIdRef.current || 'unknown';
+    const res = await fetchWithProfile(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
+      body: xml
+    });
+    if (!res.ok) throw new Error(`Failed to save ${label}: ${res.statusText}`);
+  }, [fetchWithProfile]);
+
+  // Save the CLE section: definitions + changed non-vanilla type files.
+  const persistCleChanges = useCallback(async () => {
     if (!selectedProfileId) return { ok: false, error: 'No profile selected' };
     const API_BASE = getApiBase();
-    const editorId = currentEditorIdRef.current || 'unknown';
-
     try {
       const d = storageDiff;
-
-      // 1. Definitions
       if (d.definitions.categories || d.definitions.usageflags || d.definitions.valueflags || d.definitions.tags) {
-        const xml = generateLimitsXml(definitions);
-        const res = await fetchWithProfile(`${API_BASE}/api/definitions`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
-          body: xml
-        });
-        if (!res.ok) throw new Error(`Failed to save definitions: ${res.statusText}`);
+        await putXml(`${API_BASE}/api/definitions`, generateLimitsXml(definitions), 'definitions');
       }
-
-      // 2. CLE Types
       for (const [group, files] of Object.entries(d.files)) {
         if (group === 'vanilla') continue; // Always skip vanilla (overrides are in vanilla_overrides)
         for (const [file, info] of Object.entries(files)) {
           if (info.changed) {
             const types = lootFiles[group]?.[file] || [];
-            const xml = generateTypesXml(types);
-            const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(file)}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
-              body: xml
-            });
-            if (!res.ok) throw new Error(`Failed to save ${group}/${file}: ${res.statusText}`);
+            await putXml(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(file)}`, generateTypesXml(types), `${group}/${file}`);
           }
         }
       }
+      await refreshBaselineFromAPI();
+      return { ok: true };
+    } catch (e) {
+      console.error('CLE persistence failed:', e);
+      return { ok: false, error: e.message };
+    }
+  }, [selectedProfileId, storageDiff, definitions, lootFiles, putXml, refreshBaselineFromAPI]);
 
-      // 3. Spawnable Types
+  // Save the Spawnable Types section.
+  const persistSpawnableChanges = useCallback(async () => {
+    if (!selectedProfileId) return { ok: false, error: 'No profile selected' };
+    const API_BASE = getApiBase();
+    try {
+      const d = storageDiff;
       for (const [group, files] of Object.entries(d.mission.spawnableGroups)) {
         for (const [file, changed] of Object.entries(files)) {
           if (changed) {
             const data = spawnableTypesByGroup[group]?.[file] || { types: [] };
-            const xml = generateSpawnableTypesXml(data);
-            const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(file)}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
-              body: xml
-            });
-            if (!res.ok) throw new Error(`Failed to save spawnable types ${group}/${file}: ${res.statusText}`);
+            await putXml(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(file)}`, generateSpawnableTypesXml(data), `spawnable types ${group}/${file}`);
           }
         }
       }
-
-      // 4. Random Presets
-      if (d.mission.randomPresets) {
-        const xml = generateRandomPresetsXml(randomPresets);
-        const res = await fetchWithProfile(`${API_BASE}/api/mission/randompresets`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/xml', 'X-Editor-ID': editorId },
-          body: xml
-        });
-        if (!res.ok) throw new Error(`Failed to save random presets: ${res.statusText}`);
-      }
-
-      // After all saved successfully, refresh baseline from server to clear diffs
       await refreshBaselineFromAPI();
       return { ok: true };
     } catch (e) {
-      console.error('Persistence failed:', e);
+      console.error('Spawnable types persistence failed:', e);
       return { ok: false, error: e.message };
     }
-  }, [selectedProfileId, storageDiff, definitions, lootFiles, spawnableTypesByGroup, randomPresets, fetchWithProfile, refreshBaselineFromAPI]);
+  }, [selectedProfileId, storageDiff, spawnableTypesByGroup, putXml, refreshBaselineFromAPI]);
+
+  // Save the Random Presets section.
+  const persistRandomPresetsChanges = useCallback(async () => {
+    if (!selectedProfileId) return { ok: false, error: 'No profile selected' };
+    const API_BASE = getApiBase();
+    try {
+      if (storageDiff.mission.randomPresets) {
+        await putXml(`${API_BASE}/api/mission/randompresets`, generateRandomPresetsXml(randomPresets), 'random presets');
+      }
+      await refreshBaselineFromAPI();
+      return { ok: true };
+    } catch (e) {
+      console.error('Random presets persistence failed:', e);
+      return { ok: false, error: e.message };
+    }
+  }, [selectedProfileId, storageDiff, randomPresets, putXml, refreshBaselineFromAPI]);
 
 
   const setFromMergedTypes = useCallback((nextMerged, opts = { persist: false }) => {
@@ -1531,7 +1542,9 @@ export function useLootData() {
     getGroupFiles,
     addGroup,
     addType,
-    storageDirty,
+    cleDirty,
+    spawnableDirty,
+    randomPresetsDirty,
     storageDiff,
     // Summary modal
     summary: loadSummary,
@@ -1546,7 +1559,9 @@ export function useLootData() {
     setChangeEditorID,
     reloadFromFiles,
     getBaselineFileTypes,
-    persistChangesToServer,
+    persistCleChanges,
+    persistSpawnableChanges,
+    persistRandomPresetsChanges,
     refreshBaselineFromAPI,
     spawnableFilesByGroup,
     spawnableTypesByGroup,

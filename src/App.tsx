@@ -12,7 +12,6 @@ import SummaryModal from './components/SummaryModal';
 import { ManageDefinitionsModal } from './components/ManageDefinitionsModal';
 import { NewGroupModal } from './components/NewGroupModal';
 import { NewTypeModal } from './components/NewTypeModal';
-import StorageStatusModal from './components/StorageStatusModal';
 import { RandomPresetsModal } from './components/RandomPresetsModal';
 import EditorLogin from './components/EditorLogin';
 import AdmRecordsModal from './components/AdmRecordsModal';
@@ -32,13 +31,13 @@ import ItemScanModal from './components/ItemScanModal';
 import { Sidebar } from './components/layout/Sidebar';
 import { Breadcrumbs } from './components/layout/Breadcrumbs';
 import { Button } from '@/components/base/button/button';
+import { SectionSaveButton } from '@/components/base/SectionSaveButton';
 import { NAV_ITEMS } from './consts/navigation';
 import { cx } from './utils/cx';
 import { 
-    Undo, 
-    Redo, 
-    Save, 
-    Download, 
+    Undo,
+    Redo,
+    Download,
     RefreshCw,
     AlertTriangle,
     FolderPlus,
@@ -77,11 +76,15 @@ export default function App() {
         getGroupFiles,
         addGroup,
         addType,
-        storageDirty,
+        cleDirty,
+        spawnableDirty,
+        randomPresetsDirty,
         storageDiff,
         setChangeEditorID,
         reloadFromFiles,
-        persistChangesToServer,
+        persistCleChanges,
+        persistSpawnableChanges,
+        persistRandomPresetsChanges,
         spawnableFilesByGroup,
         spawnableTypesByGroup,
         setSpawnableTypesByGroup,
@@ -127,7 +130,7 @@ export default function App() {
     const [editorID, setEditorID] = useState(() => localStorage.getItem('dayz-editor:id') || '');
     // Navigation is driven by the URL hash so a refresh / deep link restores the screen.
     const { view, navigate } = useHashRoute(); // e.g. 'cle', 'profiles', 'addons:expansion:airdrops'
-    const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'diff', 'manage-definitions', 'new-group', 'new-type'
+    const [modal, setModal] = useState<string | null>(null); // 'export', 'unknowns', 'manage-definitions', 'new-group', 'new-type'
     const setView = useCallback((id: string) => {
         navigate(id);
         setModal(null);
@@ -243,8 +246,6 @@ export default function App() {
                 onSignOut={onSignOut}
                 selectedProfile={selectedProfile}
                 onProfileClick={() => setView('profiles')}
-                storageDirty={storageDirty}
-                onStorageClick={() => setModal('diff')}
             />
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -340,14 +341,7 @@ export default function App() {
                                         <Button variant="secondary-gray" icon={FilePlus} onClick={() => setModal('new-type')}>New type</Button>
                                         <Button variant="secondary-gray" icon={Download} onClick={() => setModal('export')}>Export</Button>
                                         <Button variant="secondary-gray" icon={RefreshCw} onClick={reloadFromFiles}>Reload</Button>
-                                        <Button 
-                                            variant="primary" 
-                                            icon={Save} 
-                                            onClick={() => setModal('diff')}
-                                            disabled={!storageDirty}
-                                        >
-                                            Set Changes Live
-                                        </Button>
+                                        <SectionSaveButton dirty={cleDirty} onSave={persistCleChanges} label="Save" />
                                     </div>
                                 </div>
 
@@ -454,10 +448,12 @@ export default function App() {
                                 inline={true}
                                 typeOptions={allTypeNames}
                                 loadouts={loadouts}
+                                onSave={persistRandomPresetsChanges}
+                                dirty={randomPresetsDirty}
                             />
                         )}
                         {view === 'mission-files:spawnable-types' && (
-                            <SpawnableTypesManager 
+                            <SpawnableTypesManager
                                 spawnableFilesByGroup={spawnableFilesByGroup}
                                 spawnableTypesByGroup={spawnableTypesByGroup}
                                 setSpawnableTypesByGroup={setSpawnableTypesByGroup}
@@ -465,6 +461,8 @@ export default function App() {
                                 globalsDefaults={globalsDefaults}
                                 typeOptions={allTypeNames}
                                 loadouts={loadouts}
+                                onSave={persistSpawnableChanges}
+                                dirty={spawnableDirty}
                                 onViewCle={(group) => {
                                     setFilters(prev => ({
                                         ...prev,
@@ -573,13 +571,6 @@ export default function App() {
                     removeEntry={(kind, entry) => manage.removeEntry(kind, entry)}
                     addEntry={(kind, entry) => manage.addEntry(kind, entry)}
                     onClose={() => { setModal(null); setManageDefKind(null); }}
-                />
-            )}
-            {modal === 'diff' && (
-                <StorageStatusModal
-                    diff={storageDiff}
-                    onClose={() => setModal(null)}
-                    onApply={persistChangesToServer}
                 />
             )}
             {modal === 'new-group' && (

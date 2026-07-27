@@ -6,7 +6,6 @@ import {
   ChevronRight,
   LayoutGrid,
   ChevronDown,
-  Bell,
   Search as SearchIcon
 } from 'lucide-react';
 import { cx } from '@/utils/cx';
@@ -23,20 +22,16 @@ interface SidebarProps {
   onSignOut: () => void;
   selectedProfile?: { id: string; name: string; missionName?: string; addons?: string[] };
   onProfileClick: () => void;
-  storageDirty: boolean;
-  onStorageClick: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  className, 
-  activeTab, 
-  onTabChange, 
-  editorID, 
+export const Sidebar: React.FC<SidebarProps> = ({
+  className,
+  activeTab,
+  onTabChange,
+  editorID,
   onSignOut,
   selectedProfile,
-  onProfileClick,
-  storageDirty,
-  onStorageClick
+  onProfileClick
 }) => {
   const mapMetadata = useMapMetadata(selectedProfile?.missionName);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(() => {
@@ -175,15 +170,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <p className="text-xs text-gray-500 truncate dark:text-gray-400">Editor</p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {storageDirty && (
-              <button 
-                onClick={onStorageClick}
-                className="size-8 flex items-center justify-center text-warning-500 hover:bg-warning-50 rounded-lg transition-all dark:hover:bg-warning-900/20 animate-pulse"
-                title="Pending changes"
-              >
-                <Bell size={18} />
-              </button>
-            )}
             <ThemeToggle />
             <button 
               onClick={onSignOut}
