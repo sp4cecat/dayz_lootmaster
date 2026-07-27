@@ -14,7 +14,7 @@ import {
 } from '../utils/xml.js';
 import { getApiBase, apiFetch } from '../utils/api';
 import { loadFromStorage, saveToStorage } from '../utils/storage.js';
-import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearChangeLog, saveMissionFile, loadMissionFile } from '../utils/idb.js';
+import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles, clearAllMissionFiles, clearChangeLog, saveMissionFile, loadMissionFile } from '../utils/idb.js';
 import { loadAllLoadouts } from '../utils/loadoutStore.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
@@ -1194,6 +1194,10 @@ export function useLootData() {
 
       // Clear IndexedDB stores and any legacy/local grouped cache
       await clearAllTypeFiles();
+      // Also flush the mission-file cache (spawnableTypesByGroup, randomPresets) so this
+      // reload genuinely re-reads them from disk. loadMissionFilesFromAPI reads IDB before
+      // the API, so without this a stale/corrupt cached copy would survive "Reload from files".
+      await clearAllMissionFiles();
       await clearChangeLog();
       try {
         localStorage.removeItem(STORAGE_KEY_GROUPS);

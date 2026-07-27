@@ -363,10 +363,18 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
     cargo: []
   };
 
-  if (spawnableType.damage) {
+  // Prefer the convenience top-level field (fresh parse), else recover it from the
+  // sections array (post-save / IDB-restored shape from loadoutToSpawnableEntry, which
+  // stores damage only as a <damage> section). Keeps the control populated across round-trips.
+  const damage = spawnableType.damage
+    ?? (() => {
+      const d = (spawnableType.sections || []).find((s: any) => s.kind === 'damage');
+      return d ? { min: Number(d.attrs?.min), max: Number(d.attrs?.max) } : null;
+    })();
+  if (damage) {
     rootNode.damage = {
-      min: spawnableType.damage.min ?? 0,
-      max: spawnableType.damage.max ?? 0
+      min: damage.min ?? 0,
+      max: damage.max ?? 0
     };
   }
 
