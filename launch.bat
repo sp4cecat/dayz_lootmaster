@@ -34,6 +34,13 @@ if /I "%APP_ENV%"=="production" (
     if defined RUNNING goto production_running
 )
 
+REM --- Nothing running: offer to pull the latest changes before launching ---
+echo.
+set "PULL="
+set /p "PULL=Pull latest changes before launching? [y/N]: "
+if /I "%PULL%"=="y"   goto do_fresh_update
+if /I "%PULL%"=="yes" goto do_fresh_update
+
 echo.
 echo Launching Lootmaster [%APP_ENV%]...
 echo   Server -^> http://localhost:4317
@@ -46,10 +53,32 @@ echo Both windows launched. Close them to stop the servers.
 echo.
 goto end
 
+:do_fresh_update
+call :pull_install_build
+if errorlevel 1 (
+    echo.
+    echo Update failed. Nothing was launched.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Update complete. Launching Lootmaster [%APP_ENV%]...
+echo   Server -^> http://localhost:4317
+echo   Client -^> http://localhost:4173  (vite preview)
+echo.
+
+call :launch_prebuilt
+
+echo Both windows launched. Close them to stop the servers.
+echo.
+goto end
+
 :production_running
 echo.
 echo ========================================
-echo   Production is already running (port 4317).
+echo   Lootmaster is already running (port 4317/4173).
 echo ========================================
 echo   1. Restart (relaunch with current build)
 echo   2. Git pull, install, build ^& restart
@@ -87,34 +116,10 @@ echo.
 goto end
 
 :do_update
-echo.
-echo Pulling latest changes...
-git pull
+call :pull_install_build
 if errorlevel 1 (
     echo.
-    echo git pull failed. Production left running untouched.
-    echo.
-    pause
-    exit /b 1
-)
-
-echo.
-echo Installing dependencies (including build toolchain)...
-call npm install --include=dev
-if errorlevel 1 (
-    echo.
-    echo npm install failed. Production left running untouched.
-    echo.
-    pause
-    exit /b 1
-)
-
-echo.
-echo Building client...
-call npm run build
-if errorlevel 1 (
-    echo.
-    echo Build failed. Production left running untouched.
+    echo Update aborted. Production left running untouched.
     echo.
     pause
     exit /b 1
@@ -137,7 +142,35 @@ REM ============================================================
 :is_running
 set "RUNNING="
 netstat -ano | findstr /C:":4317 " | findstr /I "LISTENING" >nul 2>&1 && set "RUNNING=1"
+netstat -ano | findstr /C:":4173 " | findstr /I "LISTENING" >nul 2>&1 && set "RUNNING=1"
 exit /b
+
+REM Pull, install deps, build. Returns 1 on any failure; the caller reports the consequence.
+:pull_install_build
+echo.
+echo Pulling latest changes...
+git pull
+if errorlevel 1 (
+    echo   git pull failed.
+    exit /b 1
+)
+
+echo.
+echo Installing dependencies (including build toolchain)...
+call npm install --include=dev
+if errorlevel 1 (
+    echo   npm install failed.
+    exit /b 1
+)
+
+echo.
+echo Building client...
+call npm run build
+if errorlevel 1 (
+    echo   Build failed.
+    exit /b 1
+)
+exit /b 0
 
 :stop_all
 REM Close our own windows (best-effort; the client title may not match after npm/vite run)
