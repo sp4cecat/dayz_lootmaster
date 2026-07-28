@@ -1,12 +1,14 @@
-import React, { useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Modal } from './base/modal/modal';
 import { Button } from './base/button/button';
 import { Input } from './base/input/input';
 import { Slider } from './base/slider/slider';
 import { Badge } from './base/badges/badges';
+import { MapZoomControls } from './MapZoomControls';
 import { Boxes, Crosshair, Zap, AlertCircle, User } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { useMapMetadata } from '../hooks/useMapMetadata';
+import { useMapPanZoom } from '@/hooks/useMapPanZoom';
 import { useItemScan } from '../hooks/useItemScan';
 import type { DamageState, ItemInfo } from '../types/items';
 
@@ -48,29 +50,20 @@ export default function ItemScanModal({ onClose, missionName, isPanel = false }:
   const [playerId, setPlayerId] = useState('');
   const [selected, setSelected] = useState<number | null>(null);
 
-  const mapRef = useRef<HTMLDivElement>(null);
-
-  // World -> percentage of the square map (Z axis inverted vs screen Y, matching the Heat Map / Airdrop tools).
-  const toPct = (x: number, z: number) => ({
-    left: (x / map.worldSize) * 100,
-    top: (1 - z / map.worldSize) * 100,
+  // Pan/zoom shared with the Airdrop, Zones and Heat Map tools. Clicking without dragging
+  // sets the scan centre; dragging pans. Keyboard zoom is on because the map is this modal's
+  // primary content and only one instance is ever mounted.
+  const view = useMapPanZoom({
+    worldSize: map.worldSize,
+    keyboardZoom: true,
+    onBackgroundClick: (hit) => setCenter({ x: Math.round(hit.x), z: Math.round(hit.z) }),
   });
 
-  const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = mapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const relX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const relY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
-    setCenter({
-      x: Math.round((relX / rect.width) * map.worldSize),
-      z: Math.round((1 - relY / rect.height) * map.worldSize),
-    });
-  };
-
-  const centerPct = useMemo(() => toPct(center.x, center.z), [center, map.worldSize]);
-  const radiusPct = (radius / map.worldSize) * 100; // radius as % of half-extent width
+  const centerPt = view.project(center.x, center.z);
+  const radiusPx = view.projectLen(radius);
 
   const items: ItemInfo[] = result?.items ?? [];
+  const showImage = !!map.imagePath && !view.imageFailed;
 
   return (
     <Modal
@@ -161,55 +154,80 @@ export default function ItemScanModal({ onClose, missionName, isPanel = false }:
         {/* Map + results */}
         <div className="flex-1 flex gap-4 min-h-0">
           {/* Map */}
-          <div className="relative flex-1 min-w-0 bg-black rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
-            <div
-              ref={mapRef}
-              className="relative w-full h-full cursor-crosshair select-none"
-              onClick={handleMapClick}
-            >
-              {map.imagePath && (
-                <img src={map.imagePath} alt={`${map.displayName} map`} className="w-full h-full object-contain pointer-events-none" />
-              )}
+          <div
+            ref={view.viewportRef}
+            {...view.viewportHandlers}
+            className={cx(
+              'relative flex-1 min-w-0 bg-black rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 select-none touch-none',
+              view.isPanning ? 'cursor-grabbing' : 'cursor-crosshair',
+            )}
+          >
+            {/* Content layer: the image only, carrying the pan/zoom. Stretched to the square
+                rather than object-contain — the overlay maths assume the image spans exactly
+                0..worldSize, and letterboxing inside this non-square box put every marker out. */}
+            {showImage ? (
+              <div style={view.contentStyle}>
+                <img
+                  src={map.imagePath}
+                  alt={`${map.displayName} map`}
+                  {...view.imageProps}
+                  className="w-full h-full block pointer-events-none"
+                />
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 pointer-events-none">
+                No map preview for "{map.displayName}"
+              </div>
+            )}
 
-              {/* Scan area */}
-              <div
-                className="absolute rounded-full border-2 border-primary-400/80 bg-primary-400/10 pointer-events-none"
-                style={{
-                  left: `${centerPct.left}%`,
-                  top: `${centerPct.top}%`,
-                  width: `${radiusPct * 2}%`,
-                  paddingBottom: `${radiusPct * 2}%`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-              />
-              <Crosshair
-                size={16}
-                className="absolute text-primary-400 pointer-events-none"
-                style={{ left: `${centerPct.left}%`, top: `${centerPct.top}%`, transform: 'translate(-50%, -50%)' }}
-              />
+            {/* Overlay layer: untransformed, so markers keep a constant on-screen size while
+                the scan circle, which is world-sized, scales with the map. */}
+            {view.size > 0 && (
+              <div className="absolute inset-0 pointer-events-none">
+                {/* Scan area */}
+                <div
+                  className="absolute rounded-full border-2 border-primary-400/80 bg-primary-400/10 -translate-x-1/2 -translate-y-1/2"
+                  style={{
+                    left: centerPt.px,
+                    top: centerPt.py,
+                    width: Math.max(radiusPx * 2, 4),
+                    height: Math.max(radiusPx * 2, 4),
+                  }}
+                />
+                <Crosshair
+                  size={16}
+                  className="absolute text-primary-400 -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: centerPt.px, top: centerPt.py }}
+                />
 
-              {/* Item markers */}
-              {items.map((it, i) => {
-                const p = toPct(it.pos[0], it.pos[2]);
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    title={`${it.displayName || it.cls} (${it.damageState || 'unknown'})`}
-                    onClick={(e) => { e.stopPropagation(); setSelected(i); }}
-                    className={cx(
-                      'absolute w-2.5 h-2.5 rounded-full border border-white/70 -translate-x-1/2 -translate-y-1/2 hover:scale-150 transition-transform',
-                      selected === i && 'ring-2 ring-white scale-150',
-                    )}
-                    style={{
-                      left: `${p.left}%`,
-                      top: `${p.top}%`,
-                      backgroundColor: markerColor(it.damageState),
-                    }}
-                  />
-                );
-              })}
-            </div>
+                {/* Item markers */}
+                {items.map((it, i) => {
+                  const p = view.project(it.pos[0], it.pos[2]);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      title={`${it.displayName || it.cls} (${it.damageState || 'unknown'})`}
+                      // Stop the press here, or it also arms the viewport's background
+                      // gesture and moves the scan centre when you release.
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setSelected(i); }}
+                      className={cx(
+                        'absolute w-2.5 h-2.5 rounded-full border border-white/70 -translate-x-1/2 -translate-y-1/2 hover:scale-150 transition-transform pointer-events-auto',
+                        selected === i && 'ring-2 ring-white scale-150',
+                      )}
+                      style={{
+                        left: p.px,
+                        top: p.py,
+                        backgroundColor: markerColor(it.damageState),
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {view.canZoom && <MapZoomControls map={view} />}
           </div>
 
           {/* Results list */}

@@ -1253,11 +1253,11 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
                     : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/50')}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold truncate">{loc.Name || 'Unnamed'}</span>
-                  <Tooltip title={`${count} mission${count === 1 ? '' : 's'} use this location`} placement="right" delay={400}>
-                    <TooltipTrigger>
-                      <Badge size="sm" color={count > 0 ? 'brand' : 'gray'}>{count}</Badge>
-                    </TooltipTrigger>
-                  </Tooltip>
+                  {/* Native title, not <Tooltip>: TooltipTrigger renders a react-aria
+                      <button>, which cannot be nested inside this row's own <button>. */}
+                  <span title={`${count} mission${count === 1 ? '' : 's'} use this location`}>
+                    <Badge size="sm" color={count > 0 ? 'brand' : 'gray'}>{count}</Badge>
+                  </span>
                 </div>
                 <span className="text-xs text-gray-400 truncate block">{Math.round(loc.x)}, {Math.round(loc.z)} · R{Math.round(loc.Radius || 0)}</span>
               </button>
@@ -1276,12 +1276,12 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Tooltip title={mapFill ? 'Back to compact map' : 'Zoom map to fill available height'} placement="bottom" delay={400}>
-              <TooltipTrigger>
-                <Button variant={mapFill ? 'primary' : 'secondary-gray'} icon={mapFill ? Minimize01 : Maximize01}
-                  onClick={() => setMapFill((v) => !v)}>{mapFill ? 'Compact' : 'Fit height'}</Button>
-              </TooltipTrigger>
-            </Tooltip>
+            {/* Native title, not <Tooltip>: TooltipTrigger renders a react-aria <button>,
+                and our Button is a plain <button> — nesting them is invalid DOM and React
+                logs a validateDOMNesting error. */}
+            <Button variant={mapFill ? 'primary' : 'secondary-gray'} icon={mapFill ? Minimize01 : Maximize01}
+              title={mapFill ? 'Back to compact map' : 'Zoom map to fill available height'}
+              onClick={() => setMapFill((v) => !v)}>{mapFill ? 'Compact' : 'Fit height'}</Button>
             {selected && (
               <>
                 <Button variant="secondary-gray" icon={Copy01} onClick={() => duplicateLocation(selectedLocationIdx!)}>Duplicate</Button>
