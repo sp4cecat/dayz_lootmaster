@@ -33,7 +33,11 @@ const rootWithAttachment = (): LoadoutNode => ({
   cargo: [],
 });
 
-async function render(items: LoadoutNode[], onUpdate: (items: LoadoutNode[]) => void) {
+async function render(
+  items: LoadoutNode[],
+  onUpdate: (items: LoadoutNode[]) => void,
+  onNodeCreated?: (node: LoadoutNode) => void,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -45,6 +49,7 @@ async function render(items: LoadoutNode[], onUpdate: (items: LoadoutNode[]) => 
         onUpdate={onUpdate}
         onSelect={() => {}}
         onAddTemplate={() => {}}
+        onNodeCreated={onNodeCreated}
         selectedNodeId={null}
       />,
     );
@@ -54,6 +59,11 @@ async function render(items: LoadoutNode[], onUpdate: (items: LoadoutNode[]) => 
 
 const btnByText = (container: HTMLElement, text: string) =>
   Array.from(container.querySelectorAll('button')).find(b => (b.textContent || '').includes(text));
+
+// Both Contents and Variants render an "+ Add" button; CHILD_LISTS order puts Contents first,
+// so the Variants one is the last exact-"Add" match.
+const variantsAddBtn = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('button')).filter(b => (b.textContent || '').trim() === 'Add').at(-1);
 
 describe('Inline airdrop variants (tree)', () => {
   it('shows a Variants list on a root item', async () => {
@@ -77,6 +87,22 @@ describe('Inline airdrop variants (tree)', () => {
     // The seed is a fresh-id independent copy that carries the base item's attachments.
     expect(variants[0].id).not.toBe('root');
     expect(variants[0].attachments.map(a => a.name)).toEqual(['AKM_Suppressor']);
+    cleanup();
+  });
+
+  // The seed already carries the base item's classname, so it must NOT request the classname
+  // autofocus — focusing that ComboBox and blurring it without picking a suggestion used to
+  // blank the clone's name. Empty nodes from "+ Add" still want the focus.
+  it('"Clone from item" does not request classname autofocus, but "+ Add" does', async () => {
+    const onNodeCreated = vi.fn();
+    const { container, cleanup } = await render([rootWithAttachment()], vi.fn(), onNodeCreated);
+
+    await act(async () => { btnByText(container, 'Clone from item')!.click(); });
+    expect(onNodeCreated).not.toHaveBeenCalled();
+
+    await act(async () => { variantsAddBtn(container)!.click(); });
+    expect(onNodeCreated).toHaveBeenCalledTimes(1);
+    expect(onNodeCreated.mock.calls[0][0].name).toBe('');
     cleanup();
   });
 

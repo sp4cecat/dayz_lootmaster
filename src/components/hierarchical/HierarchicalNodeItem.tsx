@@ -216,6 +216,9 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
 
   // Seed a new variant from the base item itself: a fresh-id deep copy of this item (its
   // Contents included) minus its own variants. Reuses cloneNodeWithNewIds — no serialization.
+  // Deliberately does NOT call onNodeCreated: the seed arrives with the base item's classname
+  // already set, so there's nothing to type over, and focusing the classname ComboBox would
+  // just risk the user blurring it (unlike the empty nodes made by handleAddChild/handleAddGroup).
   const cloneItemToVariant = () => {
     // Type the base explicitly as LoadoutNode: cloneNodeWithNewIds' recursive generic
     // constraint won't infer cleanly through an inline spread literal.
@@ -223,7 +226,6 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
     const seed = cloneNodeWithNewIds(base);
     onUpdate({ ...node, variants: [...(node.variants || []), seed], isExpanded: true });
     onSelect(seed);
-    onNodeCreated?.(seed);
   };
 
   const updateChild = (list: ChildKey, index: number, updatedChild: LoadoutNode) => {

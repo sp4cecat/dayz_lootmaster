@@ -360,9 +360,15 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
               </div>
             ) : (
               <div className="space-y-1.5">
+                {/* allowsCustomValue is required, not cosmetic: without it react-aria's
+                    commitValue() resets inputValue on blur/close to the selected item's text —
+                    which is '' whenever nothing was picked from the popover — wiping a pre-filled
+                    or free-typed classname. It also lets modded classes absent from the catalog
+                    be entered by hand. */}
                 <ComboBox
                   items={itemOptions}
                   inputRef={nameInputRef}
+                  allowsCustomValue
                   inputValue={node.name}
                   onInputChange={value => {
                     // Items carry a combined "Class DisplayName" textValue so display names are
