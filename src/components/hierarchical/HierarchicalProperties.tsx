@@ -64,6 +64,13 @@ interface HierarchicalPropertiesProps {
    * spawnable source shows an empty picker.
    */
   spawnableTypesByGroup?: Record<string, Record<string, any>>;
+
+  /**
+   * Whether this node is a root of the tree. Vanilla spawnabletypes only accepts <damage> as a
+   * direct child of <type>, and the serialiser only emits it for the root — so the damage editor
+   * is hidden for child nodes rather than letting the user set a value that is silently dropped.
+   */
+  isRootNode?: boolean;
 }
 
 // The four sources a template node can live-link to. Order matches the import modal.
@@ -96,6 +103,7 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
   spawnableTypesByGroup,
   autoFocusNodeId,
   onAutoFocusConsumed,
+  isRootNode = false,
 }) => {
   const { displayNameFor } = useCatalog();
   const nameInputRef = React.useRef<HTMLInputElement>(null);
@@ -458,7 +466,7 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
         )}
 
         {/* Damage Section */}
-        {config.showDamage && node.type === 'item' && (
+        {config.showDamage && node.type === 'item' && isRootNode && (
           <section className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Damage (Optional)</label>
             <div className="grid grid-cols-2 gap-4">

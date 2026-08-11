@@ -397,6 +397,8 @@ export default function App() {
                                                         randomPresets={randomPresets}
                                                         globalsDefaults={globalsDefaults}
                                                         loadouts={loadouts}
+                                                        spawnableDirty={spawnableDirty}
+                                                        onSaveSpawnable={persistSpawnableChanges}
                                                     />
                                                 </div>
                                             )}

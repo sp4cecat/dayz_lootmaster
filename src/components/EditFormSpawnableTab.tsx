@@ -83,10 +83,10 @@ export default function EditFormSpawnableTab({
       updatedAt: Date.now()
     });
     if (nextEntry) {
-      updateSpawnableEntry(() => ({
-        ...nextEntry,
-        damage: entry.damage // Preserve damage if it wasn't in the loadout root (it should be)
-      }));
+      // No damage override here: updateSpawnableEntry recomputes entry.damage from
+      // nextEntry.sections, so anything set on this object would be discarded. The root
+      // node's damage is kept in sync by handleDamageChange instead.
+      updateSpawnableEntry(() => nextEntry);
     }
   };
 
@@ -243,6 +243,22 @@ export default function EditFormSpawnableTab({
       }
       return { ...current, sections: nextSections };
     });
+
+    // Keep the hierarchical tree's root node in sync. treeItems is only reseeded when the
+    // edited type/file changes, so without this the next tree edit would re-serialise
+    // <damage> from a stale root and silently revert the slider.
+    setTreeItems(prev => prev.map((root, i) => {
+      if (i !== 0) return root;
+      const fallbackMin = Number(globalsDefaults.LootDamageMin ?? 0);
+      const fallbackMax = Number(globalsDefaults.LootDamageMax ?? 0);
+      return {
+        ...root,
+        damage: {
+          min: key === 'min' ? newVal : (root.damage?.min ?? fallbackMin),
+          max: key === 'max' ? newVal : (root.damage?.max ?? fallbackMax)
+        }
+      };
+    }));
   };
 
   const handleAddAttachmentSlot = () => {
@@ -533,6 +549,7 @@ export default function EditFormSpawnableTab({
                 compatibleClasses={compatibleClasses}
                 groupSlotOptions={groupSlotOptions}
                 randomPresets={randomPresets}
+                isRootNode={treeItems.some(r => r.id === editingNode.id)}
                 config={{
                   title: 'Spawnable Item Properties',
                   showQuantity: false,

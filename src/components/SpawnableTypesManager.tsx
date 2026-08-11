@@ -366,6 +366,7 @@ export function SpawnableTypesManager({
                             }}
                             typeOptions={typeOptions}
                             compatibleClasses={compatibleClasses}
+                            isRootNode={nodes.some(r => r.id === selectedNodeId)}
                             randomPresets={randomPresets}
                             availableTemplates={loadouts}
                         />

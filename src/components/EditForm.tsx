@@ -5,6 +5,7 @@ import EditFormMarketplaceTab from './EditFormMarketplaceTab';
 import EditFormSpawnableTab from './EditFormSpawnableTab';
 import { cx } from '@/utils/cx';
 import { Button } from '@/components/base/button/button';
+import { SectionSaveButton } from '@/components/base/SectionSaveButton';
 import { X, Save as SaveIcon } from 'lucide-react';
 import type { Type } from '@/utils/xml';
 
@@ -27,6 +28,10 @@ interface EditFormProps {
   randomPresets?: { presets: any[] };
   globalsDefaults?: { LootDamageMin: number | null; LootDamageMax: number | null };
   loadouts?: any[];
+  /** Whether spawnabletypes edits are pending. Enables the Spawnable tab's save button. */
+  spawnableDirty?: boolean;
+  /** Persists spawnabletypes edits. Resolve with { ok } / { ok:false, error } — never throw. */
+  onSaveSpawnable?: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 export default function EditForm({ 
@@ -42,7 +47,9 @@ export default function EditForm({
   setSpawnableTypesByGroup = () => {}, 
   randomPresets = { presets: [] }, 
   globalsDefaults = { LootDamageMin: null, LootDamageMax: null },
-  loadouts = []
+  loadouts = [],
+  spawnableDirty = false,
+  onSaveSpawnable
 }: EditFormProps) {
   const [activeTab, setActiveTab] = useTabParam<'CLE' | 'Spawnable' | 'Marketplace'>('CLE', ['CLE', 'Spawnable', 'Marketplace']);
   const [marketTabOpened, setMarketTabOpened] = useState(false);
@@ -81,16 +88,29 @@ export default function EditForm({
         </div>
         
         <div className="flex items-center gap-3 mt-6">
-          <Button 
-              variant="primary"
-              className="flex-1"
-              onClick={() => saveCLE && saveCLE()} 
-              disabled={activeTab !== 'CLE' || !canSaveCLE || !saveCLE}
-              icon={SaveIcon}
-              size="md"
-          >
-              Save CLE
-          </Button>
+          {/* Each tab owns its own persistence, so the primary button follows the active tab.
+              Spawnable/Cargo writes straight through to the shared store, so its dirty state
+              comes from the store diff rather than a local form diff like the CLE tab's. */}
+          {activeTab === 'Spawnable' && onSaveSpawnable ? (
+            <div className="flex-1 [&>div]:w-full [&_button]:w-full">
+              <SectionSaveButton
+                dirty={spawnableDirty}
+                onSave={onSaveSpawnable}
+                label="Save Spawnable"
+              />
+            </div>
+          ) : (
+            <Button
+                variant="primary"
+                className="flex-1"
+                onClick={() => saveCLE && saveCLE()}
+                disabled={activeTab !== 'CLE' || !canSaveCLE || !saveCLE}
+                icon={SaveIcon}
+                size="md"
+            >
+                Save CLE
+            </Button>
+          )}
           <Button variant="secondary-gray" onClick={onCancel} size="md">
             Cancel
           </Button>
