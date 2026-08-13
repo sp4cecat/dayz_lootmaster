@@ -1,10 +1,11 @@
-import { 
-  Database, 
-  Map as MapIcon, 
+import {
+  Database,
+  Map as MapIcon,
   LayoutGrid,
   FileCode,
   Settings,
-  Package
+  Package,
+  Radio
 } from 'lucide-react';
 
 export interface NavItem {
@@ -36,6 +37,11 @@ export const NAV_ITEMS: NavItem[] = [
       }
     ] 
   },
+  { id: 'live', label: 'Live Server', icon: Radio, subItems: [
+    { id: 'map', label: 'Live map' },
+    { id: 'stats', label: 'Statistics' },
+    { id: 'leaderboard', label: 'Leaderboard' }
+  ]},
   { id: 'map-tools', label: 'Map Tools', icon: MapIcon, subItems: [
     { id: 'heatmap', label: 'Heat map' },
     { id: 'item-scan', label: 'Item scanner' }

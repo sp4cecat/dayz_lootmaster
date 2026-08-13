@@ -20,6 +20,9 @@ import {mkdir, readFile, stat, appendFile, readdir, cp, rm, rename, open} from '
 import crypto from 'node:crypto';
 import moment from 'moment';
 import * as ingest from './ingest-store.js';
+import * as cftoolsConfig from './cftools-config.js';
+import * as cftools from './cftools-client.js';
+import * as cftoolsService from './cftools-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -178,6 +181,8 @@ function mutateLoadouts(target, mutator) {
 
 // Ensure profiles are loaded on start
 await loadProfiles();
+// CF Tools Cloud credentials + per-profile server bindings (server/.cache/cftools.json)
+await cftoolsConfig.loadConfig();
 
 function corsHeaders() {
     return {
@@ -1685,6 +1690,222 @@ async function handleItemsRoute(url, req, res) {
     return true;
 }
 
+// ---- CF Tools Cloud (Data API + GameLabs) ----
+// Read routes never 5xx: they return 200 with { connected:false, reason } so
+// the client can degrade per-layer (house style, same as /api/catalog/*).
+// Action POSTs are user-triggered (like /items) and DO return real errors.
+
+const json = (res, status, body) => send(res, status, JSON.stringify(body), { 'Content-Type': 'application/json' });
+
+// Map a CfToolsError to an action-route HTTP response.
+function sendCftoolsActionError(res, err) {
+    const reason = (err && err.reason) || 'unreachable';
+    if (reason === 'rate_limited') {
+        json(res, 429, { error: 'CF Tools rate limit hit; retry shortly.', reason, retryAfterMs: err.retryAfterMs || 10000 });
+    } else if (reason === 'not_configured' || reason === 'no_api_id' || reason === 'no_profile') {
+        json(res, 400, { error: err.message || 'CF Tools is not configured for this profile.', reason });
+    } else {
+        json(res, 502, { error: (err && err.message) || 'CF Tools request failed.', reason });
+    }
+}
+
+// Handles any /api/cftools/* route. Dispatched BEFORE the profile gate because
+// /app and /grants are profile-independent; profile-scoped routes resolve the
+// profile themselves from X-Profile-ID. Returns true if it took the request.
+async function handleCftoolsRoute(url, req, res) {
+    const parts = url.pathname.split('/').filter(Boolean); // ['api','cftools',...]
+    if (parts[0] !== 'api' || parts[1] !== 'cftools') return false;
+    const route = parts.slice(2).join('/');
+
+    const parseBody = async () => {
+        const raw = await readBody(req);
+        return raw ? JSON.parse(raw) : {};
+    };
+
+    // --- profile-independent: application credentials + grants ---
+
+    if (route === 'app') {
+        if (req.method === 'GET') {
+            json(res, 200, cftoolsConfig.redactedView());
+            return true;
+        }
+        if (req.method === 'PUT') {
+            const body = await parseBody();
+            if (!body.applicationId || !body.secret) { badRequest(res, 'applicationId and secret are required'); return true; }
+            const previous = cftoolsConfig.getAppCredentials();
+            cftoolsConfig.setAppCredentials({ applicationId: body.applicationId, secret: body.secret });
+            cftools._resetState(); // old token/caches belong to the old credentials
+            try {
+                await cftools.getGrants(); // validate by attempting auth
+                json(res, 200, { ok: true, ...cftoolsConfig.redactedView() });
+            } catch (err) {
+                // Bad credentials: roll back so a typo doesn't brick a working setup.
+                if (previous) cftoolsConfig.setAppCredentials(previous); else cftoolsConfig.clearAppCredentials();
+                cftools._resetState();
+                json(res, 200, { ok: false, reason: (err && err.reason) || 'unreachable' });
+            }
+            return true;
+        }
+        methodNotAllowed(res);
+        return true;
+    }
+
+    if (route === 'grants') {
+        if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+        json(res, 200, await cftoolsService.buildGrants());
+        return true;
+    }
+
+    // --- profile-scoped ---
+
+    const xProfileId = req.headers['x-profile-id'];
+    const profile = profiles.find(p => String(p.id).toLowerCase() === String(xProfileId).toLowerCase());
+
+    if (route === 'binding') {
+        if (!profile) { badRequest(res, 'Missing or invalid X-Profile-ID header'); return true; }
+        if (req.method === 'GET') {
+            json(res, 200, { binding: cftoolsConfig.getServerBinding(profile.id) });
+            return true;
+        }
+        if (req.method === 'PUT') {
+            const body = await parseBody();
+            cftoolsConfig.setServerBinding(profile.id, body.apiId || null, body.label || null);
+            json(res, 200, { ok: true, binding: cftoolsConfig.getServerBinding(profile.id) });
+            return true;
+        }
+        methodNotAllowed(res);
+        return true;
+    }
+
+    if (route === 'status') {
+        if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+        json(res, 200, await cftoolsService.buildStatus(profile));
+        return true;
+    }
+
+    if (route === 'live') {
+        if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+        const layersParam = url.searchParams.get('layers');
+        const layers = layersParam ? layersParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+        json(res, 200, await cftoolsService.buildLiveSnapshot(profile, layers));
+        return true;
+    }
+
+    // Remaining routes all need a resolved binding up-front.
+    const bound = cftoolsService.resolveBinding(profile);
+
+    if (route === 'stats' || route === 'leaderboard' || route === 'player' || route === 'gamelabs/actions') {
+        if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+        if (bound.error) { json(res, 200, { connected: false, reason: bound.error }); return true; }
+        try {
+            if (route === 'stats') {
+                const { data, stale } = await cftools.getStatistics(bound.apiId);
+                json(res, 200, { connected: true, stale: !!stale, statistics: data });
+            } else if (route === 'leaderboard') {
+                const stat = url.searchParams.get('stat') || 'kills';
+                const order = url.searchParams.get('order') || 'DESC';
+                const limit = Math.min(Number(url.searchParams.get('limit')) || 25, 100);
+                const { data, stale } = await cftools.getLeaderboard(bound.apiId, { stat, order, limit });
+                json(res, 200, { connected: true, stale: !!stale, leaderboard: (data && data.leaderboard) || [] });
+            } else if (route === 'player') {
+                const ref = url.searchParams.get('ref');
+                if (!ref) { badRequest(res, 'ref query parameter (cftools_id) is required'); return true; }
+                const { data, stale } = await cftools.getPlayerStats(bound.apiId, ref);
+                json(res, 200, { connected: true, stale: !!stale, player: data });
+            } else {
+                const actions = await cftoolsService.listGameLabsActions(bound.apiId);
+                json(res, 200, { connected: true, actions });
+            }
+        } catch (err) {
+            json(res, 200, { connected: false, reason: (err && err.reason) || 'unreachable' });
+        }
+        return true;
+    }
+
+    // --- action POSTs (real errors) ---
+
+    if (route.startsWith('actions/') || route === 'gamelabs/action') {
+        if (req.method !== 'POST') { methodNotAllowed(res); return true; }
+        if (bound.error) {
+            json(res, 400, { error: 'CF Tools is not configured for this profile.', reason: bound.error });
+            return true;
+        }
+        const body = await parseBody();
+        try {
+            switch (route) {
+                case 'actions/kick': {
+                    if (!body.sessionId) { badRequest(res, 'sessionId is required'); return true; }
+                    await cftools.kick(bound.apiId, body.sessionId, body.reason);
+                    break;
+                }
+                case 'actions/message': {
+                    if (!body.content) { badRequest(res, 'content is required'); return true; }
+                    if (body.sessionId) await cftools.messagePrivate(bound.apiId, body.sessionId, body.content);
+                    else await cftools.messageServer(bound.apiId, body.content);
+                    break;
+                }
+                case 'actions/raw': {
+                    if (!body.command) { badRequest(res, 'command is required'); return true; }
+                    await cftools.rawRcon(bound.apiId, body.command);
+                    break;
+                }
+                case 'actions/teleport': {
+                    if (!body.steam64 || !Number.isFinite(Number(body.x)) || !Number.isFinite(Number(body.z))) {
+                        badRequest(res, 'steam64, x and z are required'); return true;
+                    }
+                    await cftoolsService.teleportPlayer(bound.apiId, body.steam64, {
+                        x: Number(body.x), y: Number(body.y) || 0, z: Number(body.z),
+                    });
+                    break;
+                }
+                case 'actions/heal': {
+                    if (!body.steam64) { badRequest(res, 'steam64 is required'); return true; }
+                    await cftoolsService.healPlayer(bound.apiId, body.steam64);
+                    break;
+                }
+                case 'actions/kill': {
+                    if (!body.steam64) { badRequest(res, 'steam64 is required'); return true; }
+                    await cftoolsService.killPlayer(bound.apiId, body.steam64);
+                    break;
+                }
+                case 'actions/spawn-item': {
+                    if (!body.steam64 || !body.className) { badRequest(res, 'steam64 and className are required'); return true; }
+                    await cftoolsService.spawnItem(bound.apiId, body.steam64, body.className, Number(body.quantity) || 1);
+                    break;
+                }
+                case 'actions/spawn-loadout': {
+                    if (!body.steam64 || !Array.isArray(body.items) || body.items.length === 0) {
+                        badRequest(res, 'steam64 and a non-empty items array are required'); return true;
+                    }
+                    const results = await cftoolsService.spawnLoadout(bound.apiId, body.steam64, body.items);
+                    json(res, 200, { ok: results.every(r => r.ok), results });
+                    return true;
+                }
+                case 'gamelabs/action': {
+                    if (!body.actionCode) { badRequest(res, 'actionCode is required'); return true; }
+                    await cftools.postGameLabsAction(bound.apiId, {
+                        actionCode: body.actionCode,
+                        actionContext: body.actionContext,
+                        referenceKey: body.referenceKey,
+                        parameters: body.parameters,
+                    });
+                    break;
+                }
+                default:
+                    notFound(res);
+                    return true;
+            }
+            json(res, 200, { ok: true });
+        } catch (err) {
+            sendCftoolsActionError(res, err);
+        }
+        return true;
+    }
+
+    notFound(res);
+    return true;
+}
+
 /**
  * Recursively walk a directory and collect files accepted by the predicate.
  * @param {string} base
@@ -1837,6 +2058,11 @@ const server = http.createServer(async (req, res) => {
         // Live world-item scan (profile-independent; round-trips a scanItems command to the mod)
         if (pathname === '/items' || pathname.startsWith('/items/')) {
             if (await handleItemsRoute(url, req, res)) return;
+        }
+
+        // CF Tools Cloud proxy (resolves its own profile; /app and /grants are profile-independent)
+        if (pathname.startsWith('/api/cftools')) {
+            if (await handleCftoolsRoute(url, req, res)) return;
         }
 
         // Profile & Snapshot Management

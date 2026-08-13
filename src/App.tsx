@@ -28,6 +28,9 @@ import { LoadoutDesigner } from './components/LoadoutDesigner';
 import { SpawnableTypesManager } from './components/SpawnableTypesManager';
 import HeatMapModal from './components/HeatMapModal';
 import ItemScanModal from './components/ItemScanModal';
+import LiveMapView from './components/live/LiveMapView';
+import ServerStatsView from './components/live/ServerStatsView';
+import LeaderboardView from './components/live/LeaderboardView';
 import { Sidebar } from './components/layout/Sidebar';
 import { Breadcrumbs } from './components/layout/Breadcrumbs';
 import { Button } from '@/components/base/button/button';
@@ -419,6 +422,29 @@ export default function App() {
                         )}
                         {view === 'addons:expansion:market-categories' && (
                             <MarketCategoryEditorModal
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'live:map' && (
+                            <LiveMapView
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                missionName={selectedProfile?.missionName}
+                                isPanel={true}
+                                onOpenSettings={() => setView('profiles')}
+                            />
+                        )}
+                        {view === 'live:stats' && (
+                            <ServerStatsView
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                isPanel={true}
+                            />
+                        )}
+                        {view === 'live:leaderboard' && (
+                            <LeaderboardView
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
                                 isPanel={true}
