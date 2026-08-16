@@ -71,7 +71,7 @@ const EVENT_CLASS_ICONS: Array<[RegExp, IconDefinition, string]> = [
   [/submarine/i, faStar, 'text-yellow-300'],
   [/airdrop/i, faParachuteBox, 'text-cyan-400'],
   [/punch.?card/i, faTicket, 'text-pink-400'],
-  [/briefcase/i, faBriefcase, 'text-indigo-400'],
+  [/briefcase/i, faBriefcase, 'text-red-500'],
 ];
 
 const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';

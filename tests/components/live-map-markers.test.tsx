@@ -188,6 +188,8 @@ describe('LiveMapView marker projection', () => {
     expect(glyphClass('KMUC Keycard')).toContain('text-violet-400');
     // Containers themselves never go silver.
     expect(glyphClass('ExpansionAirdropContainer_Military')).toContain('text-cyan-400');
+    // Briefcase reads red for contrast against the pale map background.
+    expect(glyphClass('ScientificBriefcase')).toContain('text-red-500');
   });
 
   it('shows the roster/summary side panel with the player count', async () => {
