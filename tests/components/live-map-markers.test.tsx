@@ -39,11 +39,12 @@ const PLAYER = {
   banCount: 0,
 };
 
-const vehicle = (id: string, className: string) => ({
-  id, className, displayName: null, position: [7680, 0, 7680] as [number, number, number], speed: 0, health: 1000,
+const at = (x: number, z: number) => [x, 0, z] as [number, number, number];
+const vehicle = (id: string, className: string, position = at(7680, 7680)) => ({
+  id, className, displayName: null, position, speed: 0, health: 1000,
 });
-const event = (id: string, className: string, type: string) => ({
-  id, className, type, displayName: null, position: [7680, 0, 7680] as [number, number, number],
+const event = (id: string, className: string, type: string, position = at(7680, 7680)) => ({
+  id, className, type, displayName: null, position,
 });
 
 vi.mock('@/hooks/useLiveSnapshot', () => ({
@@ -54,29 +55,29 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
       vehicles: {
         at: 1, stale: false,
         items: [
-          vehicle('v1', 'VeeDub_Orange'),
-          vehicle('v2', 'RFMosquito'),
-          vehicle('v3', 'Boat_01_Camo'),
-          vehicle('v4', 'Offroad_02'),
-          vehicle('v5', 'Expansion_Generic_Vehicle_Cover'),
+          vehicle('v1', 'VeeDub_Orange', at(1000, 1000)),
+          vehicle('v2', 'RFMosquito', at(1100, 1100)),
+          vehicle('v3', 'Boat_01_Camo', at(1200, 1200)),
+          vehicle('v4', 'Offroad_02', at(1300, 1300)),
+          vehicle('v5', 'Expansion_Generic_Vehicle_Cover', at(1400, 1400)),
         ],
       },
       events: {
         at: 1, stale: false,
         items: [
-          event('e1', 'Wreck_UH1Y', 'helicrash'),
-          event('e2', 'Land_Wreck_hb01_aban1_police_DE', 'wreck'),
-          event('e3', 'StaticObj_Wreck_Train_742_Red_DE', 'wreck'),
-          event('e4', 'KMUC Keycard', 'unknown'),
-          event('e5', 'Staff', 'unknown'),
-          event('e6', 'Camp Event', 'unknown'),
-          event('e7', 'Smokey Grenade', 'unknown'),
-          event('e8', 'Convoy', 'unknown'),
-          event('e9', 'Mjolnir Head', 'unknown'),
-          event('e10', 'Mjolnir Handle', 'unknown'),
-          event('e11', 'Submarine', 'unknown'),
-          event('e12', 'ExpansionAirdropContainer_Military', 'unknown'),
-          event('e13', 'Punch Card', 'unknown'),
+          event('e1', 'Wreck_UH1Y', 'helicrash', at(2000, 2000)),
+          event('e2', 'Land_Wreck_hb01_aban1_police_DE', 'wreck', at(2100, 2100)),
+          event('e3', 'StaticObj_Wreck_Train_742_Red_DE', 'wreck', at(2200, 2200)),
+          event('e4', 'KMUC Keycard', 'unknown', at(4000, 4000)), // loose on the ground
+          event('e5', 'Staff', 'unknown', at(1000.5, 1000.5)),    // in VeeDub_Orange cargo
+          event('e6', 'Camp Event', 'unknown', at(2300, 2300)),
+          event('e7', 'Smokey Grenade', 'unknown', at(2400, 2400)),
+          event('e8', 'Convoy', 'unknown', at(2500, 2500)),
+          event('e9', 'Mjolnir Head', 'unknown', at(2600, 2600)),
+          event('e10', 'Mjolnir Handle', 'unknown', at(3840, 11520)), // carried by Alice
+          event('e11', 'Submarine', 'unknown', at(2700, 2700)),
+          event('e12', 'ExpansionAirdropContainer_Military', 'unknown', at(2800, 2800)),
+          event('e13', 'Punch Card', 'unknown', at(2800, 2800)),  // inside the airdrop container
         ],
       },
       territories: { at: 1, stale: false, items: [] },
@@ -171,6 +172,20 @@ describe('LiveMapView marker projection', () => {
     expect(iconIn('Submarine')).toBe('star');
     expect(iconIn('ExpansionAirdropContainer_Military')).toBe('parachute-box');
     expect(iconIn('Punch Card')).toBe('ticket');
+  });
+
+  it('tints stored items silver when co-located with a container, vehicle, or player', async () => {
+    const container = await render();
+    const glyphClass = (title: string) =>
+      (container.querySelector(`button[title="${title}"] svg`) as SVGElement | null)?.getAttribute('class') ?? '';
+
+    expect(glyphClass('Punch Card')).toContain('text-slate-300');       // inside the airdrop container
+    expect(glyphClass('Staff')).toContain('text-slate-300');            // in vehicle cargo
+    expect(glyphClass('Mjolnir Handle')).toContain('text-slate-300');   // carried by a player
+    expect(glyphClass('KMUC Keycard')).not.toContain('text-slate-300'); // loose on the ground
+    expect(glyphClass('KMUC Keycard')).toContain('text-violet-400');
+    // Containers themselves never go silver.
+    expect(glyphClass('ExpansionAirdropContainer_Military')).toContain('text-cyan-400');
   });
 
   it('shows the roster/summary side panel with the player count', async () => {

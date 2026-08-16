@@ -18,7 +18,7 @@ import RawActionPanel from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
 import {
   EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker,
-  type MarkerSelection,
+  computeStoredEventIds, type MarkerSelection,
 } from './LiveMarkers';
 
 interface LiveMapViewProps {
@@ -66,6 +66,16 @@ export default function LiveMapView({
   const { snapshot, loading } = useLiveSnapshot(selectedProfileId, layers, status.connected);
 
   const [selection, setSelection] = useState<MarkerSelection | null>(null);
+
+  // Items co-located with a tracked container/vehicle/player are stored — silver.
+  const storedEventIds = useMemo(
+    () => computeStoredEventIds(
+      snapshot?.events?.items ?? [],
+      snapshot?.vehicles?.items ?? [],
+      snapshot?.players?.items ?? [],
+    ),
+    [snapshot],
+  );
 
   // Admin actions (Phase 3). Teleport is a two-step map gesture: pick the
   // player, click a destination, confirm with the exact coordinates.
@@ -262,6 +272,7 @@ export default function LiveMapView({
                         py={p.py}
                         selected={isSel('event', id)}
                         dimmed={snapshot.events?.stale}
+                        stored={storedEventIds.has(id)}
                         onSelect={() => setSelection({ kind: 'event', id })}
                       />
                     );
