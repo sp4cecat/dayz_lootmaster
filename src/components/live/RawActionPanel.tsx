@@ -9,6 +9,15 @@ import ConfirmDialog from './ConfirmDialog';
 
 type Actions = ReturnType<typeof useCfToolsActions>;
 
+/** The map selection resolved into a GameLabs action context + reference. */
+export interface RawActionTarget {
+  context: 'world' | 'player' | 'vehicle' | 'object';
+  referenceKey: string | null;
+  label: string | null;
+}
+
+const WORLD_TARGET: RawActionTarget = { context: 'world', referenceKey: null, label: null };
+
 interface GameLabsActionDef {
   actionCode: string;
   actionName?: string;
@@ -53,13 +62,16 @@ function paramList(def: GameLabsActionDef): { key: string; dataType: string }[] 
 }
 
 /**
- * Raw GameLabs action passthrough: pick any action the server advertises
- * (including custom mod-registered ones), fill its typed parameters, execute.
- * The escape hatch for actions Lootmaster has no dedicated UI for.
+ * Contextual GameLabs action panel: with nothing selected on the map it offers
+ * only world-context actions (weather, time, "clear all AI", …); selecting a
+ * player/vehicle/object marker narrows the list to that context and targets
+ * the selection automatically. The escape hatch for actions Lootmaster has no
+ * dedicated UI for.
  */
-export default function RawActionPanel({ actions, selectedProfileId }: {
+export default function RawActionPanel({ actions, selectedProfileId, target = WORLD_TARGET }: {
   actions: Actions;
   selectedProfileId?: string;
+  target?: RawActionTarget;
 }) {
   const [defs, setDefs] = useState<GameLabsActionDef[]>([]);
   const [code, setCode] = useState('');
@@ -81,10 +93,21 @@ export default function RawActionPanel({ actions, selectedProfileId }: {
     return () => { cancelled = true; };
   }, [selectedProfileId]);
 
-  const selected = defs.find(d => d.actionCode === code);
+  // Selecting a different marker changes the context — drop the stale pick.
+  useEffect(() => {
+    setCode('');
+    setValues({});
+    setChecks({});
+  }, [target.context, target.referenceKey]);
+
+  const available = useMemo(
+    () => defs.filter(d => (d.actionContext || 'world') === target.context),
+    [defs, target.context],
+  );
+  const selected = available.find(d => d.actionCode === code);
   const params = useMemo(() => (selected ? paramList(selected) : []), [selected]);
-  const context = selected?.actionContext || 'world';
-  const needsReference = context !== 'world';
+  const needsReference = target.context !== 'world';
+  const effectiveReference = target.referenceKey ?? referenceKey.trim();
 
   if (defs.length === 0) return null;
 
@@ -95,7 +118,7 @@ export default function RawActionPanel({ actions, selectedProfileId }: {
       parameters[key] = toWireParam(dataType, values[key] || '', !!checks[key]);
     }
     const result = await actions.gameLabsAction(
-      selected.actionCode, context, needsReference ? referenceKey.trim() : null, parameters,
+      selected.actionCode, target.context, needsReference ? effectiveReference : null, parameters,
     );
     setConfirming(false);
     setFeedback(result.ok ? `Executed ${selected.actionCode}.` : (result.error || 'Action failed.'));
@@ -107,23 +130,32 @@ export default function RawActionPanel({ actions, selectedProfileId }: {
       <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
         <Terminal size={13} />
         <span className="text-[10px] font-bold uppercase tracking-wider">GameLabs actions</span>
+        <span className="ml-auto text-[10px] font-medium normal-case truncate max-w-40">
+          {target.context === 'world' ? 'World' : `${target.context}: ${target.label || target.referenceKey}`}
+        </span>
       </div>
+      {available.length === 0 ? (
+        <p className="text-[11px] text-gray-400 dark:text-gray-500">
+          No {target.context}-context actions available.
+        </p>
+      ) : (
       <Select
         size="sm"
         options={[
           { label: '— Select an action —', value: '' },
-          ...defs.map(d => ({ label: d.actionName || d.actionCode, value: d.actionCode })),
+          ...available.map(d => ({ label: d.actionName || d.actionCode, value: d.actionCode })),
         ]}
         value={code}
         onChange={e => { setCode(e.target.value); setValues({}); setChecks({}); }}
       />
+      )}
       {selected && (
         <div className="space-y-2">
-          {needsReference && (
+          {needsReference && !target.referenceKey && (
             <Input
               size="sm"
-              label={`Reference (${context})`}
-              placeholder={context === 'player' ? 'steam64' : `${context} reference key`}
+              label={`Reference (${target.context})`}
+              placeholder={target.context === 'player' ? 'steam64' : `${target.context} reference key`}
               value={referenceKey}
               onChange={e => setReferenceKey(e.target.value)}
             />
@@ -152,7 +184,7 @@ export default function RawActionPanel({ actions, selectedProfileId }: {
           <Button
             size="xs"
             variant="secondary-color"
-            disabled={actions.busy || (needsReference && !referenceKey.trim())}
+            disabled={actions.busy || (needsReference && !effectiveReference)}
             onClick={() => setConfirming(true)}
           >
             Execute
@@ -164,7 +196,7 @@ export default function RawActionPanel({ actions, selectedProfileId }: {
       <ConfirmDialog
         open={confirming}
         title="Execute GameLabs action"
-        message={<>Run <b>{selected?.actionName || selected?.actionCode}</b>{needsReference ? <> on <b>{referenceKey}</b></> : null} on the live server?</>}
+        message={<>Run <b>{selected?.actionName || selected?.actionCode}</b>{needsReference ? <> on <b>{target.label || effectiveReference}</b></> : null} on the live server?</>}
         confirmLabel="Execute"
         busy={actions.busy}
         onCancel={() => setConfirming(false)}

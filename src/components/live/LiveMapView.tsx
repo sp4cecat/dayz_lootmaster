@@ -14,7 +14,7 @@ import { useCfToolsActions } from '@/hooks/useCfToolsActions';
 import type { LiveLayerKey, LivePlayer } from '@/types/cftools';
 import LiveSidePanel from './LiveSidePanel';
 import PlayerActionsBar from './PlayerActionsBar';
-import RawActionPanel from './RawActionPanel';
+import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
 import {
   EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker,
@@ -66,6 +66,27 @@ export default function LiveMapView({
   const { snapshot, loading } = useLiveSnapshot(selectedProfileId, layers, status.connected);
 
   const [selection, setSelection] = useState<MarkerSelection | null>(null);
+
+  // Resolve the selected marker into a GameLabs action target. No selection →
+  // world-context actions; player/vehicle/event selections narrow the raw
+  // action panel to their context. referenceKeys verified against the GameLabs
+  // mod source: player = steam64, vehicle/object = the entity id string the
+  // entities endpoints already return.
+  const rawTarget = useMemo((): RawActionTarget => {
+    const world: RawActionTarget = { context: 'world', referenceKey: null, label: null };
+    if (!selection || !snapshot) return world;
+    if (selection.kind === 'player') {
+      const pl = snapshot.players?.items.find(p => (p.sessionId || p.steamId || p.name) === selection.id);
+      return pl?.steamId ? { context: 'player', referenceKey: pl.steamId, label: pl.name } : world;
+    }
+    if (selection.kind === 'vehicle') {
+      const v = snapshot.vehicles?.items.find((x, i) => (x.id || String(i)) === selection.id);
+      return v?.id ? { context: 'vehicle', referenceKey: v.id, label: v.displayName || v.className || 'Vehicle' } : world;
+    }
+    const list = selection.kind === 'territory' ? snapshot.territories?.items : snapshot.events?.items;
+    const e = list?.find((x, i) => (x.id || String(i)) === selection.id);
+    return e?.id ? { context: 'object', referenceKey: e.id, label: e.displayName || e.className || e.type } : world;
+  }, [selection, snapshot]);
 
   // Items co-located with a tracked container/vehicle/player are stored — silver.
   const storedEventIds = useMemo(
@@ -338,7 +359,7 @@ export default function LiveMapView({
               )}
               footer={
                 status.capabilities?.gameLabs
-                  ? <RawActionPanel actions={actions} selectedProfileId={selectedProfileId} />
+                  ? <RawActionPanel actions={actions} selectedProfileId={selectedProfileId} target={rawTarget} />
                   : undefined
               }
             />
