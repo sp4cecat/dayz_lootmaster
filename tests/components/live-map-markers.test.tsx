@@ -65,6 +65,17 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
         items: [
           event('e1', 'Wreck_UH1Y', 'helicrash'),
           event('e2', 'Land_Wreck_hb01_aban1_police_DE', 'wreck'),
+          event('e3', 'StaticObj_Wreck_Train_742_Red_DE', 'wreck'),
+          event('e4', 'KMUC Keycard', 'unknown'),
+          event('e5', 'Staff', 'unknown'),
+          event('e6', 'Camp Event', 'unknown'),
+          event('e7', 'Smokey Grenade', 'unknown'),
+          event('e8', 'Convoy', 'unknown'),
+          event('e9', 'Mjolnir Head', 'unknown'),
+          event('e10', 'Mjolnir Handle', 'unknown'),
+          event('e11', 'Submarine', 'unknown'),
+          event('e12', 'ExpansionAirdropContainer_Military', 'unknown'),
+          event('e13', 'Punch Card', 'unknown'),
         ],
       },
       territories: { at: 1, stale: false, items: [] },
@@ -136,6 +147,24 @@ describe('LiveMapView marker projection', () => {
     expect(iconIn('Wreck_UH1Y')).toBe('helicopter');    // heli crash site
     expect(iconIn('Land_Wreck_hb01_aban1_police_DE')).toBe('car-burst'); // car wreck, not a helicrash
     expect(iconIn('Alice')).toBe('person');
+  });
+
+  it('maps modded event classnames to their Font Awesome glyphs', async () => {
+    const container = await render();
+    const iconIn = (title: string) =>
+      (container.querySelector(`button[title="${title}"] svg`) as SVGElement | null)?.getAttribute('data-icon');
+
+    expect(iconIn('StaticObj_Wreck_Train_742_Red_DE')).toBe('train'); // class match beats the wreck type
+    expect(iconIn('KMUC Keycard')).toBe('credit-card');
+    expect(iconIn('Staff')).toBe('staff-snake');        // bare 'staff' is FA Pro-only
+    expect(iconIn('Camp Event')).toBe('campground');
+    expect(iconIn('Smokey Grenade')).toBe('bomb');
+    expect(iconIn('Convoy')).toBe('truck-field-un');
+    expect(iconIn('Mjolnir Head')).toBe('gavel');
+    expect(iconIn('Mjolnir Handle')).toBe('wand-magic'); // bare 'wand' is FA Pro-only
+    expect(iconIn('Submarine')).toBe('star');
+    expect(iconIn('ExpansionAirdropContainer_Military')).toBe('parachute-box');
+    expect(iconIn('Punch Card')).toBe('ticket');
   });
 
   it('shows the roster/summary side panel with the player count', async () => {

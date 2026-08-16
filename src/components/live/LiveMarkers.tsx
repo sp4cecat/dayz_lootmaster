@@ -4,6 +4,8 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faPerson, faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
   faCarBurst, faBiohazard, faFlag, faLocationDot,
+  faTrain, faCreditCard, faStaffSnake, faCampground, faBomb, faTruckFieldUn,
+  faGavel, faWandMagic, faStar, faParachuteBox, faTicket,
 } from '@fortawesome/free-solid-svg-icons';
 import { cx } from '@/utils/cx';
 import type { LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
@@ -40,6 +42,26 @@ const EVENT_ICONS: Record<string, { icon: IconDefinition; tint: string }> = {
   wreck: { icon: faCarBurst, tint: 'text-amber-400' },
   contaminated_area: { icon: faBiohazard, tint: 'text-yellow-400' },
 };
+
+/**
+ * Per-server event classnames (Deer Isle mods report display-ish names like
+ * "KMUC Keycard", "Camp Event"). Checked in order, first match wins — keep
+ * "mjolnir head"/"handle" ahead of any broader pattern. `staff` and `wand`
+ * are Pro-only in Font Awesome; staff-snake and wand-magic are the free kin.
+ */
+const EVENT_CLASS_ICONS: Array<[RegExp, IconDefinition, string]> = [
+  [/mjolnir.*head/i, faGavel, 'text-amber-300'],
+  [/mjolnir.*handle/i, faWandMagic, 'text-fuchsia-400'],
+  [/train/i, faTrain, 'text-amber-400'],
+  [/keycard/i, faCreditCard, 'text-violet-400'],
+  [/staff/i, faStaffSnake, 'text-purple-400'],
+  [/camp/i, faCampground, 'text-lime-400'],
+  [/grenade/i, faBomb, 'text-stone-300'],
+  [/convoy/i, faTruckFieldUn, 'text-teal-400'],
+  [/submarine/i, faStar, 'text-yellow-300'],
+  [/airdrop/i, faParachuteBox, 'text-cyan-400'],
+  [/punch.?card/i, faTicket, 'text-pink-400'],
+];
 
 const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
 
@@ -116,8 +138,12 @@ export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
 }
 
 function eventVisual(event: LiveEvent): { icon: IconDefinition; tint: string } {
-  // Vehicle spawn events carry the vehicle classname — match those first.
-  const vehicleIcon = iconForClassName(event.className);
+  const cn = event.className || '';
+  for (const [pattern, icon, tint] of EVENT_CLASS_ICONS) {
+    if (pattern.test(cn)) return { icon, tint };
+  }
+  // Vehicle spawn events carry the vehicle classname — match those next.
+  const vehicleIcon = iconForClassName(cn);
   if (vehicleIcon) return { icon: vehicleIcon, tint: 'text-sky-400' };
   return EVENT_ICONS[event.type] ?? { icon: faLocationDot, tint: 'text-purple-400' };
 }
