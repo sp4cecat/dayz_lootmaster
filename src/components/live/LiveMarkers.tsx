@@ -5,7 +5,7 @@ import {
   faPerson, faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
   faCarBurst, faBiohazard, faFlag, faLocationDot,
   faTrain, faCreditCard, faStaffSnake, faCampground, faBomb, faTruckFieldUn,
-  faGavel, faWandMagic, faStar, faParachuteBox, faTicket,
+  faGavel, faWandMagic, faStar, faParachuteBox, faTicket, faBriefcase,
 } from '@fortawesome/free-solid-svg-icons';
 import { cx } from '@/utils/cx';
 import type { LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
@@ -71,6 +71,7 @@ const EVENT_CLASS_ICONS: Array<[RegExp, IconDefinition, string]> = [
   [/submarine/i, faStar, 'text-yellow-300'],
   [/airdrop/i, faParachuteBox, 'text-cyan-400'],
   [/punch.?card/i, faTicket, 'text-pink-400'],
+  [/briefcase/i, faBriefcase, 'text-indigo-400'],
 ];
 
 const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
@@ -83,7 +84,7 @@ const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
  * event, a vehicle, or a player is being carried/stored — tint it silver.
  * Base chests aren't tracked at all, so items inside them can't be detected.
  */
-const STORABLE_ITEM = /keycard|staff|grenade|mjolnir|punch.?card/i;
+const STORABLE_ITEM = /keycard|staff|grenade|mjolnir|punch.?card|briefcase/i;
 const CONTAINER_EVENT = /airdrop|camp|submarine|convoy/i;
 const STORED_EPS_M = 1.5;
 

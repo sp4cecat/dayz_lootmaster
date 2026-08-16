@@ -78,6 +78,7 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
           event('e11', 'Submarine', 'unknown', at(2700, 2700)),
           event('e12', 'ExpansionAirdropContainer_Military', 'unknown', at(2800, 2800)),
           event('e13', 'Punch Card', 'unknown', at(2800, 2800)),  // inside the airdrop container
+          event('e14', 'ScientificBriefcase', 'unknown', at(2900, 2900)),
         ],
       },
       territories: { at: 1, stale: false, items: [] },
@@ -172,6 +173,7 @@ describe('LiveMapView marker projection', () => {
     expect(iconIn('Submarine')).toBe('star');
     expect(iconIn('ExpansionAirdropContainer_Military')).toBe('parachute-box');
     expect(iconIn('Punch Card')).toBe('ticket');
+    expect(iconIn('ScientificBriefcase')).toBe('briefcase');
   });
 
   it('tints stored items silver when co-located with a container, vehicle, or player', async () => {
