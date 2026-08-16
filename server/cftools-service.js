@@ -150,6 +150,13 @@ function normalizePlayer(session) {
         // position may legitimately be absent (player still loading in) — the
         // marker is simply omitted while the roster row still shows.
         position: normSessionPosition(live.position && live.position.latest),
+        // The GameLabs mod reports per-player health and item-in-hands
+        // (_ServerPlayerEx: health, item), but the public Data API exposes no
+        // player entities route (probed 2026-08: /GameLabs/entities/players
+        // 404s). Extract opportunistically so the UI lights up if CF Tools
+        // ever surfaces them on the GSM session.
+        health: num(live.health),
+        handItem: (typeof live.item === 'string' && live.item) || null,
         ping: live.ping ? num(live.ping.actual) : null,
         loaded: !!live.loaded,
         banCount: session.info ? num(session.info.ban_count) : null,

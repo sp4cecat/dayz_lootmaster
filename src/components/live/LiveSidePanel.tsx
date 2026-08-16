@@ -74,6 +74,8 @@ export default function LiveSidePanel({
         <Row label="Steam64">{player.steamId || '—'}</Row>
         <Row label="CFTools ID">{player.cftoolsId || '—'}</Row>
         <Row label="Position">{fmtPos(player.position)}</Row>
+        <Row label="HP">{player.health != null ? `${Math.round(player.health)}` : '—'}</Row>
+        <Row label="In hands">{player.handItem || '—'}</Row>
         <Row label="Ping">{player.ping != null ? `${player.ping} ms` : '—'}</Row>
         <Row label="Loaded in">{player.loaded ? 'yes' : 'still loading'}</Row>
         <Row label="Recorded bans">{player.banCount ?? '—'}</Row>

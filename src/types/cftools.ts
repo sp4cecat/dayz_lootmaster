@@ -9,6 +9,10 @@ export interface LivePlayer {
   steamId: string | null;
   /** Absent while the player is still loading in — omit the marker, keep the roster row. */
   position: [number, number, number] | null;
+  /** GlobalHealth 0–100 — null until CF Tools exposes it on the Data API. */
+  health: number | null;
+  /** Classname of the item in hands — null until CF Tools exposes it. */
+  handItem: string | null;
   ping: number | null;
   loaded: boolean;
   banCount: number | null;

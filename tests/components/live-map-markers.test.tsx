@@ -22,7 +22,7 @@ vi.mock('@/hooks/useCfToolsStatus', () => ({
     status: {
       connected: true,
       nickname: 'Test Server',
-      capabilities: { gsm: true, gameLabs: false },
+      capabilities: { gsm: true, gameLabs: true },
     },
     reload: () => {},
   }),
@@ -34,6 +34,8 @@ const PLAYER = {
   name: 'Alice',
   steamId: '76500000000000001',
   position: [3840, 10, 11520] as [number, number, number], // x = 1/4 world, z = 3/4 world
+  health: 87.4,
+  handItem: 'M4A1',
   ping: 40,
   loaded: true,
   banCount: 0,
@@ -126,16 +128,64 @@ async function render() {
   return container;
 }
 
+/** jsdom has no PointerEvent constructor; React 19 listens for the native type name. */
+function pointer(el: Element, type: string, clientX: number, clientY: number) {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY });
+  Object.defineProperty(e, 'pointerId', { value: 1 });
+  Object.defineProperty(e, 'button', { value: 0 });
+  el.dispatchEvent(e);
+}
+
 describe('LiveMapView marker projection', () => {
   it('projects a player position through the shared map transform (Z inverted)', async () => {
     const container = await render();
-    const marker = container.querySelector('button[title="Alice"]') as HTMLElement;
+    const marker = container.querySelector('button[aria-label="Alice"]') as HTMLElement;
     expect(marker).toBeTruthy();
 
     // x = 3840/15360 of a 600px box = 150px; z = 11520/15360 -> screen Y is
     // inverted: (1 - 0.75) * 600 = 150px.
     expect(parseFloat(marker.style.left)).toBeCloseTo(150, 5);
     expect(parseFloat(marker.style.top)).toBeCloseTo(150, 5);
+  });
+
+  it('renders players as a translucent orange dot with a hover tooltip (name, HP, hands)', async () => {
+    const container = await render();
+    const marker = container.querySelector('button[aria-label="Alice"]') as HTMLElement;
+    const dot = marker.querySelector('[data-testid="player-dot"]') as HTMLElement;
+    expect(dot).toBeTruthy();
+    expect(dot.className).toContain('bg-orange-500/60');
+    expect(marker.querySelector('svg')).toBeNull(); // no glyph, no permanent name label
+
+    expect(marker.querySelector('[role="tooltip"]')).toBeNull();
+    await act(async () => {
+      marker.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    const tip = marker.querySelector('[role="tooltip"]') as HTMLElement;
+    expect(tip).toBeTruthy();
+    expect(tip.textContent).toContain('Alice');
+    expect(tip.textContent).toContain('HP: 87');
+    expect(tip.textContent).toContain('Hands: M4A1');
+  });
+
+  it('drag-and-drop on a player dot opens the teleport confirmation at the drop point', async () => {
+    const container = await render();
+    const marker = container.querySelector('button[aria-label="Alice"]') as HTMLElement;
+
+    // Drag the dot from its marker (150,150) to the viewport centre (300,300).
+    await act(async () => { pointer(marker, 'pointerdown', 150, 150); });
+    await act(async () => { pointer(marker, 'pointermove', 300, 300); });
+    // Mid-drag: ghost dot with the live destination coordinates.
+    const ghost = container.querySelector('[data-testid="player-drag-ghost"]') as HTMLElement;
+    expect(ghost).toBeTruthy();
+    expect(ghost.textContent).toContain('7680, 7680');
+
+    await act(async () => { pointer(marker, 'pointerup', 300, 300); });
+    // (300,300) in a 600px box is the world centre; Z is screen-inverted.
+    expect(document.body.textContent).toContain('Teleport player');
+    expect(document.body.textContent).toContain('7680, 7680');
+    // The click that follows a drag-release must not re-select the player.
+    await act(async () => { marker.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).not.toContain('Ping');
   });
 
   it('maps modded classnames to their Font Awesome glyphs', async () => {
@@ -149,7 +199,6 @@ describe('LiveMapView marker projection', () => {
     expect(iconIn('Offroad_02')).toBe('car');           // default vehicle
     expect(iconIn('Wreck_UH1Y')).toBe('helicopter');    // heli crash site
     expect(iconIn('Land_Wreck_hb01_aban1_police_DE')).toBe('car-burst'); // car wreck, not a helicrash
-    expect(iconIn('Alice')).toBe('person');
 
     // Covered vehicles (Expansion cover entity) render silver.
     const covered = container.querySelector('button[title="Expansion_Generic_Vehicle_Cover"] svg');

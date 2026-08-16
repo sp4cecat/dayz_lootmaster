@@ -323,6 +323,7 @@ export default function LiveMapView({
                     if (!pl.position) return null;
                     const id = pl.sessionId || pl.steamId || pl.name;
                     const p = view.project(pl.position[0], pl.position[2]);
+                    const canDragTeleport = !!status.capabilities?.gameLabs && !!pl.steamId;
                     return (
                       <PlayerMarker
                         key={`p-${id}`}
@@ -332,6 +333,13 @@ export default function LiveMapView({
                         selected={isSel('player', id)}
                         dimmed={snapshot.players?.stale}
                         onSelect={() => setSelection({ kind: 'player', id })}
+                        toWorld={canDragTeleport ? view.toWorld : undefined}
+                        onDragTeleport={canDragTeleport ? (player, dest) => {
+                          // A drop off the map edge clamps to the world bounds.
+                          const clamp = (v: number) => Math.min(Math.max(v, 0), Math.round(map.worldSize));
+                          setTeleportTarget(player);
+                          setTeleportDest({ x: clamp(dest.x), z: clamp(dest.z) });
+                        } : undefined}
                       />
                     );
                   })}

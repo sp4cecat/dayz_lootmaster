@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
-  faPerson, faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
+  faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
   faCarBurst, faBiohazard, faFlag, faLocationDot,
   faTrain, faCreditCard, faStaffSnake, faCampground, faBomb, faTruckFieldUn,
   faGavel, faWandMagic, faStar, faParachuteBox, faTicket, faBriefcase,
@@ -155,18 +155,130 @@ function MarkerButton({ px, py, selected, dimmed, title, onSelect, children }: B
   );
 }
 
-export function PlayerMarker({ player, px, py, selected, dimmed, onSelect }: {
+/** Pointer travel (px) beyond which a press on a player dot becomes a drag. */
+const DRAG_SLOP = 4;
+
+/**
+ * Players render as a translucent orange dot. Hover shows a tooltip with the
+ * in-game name, HP and item in hands (HP/hands read "n/a" until CF Tools
+ * exposes them on the Data API — the GameLabs mod reports both, but there is
+ * no player entities route). When `onDragTeleport` is provided the dot can be
+ * dragged: a ghost dot with live world coordinates follows the pointer, and
+ * releasing asks the caller to teleport the player there. A press that never
+ * travels past the slop stays a click and selects the player as before.
+ */
+export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDragTeleport, toWorld }: {
   player: LivePlayer; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
+  /** Present when drag-to-teleport is available (GameLabs connected + steam64 known). */
+  onDragTeleport?: (player: LivePlayer, dest: { x: number; z: number }) => void;
+  /** Client (mouse) position -> world metres, from the map view. */
+  toWorld?: (clientX: number, clientY: number) => { x: number; z: number } | null;
 }) {
+  const [hover, setHover] = useState(false);
+  const [drag, setDrag] = useState<{ dx: number; dy: number; x: number; z: number } | null>(null);
+  const gesture = useRef({ pointerId: -1, startX: 0, startY: 0, dragging: false });
+  const suppressClick = useRef(false);
+
+  const draggable = !!(onDragTeleport && toWorld);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    gesture.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dragging: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const g = gesture.current;
+    if (g.pointerId !== e.pointerId || !draggable) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    if (!g.dragging && Math.hypot(dx, dy) <= DRAG_SLOP) return;
+    g.dragging = true;
+    const hit = toWorld!(e.clientX, e.clientY);
+    setDrag({ dx, dy, x: Math.round(hit?.x ?? 0), z: Math.round(hit?.z ?? 0) });
+  };
+
+  const endGesture = (e: React.PointerEvent<HTMLButtonElement>, cancelled: boolean) => {
+    const g = gesture.current;
+    if (g.pointerId !== e.pointerId) return;
+    gesture.current = { pointerId: -1, startX: 0, startY: 0, dragging: false };
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    setDrag(null);
+    if (g.dragging) {
+      // The click event that follows a drag-release must not select.
+      suppressClick.current = true;
+      if (!cancelled) {
+        const hit = toWorld?.(e.clientX, e.clientY);
+        if (hit && onDragTeleport) onDragTeleport(player, { x: Math.round(hit.x), z: Math.round(hit.z) });
+      }
+    }
+  };
+
   return (
-    <MarkerButton px={px} py={py} selected={selected} dimmed={dimmed} title={player.name} onSelect={onSelect}>
-      <span className="flex flex-col items-center">
-        <Glyph icon={faPerson} tint="text-emerald-400" selected={selected} size={16} />
-        <span className="mt-0.5 px-1 rounded bg-black/60 text-[9px] font-medium text-white whitespace-nowrap leading-tight">
-          {player.name}
+    <>
+      <button
+        type="button"
+        aria-label={player.name}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={(e) => endGesture(e, false)}
+        onPointerCancel={(e) => endGesture(e, true)}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (suppressClick.current) { suppressClick.current = false; return; }
+          onSelect();
+        }}
+        className={cx(
+          'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1',
+          draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+          selected && 'z-10',
+          dimmed && 'opacity-50',
+        )}
+        style={{ left: px, top: py }}
+      >
+        <span
+          data-testid="player-dot"
+          className={cx(
+            'block h-3.5 w-3.5 rounded-full border shadow-md transition-transform',
+            selected
+              ? 'bg-primary-400/70 border-primary-100 scale-125'
+              : 'bg-orange-500/60 border-orange-200/80',
+            drag && 'opacity-30',
+            !drag && 'hover:scale-125',
+          )}
+        />
+        {hover && !drag && (
+          <span
+            role="tooltip"
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-gray-900/95 text-left whitespace-nowrap pointer-events-none z-20 shadow-lg"
+          >
+            <span className="block text-[10px] font-semibold text-white leading-tight">{player.name}</span>
+            <span className="block text-[9px] text-gray-300 leading-tight">
+              HP: {player.health != null ? Math.round(player.health) : 'n/a'}
+            </span>
+            <span className="block text-[9px] text-gray-300 leading-tight">
+              Hands: {player.handItem || 'n/a'}
+            </span>
+          </span>
+        )}
+      </button>
+      {/* Ghost dot under the pointer while dragging, with the live destination. */}
+      {drag && (
+        <span
+          data-testid="player-drag-ghost"
+          className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex flex-col items-center"
+          style={{ left: px + drag.dx, top: py + drag.dy }}
+        >
+          <span className="block h-3.5 w-3.5 rounded-full border shadow-md bg-orange-500/60 border-orange-200/80" />
+          <span className="mt-0.5 px-1 rounded bg-black/70 text-[9px] font-medium text-white whitespace-nowrap leading-tight">
+            {drag.x}, {drag.z}
+          </span>
         </span>
-      </span>
-    </MarkerButton>
+      )}
+    </>
   );
 }
 

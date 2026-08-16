@@ -102,7 +102,8 @@ describe('buildLiveSnapshot', () => {
             gamedata: { player_name: 'Alice', steam64: '765...1' },
             info: { ban_count: 0 },
             // Wire order is [x, z, height] (verified live) — the app reorders to [x, height, z].
-            live: { loaded: true, ping: { actual: 42, trend: 0 }, position: { latest: [1200.5, 4500.25, 30] } },
+            // health/item are opportunistic: no Data API route carries them today.
+            live: { loaded: true, ping: { actual: 42, trend: 0 }, position: { latest: [1200.5, 4500.25, 30] }, health: 87.4, item: 'M4A1' },
           },
           {
             id: 'sess-2', cftools_id: 'cf-2',
@@ -117,9 +118,12 @@ describe('buildLiveSnapshot', () => {
     expect(snap.players.items).toHaveLength(2);
     expect(snap.players.items[0]).toMatchObject({
       name: 'Alice', steamId: '765...1', ping: 42, position: [1200.5, 30, 4500.25],
+      health: 87.4, handItem: 'M4A1',
     });
     // No position → null (marker omitted client-side), row itself survives.
     expect(snap.players.items[1].position).toBeNull();
+    // Sessions without the opportunistic health/item fields normalize to null.
+    expect(snap.players.items[1]).toMatchObject({ health: null, handItem: null });
   });
 
   it('splits territory flags out of the events layer', async () => {
