@@ -12,8 +12,14 @@
  * the map (stale entries come from the client cache's stale-serve).
  */
 
+import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import * as cf from './cftools-client.js';
 import * as cfg from './cftools-config.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -190,6 +196,99 @@ function normalizeEvent(e) {
 const isTerritory = (ev) =>
     ev.type === 'territory_flag' || (ev.className && /territoryflag/i.test(ev.className));
 
+// ---- spawn ledger ----
+//
+// No server log records tracked-item spawns with positions (verified against
+// the staging ADM/RPT/script/EventManager/GameLabs logs), but CW_Gamelabs
+// registers each item with GameLabs ~100ms after the entity spawns — so the
+// FIRST position this backend ever observes for an event id IS its spawn
+// position. An event whose current position has left that spot was picked up,
+// dropped elsewhere, or stored (including untracked base chests the anchor
+// heuristic can't see). Ledger persists across backend restarts; entries prune
+// when a FRESH events payload no longer contains the id (entity despawned, or
+// the game server restarted and network ids rolled over).
+//
+// Limit: items that spawned before Lootmaster first polled are ledgered at
+// wherever they were first seen — a pre-existing moved item reads "at spawn".
+
+// eslint-disable-next-line no-undef
+const SPAWNS_FILE = process.env.CFTOOLS_SPAWNS_FILE
+    // eslint-disable-next-line no-undef
+    ? resolve(process.env.CFTOOLS_SPAWNS_FILE)
+    : resolve(join(__dirname, '.cache', 'cftools-spawns.json'));
+
+// eslint-disable-next-line no-undef
+const SPAWNS_PERSIST_DISABLED = !!process.env.VITEST || process.env.NODE_ENV === 'test';
+
+const SPAWN_EPS_M = 2; // horizontal metres; loot settles but does not drift
+
+let spawnLedger = {}; // { [apiId]: { [eventId]: { x, z, at } } }
+let ledgerLoaded = false;
+
+async function ensureLedgerLoaded() {
+    if (ledgerLoaded) return;
+    ledgerLoaded = true;
+    if (SPAWNS_PERSIST_DISABLED) return;
+    try {
+        const parsed = JSON.parse(await readFile(SPAWNS_FILE, 'utf8'));
+        if (parsed && typeof parsed === 'object') spawnLedger = parsed;
+    } catch { /* nothing saved yet */ }
+}
+
+let ledgerSaveTimer = null;
+function persistLedger() {
+    if (SPAWNS_PERSIST_DISABLED) return;
+    if (ledgerSaveTimer) return;
+    ledgerSaveTimer = setTimeout(async () => {
+        ledgerSaveTimer = null;
+        // eslint-disable-next-line no-undef
+        const tmp = `${SPAWNS_FILE}.tmp-${process.pid}-${crypto.randomUUID()}`;
+        try {
+            await mkdir(dirname(SPAWNS_FILE), { recursive: true });
+            await writeFile(tmp, JSON.stringify(spawnLedger), 'utf8');
+            await rename(tmp, SPAWNS_FILE);
+        } catch {
+            try { await rm(tmp, { force: true }); } catch { /* ignore */ }
+        }
+    }, 2000);
+}
+
+/**
+ * Record first-seen positions and annotate each event with `moved` (left its
+ * spawn spot) and `spawnPosition`. Prunes vanished ids only on fresh payloads —
+ * a stale-served snapshot must not wipe the ledger.
+ */
+function applySpawnLedger(apiId, events, fresh) {
+    const book = spawnLedger[apiId] || (spawnLedger[apiId] = {});
+    const seen = new Set();
+    let dirty = false;
+    for (const e of events) {
+        if (!e.id) continue;
+        seen.add(e.id);
+        let entry = book[e.id];
+        if (!entry) {
+            entry = book[e.id] = { x: e.position[0], z: e.position[2], at: Date.now() };
+            dirty = true;
+        }
+        e.moved = Math.abs(e.position[0] - entry.x) > SPAWN_EPS_M
+            || Math.abs(e.position[2] - entry.z) > SPAWN_EPS_M;
+        e.spawnPosition = [entry.x, 0, entry.z];
+    }
+    if (fresh) {
+        for (const id of Object.keys(book)) {
+            if (!seen.has(id)) { delete book[id]; dirty = true; }
+        }
+    }
+    if (dirty) persistLedger();
+    return events;
+}
+
+/** Test seam: reset the in-memory ledger (persistence is disabled under tests). */
+export function _resetSpawnLedger() {
+    spawnLedger = {};
+    ledgerLoaded = true;
+}
+
 /**
  * Combined live snapshot for the map. `layers` is a Set/array of
  * 'players' | 'vehicles' | 'events' | 'territories'. Each requested layer
@@ -223,8 +322,11 @@ export async function buildLiveSnapshot(profile, layers) {
 
     if (want.has('events') || want.has('territories')) {
         tasks.push(cf.getEvents(bound.apiId)
-            .then(({ at, stale, data }) => {
-                const events = entityList(data).map(normalizeEvent).filter(Boolean);
+            .then(async ({ at, stale, data }) => {
+                await ensureLedgerLoaded();
+                const events = applySpawnLedger(
+                    bound.apiId, entityList(data).map(normalizeEvent).filter(Boolean), !stale,
+                );
                 if (want.has('events')) {
                     out.events = { at, stale, items: events.filter(e => !isTerritory(e)) };
                 }

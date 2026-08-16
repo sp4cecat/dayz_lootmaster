@@ -108,6 +108,14 @@ export default function LiveSidePanel({
         <Row label="Type">{event.type.replace(/_/g, ' ')}</Row>
         <Row label="Class">{event.className || '—'}</Row>
         <Row label="Position">{fmtPos(event.position)}</Row>
+        {event.moved !== undefined && (
+          <Row label="Status">
+            {event.moved ? 'moved — dropped, stored, or carried' : 'at spawn location'}
+          </Row>
+        )}
+        {event.moved && event.spawnPosition && (
+          <Row label="Spawned at">{fmtPos(event.spawnPosition)}</Row>
+        )}
       </div>
     ) : (
       <p className="text-xs text-gray-400">No longer reported.</p>

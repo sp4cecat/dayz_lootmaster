@@ -297,7 +297,7 @@ export default function LiveMapView({
                         py={p.py}
                         selected={isSel('event', id)}
                         dimmed={snapshot.events?.stale}
-                        stored={storedEventIds.has(id)}
+                        stored={storedEventIds.has(id) || e.moved === true}
                         onSelect={() => setSelection({ kind: 'event', id })}
                       />
                     );

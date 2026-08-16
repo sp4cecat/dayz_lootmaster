@@ -73,7 +73,7 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
           event('e6', 'Camp Event', 'unknown', at(2300, 2300)),
           event('e7', 'Smokey Grenade', 'unknown', at(2400, 2400)),
           event('e8', 'Convoy', 'unknown', at(2500, 2500)),
-          event('e9', 'Mjolnir Head', 'unknown', at(2600, 2600)),
+          { ...event('e9', 'Mjolnir Head', 'unknown', at(2600, 2600)), moved: true }, // left its spawn point
           event('e10', 'Mjolnir Handle', 'unknown', at(3840, 11520)), // carried by Alice
           event('e11', 'Submarine', 'unknown', at(2700, 2700)),
           event('e12', 'ExpansionAirdropContainer_Military', 'unknown', at(2800, 2800)),
@@ -184,7 +184,8 @@ describe('LiveMapView marker projection', () => {
     expect(glyphClass('Punch Card')).toContain('text-slate-300');       // inside the airdrop container
     expect(glyphClass('Staff')).toContain('text-slate-300');            // in vehicle cargo
     expect(glyphClass('Mjolnir Handle')).toContain('text-slate-300');   // carried by a player
-    expect(glyphClass('KMUC Keycard')).not.toContain('text-slate-300'); // loose on the ground
+    expect(glyphClass('Mjolnir Head')).toContain('text-slate-300');     // moved from its spawn point (ledger)
+    expect(glyphClass('KMUC Keycard')).not.toContain('text-slate-300'); // loose at its spawn point
     expect(glyphClass('KMUC Keycard')).toContain('text-violet-400');
     // Containers themselves never go silver.
     expect(glyphClass('ExpansionAirdropContainer_Military')).toContain('text-cyan-400');

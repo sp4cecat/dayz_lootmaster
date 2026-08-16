@@ -30,6 +30,14 @@ export interface LiveEvent {
   className: string | null;
   displayName: string | null;
   position: [number, number, number];
+  /**
+   * True when the entity has left its first-seen (spawn) position — it was
+   * picked up, dropped elsewhere, or stored. From the server's spawn ledger;
+   * absent for entities without a stable id.
+   */
+  moved?: boolean;
+  /** First position the backend ever observed for this entity. */
+  spawnPosition?: [number, number, number];
 }
 
 /** One map layer's payload; `stale` = served from cache during a rate-limit/outage. */

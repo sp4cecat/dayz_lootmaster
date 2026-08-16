@@ -18,7 +18,7 @@ vi.mock('../../server/cftools-client.js', async (importOriginal) => {
 import * as cf from '../../server/cftools-client.js';
 import * as cfg from '../../server/cftools-config.js';
 import {
-  buildStatus, buildLiveSnapshot, resolveActionCode, spawnLoadout,
+  buildStatus, buildLiveSnapshot, resolveActionCode, spawnLoadout, _resetSpawnLedger,
 } from '../../server/cftools-service.js';
 
 const PROFILE = { id: 'p1', name: 'Test', serverPath: 'X:\\srv', missionName: 'dayzOffline.chernarusplus' };
@@ -26,6 +26,7 @@ const PROFILE = { id: 'p1', name: 'Test', serverPath: 'X:\\srv', missionName: 'd
 beforeEach(() => {
   vi.clearAllMocks();
   cfg._resetState();
+  _resetSpawnLedger();
   cfg.setAppCredentials({ applicationId: 'app', secret: 's' });
   cfg.setServerBinding('p1', 'api-1', 'Test Server');
 });
@@ -187,6 +188,55 @@ describe('buildLiveSnapshot', () => {
     const snap = await buildLiveSnapshot(PROFILE, ['vehicles', 'events']);
     expect(snap.vehicles.items[0].position).toEqual([4200.5, 0, 9800.25]);
     expect(snap.events.items[0].position).toEqual([100, 0, 200]);
+  });
+});
+
+describe('spawn ledger', () => {
+  const eventsPayload = (entities, stale = false) => ({ at: 1, stale, data: { entities } });
+  const keycard = (position) => ({ id: 'e1', classname: 'KMUC Keycard', position });
+
+  it('flags an event as moved once it leaves its first-seen position', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([1000, 0, 2000])]));
+    let snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items[0]).toMatchObject({ moved: false, spawnPosition: [1000, 0, 2000] });
+
+    // Within the 2m settle tolerance: still "at spawn".
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([1001, 0, 2001])]));
+    snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items[0].moved).toBe(false);
+
+    // Carried across the map: moved, spawnPosition preserved.
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([5000, 0, 9000])]));
+    snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items[0]).toMatchObject({ moved: true, spawnPosition: [1000, 0, 2000] });
+  });
+
+  it('prunes vanished ids on fresh payloads so a respawn is a new spawn point', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([1000, 0, 2000])]));
+    await buildLiveSnapshot(PROFILE, ['events']);
+
+    // Item despawned (fresh payload without it) — ledger entry drops.
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([]));
+    await buildLiveSnapshot(PROFILE, ['events']);
+
+    // Same id reappears elsewhere (network ids recycle after a server restart):
+    // treated as a fresh spawn, not as "moved".
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([7000, 0, 7000])]));
+    const snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items[0]).toMatchObject({ moved: false, spawnPosition: [7000, 0, 7000] });
+  });
+
+  it('does not prune the ledger from a stale-served payload', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([1000, 0, 2000])]));
+    await buildLiveSnapshot(PROFILE, ['events']);
+
+    // Rate-limited: stale serve without the item must NOT wipe its spawn entry.
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([], true));
+    await buildLiveSnapshot(PROFILE, ['events']);
+
+    cf.getEvents.mockResolvedValueOnce(eventsPayload([keycard([5000, 0, 9000])]));
+    const snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items[0]).toMatchObject({ moved: true, spawnPosition: [1000, 0, 2000] });
   });
 });
 
