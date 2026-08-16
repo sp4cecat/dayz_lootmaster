@@ -136,4 +136,27 @@ describe('EditFormSpawnableTab item condition persistence', () => {
 
     unmount();
   });
+
+  // Regression: SpawnableTypesManager saved entries as {name, sections} with no `damage` helper,
+  // and that shape persists in IndexedDB. Gating the sliders on entry.damage showed the empty
+  // state for a type that already had a <damage> section; clicking "Set Spawn Damage" then took
+  // handleDamageChange's existing-section branch and overwrote min with the globals default.
+  it('shows the condition sliders for an entry saved without the damage helper field', async () => {
+    (findSpawnableEntryForType as any).mockReturnValue({
+      group: '__root',
+      file: 'cfgspawnabletypes.xml',
+      entry: {
+        name: 'TestItem',
+        sections: [{ kind: XMLNodeKind.DAMAGE, chance: null, preset: '', attrs: { min: '0.250', max: '0.750' }, items: [] }],
+      },
+    });
+
+    const { container, unmount } = await mount(<EditFormSpawnableTab {...baseProps} />);
+
+    expect(buttonsByText(container, 'Set Spawn Damage')).toHaveLength(0);
+    expect(container.textContent).toContain('Min Damage');
+    expect(container.textContent).toContain('Max Damage');
+
+    unmount();
+  });
 });

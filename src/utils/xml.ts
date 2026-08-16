@@ -150,18 +150,41 @@ export function parseSpawnableTypesXml(xml: string) {
   return {
     types: typeNodes.map(node => {
       const sections = Array.from(node.children || []).map(section => parseSpawnableNode(section));
-      const damageSection = sections.find(s => s.kind === XMLNodeKind.DAMAGE);
       return {
         name: node.getAttribute('name') || '',
         sections,
-        damage: damageSection ? {
-          min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
-          max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
-        } : null,
-        attachments: sections.filter(s => s.kind === XMLNodeKind.ATTACHMENTS),
-        cargo: sections.filter(s => s.kind === XMLNodeKind.CARGO)
+        ...deriveSpawnableHelpers(sections)
       };
     })
+  };
+}
+
+/**
+ * Coerce a raw <damage> attribute to a number, or null when it is absent/blank/non-numeric.
+ * Absence is meaningful: DayZ falls back to globals.xml LootDamageMin/Max for a missing attribute,
+ * so it must never be collapsed to 0 (and NaN must never reach a serialiser).
+ */
+export function toDamageNumber(value: any): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The convenience fields hung off a spawnable type entry alongside its raw `sections`.
+ * `sections` stays the single source of truth for serialisation; these are read-side helpers.
+ * Shared so every producer of an entry (parse, tree commit, tile edit) emits the same shape.
+ */
+export function deriveSpawnableHelpers(sections: any[]) {
+  const list = sections || [];
+  const damageSection = list.find((s: any) => s.kind === XMLNodeKind.DAMAGE);
+  return {
+    damage: damageSection ? {
+      min: toDamageNumber(damageSection.attrs?.min),
+      max: toDamageNumber(damageSection.attrs?.max)
+    } : null,
+    attachments: list.filter((s: any) => s.kind === XMLNodeKind.ATTACHMENTS),
+    cargo: list.filter((s: any) => s.kind === XMLNodeKind.CARGO)
   };
 }
 

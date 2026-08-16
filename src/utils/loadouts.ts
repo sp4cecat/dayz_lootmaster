@@ -1,7 +1,21 @@
 import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
-import { escapeAttr, renderSpawnableSection } from '@/utils/xml';
+import { escapeAttr, renderSpawnableSection, deriveSpawnableHelpers, toDamageNumber } from '@/utils/xml';
 import { buildNodeIndex, materializeLinkedClones, cloneNodeWithNewIds } from '@/utils/tree';
+
+/**
+ * <damage> attributes for a tree node's damage, keyed only for the bounds that are actually set.
+ * A null bound is omitted entirely so DayZ keeps falling back to globals.xml, and 3 decimals match
+ * what formatChance emits on the generateSpawnableTypesXml path — so the model and the file agree.
+ */
+function damageAttrs(damage: { min: number | null; max: number | null }): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const min = toDamageNumber(damage.min);
+  const max = toDamageNumber(damage.max);
+  if (min !== null) attrs.min = min.toFixed(3);
+  if (max !== null) attrs.max = max.toFixed(3);
+  return attrs;
+}
 
 /**
  * Coerce an Expansion attachment/variant entry that may be a bare classname string
@@ -335,7 +349,8 @@ export function loadoutToVanillaXml(
     const space = ' '.repeat(indent);
     lines.push(`${space}<type name="${escapeAttr(node.name)}">`);
     if (node.damage) {
-      lines.push(`${space}  <damage min="${node.damage.min.toFixed(2)}" max="${node.damage.max.toFixed(2)}"/>`);
+      const attrs = Object.entries(damageAttrs(node.damage)).map(([k, v]) => ` ${k}="${v}"`).join('');
+      lines.push(`${space}  <damage${attrs}/>`);
     }
     (node.attachments || []).forEach(child => renderBlock('attachments', child, `${space}  `));
     (node.cargo || []).forEach(child => renderBlock('cargo', child, `${space}  `));
@@ -366,15 +381,17 @@ export function vanillaSpawnableToLoadout(spawnableType: any): Loadout {
   // Prefer the convenience top-level field (fresh parse), else recover it from the
   // sections array (post-save / IDB-restored shape from loadoutToSpawnableEntry, which
   // stores damage only as a <damage> section). Keeps the control populated across round-trips.
+  // A missing/blank/non-numeric bound stays null — it must not become 0, which would mean
+  // "always spawn pristine" instead of deferring to globals.xml.
   const damage = spawnableType.damage
     ?? (() => {
-      const d = (spawnableType.sections || []).find((s: any) => s.kind === 'damage');
-      return d ? { min: Number(d.attrs?.min), max: Number(d.attrs?.max) } : null;
+      const d = (spawnableType.sections || []).find((s: any) => s.kind === XMLNodeKind.DAMAGE);
+      return d ? { min: d.attrs?.min, max: d.attrs?.max } : null;
     })();
   if (damage) {
     rootNode.damage = {
-      min: damage.min ?? 0,
-      max: damage.max ?? 0
+      min: toDamageNumber(damage.min),
+      max: toDamageNumber(damage.max)
     };
   }
 
@@ -547,10 +564,10 @@ export function loadoutToSpawnableEntry(loadout: Loadout): any {
   if (root.damage) {
     sections.push({
       kind: XMLNodeKind.DAMAGE,
-      attrs: {
-        min: root.damage.min.toFixed(2),
-        max: root.damage.max.toFixed(2)
-      }
+      chance: null,
+      preset: '',
+      attrs: damageAttrs(root.damage),
+      items: []
     });
   }
 
@@ -572,9 +589,13 @@ export function loadoutToSpawnableEntry(loadout: Loadout): any {
   // Appended last — DayZ is order-agnostic for <type> children.
   if (root.preservedSections?.length) sections.push(...root.preservedSections);
 
+  // Include the read-side helper fields so this entry is shape-identical to a freshly parsed one.
+  // Without them, consumers that gate on `entry.damage` (EditFormSpawnableTab) treat a type saved
+  // from the tree as having no <damage> at all, and re-seed min from the globals default.
   return {
     name: root.name,
-    sections
+    sections,
+    ...deriveSpawnableHelpers(sections)
   };
 }
 

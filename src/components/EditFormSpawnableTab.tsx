@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP } from '@/utils/xml';
+import { findSpawnableEntryForType, ROOT_SPAWNABLE_GROUP, deriveSpawnableHelpers } from '@/utils/xml';
 import { Slider } from '@/components/base/slider/slider';
 import { Checkbox } from '@/components/base/checkbox/checkbox';
 import { Badge } from '@/components/base/badges/badges';
@@ -118,6 +118,12 @@ export default function EditFormSpawnableTab({
     cargo: []
   };
 
+  // Derive damage from the raw sections rather than trusting entry.damage: entries written by
+  // older builds of SpawnableTypesManager carry no helper fields and persist in IndexedDB, and
+  // gating the sliders on the helper would show the "Set Spawn Damage" empty state for a type
+  // that already has a <damage> section — whose min would then be overwritten from globals.
+  const entryDamage = useMemo(() => deriveSpawnableHelpers(entry.sections || []).damage, [entry.sections]);
+
   // Reseed the stateful tree only when the edited type/file identity changes or we (re)enter
   // tree view — NOT on every entry change, so our own tree edits don't collapse/re-id the tree.
   // entryRef keeps the seed reading the freshest entry (reflecting tiles-view / Quick Apply edits).
@@ -193,13 +199,7 @@ export default function EditFormSpawnableTab({
     const nextEntry = updater(currentEntry);
     
     // Recalculate helper properties
-    const damageSection = nextEntry.sections?.find((s: any) => s.kind === XMLNodeKind.DAMAGE);
-    nextEntry.damage = damageSection ? {
-      min: damageSection.attrs.min !== undefined ? Number(damageSection.attrs.min) : null,
-      max: damageSection.attrs.max !== undefined ? Number(damageSection.attrs.max) : null
-    } : null;
-    nextEntry.attachments = nextEntry.sections?.filter((s: any) => s.kind === XMLNodeKind.ATTACHMENTS) || [];
-    nextEntry.cargo = nextEntry.sections?.filter((s: any) => s.kind === XMLNodeKind.CARGO) || [];
+    Object.assign(nextEntry, deriveSpawnableHelpers(nextEntry.sections || []));
 
     if (existingIdx === -1) {
       fileData.types = [...fileData.types, nextEntry];
@@ -215,50 +215,44 @@ export default function EditFormSpawnableTab({
   const handleDamageChange = (key: 'min' | 'max', val: number) => {
     const newVal = val / 100;
     const formatted = newVal.toFixed(3);
-    
+    // The attrs the <damage> section ends up with. Creating one from scratch seeds the untouched
+    // bound from globals so the new section is fully specified; editing an existing one touches
+    // only `key`, leaving an absent sibling absent (DayZ keeps falling back to globals for it).
+    let nextAttrs: Record<string, string> = {};
+
     updateSpawnableEntry(current => {
       const nextSections = [...(current.sections || [])];
       const damageIdx = nextSections.findIndex(s => s.kind === XMLNodeKind.DAMAGE);
-      
+
       if (damageIdx === -1) {
+        nextAttrs = {
+          min: String(globalsDefaults.LootDamageMin ?? '0.000'),
+          max: String(globalsDefaults.LootDamageMax ?? '0.000'),
+          [key]: formatted
+        };
         nextSections.push({
           kind: XMLNodeKind.DAMAGE,
           chance: null,
           preset: '',
-          attrs: {
-            min: String(globalsDefaults.LootDamageMin ?? '0.000'),
-            max: String(globalsDefaults.LootDamageMax ?? '0.000'),
-            [key]: formatted
-          },
+          attrs: nextAttrs,
           items: []
         });
       } else {
-        nextSections[damageIdx] = {
-          ...nextSections[damageIdx],
-          attrs: {
-            ...nextSections[damageIdx].attrs,
-            [key]: formatted
-          }
-        };
+        nextAttrs = { ...nextSections[damageIdx].attrs, [key]: formatted };
+        nextSections[damageIdx] = { ...nextSections[damageIdx], attrs: nextAttrs };
       }
       return { ...current, sections: nextSections };
     });
 
     // Keep the hierarchical tree's root node in sync. treeItems is only reseeded when the
     // edited type/file changes, so without this the next tree edit would re-serialise
-    // <damage> from a stale root and silently revert the slider.
-    setTreeItems(prev => prev.map((root, i) => {
-      if (i !== 0) return root;
-      const fallbackMin = Number(globalsDefaults.LootDamageMin ?? 0);
-      const fallbackMax = Number(globalsDefaults.LootDamageMax ?? 0);
-      return {
-        ...root,
-        damage: {
-          min: key === 'min' ? newVal : (root.damage?.min ?? fallbackMin),
-          max: key === 'max' ? newVal : (root.damage?.max ?? fallbackMax)
-        }
-      };
-    }));
+    // <damage> from a stale root and silently revert the slider. Mirror the section's attrs
+    // exactly — filling the untouched bound from globals here instead would make the next tree
+    // edit write out an attribute the section deliberately left absent.
+    const nextDamage = deriveSpawnableHelpers([{ kind: XMLNodeKind.DAMAGE, attrs: nextAttrs }]).damage;
+    setTreeItems(prev => prev.map((root, i) => (
+      i === 0 && nextDamage ? { ...root, damage: nextDamage } : root
+    )));
   };
 
   const handleAddAttachmentSlot = () => {
@@ -436,11 +430,11 @@ export default function EditFormSpawnableTab({
         <div className="flex items-center gap-2 mb-4">
           <Badge color="brand" size="sm" type="modern">Item Condition</Badge>
         </div>
-        {entry.damage ? (
+        {entryDamage ? (
           <div className="grid grid-cols-2 gap-6 bg-gray-50 dark:bg-gray-950/20 p-6 rounded-xl border border-gray-100 dark:border-gray-800">
-            <Slider 
-              label="Min Damage" 
-              value={[chancePercent(entry.damage?.min ?? globalsDefaults.LootDamageMin)]} 
+            <Slider
+              label="Min Damage"
+              value={[chancePercent(entryDamage.min ?? globalsDefaults.LootDamageMin)]}
               maxValue={100} 
               step={1}
               onChange={(v) => handleDamageChange('min', Array.isArray(v) ? v[0] : v)}
@@ -448,7 +442,7 @@ export default function EditFormSpawnableTab({
             />
             <Slider 
               label="Max Damage" 
-              value={[chancePercent(entry.damage?.max ?? globalsDefaults.LootDamageMax)]} 
+              value={[chancePercent(entryDamage.max ?? globalsDefaults.LootDamageMax)]}
               maxValue={100} 
               step={1}
               onChange={(v) => handleDamageChange('max', Array.isArray(v) ? v[0] : v)}

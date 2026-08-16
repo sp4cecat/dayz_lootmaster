@@ -8,6 +8,16 @@ import { Badge } from '@/components/base/badges/badges';
 import { cx } from '@/utils/cx';
 import { useCatalog } from '@/contexts/CatalogContext';
 
+/**
+ * A cleared damage field means "no attribute", not 0 — DayZ falls back to globals.xml
+ * LootDamageMin/Max when a <damage> bound is absent, so an empty input must stay null.
+ */
+function parseDamageBound(raw: string): number | null {
+  if (raw === '') return null;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 export interface HierarchicalPropertiesConfig {
   showQuantity?: boolean;
   showDamage?: boolean;
@@ -472,22 +482,22 @@ export const HierarchicalProperties: React.FC<HierarchicalPropertiesProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <span className="text-[10px] text-gray-500">Min Damage (0.0 - 1.0)</span>
-                <Input 
-                  type="number" 
-                  step="0.1" 
-                  size="sm" 
-                  value={node.damage?.min ?? ''} 
-                  onChange={e => onUpdate({ ...node, damage: { ...node.damage, min: parseFloat(e.target.value) || 0, max: node.damage?.max ?? 0 } })}
+                <Input
+                  type="number"
+                  step="0.1"
+                  size="sm"
+                  value={node.damage?.min ?? ''}
+                  onChange={e => onUpdate({ ...node, damage: { min: parseDamageBound(e.target.value), max: node.damage?.max ?? null } })}
                 />
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] text-gray-500">Max Damage (0.0 - 1.0)</span>
-                <Input 
-                  type="number" 
-                  step="0.1" 
-                  size="sm" 
-                  value={node.damage?.max ?? ''} 
-                  onChange={e => onUpdate({ ...node, damage: { ...node.damage, max: parseFloat(e.target.value) || 0, min: node.damage?.min ?? 0 } })}
+                <Input
+                  type="number"
+                  step="0.1"
+                  size="sm"
+                  value={node.damage?.max ?? ''}
+                  onChange={e => onUpdate({ ...node, damage: { max: parseDamageBound(e.target.value), min: node.damage?.min ?? null } })}
                 />
               </div>
             </div>

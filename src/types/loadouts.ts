@@ -18,9 +18,12 @@ export interface LoadoutNode {
     max: number;
     percent: number;
   };
+  // Spawnable-type root nodes only: the <damage min max/> section. Either bound may be null,
+  // meaning the attribute was absent in the source XML — DayZ then falls back to globals.xml
+  // LootDamageMin/Max, so the absence must survive the round-trip rather than collapsing to 0.
   damage?: {
-    min: number;
-    max: number;
+    min: number | null;
+    max: number | null;
   };
   attachments: LoadoutNode[];
   cargo: LoadoutNode[];
