@@ -5,17 +5,17 @@ Agent definitions live in `.claude/agents/`. Invoke via the Agent tool with the 
 
 ## lootmaster-frontend
 **File**: `.claude/agents/lootmaster-frontend.md`
-**Use for**: React component authoring, Untitled UI patterns, Tailwind styling, Hierarchical Editor (dnd-kit), TypeScript prop interfaces, dark-mode correctness.
+**Use for**: React component authoring, Untitled UI patterns, Tailwind styling, Hierarchical Editor (dnd-kit), TypeScript prop interfaces, dark-mode correctness, Live Server views (`src/components/live/*` — Font Awesome map markers, contextual GameLabs action panel, live-data hooks).
 **Skip when**: the task is about server-side logic, XML parsing utilities, or DayZ economy domain rules.
 
 ## lootmaster-backend
 **File**: `.claude/agents/lootmaster-backend.md`
-**Use for**: `server/index.js` changes, profile/mission file I/O, IndexedDB schema (`src/utils/idb.js`), XML serialisation (`src/utils/xml.ts`), API endpoint design, change-log audit trail.
+**Use for**: `server/index.js` changes, profile/mission file I/O, IndexedDB schema (`src/utils/idb.js`), XML serialisation (`src/utils/xml.ts`), API endpoint design, change-log audit trail, CF Tools Cloud proxy (`server/cftools-{config,client,service}.js`, `/api/cftools/*` routes, TTL caching, degradation reasons).
 **Skip when**: the task is about React rendering or DayZ config semantics.
 
 ## lootmaster-dayz
 **File**: `.claude/agents/lootmaster-dayz.md`
-**Use for**: DayZ CLE domain questions — types.xml schema, cfgeconomycore.xml structure, spawnable types resolution hierarchy, Expansion Mod integration (market, airdrops, traders), cfglimitsdefinition.xml validation rules, vanilla override protection logic.
+**Use for**: DayZ CLE domain questions — types.xml schema, cfgeconomycore.xml structure, spawnable types resolution hierarchy, Expansion Mod integration (market, airdrops, traders), cfglimitsdefinition.xml validation rules, vanilla override protection logic, CF Tools/GameLabs wire semantics (what the mods report, MapIcons.json renaming, covered vehicles, wreck taxonomy, action contexts).
 **Skip when**: you need implementation code — this agent analyses and specifies; it routes coding tasks to the other two.
 
 ## lootmaster-expansion-airdrops
@@ -40,3 +40,6 @@ Agent definitions live in `.claude/agents/`. Invoke via the Agent tool with the 
 | Understand how airdrop Variants / Attachments spawn, or the airdrop JSON schema | `lootmaster-expansion-airdrops` |
 | Spec how `LoadoutNode` should map to Expansion airdrop loot | `lootmaster-expansion-airdrops` (spec) → then a coder |
 | Add support for a new DayZ map or add-on | `lootmaster-dayz` (spec) → then appropriate coder |
+| Change the CF Tools proxy, caching, or add a Data API endpoint | `lootmaster-backend` |
+| Live map markers, icon mappings, contextual action panel, live hooks | `lootmaster-frontend` |
+| What GameLabs/CF Tools actually report, or why a live-map classname looks odd | `lootmaster-dayz` |

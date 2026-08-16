@@ -1,6 +1,6 @@
 ---
 name: lootmaster-backend
-description: Node.js server, data-layer, and XML/JSON utility specialist for Lootmaster. Use for server/index.js changes, profile/mission file operations, IndexedDB schema, XML serialisation logic, and API endpoint work. Do NOT use for React components or DayZ economy domain concepts.
+description: Node.js server, data-layer, and XML/JSON utility specialist for Lootmaster. Use for server/index.js changes, profile/mission file operations, IndexedDB schema, XML serialisation logic, API endpoint work, and the CF Tools Cloud proxy (server/cftools-*.js, /api/cftools/* routes). Do NOT use for React components or DayZ economy domain concepts.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -46,7 +46,25 @@ Detected add-ons are returned in the `/api/profiles` response and consumed by th
 3. Diff: IDB state vs baseline (deep `JSON.stringify` comparison for mission files)
 4. Save: Frontend `PUT` → Server writes to disk + appends `changes.txt`
 
+## CF Tools Cloud Proxy (`/api/cftools/*`)
+Three modules; everything the app knows about CF Tools goes through them:
+- `server/cftools-config.js` — credentials in **gitignored** `server/.cache/cftools.json`; app id/secret are global, `apiId` bound per profile. The secret is write-only to the browser: `GET /api/cftools/app` returns a redacted view, never the secret.
+- `server/cftools-client.js` — the first outbound HTTP client in this backend (Node ≥20 global `fetch` keeps the zero-dependency rule). Bearer token via `POST /v1/auth/register`, held in memory, 23h expiry; any 401 → invalidate, re-register once, retry once. All reads go through per-(apiId, routeKey) TTL caches: sessions 5s, GameLabs entities 30s, info/statistics/leaderboard 60s, actions/grants 300s. On 429: Retry-After cooldown + serve the stale entry marked `stale:true`. Mutations are never cached.
+- `server/cftools-service.js` — normalizers, `buildStatus`, `buildLiveSnapshot` (per-layer degradation), action helpers.
+
+Routing: `/api/cftools/*` dispatches **before** the `X-Profile-ID` gate (self-resolves the profile). Reads always return 200 with `{connected:false, reason: not_configured|no_api_id|no_profile|auth_failed|no_grant|rate_limited|unreachable}` on failure; action POSTs return real HTTP errors (400/429/502).
+
+Verified API facts (from the cftools.js SDK + live staging — do not re-derive):
+- GameLabs entity routes are `/v1/server/{id}/GameLabs/entities/vehicles` and `…/entities/events`. The hyphenated `entity-vehicles`/`entity-events` variants **404** (regression-tested in `tests/server/cftools-client.test.js`).
+- Entity positions are 2-element `[x, z]` — `normPosition` maps them to `[x, 0, z]`.
+- GameLabs presence = **non-empty actions list** (`/GameLabs/actions`); `/info` capability strings stay silent even with GameLabs connected.
+- Action `referenceKey`: player context = **steam64**; vehicle/object context = the entity `id` string the entities endpoints return (`_Vehicle<0x…>` / `_Event<0x…>`).
+- Wire params use `valueBoolean` (not `valueBool`); spawn-item `dataType` is `string`; teleport is a `vector` with `valueVectorX/Y/Z`.
+- `resolveActionCode` matches against the live actions list — never hardcode `CFCloud_*` codes.
+- Event `type` classification in `normalizeEvent`: heli crashes = bare `Wreck_*` / CrashBase; `Land_Wreck_*` (abandoned cars) and `StaticObj_Wreck_Train_*` → type `wreck`; `TerritoryFlag` entities split into the territories layer.
+
 ## Testing
 - Framework: Vitest; environment: `jsdom` (required for `DOMParser`)
-- Run: `npm test -- --watch=false` (the `--` passes the flag to vitest, not npm)
+- Run: `npx vitest run` (preferred; `npm test -- --watch=false` triggers a vitest CLI warning)
 - Focus coverage on `src/utils/xml.ts`, `src/utils/validation.js`, `src/hooks/useLootData.js`
+- CF Tools proxy: `tests/server/cftools-{client,config,service}.test.js` — auth serialization, TTL/stale-serve, endpoint-path regressions (`npx vitest run tests/server`)

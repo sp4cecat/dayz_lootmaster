@@ -1,6 +1,6 @@
 ---
 name: lootmaster-frontend
-description: React 19/TypeScript UI specialist for the Lootmaster DayZ server management dashboard. Use for component authoring, Untitled UI patterns, hierarchical editor work, dnd-kit drag-and-drop, and Tailwind styling. Do NOT use for backend logic, XML parsing, or DayZ economy concepts — those belong to lootmaster-backend and lootmaster-dayz.
+description: React 19/TypeScript UI specialist for the Lootmaster DayZ server management dashboard. Use for component authoring, Untitled UI patterns, hierarchical editor work, dnd-kit drag-and-drop, Tailwind styling, and the Live Server views (src/components/live/*, map markers, contextual GameLabs action panel). Do NOT use for backend logic, XML parsing, or DayZ economy concepts — those belong to lootmaster-backend and lootmaster-dayz.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -39,3 +39,11 @@ You are a senior React engineer working exclusively on the **Lootmaster** fronte
 - IndexedDB (`src/utils/idb.js`) stores `lootTypes`, `changeLog`, `missionFiles`, `loadouts`.
 - localStorage holds UI config (apiBase, selectedProfile, theme).
 - The app is IDB-first for mission configs — prefer IDB over server files if both exist.
+
+## Live Server Views (CF Tools / GameLabs)
+- Components: `src/components/live/` — LiveMapView, LiveMarkers, LiveSidePanel, PlayerActionsBar, RawActionPanel, ConfirmDialog, ServerStatsView, LeaderboardView, PlayerDetailDrawer. Types in `src/types/cftools.ts`. Hooks: `useCfToolsStatus` (10s poll), `useLiveSnapshot` (5s poll, pauses on hidden tab), `useCfToolsActions`.
+- **Icon exception**: live-map markers use **Font Awesome Free** (`@fortawesome/react-fontawesome` + `@fortawesome/free-solid-svg-icons`) rendered as bare ~14px glyphs with a dark drop-shadow — NOT lucide/@untitledui — because the icon names mirror the game server's `profiles/CW_Gamelabs/MapIcons.json` config. The classname→icon mapping is `iconForClassName` + `EVENT_CLASS_ICONS` in `LiveMarkers.tsx`. `staff` and `wand` are FA-Pro-only; `staff-snake` and `wand-magic` stand in.
+- **Silver tint** (`text-slate-300`) means "not loose in the world": covered vehicles (`Expansion…Cover` classnames) and stored/carried items via `computeStoredEventIds` — position coincidence within 1.5 m of a container event / vehicle / player. There is NO containment field on the wire; this is a heuristic (items in untracked base chests can't be detected).
+- **Contextual actions**: LiveMapView computes a `RawActionTarget` `{context, referenceKey, label, className}` from the selection (no selection → world). RawActionPanel filters the advertised actions by `actionContext` AND the `actionContextFilter` classname allowlist (e.g. the briefcase-open action only for `ScientificBriefcase`). The LiveSidePanel `footer` renders in **every** panel state — it was once summary-only, which hid contextual actions behind any selection (regression-tested).
+- Map projection: markers live on the untransformed overlay layer via `useMapPanZoom`'s `project()`; constant on-screen size across zoom; Z-axis inverts to screen Y.
+- Tests: `tests/components/live-*.test.tsx`, `tests/components/raw-action-panel.test.tsx` — assert `svg[data-icon]` values and tint classes rather than snapshotting.

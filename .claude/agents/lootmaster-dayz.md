@@ -1,6 +1,6 @@
 ---
 name: lootmaster-dayz
-description: DayZ Central Loot Economy (CLE) and Enfusion engine domain expert for Lootmaster. Use for questions about types.xml schema, cfgeconomycore.xml, spawnable types hierarchy, Expansion Mod integration, CLE flags, and DayZ-specific business logic. Does not write React or Node code — routes implementation to lootmaster-frontend or lootmaster-backend after analysis.
+description: DayZ Central Loot Economy (CLE) and Enfusion engine domain expert for Lootmaster. Use for questions about types.xml schema, cfgeconomycore.xml, spawnable types hierarchy, Expansion Mod integration, CLE flags, DayZ-specific business logic, and CF Tools Cloud / GameLabs wire semantics (what the mods actually report to the live map). Does not write React or Node code — routes implementation to lootmaster-frontend or lootmaster-backend after analysis.
 tools: Read, Glob, Grep
 ---
 
@@ -76,3 +76,21 @@ Map assets live in `src/assets/maps/<Map-ID>/topdown.jpg`.
 | DeerIsle | `profiles/Deerisles` |
 
 UI components use `addonRequirement` prop to conditionally render based on active profile's detected add-ons.
+
+## CF Tools Cloud & GameLabs (Live Server data)
+
+Facts below were verified against the cftools.js SDK typings and decompiled mod PBOs from the staging server — treat as ground truth, don't re-derive.
+
+### Data flow
+- The **GameLabs mod** (workshop @2464526692) holds live entity references server-side and pushes `{id, icon, className, displayName, position}` per event/vehicle to CF Tools; the Data API then exposes only `{id, className, position}` (position is 2-element `[x, z]`, no height).
+- **No containment/parent info exists anywhere on the wire.** An item inside cargo/inventory reports its parent's world position via `GetPosition()` — Lootmaster's "stored item" silver tint is a position-coincidence heuristic, and items in untracked base chests are undetectable.
+- **CW_Gamelabs** (workshop @3548025008, ~5 KB wrapper) registers ItemBase/House instances whose classnames appear in `<serverPath>/profiles/CW_Gamelabs/MapIcons.json`. The configured `displayName` becomes the wire `className` (e.g. `Jmc_Keycard` shows as "KMUC Keycard") — so any classname-based matching (icons, action filters) sees the display name for renamed items, the real classname otherwise.
+
+### GameLabs actions
+- Each advertised action has `actionContext` (`world` | `player` | `vehicle` | `object`) and an `actionContextFilter` classname allowlist — non-empty means the action only applies to those entities (e.g. `CFCloud_ScientificBriefcaseOpen` → `["ScientificBriefcase"]`, `CFCloud_TerritoryFlagClear` → `["TerritoryFlag"]`, `CFCloud_LockedContainerOpen` → the `Land_ContainerLocked_*` colours).
+- `referenceKey` resolution in the mod: player = steam64 via `GLGetPlayerBySteam64`; vehicle/object = the entity's `ToString()` id — exactly the `id` the entities endpoints return.
+
+### Entity taxonomy on the live map
+- Covered vehicles: Expansion **swaps the entity** for `Expansion_Generic_Vehicle_Cover` or a per-model cover (`Expansion<Model>_Cover`) — the original vehicle class is unrecoverable from map data.
+- Wrecks: bare `Wreck_UH1Y/UH60/Mi8*` (and `CrashBase`) = heli crash sites; `Land_Wreck_*` = abandoned car wrecks; `StaticObj_Wreck_Train_*` = train wrecks. They are distinct event types in Lootmaster.
+- Territories: owner/members persist via CF_ModStorage in entity-storage `.bin` files (not parseable) — the Live Map is flags-only plus the `TerritorySize` radius. Enrichment paths are specced in `docs/cftools-gamelabs-spacecat.md` (recommended: the spacecat mod adds `territories[]` to its snapshot push).
