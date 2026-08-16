@@ -126,6 +126,17 @@ export async function buildGrants() {
 
 // ---- live snapshot (map layers) ----
 
+// CF Tools vectors are (x, z, height) on the wire — GSM session positions and
+// GameLabs vector params alike (verified live: [4361, 8188, 22.7] on Deer Isle,
+// and the mod's GetVector() reads worldZ from the second slot). Reorder
+// 3-element session positions to the app's [x, height, z].
+function normSessionPosition(raw) {
+    if (Array.isArray(raw) && raw.length >= 3) {
+        return normPosition([raw[0], raw[2], raw[1]]);
+    }
+    return normPosition(raw);
+}
+
 function normalizePlayer(session) {
     if (!session || typeof session !== 'object') return null;
     const gamedata = session.gamedata || {};
@@ -138,7 +149,7 @@ function normalizePlayer(session) {
         steamId: gamedata.steam64 || null,
         // position may legitimately be absent (player still loading in) — the
         // marker is simply omitted while the roster row still shows.
-        position: normPosition(live.position && live.position.latest),
+        position: normSessionPosition(live.position && live.position.latest),
         ping: live.ping ? num(live.ping.actual) : null,
         loaded: !!live.loaded,
         banCount: session.info ? num(session.info.ban_count) : null,
@@ -388,7 +399,9 @@ export async function teleportPlayer(apiId, steam64, { x, y, z }) {
         actionContext: 'player',
         referenceKey: steam64,
         parameters: {
-            vector: { dataType: 'vector', valueVectorX: x, valueVectorY: y ?? 0, valueVectorZ: z },
+            // GameLabs GetVector(): worldX = valueVectorX, worldZ = valueVectorY,
+            // height = valueVectorZ (0 → SurfaceY snap). NOT the world x/y/z order.
+            vector: { dataType: 'vector', valueVectorX: x, valueVectorY: z, valueVectorZ: y ?? 0 },
         },
     });
 }

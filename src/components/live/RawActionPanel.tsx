@@ -47,8 +47,12 @@ function toWireParam(dataType: string, raw: string, checked: boolean): Record<st
     case 'boolean':
       return { dataType: 'boolean', valueBoolean: checked };
     case 'vector': {
-      const [x = 0, y = 0, z = 0] = raw.split(/[\s,]+/).map(Number).map(n => (Number.isFinite(n) ? n : 0));
-      return { dataType: 'vector', valueVectorX: x, valueVectorY: y, valueVectorZ: z };
+      // Entered as in-game "x y z" (y = height) or just "x z". The GameLabs
+      // wire order differs: valueVectorY carries world Z and valueVectorZ the
+      // height (0 → snap to surface), per the mod's GetVector().
+      const parts = raw.split(/[\s,]+/).filter(Boolean).map(Number).map(n => (Number.isFinite(n) ? n : 0));
+      const [x = 0, y = 0, z = 0] = parts.length === 2 ? [parts[0], 0, parts[1]] : parts;
+      return { dataType: 'vector', valueVectorX: x, valueVectorY: z, valueVectorZ: y };
     }
     default:
       // string, cf_itemlist, webhook_url — all carried as strings on the wire.

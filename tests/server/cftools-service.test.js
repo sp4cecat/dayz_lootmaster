@@ -18,7 +18,7 @@ vi.mock('../../server/cftools-client.js', async (importOriginal) => {
 import * as cf from '../../server/cftools-client.js';
 import * as cfg from '../../server/cftools-config.js';
 import {
-  buildStatus, buildLiveSnapshot, resolveActionCode, spawnLoadout, _resetSpawnLedger,
+  buildStatus, buildLiveSnapshot, resolveActionCode, spawnLoadout, teleportPlayer, _resetSpawnLedger,
 } from '../../server/cftools-service.js';
 
 const PROFILE = { id: 'p1', name: 'Test', serverPath: 'X:\\srv', missionName: 'dayzOffline.chernarusplus' };
@@ -101,7 +101,8 @@ describe('buildLiveSnapshot', () => {
             id: 'sess-1', cftools_id: 'cf-1',
             gamedata: { player_name: 'Alice', steam64: '765...1' },
             info: { ban_count: 0 },
-            live: { loaded: true, ping: { actual: 42, trend: 0 }, position: { latest: [1200.5, 30, 4500.25] } },
+            // Wire order is [x, z, height] (verified live) — the app reorders to [x, height, z].
+            live: { loaded: true, ping: { actual: 42, trend: 0 }, position: { latest: [1200.5, 4500.25, 30] } },
           },
           {
             id: 'sess-2', cftools_id: 'cf-2',
@@ -256,6 +257,22 @@ describe('resolveActionCode', () => {
   it('returns null when nothing matches (button hides, no dud fires)', () => {
     expect(resolveActionCode(actions, 'kill')).toBeNull();
     expect(resolveActionCode([], 'teleport')).toBeNull();
+  });
+});
+
+describe('teleportPlayer', () => {
+  it('sends the GameLabs wire vector order: valueVectorY = world Z, valueVectorZ = height', async () => {
+    cf.getGameLabsActions.mockResolvedValue({
+      at: 1, stale: false, data: { actions: [{ actionCode: 'CFCloud_TeleportPlayer' }] },
+    });
+    cf.postGameLabsAction.mockResolvedValue({});
+    await teleportPlayer('api-1', '765...1', { x: 4361, z: 8188 });
+    expect(cf.postGameLabsAction).toHaveBeenCalledWith('api-1', expect.objectContaining({
+      parameters: {
+        // Height 0 → the mod snaps to SurfaceY at (x, z).
+        vector: { dataType: 'vector', valueVectorX: 4361, valueVectorY: 8188, valueVectorZ: 0 },
+      },
+    }));
   });
 });
 
