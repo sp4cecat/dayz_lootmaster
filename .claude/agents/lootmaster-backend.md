@@ -59,7 +59,8 @@ Verified API facts (from the cftools.js SDK + live staging — do not re-derive)
 - Entity positions are 2-element `[x, z]` — `normPosition` maps them to `[x, 0, z]`.
 - GameLabs presence = **non-empty actions list** (`/GameLabs/actions`); `/info` capability strings stay silent even with GameLabs connected.
 - Action `referenceKey`: player context = **steam64**; vehicle/object context = the entity `id` string the entities endpoints return (`_Vehicle<0x…>` / `_Event<0x…>`).
-- Wire params use `valueBoolean` (not `valueBool`); spawn-item `dataType` is `string`; teleport is a `vector` with `valueVectorX/Y/Z`.
+- Wire params use `valueBoolean` (not `valueBool`); spawn-item `dataType` is `string`.
+- **CF Tools vectors are (x, z, height)**, not world (x, y, z): GSM `live.position.latest` is `[x, z, h]` (reordered by `normSessionPosition`), and GameLabs vector params decode worldZ from `valueVectorY` and height from `valueVectorZ` (0 → SurfaceY snap). Transposing these plots players at the map's south edge / teleports to z≈0.
 - `resolveActionCode` matches against the live actions list — never hardcode `CFCloud_*` codes.
 - Event `type` classification in `normalizeEvent`: heli crashes = bare `Wreck_*` / CrashBase; `Land_Wreck_*` (abandoned cars) and `StaticObj_Wreck_Train_*` → type `wreck`; `TerritoryFlag` entities split into the territories layer.
 
