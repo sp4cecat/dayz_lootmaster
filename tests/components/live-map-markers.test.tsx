@@ -58,6 +58,7 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
           vehicle('v2', 'RFMosquito'),
           vehicle('v3', 'Boat_01_Camo'),
           vehicle('v4', 'Offroad_02'),
+          vehicle('v5', 'Expansion_Generic_Vehicle_Cover'),
         ],
       },
       events: {
@@ -147,6 +148,11 @@ describe('LiveMapView marker projection', () => {
     expect(iconIn('Wreck_UH1Y')).toBe('helicopter');    // heli crash site
     expect(iconIn('Land_Wreck_hb01_aban1_police_DE')).toBe('car-burst'); // car wreck, not a helicrash
     expect(iconIn('Alice')).toBe('person');
+
+    // Covered vehicles (Expansion cover entity) render silver.
+    const covered = container.querySelector('button[title="Expansion_Generic_Vehicle_Cover"] svg');
+    expect(covered?.getAttribute('data-icon')).toBe('car');
+    expect(covered?.getAttribute('class')).toContain('text-slate-300');
   });
 
   it('maps modded event classnames to their Font Awesome glyphs', async () => {

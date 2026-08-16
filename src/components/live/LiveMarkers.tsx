@@ -37,6 +37,16 @@ export function iconForClassName(className: string | null | undefined): IconDefi
   return null;
 }
 
+/**
+ * Covered vehicles: Expansion swaps the vehicle for a cover entity —
+ * Expansion_Generic_Vehicle_Cover or per-model ones like ExpansionMerlin_Cover
+ * (classnames verified from the vehicles_scripts PBO).
+ */
+export const isCoveredVehicle = (className: string | null | undefined) =>
+  !!className && /expansion\w*_?cover/i.test(className);
+
+const COVERED_TINT = 'text-slate-300';
+
 const EVENT_ICONS: Record<string, { icon: IconDefinition; tint: string }> = {
   helicrash: { icon: faHelicopter, tint: 'text-orange-400' },
   wreck: { icon: faCarBurst, tint: 'text-amber-400' },
@@ -126,19 +136,21 @@ export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
   vehicle: LiveVehicle; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
 }) {
   const icon = iconForClassName(vehicle.className) ?? faCar;
+  const tint = isCoveredVehicle(vehicle.className) ? COVERED_TINT : 'text-sky-400';
   return (
     <MarkerButton
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={vehicle.displayName || vehicle.className || 'Vehicle'}
       onSelect={onSelect}
     >
-      <Glyph icon={icon} tint="text-sky-400" selected={selected} />
+      <Glyph icon={icon} tint={tint} selected={selected} />
     </MarkerButton>
   );
 }
 
 function eventVisual(event: LiveEvent): { icon: IconDefinition; tint: string } {
   const cn = event.className || '';
+  if (isCoveredVehicle(cn)) return { icon: faCar, tint: COVERED_TINT };
   for (const [pattern, icon, tint] of EVENT_CLASS_ICONS) {
     if (pattern.test(cn)) return { icon, tint };
   }
