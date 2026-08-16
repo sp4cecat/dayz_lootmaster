@@ -12,7 +12,7 @@ interface LiveSidePanelProps {
   onClearSelection: () => void;
   /** P3 slot: action bar rendered under a selected player's details. */
   playerActions?: (player: LivePlayer) => React.ReactNode;
-  /** Extra content when nothing is selected (e.g. the raw GameLabs action panel). */
+  /** Rendered below every panel state (e.g. the contextual GameLabs action panel). */
   footer?: React.ReactNode;
 }
 
@@ -150,7 +150,6 @@ export default function LiveSidePanel({
         <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
           Select a marker for details. Data via CF Tools Cloud{status.capabilities?.gameLabs ? ' + GameLabs' : ''}.
         </p>
-        {footer && <div className="mt-3">{footer}</div>}
       </div>
     );
   }
@@ -158,6 +157,7 @@ export default function LiveSidePanel({
   return (
     <div className="w-72 shrink-0 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 p-4">
       {body}
+      {footer && <div className="mt-3">{footer}</div>}
     </div>
   );
 }
