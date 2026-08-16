@@ -62,7 +62,18 @@ export async function buildStatus(profile) {
         const server = data && data.server ? data.server : {};
         const integration = server.gameserver && server.gameserver.game_integration
             ? server.gameserver.game_integration : {};
-        const capabilities = Array.isArray(integration.capabilities) ? integration.capabilities : [];
+        // GameLabs detection: the authoritative signal is the actions list — the
+        // Data API documents it as empty iff the GameLabs mod is not installed.
+        // The /info capability strings don't reliably mention GameLabs (observed
+        // live: a server with GameLabs connected and no matching string), so they
+        // are only the fallback when the actions probe itself fails. Cached 300s.
+        let gameLabs;
+        try {
+            gameLabs = (await listGameLabsActions(bound.apiId)).length > 0;
+        } catch {
+            const capabilities = Array.isArray(integration.capabilities) ? integration.capabilities : [];
+            gameLabs = capabilities.some(c => /gamelabs/i.test(String(c)));
+        }
         return {
             connected: true,
             stale: !!stale,
@@ -71,7 +82,7 @@ export async function buildStatus(profile) {
             capabilities: {
                 // GSM/session data rides on the base integration; GameLabs layers need the mod.
                 gsm: integration.status !== false,
-                gameLabs: capabilities.some(c => /gamelabs/i.test(String(c))),
+                gameLabs,
             },
         };
     } catch (err) {

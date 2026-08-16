@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as cfg from '../../server/cftools-config.js';
-import { request, cachedGet, _resetState, CfToolsError } from '../../server/cftools-client.js';
+import { request, cachedGet, getVehicles, getEvents, _resetState, CfToolsError } from '../../server/cftools-client.js';
 
 // Minimal fetch Response stand-in.
 const jsonResponse = (status, body, headers = {}) => ({
@@ -157,6 +157,19 @@ describe('cachedGet', () => {
     });
     await expect(cachedGet('api1', 'fresh', '/v1/server/api1/info', 1_000))
       .rejects.toBeInstanceOf(CfToolsError);
+  });
+
+  it('hits the real GameLabs entities routes (regression: entity-vehicles 404s)', async () => {
+    // The Data API's routes are /GameLabs/entities/{vehicles,events} — the
+    // hyphenated entity-vehicles/entity-events variants do not exist and 404,
+    // which surfaced as every GameLabs layer reading "unavailable" on staging.
+    fetchMock.mockImplementation(okFetch({ entities: [] }));
+    await getVehicles('api1');
+    await getEvents('api1');
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls).toContain('https://data.cftools.cloud/v1/server/api1/GameLabs/entities/vehicles');
+    expect(urls).toContain('https://data.cftools.cloud/v1/server/api1/GameLabs/entities/events');
+    expect(urls.some(u => u.includes('entity-vehicles') || u.includes('entity-events'))).toBe(false);
   });
 
   it('serves stale on non-429 upstream errors too', async () => {

@@ -239,10 +239,10 @@ export const getGameLabsActions = (apiId) =>
     cachedGet(apiId, 'glActions', `/v1/server/${apiId}/GameLabs/actions`, TTL.glActions);
 
 export const getVehicles = (apiId) =>
-    cachedGet(apiId, 'glVehicles', `/v1/server/${apiId}/GameLabs/entity-vehicles`, TTL.glVehicles);
+    cachedGet(apiId, 'glVehicles', `/v1/server/${apiId}/GameLabs/entities/vehicles`, TTL.glVehicles);
 
 export const getEvents = (apiId) =>
-    cachedGet(apiId, 'glEvents', `/v1/server/${apiId}/GameLabs/entity-events`, TTL.glEvents);
+    cachedGet(apiId, 'glEvents', `/v1/server/${apiId}/GameLabs/entities/events`, TTL.glEvents);
 
 // Mutations — never cached.
 

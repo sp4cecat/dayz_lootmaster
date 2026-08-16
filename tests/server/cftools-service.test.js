@@ -49,15 +49,23 @@ describe('degradation reasons', () => {
 });
 
 describe('buildStatus capabilities', () => {
-  it('reads GameLabs capability from game_integration', async () => {
-    cf.getServerInfo.mockResolvedValue({
-      at: 1, stale: false,
-      data: {
-        server: {
-          _object: { nickname: 'Zen Chernarus' },
-          gameserver: { game_integration: { status: true, capabilities: ['GameLabs_Actions', 'gsm'] } },
-        },
+  const infoWithCapabilities = (capabilities) => ({
+    at: 1, stale: false,
+    data: {
+      server: {
+        _object: { nickname: 'Zen Chernarus' },
+        gameserver: { game_integration: { status: true, capabilities } },
       },
+    },
+  });
+
+  it('detects GameLabs from a non-empty actions list even when capability strings are silent', async () => {
+    // Observed live on staging: GameLabs connected and reporting, yet no
+    // "gamelabs" string in game_integration.capabilities. The actions probe is
+    // the authoritative signal.
+    cf.getServerInfo.mockResolvedValue(infoWithCapabilities(['gsm', 'update']));
+    cf.getGameLabsActions.mockResolvedValue({
+      at: 1, stale: false, data: { available_actions: [{ actionCode: 'CFCloud_TeleportPlayer' }] },
     });
     const status = await buildStatus(PROFILE);
     expect(status).toMatchObject({
@@ -65,6 +73,20 @@ describe('buildStatus capabilities', () => {
       nickname: 'Zen Chernarus',
       capabilities: { gsm: true, gameLabs: true },
     });
+  });
+
+  it('reports gameLabs false when the actions list is empty (mod not installed)', async () => {
+    cf.getServerInfo.mockResolvedValue(infoWithCapabilities(['gsm']));
+    cf.getGameLabsActions.mockResolvedValue({ at: 1, stale: false, data: { available_actions: [] } });
+    const status = await buildStatus(PROFILE);
+    expect(status.capabilities.gameLabs).toBe(false);
+  });
+
+  it('falls back to capability strings when the actions probe fails', async () => {
+    cf.getServerInfo.mockResolvedValue(infoWithCapabilities(['GameLabs_Actions']));
+    cf.getGameLabsActions.mockRejectedValue(new cf.CfToolsError('rate_limited', 'slow down'));
+    const status = await buildStatus(PROFILE);
+    expect(status.capabilities.gameLabs).toBe(true);
   });
 });
 
@@ -131,6 +153,21 @@ describe('buildLiveSnapshot', () => {
     });
     const snap = await buildLiveSnapshot(PROFILE, ['vehicles']);
     expect(snap.vehicles.items.map(v => v.id)).toEqual(['v2']);
+  });
+
+  it('normalizes the 2-element [x, z] positions the GameLabs entities endpoints return', async () => {
+    // Real wire shape (cftools.js types): position: [number, number] — no height.
+    cf.getVehicles.mockResolvedValue({
+      at: 1, stale: false,
+      data: { entities: [{ id: 'v1', className: 'OffroadHatchback', position: [4200.5, 9800.25], speed: 12, health: 900 }] },
+    });
+    cf.getEvents.mockResolvedValue({
+      at: 1, stale: false,
+      data: { entities: [{ id: 'e1', className: 'Wreck_Mi8', position: [100, 200] }] },
+    });
+    const snap = await buildLiveSnapshot(PROFILE, ['vehicles', 'events']);
+    expect(snap.vehicles.items[0].position).toEqual([4200.5, 0, 9800.25]);
+    expect(snap.events.items[0].position).toEqual([100, 0, 200]);
   });
 });
 
