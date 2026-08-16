@@ -136,6 +136,25 @@ describe('buildLiveSnapshot', () => {
     expect(snap.territories.items[0].type).toBe('territory_flag');
   });
 
+  it('classifies heli crash sites separately from car/train wrecks (regression: staging Deer Isle)', async () => {
+    // Real classnames observed live: bare Wreck_* are heli crash sites, while
+    // Land_Wreck_* (abandoned cars) and StaticObj_Wreck_Train_* must not get
+    // the helicrash icon.
+    cf.getEvents.mockResolvedValue({
+      at: 10, stale: false,
+      data: {
+        entities: [
+          { id: 'h1', classname: 'Wreck_UH1Y', position: [1, 0, 2] },
+          { id: 'w1', classname: 'Land_Wreck_hb01_aban1_police_DE', position: [3, 0, 4] },
+          { id: 'w2', classname: 'StaticObj_Wreck_Train_742_Red_DE', position: [5, 0, 6] },
+        ],
+      },
+    });
+    const snap = await buildLiveSnapshot(PROFILE, ['events']);
+    const types = Object.fromEntries(snap.events.items.map(e => [e.id, e.type]));
+    expect(types).toEqual({ h1: 'helicrash', w1: 'wreck', w2: 'wreck' });
+  });
+
   it('degrades one failing layer without blanking the others', async () => {
     cf.getSessions.mockResolvedValue({ at: 1, stale: false, data: { sessions: [] } });
     cf.getVehicles.mockRejectedValue(new cf.CfToolsError('rate_limited', 'slow down'));

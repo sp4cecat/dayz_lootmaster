@@ -172,7 +172,10 @@ function normalizeEvent(e) {
     if (!type && className) {
         const cn = className.toLowerCase();
         if (cn.includes('territoryflag')) type = 'territory_flag';
-        else if (cn.includes('crashbase') || cn.includes('wreck')) type = 'helicrash';
+        // Heli crash sites are bare Wreck_* (Wreck_UH1Y/UH60/Mi8*) or CrashBase;
+        // Land_Wreck_* cars and StaticObj_Wreck_Train_* are ordinary wrecks.
+        else if (cn.startsWith('wreck_') || cn.includes('crashbase') || cn.includes('helicrash')) type = 'helicrash';
+        else if (cn.includes('wreck')) type = 'wreck';
         else if (cn.includes('contaminated')) type = 'contaminated_area';
     }
     return {

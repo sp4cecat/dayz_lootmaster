@@ -39,13 +39,34 @@ const PLAYER = {
   banCount: 0,
 };
 
+const vehicle = (id: string, className: string) => ({
+  id, className, displayName: null, position: [7680, 0, 7680] as [number, number, number], speed: 0, health: 1000,
+});
+const event = (id: string, className: string, type: string) => ({
+  id, className, type, displayName: null, position: [7680, 0, 7680] as [number, number, number],
+});
+
 vi.mock('@/hooks/useLiveSnapshot', () => ({
   useLiveSnapshot: () => ({
     snapshot: {
       connected: true,
       players: { at: 1, stale: false, items: [PLAYER] },
-      vehicles: { at: 1, stale: false, items: [] },
-      events: { at: 1, stale: false, items: [] },
+      vehicles: {
+        at: 1, stale: false,
+        items: [
+          vehicle('v1', 'VeeDub_Orange'),
+          vehicle('v2', 'RFMosquito'),
+          vehicle('v3', 'Boat_01_Camo'),
+          vehicle('v4', 'Offroad_02'),
+        ],
+      },
+      events: {
+        at: 1, stale: false,
+        items: [
+          event('e1', 'Wreck_UH1Y', 'helicrash'),
+          event('e2', 'Land_Wreck_hb01_aban1_police_DE', 'wreck'),
+        ],
+      },
       territories: { at: 1, stale: false, items: [] },
     },
     loading: false,
@@ -101,6 +122,20 @@ describe('LiveMapView marker projection', () => {
     // inverted: (1 - 0.75) * 600 = 150px.
     expect(parseFloat(marker.style.left)).toBeCloseTo(150, 5);
     expect(parseFloat(marker.style.top)).toBeCloseTo(150, 5);
+  });
+
+  it('maps modded classnames to their Font Awesome glyphs', async () => {
+    const container = await render();
+    const iconIn = (title: string) =>
+      (container.querySelector(`button[title="${title}"] svg`) as SVGElement | null)?.getAttribute('data-icon');
+
+    expect(iconIn('VeeDub_Orange')).toBe('van-shuttle');
+    expect(iconIn('RFMosquito')).toBe('helicopter-symbol');
+    expect(iconIn('Boat_01_Camo')).toBe('ship');
+    expect(iconIn('Offroad_02')).toBe('car');           // default vehicle
+    expect(iconIn('Wreck_UH1Y')).toBe('helicopter');    // heli crash site
+    expect(iconIn('Land_Wreck_hb01_aban1_police_DE')).toBe('car-burst'); // car wreck, not a helicrash
+    expect(iconIn('Alice')).toBe('person');
   });
 
   it('shows the roster/summary side panel with the player count', async () => {

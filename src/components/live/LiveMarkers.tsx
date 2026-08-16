@@ -1,5 +1,10 @@
 import React from 'react';
-import { User, Car, Flame, Biohazard, Flag, MapPin } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import {
+  faPerson, faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
+  faCarBurst, faBiohazard, faFlag, faLocationDot,
+} from '@fortawesome/free-solid-svg-icons';
 import { cx } from '@/utils/cx';
 import type { LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
 
@@ -8,6 +13,9 @@ import type { LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
  * (ItemScanModal pattern): positioned via `project()`, constant on-screen size
  * across zoom. Marker handles are pointer-events-auto and stop propagation so a
  * press doesn't arm the viewport's pan/click gesture.
+ *
+ * Rendered as bare Font Awesome glyphs (no badge discs) with a dark drop-shadow
+ * for contrast against the map tiles.
  */
 
 export interface MarkerSelection {
@@ -16,6 +24,37 @@ export interface MarkerSelection {
 }
 
 export const selectionKey = (s: MarkerSelection | null) => (s ? `${s.kind}:${s.id}` : null);
+
+/** Vehicle-class icon mapping — shared by vehicles and vehicle-spawn events. */
+export function iconForClassName(className: string | null | undefined): IconDefinition | null {
+  if (!className) return null;
+  const cn = className.toLowerCase();
+  if (cn.includes('veedub')) return faVanShuttle;
+  if (cn.includes('mosquito')) return faHelicopterSymbol;
+  if (cn.includes('boat')) return faShip;
+  return null;
+}
+
+const EVENT_ICONS: Record<string, { icon: IconDefinition; tint: string }> = {
+  helicrash: { icon: faHelicopter, tint: 'text-orange-400' },
+  wreck: { icon: faCarBurst, tint: 'text-amber-400' },
+  contaminated_area: { icon: faBiohazard, tint: 'text-yellow-400' },
+};
+
+const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
+
+function Glyph({ icon, tint, selected, size = 14 }: {
+  icon: IconDefinition; tint: string; selected: boolean; size?: number;
+}) {
+  return (
+    <FontAwesomeIcon
+      icon={icon}
+      fixedWidth
+      style={{ fontSize: size }}
+      className={cx(GLYPH_SHADOW, selected ? 'text-primary-400' : tint)}
+    />
+  );
+}
 
 interface BaseMarkerProps {
   px: number;
@@ -52,14 +91,7 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect }: {
   return (
     <MarkerButton px={px} py={py} selected={selected} dimmed={dimmed} title={player.name} onSelect={onSelect}>
       <span className="flex flex-col items-center">
-        <span
-          className={cx(
-            'flex items-center justify-center size-5 rounded-full border-2 border-white/80 shadow-md',
-            selected ? 'bg-primary-500 ring-2 ring-white' : 'bg-emerald-500',
-          )}
-        >
-          <User size={11} className="text-white" />
-        </span>
+        <Glyph icon={faPerson} tint="text-emerald-400" selected={selected} size={16} />
         <span className="mt-0.5 px-1 rounded bg-black/60 text-[9px] font-medium text-white whitespace-nowrap leading-tight">
           {player.name}
         </span>
@@ -71,48 +103,36 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect }: {
 export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
   vehicle: LiveVehicle; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
 }) {
+  const icon = iconForClassName(vehicle.className) ?? faCar;
   return (
     <MarkerButton
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={vehicle.displayName || vehicle.className || 'Vehicle'}
       onSelect={onSelect}
     >
-      <span
-        className={cx(
-          'flex items-center justify-center size-5 rounded-md border-2 border-white/80 shadow-md',
-          selected ? 'bg-primary-500 ring-2 ring-white' : 'bg-sky-500',
-        )}
-      >
-        <Car size={11} className="text-white" />
-      </span>
+      <Glyph icon={icon} tint="text-sky-400" selected={selected} />
     </MarkerButton>
   );
 }
 
-function eventVisual(type: string): { icon: React.ElementType; bg: string } {
-  if (type === 'helicrash') return { icon: Flame, bg: 'bg-orange-500' };
-  if (type === 'contaminated_area') return { icon: Biohazard, bg: 'bg-yellow-500' };
-  return { icon: MapPin, bg: 'bg-purple-500' };
+function eventVisual(event: LiveEvent): { icon: IconDefinition; tint: string } {
+  // Vehicle spawn events carry the vehicle classname — match those first.
+  const vehicleIcon = iconForClassName(event.className);
+  if (vehicleIcon) return { icon: vehicleIcon, tint: 'text-sky-400' };
+  return EVENT_ICONS[event.type] ?? { icon: faLocationDot, tint: 'text-purple-400' };
 }
 
 export function EventMarker({ event, px, py, selected, dimmed, onSelect }: {
   event: LiveEvent; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
 }) {
-  const { icon: Icon, bg } = eventVisual(event.type);
+  const { icon, tint } = eventVisual(event);
   return (
     <MarkerButton
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={event.displayName || event.className || event.type}
       onSelect={onSelect}
     >
-      <span
-        className={cx(
-          'flex items-center justify-center size-5 rounded-full border-2 border-white/80 shadow-md',
-          selected ? 'bg-primary-500 ring-2 ring-white' : bg,
-        )}
-      >
-        <Icon size={11} className="text-white" />
-      </span>
+      <Glyph icon={icon} tint={tint} selected={selected} />
     </MarkerButton>
   );
 }
@@ -138,14 +158,7 @@ export function TerritoryMarker({ territory, px, py, radiusPx, selected, dimmed,
         title={territory.displayName || 'Territory flag'}
         onSelect={onSelect}
       >
-        <span
-          className={cx(
-            'flex items-center justify-center size-5 rounded-full border-2 border-white/80 shadow-md',
-            selected ? 'bg-primary-500 ring-2 ring-white' : 'bg-rose-500',
-          )}
-        >
-          <Flag size={11} className="text-white" />
-        </span>
+        <Glyph icon={faFlag} tint="text-rose-400" selected={selected} />
       </MarkerButton>
     </>
   );
