@@ -7,10 +7,19 @@ import { act } from 'react';
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 const ACTIONS = [
-  { actionCode: 'CFCloud_WorldTime', actionContext: 'world', actionName: 'Update world time', parameters: {} },
-  { actionCode: 'CFCloud_WipeAI', actionContext: 'world', actionName: 'Clear all world AI', parameters: {} },
-  { actionCode: 'CFCloud_VehicleExplode', actionContext: 'vehicle', actionName: 'Explode vehicle', parameters: {} },
-  { actionCode: 'CFCloud_HealPlayer', actionContext: 'player', actionName: 'Replenish player vitals', parameters: {} },
+  { actionCode: 'CFCloud_WorldTime', actionContext: 'world', actionContextFilter: [], actionName: 'Update world time', parameters: {} },
+  { actionCode: 'CFCloud_WipeAI', actionContext: 'world', actionContextFilter: [], actionName: 'Clear all world AI', parameters: {} },
+  { actionCode: 'CFCloud_VehicleExplode', actionContext: 'vehicle', actionContextFilter: [], actionName: 'Explode vehicle', parameters: {} },
+  { actionCode: 'CFCloud_HealPlayer', actionContext: 'player', actionContextFilter: [], actionName: 'Replenish player vitals', parameters: {} },
+  { actionCode: 'CFCloud_ObjectDelete', actionContext: 'object', actionContextFilter: [], actionName: 'Delete object', parameters: {} },
+  {
+    actionCode: 'CFCloud_ScientificBriefcaseOpen', actionContext: 'object',
+    actionContextFilter: ['ScientificBriefcase'], actionName: 'Open a locked scientific briefcase', parameters: {},
+  },
+  {
+    actionCode: 'CFCloud_TerritoryFlagClear', actionContext: 'object',
+    actionContextFilter: ['TerritoryFlag'], actionName: 'Clear territory (Server restart required)', parameters: {},
+  },
 ];
 
 vi.mock('@/utils/api', () => ({
@@ -61,9 +70,26 @@ describe('RawActionPanel contextual filtering', () => {
     expect(container.querySelector('input[placeholder="vehicle reference key"]')).toBeNull();
   });
 
-  it('shows an empty-context note when the selection has no matching actions', async () => {
-    const container = await render({ context: 'object', referenceKey: '_Event<0x2>', label: 'KMUC Keycard' });
-    expect(container.textContent).toContain('No object-context actions available.');
-    expect(container.querySelector('select')).toBeNull();
+  it('honors actionContextFilter: briefcase-only action needs a ScientificBriefcase selected', async () => {
+    const briefcase = await render({
+      context: 'object', referenceKey: '_Event<0x2>', label: 'ScientificBriefcase', className: 'ScientificBriefcase',
+    });
+    expect(optionLabels(briefcase)).toContain('Open a locked scientific briefcase');
+    expect(optionLabels(briefcase)).toContain('Delete object');       // empty filter → any object
+    expect(optionLabels(briefcase)).not.toContain('Clear territory (Server restart required)');
+
+    const keycard = await render({
+      context: 'object', referenceKey: '_Event<0x3>', label: 'KMUC Keycard', className: 'KMUC Keycard',
+    });
+    expect(optionLabels(keycard)).not.toContain('Open a locked scientific briefcase');
+    expect(optionLabels(keycard)).toContain('Delete object');
+  });
+
+  it('offers the territory-flag action only on a TerritoryFlag selection', async () => {
+    const flag = await render({
+      context: 'object', referenceKey: '_Event<0x4>', label: 'Territory flag', className: 'TerritoryFlag',
+    });
+    expect(optionLabels(flag)).toContain('Clear territory (Server restart required)');
+    expect(optionLabels(flag)).not.toContain('Open a locked scientific briefcase');
   });
 });

@@ -73,19 +73,23 @@ export default function LiveMapView({
   // mod source: player = steam64, vehicle/object = the entity id string the
   // entities endpoints already return.
   const rawTarget = useMemo((): RawActionTarget => {
-    const world: RawActionTarget = { context: 'world', referenceKey: null, label: null };
+    const world: RawActionTarget = { context: 'world', referenceKey: null, label: null, className: null };
     if (!selection || !snapshot) return world;
     if (selection.kind === 'player') {
       const pl = snapshot.players?.items.find(p => (p.sessionId || p.steamId || p.name) === selection.id);
-      return pl?.steamId ? { context: 'player', referenceKey: pl.steamId, label: pl.name } : world;
+      return pl?.steamId ? { context: 'player', referenceKey: pl.steamId, label: pl.name, className: null } : world;
     }
     if (selection.kind === 'vehicle') {
       const v = snapshot.vehicles?.items.find((x, i) => (x.id || String(i)) === selection.id);
-      return v?.id ? { context: 'vehicle', referenceKey: v.id, label: v.displayName || v.className || 'Vehicle' } : world;
+      return v?.id
+        ? { context: 'vehicle', referenceKey: v.id, label: v.displayName || v.className || 'Vehicle', className: v.className }
+        : world;
     }
     const list = selection.kind === 'territory' ? snapshot.territories?.items : snapshot.events?.items;
     const e = list?.find((x, i) => (x.id || String(i)) === selection.id);
-    return e?.id ? { context: 'object', referenceKey: e.id, label: e.displayName || e.className || e.type } : world;
+    return e?.id
+      ? { context: 'object', referenceKey: e.id, label: e.displayName || e.className || e.type, className: e.className }
+      : world;
   }, [selection, snapshot]);
 
   // Items co-located with a tracked container/vehicle/player are stored — silver.

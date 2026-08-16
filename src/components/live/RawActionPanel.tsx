@@ -14,14 +14,18 @@ export interface RawActionTarget {
   context: 'world' | 'player' | 'vehicle' | 'object';
   referenceKey: string | null;
   label: string | null;
+  /** Entity classname, matched against each action's actionContextFilter allowlist. */
+  className?: string | null;
 }
 
-const WORLD_TARGET: RawActionTarget = { context: 'world', referenceKey: null, label: null };
+const WORLD_TARGET: RawActionTarget = { context: 'world', referenceKey: null, label: null, className: null };
 
 interface GameLabsActionDef {
   actionCode: string;
   actionName?: string;
   actionContext?: string;
+  /** Classname allowlist: non-empty means the action only applies to these entities. */
+  actionContextFilter?: string[];
   parameters?: GameLabsParamDef[] | Record<string, GameLabsParamDef>;
 }
 
@@ -100,9 +104,15 @@ export default function RawActionPanel({ actions, selectedProfileId, target = WO
     setChecks({});
   }, [target.context, target.referenceKey]);
 
+  // Context must match, and a non-empty actionContextFilter restricts the
+  // action to specific classnames (e.g. CFCloud_ScientificBriefcaseOpen only
+  // applies to ScientificBriefcase).
   const available = useMemo(
-    () => defs.filter(d => (d.actionContext || 'world') === target.context),
-    [defs, target.context],
+    () => defs.filter(d =>
+      (d.actionContext || 'world') === target.context
+      && (!d.actionContextFilter?.length
+        || (!!target.className && d.actionContextFilter.includes(target.className)))),
+    [defs, target.context, target.className],
   );
   const selected = available.find(d => d.actionCode === code);
   const params = useMemo(() => (selected ? paramList(selected) : []), [selected]);
