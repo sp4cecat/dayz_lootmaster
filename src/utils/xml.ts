@@ -29,6 +29,44 @@ export interface Type {
 
 export const ROOT_SPAWNABLE_GROUP = '__root';
 
+/** Names a spawnabletypes file may have when cfgeconomycore.xml doesn't declare one yet. */
+export const CANONICAL_SPAWNABLE_FILE_RE = /^(cfg)?spawnabletypes?\.xml$/i;
+
+/**
+ * Drop spawnable buckets keyed by a file that is not a spawnabletypes file of its group.
+ *
+ * Older builds seeded the spawnable store from each group's *types* file list, so an
+ * IndexedDB cache can still hold e.g. `mortys/types.xml` full of types parsed as spawnable
+ * entries. Editing a type that appears in such a bucket routes its save to
+ * `/api/spawnabletypes/<group>/types.xml`, overwriting the group's real types.xml with a
+ * <spawnabletypes> document.
+ *
+ * @param store spawnableTypesByGroup — mutated in place
+ * @param declaredByGroup file names (or paths) cfgeconomycore declares as spawnabletypes per group
+ * @returns the `group/file` keys that were removed
+ */
+export function pruneUndeclaredSpawnableFiles(
+  store: Record<string, Record<string, any>>,
+  declaredByGroup: Record<string, string[] | Record<string, unknown>>
+): string[] {
+  const declared: Record<string, Set<string>> = {};
+  for (const [group, files] of Object.entries(declaredByGroup || {})) {
+    const list = Array.isArray(files) ? files : Object.keys(files || {});
+    declared[group] = new Set(list.map(f => String(f).split('/').pop()!.toLowerCase()));
+  }
+
+  const removed: string[] = [];
+  for (const [group, files] of Object.entries(store || {})) {
+    for (const fileName of Object.keys(files || {})) {
+      if (declared[group]?.has(fileName.toLowerCase())) continue;
+      if (CANONICAL_SPAWNABLE_FILE_RE.test(fileName)) continue;
+      delete store[group][fileName];
+      removed.push(`${group}/${fileName}`);
+    }
+  }
+  return removed;
+}
+
 import { XMLNodeKind } from '@/types/xml';
 
 /**

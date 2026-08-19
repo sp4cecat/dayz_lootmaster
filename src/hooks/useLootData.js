@@ -5,6 +5,7 @@ import {
   parseLimitsXml,
   parseRandomPresetsXml,
   parseSpawnableTypesXml,
+  pruneUndeclaredSpawnableFiles,
   ROOT_SPAWNABLE_GROUP,
   parseTypesXml,
   generateTypesXml,
@@ -221,6 +222,12 @@ export function useLootData() {
           warnings.push(`Group "${group}" file "${f}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
         }
       }
+    }
+
+    // Discard cached buckets keyed by a file that isn't a spawnabletypes file of its group —
+    // otherwise editing a type listed in one routes its save over that group's types.xml.
+    for (const key of pruneUndeclaredSpawnableFiles(nextSpawnable, filesByGroup || {})) {
+      warnings.push(`Discarded cached spawnable types for "${key}": not a spawnabletypes file of that group.`);
     }
 
     // If IDB is empty for presets, load from API

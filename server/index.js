@@ -23,6 +23,7 @@ import * as ingest from './ingest-store.js';
 import * as cftoolsConfig from './cftools-config.js';
 import * as cftools from './cftools-client.js';
 import * as cftoolsService from './cftools-service.js';
+import {isAllowedSpawnableFileName} from './spawnable-files.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -545,6 +546,22 @@ async function firstExistingPath(paths) {
         }
     }
     return paths[0] || null;
+}
+
+/**
+ * Whether `fileName` may be read/written as a spawnabletypes file of `group`, per the
+ * declarations in cfgeconomycore.xml. See server/spawnable-files.js for the rules.
+ * @returns {Promise<boolean>}
+ */
+async function isSpawnableFileNameAllowed(profile, paths, group, fileName) {
+    const spawnableMap = await getGroupSpawnableFilesMap(profile, paths);
+    const typesMap = await getGroupFilesMap(profile, paths);
+    return isAllowedSpawnableFileName({
+        group,
+        fileName,
+        declaredSpawnable: spawnableMap[group] || [],
+        declaredTypes: typesMap[group] || []
+    });
 }
 
 async function spawnableTypesFilePath(profile, paths, group, fileName = null) {
@@ -3026,6 +3043,10 @@ const server = http.createServer(async (req, res) => {
             const fileName = fileNameRaw ? decodeURIComponent(fileNameRaw) : null;
             if (!isSafeName(group)) {
                 badRequest(res, 'Invalid group');
+                return;
+            }
+            if (fileName && !(await isSpawnableFileNameAllowed(profile, paths, group, fileName))) {
+                badRequest(res, `"${fileName}" is not a spawnabletypes file of group "${group}"`);
                 return;
             }
             const target = await spawnableTypesFilePath(profile, paths, group, fileName);
