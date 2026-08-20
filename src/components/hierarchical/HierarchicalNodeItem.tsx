@@ -388,11 +388,15 @@ export const HierarchicalNodeItem: React.FC<HierarchicalNodeItemProps> = ({
               >
                 <Settings2 size={14} />
               </Button>
-              {displayNode.type === 'item' && onDuplicate && (
+              {(displayNode.type === 'item' || isGroup) && onDuplicate && (
                 <Button
                   variant="secondary"
                   size="sm"
                   className="h-8 w-8 p-0"
+                  aria-label={isGroup ? 'Duplicate group' : 'Duplicate item'}
+                  // A group duplicates as an independent copy (its members come along); an
+                  // item duplicates as a live linked clone. See duplicateChild.
+                  title={isGroup ? 'Duplicate this group and its members' : 'Duplicate as a linked clone'}
                   onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
                 >
                   <Copy size={14} />
