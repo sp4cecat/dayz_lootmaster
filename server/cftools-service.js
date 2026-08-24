@@ -192,8 +192,10 @@ const modStat = (v) => {
     return n === null || n < 0 ? null : n;
 };
 
-// `alive` crosses the wire as a bool from Enforce's JsonSerializer but is
-// declared 0|1 in openapi-ingest.json; accept either, and only claim knowledge
+// The mod declares `alive` as an Enforce `bool`, but its JsonSerializer emits
+// bools as 1/0 — hence the `integer, enum [0,1]` in openapi-ingest.json (same
+// quirk buildCatalogDetail works around for the catalog's boolean flags).
+// Accept true/false too in case that ever changes, and only claim knowledge
 // when the field is actually present.
 function modAlive(v) {
     if (v === true || v === 1) return true;

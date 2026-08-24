@@ -61,9 +61,11 @@ onto the CF Tools player roster via `enrichFromMod()`, joined on steam64
 conditional rows in the side panel (`heatComfort` is on the wire too but is not
 surfaced). Two wire quirks the merge normalises: the mod's `StatValue()` returns
 **-1** for a stat the engine doesn't declare (collapsed to null, so "unknown"
-never renders as a reading), and `alive` crosses as a bool from Enforce's
-JsonSerializer despite `openapi-ingest.json` declaring it `0|1` — both are
-accepted.
+never renders as a reading), and `alive` — an Enforce `bool` — arrives as `1`/`0`
+because that is how Enforce's JsonSerializer emits bools (the same quirk
+`buildCatalogDetail` handles for the catalog's boolean flags), which is why
+`openapi-ingest.json` declares it `integer, enum [0,1]`. `true`/`false` are
+accepted too, in case that ever changes.
 
 ## How GameLabs extensions work
 
