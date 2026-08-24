@@ -260,7 +260,7 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDra
               HP: {player.health != null ? Math.round(player.health) : 'n/a'}
             </span>
             <span className="block text-[9px] text-gray-300 leading-tight">
-              Hands: {player.handItem || 'n/a'}
+              Hands: {player.handItemLabel || player.handItem || 'n/a'}
             </span>
           </span>
         )}

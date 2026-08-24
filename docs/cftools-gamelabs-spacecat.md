@@ -17,6 +17,54 @@ CFTools Cloud UI **and** over the CF Tools Data API that Lootmaster now proxies
   actions" panel (`src/components/live/RawActionPanel.tsx` generates a form
   from each action's typed parameters) — zero frontend work per new action.
 
+## Per-player telemetry (health / item in hands) — settled
+
+**GameLabs cannot supply this to Lootmaster.** Verified against the mod itself
+(v1.938, workshop 2464526692). Its `.c` files are obfuscated stubs, but JAPM
+dumped the real source to `@GameLabs/Addons/000_Scripts/__JAPM__/unknown*.txt`.
+
+GameLabs already *collects* exactly what we want — `_ServerPlayerEx` (in
+`5_Mission/definitions.c`) sets `health = GetHealth("GlobalHealth","Health")` and
+`item = GetItemInHands().GetType()`, and the reporter POSTs the list to
+`/v1/server/players` on `api.gamelabs.cloud` every ~10 s. That is why the CF Tools
+Cloud UI map shows both. It is one-way: the public Data API has no route that
+reads it back (`/GameLabs/entities/players` probed 2026-08 → 404), GSM sessions
+omit both, and `_ServerPlayer` is a fixed struct with **no extension point** —
+there is no `SetPlayerMeta`, no custom player fields, no per-player event.
+
+The only writable per-player field anywhere in the API is `PlayerBase.gl_name`
+(a GameLabs-injected string; `ZenNameMapLink` uses it to append a character name
+to the marker label). It is the player's *name* — overloading it corrupts the
+roster, kick/ban and chat views — and it still only reaches `/v1/server/players`.
+
+Fallbacks, if a *remote* server ever needs this without an `/ingest` path:
+
+1. Register an `_Event` bound to the `PlayerBase` with health/hands in the HTML
+   `displayName` (Basic Territories proves `<b>`/`<br/>` render). This *is*
+   readable — it surfaces on `/GameLabs/entities/events`, which Lootmaster already
+   polls. Costs: a shadow marker per player in the Cloud UI, 10 s granularity,
+   no update channel (`RemoveEvent` + re-register), and a position join back to
+   the real player.
+2. A `player`-context `GameLabsContextAction` with a `webhook_url` response —
+   one round-trip per invocation, wrong shape for a stream.
+3. `GetApi().KV_SET(...)` — writes to `api.gamelabs.cloud`, which Lootmaster
+   cannot read.
+
+**What shipped instead:** the spacecat mod's `SpacecatPlayerInfo` gained a
+`hands` field (`GetItemInHands().GetType()`); `health` was already on the wire.
+`buildLiveSnapshot` in `server/cftools-service.js` now merges the mod snapshot
+onto the CF Tools player roster via `enrichFromMod()`, joined on steam64
+(`PlayerIdentity.GetPlainId()` == `gamedata.steam64`), gated on
+`ingest.modConnected()`. CF Tools remains the roster; the mod only enriches.
+
+`blood`, `shock`, `energy`, `water` and `alive` ride the same merge and render as
+conditional rows in the side panel (`heatComfort` is on the wire too but is not
+surfaced). Two wire quirks the merge normalises: the mod's `StatValue()` returns
+**-1** for a stat the engine doesn't declare (collapsed to null, so "unknown"
+never renders as a reading), and `alive` crosses as a bool from Enforce's
+JsonSerializer despite `openapi-ingest.json` declaring it `0|1` — both are
+accepted.
+
 ## How GameLabs extensions work
 
 Reference: `CFToolsGameLabs/game-plugin-dayz` + `CFToolsGameLabs/dayz-examples`

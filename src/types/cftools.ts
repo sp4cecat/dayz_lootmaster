@@ -9,10 +9,22 @@ export interface LivePlayer {
   steamId: string | null;
   /** Absent while the player is still loading in — omit the marker, keep the roster row. */
   position: [number, number, number] | null;
-  /** GlobalHealth 0–100 — null until CF Tools exposes it on the Data API. */
+  /** GlobalHealth 0–100. Sourced from the companion mod's snapshot; null when it isn't connected. */
   health: number | null;
-  /** Classname of the item in hands — null until CF Tools exposes it. */
+  /** Classname of the item in hands. Same source as `health`; null when empty-handed or unknown. */
   handItem: string | null;
+  /** Friendly name for `handItem`, resolved from the mod catalog. Null when the catalog has no entry. */
+  handItemLabel: string | null;
+  /** Blood, ~0–5000. Same source as `health`. */
+  blood: number | null;
+  /** Shock, ~0–100. Same source as `health`. */
+  shock: number | null;
+  /** Energy stat; null when the engine doesn't declare it (the mod sends -1). */
+  energy: number | null;
+  /** Water stat; null when the engine doesn't declare it (the mod sends -1). */
+  water: number | null;
+  /** False only when the mod explicitly reports a dead player; null when unknown. */
+  alive: boolean | null;
   ping: number | null;
   loaded: boolean;
   banCount: number | null;

@@ -15,8 +15,17 @@ vi.mock('../../server/cftools-client.js', async (importOriginal) => {
   };
 });
 
+// Stub the companion-mod ingest store: it's a module singleton whose snapshot
+// freshness is wall-clock based, so faking it keeps the merge tests order-independent.
+vi.mock('../../server/ingest-store.js', () => ({
+  modConnected: vi.fn(() => false),
+  getSnapshot: vi.fn(() => ({ data: null, at: 0 })),
+  getTypeDetail: vi.fn(() => null),
+}));
+
 import * as cf from '../../server/cftools-client.js';
 import * as cfg from '../../server/cftools-config.js';
+import * as ingest from '../../server/ingest-store.js';
 import {
   buildStatus, buildLiveSnapshot, resolveActionCode, spawnLoadout, teleportPlayer, _resetSpawnLedger,
 } from '../../server/cftools-service.js';
@@ -29,6 +38,10 @@ beforeEach(() => {
   _resetSpawnLedger();
   cfg.setAppCredentials({ applicationId: 'app', secret: 's' });
   cfg.setServerBinding('p1', 'api-1', 'Test Server');
+  // Default: no companion mod. Merge tests opt in.
+  ingest.modConnected.mockReturnValue(false);
+  ingest.getSnapshot.mockReturnValue({ data: null, at: 0 });
+  ingest.getTypeDetail.mockReturnValue(null);
 });
 
 describe('degradation reasons', () => {
@@ -124,6 +137,127 @@ describe('buildLiveSnapshot', () => {
     expect(snap.players.items[1].position).toBeNull();
     // Sessions without the opportunistic health/item fields normalize to null.
     expect(snap.players.items[1]).toMatchObject({ health: null, handItem: null });
+  });
+
+  // The companion mod's /ingest/snapshot is the only source of live health and
+  // item-in-hands — CF Tools' Data API carries neither.
+  describe('companion-mod enrichment', () => {
+    const sessionsWith = (...players) => {
+      cf.getSessions.mockResolvedValue({ at: 10, stale: false, data: { sessions: players } });
+    };
+    const session = (name, steam64) => ({
+      id: `sess-${name}`, cftools_id: `cf-${name}`,
+      gamedata: { player_name: name, steam64 },
+      live: { loaded: true, position: { latest: [100, 200, 5] } },
+    });
+    const modUp = (...players) => {
+      ingest.modConnected.mockReturnValue(true);
+      ingest.getSnapshot.mockReturnValue({ data: { players }, at: 1 });
+    };
+
+    it('merges health and item-in-hands onto the roster, joined by steam64', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({ name: 'Someone Else', steamId: '765...1', health: 62.5, hands: 'M4A1', alive: 1 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ health: 62.5, handItem: 'M4A1' });
+    });
+
+    it('falls back to the in-game name when CF Tools has no steam64 yet', async () => {
+      sessionsWith(session('Alice', null));
+      modUp({ name: 'alice', id: '765...1', health: 71, hands: 'AKM', alive: 1 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ health: 71, handItem: 'AKM' });
+    });
+
+    it('resolves a friendly label for the hands classname from the mod catalog', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({ steamId: '765...1', health: 50, hands: 'M4A1', alive: 1 });
+      ingest.getTypeDetail.mockReturnValue({ displayName: 'M4-A1' });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0].handItemLabel).toBe('M4-A1');
+    });
+
+    it('leaves handItemLabel null when the catalog has no entry', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({ steamId: '765...1', health: 50, hands: 'Modded_Gun', alive: 1 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ handItem: 'Modded_Gun', handItemLabel: null });
+    });
+
+    it('surfaces the mod-only stats (blood/shock/energy/water/alive)', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({
+        steamId: '765...1', health: 62.5, blood: 4800, shock: 42,
+        energy: 1200, water: 900, alive: true, hands: 'M4A1',
+      });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({
+        blood: 4800, shock: 42, energy: 1200, water: 900, alive: true,
+      });
+    });
+
+    it("treats the mod's -1 stat sentinel as unknown, not as a reading", async () => {
+      sessionsWith(session('Alice', '765...1'));
+      // StatValue() returns -1 when the engine doesn't declare the stat.
+      modUp({ steamId: '765...1', health: 62.5, blood: 4800, energy: -1, water: -1, alive: true });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ blood: 4800, energy: null, water: null });
+    });
+
+    it('accepts alive as either a bool or the 0|1 the contract declares', async () => {
+      sessionsWith(session('Alice', '765...1'), session('Bob', '765...2'));
+      modUp(
+        { steamId: '765...1', alive: 0 },
+        { steamId: '765...2', alive: 1 },
+      );
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0].alive).toBe(false);
+      expect(snap.players.items[1].alive).toBe(true);
+    });
+
+    it('leaves stats null when the mod omits them entirely', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({ steamId: '765...1', health: 62.5 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({
+        health: 62.5, blood: null, shock: null, energy: null, water: null, alive: null,
+      });
+    });
+
+    it('keeps health but drops hands for a dead player', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({ steamId: '765...1', health: 0, hands: 'M4A1', alive: 0 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ health: 0, handItem: null });
+    });
+
+    it('does not enrich when the mod is disconnected', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      // Snapshot data present but stale — modConnected() is the only gate.
+      ingest.getSnapshot.mockReturnValue({
+        data: { players: [{ steamId: '765...1', health: 99, hands: 'M4A1', alive: 1 }] }, at: 1,
+      });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ health: null, handItem: null });
+    });
+
+    it('ignores snapshot players with no matching session (no phantom markers)', async () => {
+      sessionsWith(session('Alice', '765...1'));
+      modUp({ name: 'Ghost', steamId: '765...9', health: 40, hands: 'AKM', alive: 1 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items).toHaveLength(1);
+      expect(snap.players.items[0]).toMatchObject({ name: 'Alice', health: null, handItem: null });
+    });
+
+    it("does not overwrite values CF Tools itself provided", async () => {
+      const s = session('Alice', '765...1');
+      s.live.health = 87.4;
+      s.live.item = 'Sporter22';
+      sessionsWith(s);
+      modUp({ steamId: '765...1', health: 12, hands: 'M4A1', alive: 1 });
+      const snap = await buildLiveSnapshot(PROFILE, ['players']);
+      expect(snap.players.items[0]).toMatchObject({ health: 87.4, handItem: 'Sporter22' });
+    });
   });
 
   it('splits territory flags out of the events layer', async () => {

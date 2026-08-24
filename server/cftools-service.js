@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import * as cf from './cftools-client.js';
 import * as cfg from './cftools-config.js';
+import * as ingest from './ingest-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -150,17 +151,94 @@ function normalizePlayer(session) {
         // position may legitimately be absent (player still loading in) — the
         // marker is simply omitted while the roster row still shows.
         position: normSessionPosition(live.position && live.position.latest),
-        // The GameLabs mod reports per-player health and item-in-hands
-        // (_ServerPlayerEx: health, item), but the public Data API exposes no
-        // player entities route (probed 2026-08: /GameLabs/entities/players
-        // 404s). Extract opportunistically so the UI lights up if CF Tools
-        // ever surfaces them on the GSM session.
+        // The GameLabs mod collects per-player health and item-in-hands
+        // (_ServerPlayerEx: health, item) and POSTs them to api.gamelabs.cloud,
+        // but that is one-way: the public Data API exposes no player entities
+        // route (probed 2026-08: /GameLabs/entities/players 404s) and GSM
+        // sessions omit both. Extract opportunistically anyway so the UI lights
+        // up if CF Tools ever surfaces them; enrichFromMod() is what actually
+        // fills these in today.
         health: num(live.health),
         handItem: (typeof live.item === 'string' && live.item) || null,
+        handItemLabel: null,
+        // Companion-mod only (CF Tools carries none of these) — see enrichFromMod.
+        blood: null,
+        shock: null,
+        energy: null,
+        water: null,
+        alive: null,
         ping: live.ping ? num(live.ping.actual) : null,
         loaded: !!live.loaded,
         banCount: session.info ? num(session.info.ban_count) : null,
     };
+}
+
+/**
+ * Fill health / item-in-hands from the companion mod's `/ingest/snapshot`.
+ *
+ * The mod snapshot is the only source of these: CF Tools' Data API carries
+ * neither (see normalizePlayer). CF Tools stays the roster — identity, session,
+ * ping, bans, position — and this only enriches rows that already exist, so a
+ * snapshot player with no matching session never becomes a phantom marker.
+ *
+ * Join key is steam64: the mod sends `PlayerIdentity.GetPlainId()`, the same
+ * value CF Tools reports as `gamedata.steam64`. In-game name is the fallback
+ * for rows where CF Tools has no steam64 yet (still authenticating).
+ */
+// The mod's StatValue() returns -1 for a stat the engine doesn't declare, which
+// is "unknown", not a reading — collapse it (and any other negative) to null.
+const modStat = (v) => {
+    const n = num(v);
+    return n === null || n < 0 ? null : n;
+};
+
+// `alive` crosses the wire as a bool from Enforce's JsonSerializer but is
+// declared 0|1 in openapi-ingest.json; accept either, and only claim knowledge
+// when the field is actually present.
+function modAlive(v) {
+    if (v === true || v === 1) return true;
+    if (v === false || v === 0) return false;
+    return null;
+}
+
+function enrichFromMod(players) {
+    // A stale or absent mod must not blank fields CF Tools might have set.
+    if (!ingest.modConnected()) return players;
+    const snap = ingest.getSnapshot().data;
+    const modPlayers = snap && Array.isArray(snap.players) ? snap.players : [];
+    if (!modPlayers.length) return players;
+
+    const byId = new Map();
+    const byName = new Map();
+    for (const mp of modPlayers) {
+        if (!mp || typeof mp !== 'object') continue;
+        const id = mp.steamId || mp.id;
+        if (id) byId.set(String(id), mp);
+        if (mp.name) byName.set(String(mp.name).toLowerCase(), mp);
+    }
+
+    for (const p of players) {
+        const mp = (p.steamId && byId.get(String(p.steamId)))
+            || (p.name && byName.get(String(p.name).toLowerCase()));
+        if (!mp) continue;
+        const alive = modAlive(mp.alive);
+        // CF Tools wins if it ever starts carrying these; the mod fills the gap.
+        if (p.health === null) p.health = modStat(mp.health);
+        if (p.handItem === null && alive !== false) {
+            p.handItem = (typeof mp.hands === 'string' && mp.hands) || null;
+        }
+        // Mod-only stats: nothing upstream can supply these, so assign directly.
+        p.blood = modStat(mp.blood);
+        p.shock = modStat(mp.shock);
+        p.energy = modStat(mp.energy);
+        p.water = modStat(mp.water);
+        p.alive = alive;
+        if (p.handItem && !p.handItemLabel) {
+            const detail = ingest.getTypeDetail(p.handItem);
+            p.handItemLabel = (detail && detail.displayName) || null;
+        }
+    }
+    return players;
 }
 
 function entityList(data) {
@@ -325,7 +403,10 @@ export async function buildLiveSnapshot(profile, layers) {
         tasks.push(cf.getSessions(bound.apiId)
             .then(({ at, stale, data }) => {
                 const sessions = (data && Array.isArray(data.sessions)) ? data.sessions : [];
-                out.players = { at, stale, items: sessions.map(normalizePlayer).filter(Boolean) };
+                out.players = {
+                    at, stale,
+                    items: enrichFromMod(sessions.map(normalizePlayer).filter(Boolean)),
+                };
             })
             .catch((err) => { out.players = { error: reasonOf(err), items: [] }; }));
     }

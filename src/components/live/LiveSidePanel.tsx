@@ -75,7 +75,20 @@ export default function LiveSidePanel({
         <Row label="CFTools ID">{player.cftoolsId || '—'}</Row>
         <Row label="Position">{fmtPos(player.position)}</Row>
         <Row label="HP">{player.health != null ? `${Math.round(player.health)}` : '—'}</Row>
-        <Row label="In hands">{player.handItem || '—'}</Row>
+        {/* Companion-mod stats: the rows only appear once the mod supplies them,
+            so a CF-Tools-only server keeps the card free of dead placeholders. */}
+        {player.blood != null && <Row label="Blood">{Math.round(player.blood)}</Row>}
+        {player.shock != null && <Row label="Shock">{Math.round(player.shock)}</Row>}
+        {player.energy != null && <Row label="Energy">{Math.round(player.energy)}</Row>}
+        {player.water != null && <Row label="Water">{Math.round(player.water)}</Row>}
+        {player.alive != null && (
+          <Row label="Status">
+            <span className={player.alive ? undefined : 'text-error-600 dark:text-error-400'}>
+              {player.alive ? 'Alive' : 'Dead'}
+            </span>
+          </Row>
+        )}
+        <Row label="In hands">{player.handItemLabel || player.handItem || '—'}</Row>
         <Row label="Ping">{player.ping != null ? `${player.ping} ms` : '—'}</Row>
         <Row label="Loaded in">{player.loaded ? 'yes' : 'still loading'}</Row>
         <Row label="Recorded bans">{player.banCount ?? '—'}</Row>

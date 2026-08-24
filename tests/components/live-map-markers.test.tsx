@@ -36,10 +36,20 @@ const PLAYER = {
   position: [3840, 10, 11520] as [number, number, number], // x = 1/4 world, z = 3/4 world
   health: 87.4,
   handItem: 'M4A1',
+  handItemLabel: null,
+  blood: 4800,
+  shock: 100,
+  energy: 1200,
+  water: 900,
+  alive: true,
   ping: 40,
   loaded: true,
   banCount: 0,
 };
+
+// Per-test override for the players layer; null falls back to [PLAYER]. The
+// snapshot mock factory reads this lazily, so tests can swap it before render().
+let playersOverride: (typeof PLAYER)[] | null = null;
 
 const at = (x: number, z: number) => [x, 0, z] as [number, number, number];
 const vehicle = (id: string, className: string, position = at(7680, 7680)) => ({
@@ -53,7 +63,7 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
   useLiveSnapshot: () => ({
     snapshot: {
       connected: true,
-      players: { at: 1, stale: false, items: [PLAYER] },
+      players: { at: 1, stale: false, items: playersOverride ?? [PLAYER] },
       vehicles: {
         at: 1, stale: false,
         items: [
@@ -165,6 +175,21 @@ describe('LiveMapView marker projection', () => {
     expect(tip.textContent).toContain('Alice');
     expect(tip.textContent).toContain('HP: 87');
     expect(tip.textContent).toContain('Hands: M4A1');
+  });
+
+  it('prefers the catalog display name over the raw classname for hands', async () => {
+    playersOverride = [{ ...PLAYER, handItemLabel: 'M4-A1' }];
+    try {
+      const container = await render();
+      const marker = container.querySelector('button[aria-label="Alice"]') as HTMLElement;
+      await act(async () => {
+        marker.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      });
+      const tip = marker.querySelector('[role="tooltip"]') as HTMLElement;
+      expect(tip.textContent).toContain('Hands: M4-A1');
+    } finally {
+      playersOverride = null;
+    }
   });
 
   it('drag-and-drop on a player dot opens the teleport confirmation at the drop point', async () => {

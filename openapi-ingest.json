@@ -107,7 +107,11 @@
           "energy": { "type": "number" },
           "water": { "type": "number" },
           "heatComfort": { "type": "number" },
-          "alive": { "type": "integer", "enum": [0, 1] }
+          "alive": { "type": "integer", "enum": [0, 1] },
+          "hands": {
+            "type": "string",
+            "description": "Classname of the item in hands; absent or \"\" when empty-handed."
+          }
         }
       },
       "Weather": {
