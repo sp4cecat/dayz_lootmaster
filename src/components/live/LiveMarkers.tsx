@@ -76,43 +76,6 @@ const EVENT_CLASS_ICONS: Array<[RegExp, IconDefinition, string]> = [
 
 const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
 
-/**
- * "In storage" detection for tracked loot items. The GameLabs payload carries
- * no containment info ({id, className, position} only — verified against the
- * mod source), but an item inside cargo reports its parent's world position.
- * So a storable item sitting at exactly the same spot as a tracked container
- * event, a vehicle, or a player is being carried/stored — tint it silver.
- * Base chests aren't tracked at all, so items inside them can't be detected.
- */
-const STORABLE_ITEM = /keycard|staff|grenade|mjolnir|punch.?card|briefcase/i;
-const CONTAINER_EVENT = /airdrop|camp|submarine|convoy/i;
-const STORED_EPS_M = 1.5;
-
-export function computeStoredEventIds(
-  events: LiveEvent[],
-  vehicles: LiveVehicle[],
-  players: LivePlayer[],
-): Set<string> {
-  const anchors: Array<[number, number]> = [];
-  for (const e of events) {
-    if (CONTAINER_EVENT.test(e.className || '')) anchors.push([e.position[0], e.position[2]]);
-  }
-  for (const v of vehicles) anchors.push([v.position[0], v.position[2]]);
-  for (const p of players) {
-    if (p.position) anchors.push([p.position[0], p.position[2]]);
-  }
-  const stored = new Set<string>();
-  events.forEach((e, i) => {
-    if (!STORABLE_ITEM.test(e.className || '')) return;
-    const x = e.position[0];
-    const z = e.position[2];
-    if (anchors.some(([ax, az]) => Math.abs(ax - x) < STORED_EPS_M && Math.abs(az - z) < STORED_EPS_M)) {
-      stored.add(e.id || String(i));
-    }
-  });
-  return stored;
-}
-
 function Glyph({ icon, tint, selected, size = 14 }: {
   icon: IconDefinition; tint: string; selected: boolean; size?: number;
 }) {
@@ -310,6 +273,12 @@ function eventVisual(event: LiveEvent): { icon: IconDefinition; tint: string } {
   return EVENT_ICONS[event.type] ?? { icon: faLocationDot, tint: 'text-purple-400' };
 }
 
+/**
+ * `stored` greys the glyph. Its only source now is the spawn ledger's `moved`
+ * flag: spacecat_gamelabs decides containment in Enforce and simply publishes no
+ * marker for an item on a player or in cargo, so anything that reaches this
+ * component is world-placed — grey just means "not where it spawned".
+ */
 export function EventMarker({ event, px, py, selected, dimmed, stored, onSelect }: {
   event: LiveEvent; px: number; py: number; selected: boolean; dimmed?: boolean; stored?: boolean; onSelect: () => void;
 }) {

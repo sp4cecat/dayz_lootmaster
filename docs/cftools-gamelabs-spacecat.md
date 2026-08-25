@@ -67,6 +67,29 @@ because that is how Enforce's JsonSerializer emits bools (the same quirk
 `openapi-ingest.json` declares it `integer, enum [0,1]`. `true`/`false` are
 accepted too, in case that ever changes.
 
+## Quest-item containment — handled upstream, not here
+
+**Lootmaster does no containment inference.** `spacecat_gamelabs`
+(`F:/Dayz Dev/sauce/azmod/workspace/spacecat_gamelabs`) replaces `@CW_Gamelabs`
+and decides placement in Enforce: an item on a player or inside another
+container's cargo gets **no GameLabs marker at all**, and a marker is added or
+dropped *as the item moves* (`EEItemLocationChanged`) rather than being decided
+once at spawn. So anything that reaches the events layer is world-placed.
+
+This retired `computeStoredEventIds` in `src/components/live/LiveMarkers.tsx` — a
+proximity heuristic that greyed an item sitting within 1.5 m of a container,
+vehicle, or player. It existed only because CW_Gamelabs published markers for
+carried items and the payload carried no containment field. Under the new mod it
+could only ever fire on genuinely loose ground loot, i.e. as a false positive.
+
+What remains is the spawn ledger's `moved` flag, which is unaffected and now
+strictly more meaningful: it marks a world item that is no longer where it
+spawned. `EventMarker`'s `stored` prop is driven solely by it.
+
+**Caveat:** this holds only for servers running `spacecat_gamelabs`. A profile
+still on `@CW_Gamelabs` will show markers for carried items with nothing to grey
+them — the two mods must never run together on the same server.
+
 ## How GameLabs extensions work
 
 Reference: `CFToolsGameLabs/game-plugin-dayz` + `CFToolsGameLabs/dayz-examples`
@@ -112,30 +135,67 @@ Mirrors the `/ingest` `scanItems` command (world-context, region-scoped).
 Other 1:1 candidates: `Spacecat_Broadcast` (`string message`),
 `Spacecat_RefreshCatalog` (no params — re-trigger the chunked catalog push).
 
-## Territory metadata enrichment (the P2 fallback)
+## Territory metadata enrichment — shipped
 
-Verified against the Expansion source (`ExpansionTerritoryModule.c`,
-`TerritoryFlag.c`, experimental branch): territory owner/members/level persist
-via `CF_OnStoreSave`/`CF_OnStoreLoad` (CF_ModStorage) inside the entity storage
-`.bin` files — **not** as parseable JSON under `profiles/ExpansionMod/`. So the
-zero-mod-change enrichment path is not viable and the Live Map ships flags-only
-territory markers (position + TerritorySize radius).
+**Solved by `spacecat_gamelabs`; approach 1 below is what it does.** The original
+blocker still stands as stated — verified against the Expansion source
+(`ExpansionTerritoryModule.c`, `TerritoryFlag.c`): owner/members/level persist via
+`CF_OnStoreSave`/`CF_OnStoreLoad` (CF_ModStorage) inside the entity storage `.bin`
+files, **not** as parseable JSON under `profiles/ExpansionMod/`. There is no
+zero-mod-change path. What changed is that the mod now exists.
 
-To enrich, a small server-side extension (in spacecat or standalone) would:
+`SGL_TerritoryFlag.c` (in the separate `spacecat_gamelabs_compat_expansion` PBO,
+which must be separate because `requiredAddons` — not `-mod=` position — decides
+script-module order) takes over GameLabs' own flag marker and rebuilds the tooltip
+as a strict superset of theirs:
 
-1. Override GameLabs' base tracking of `TerritoryFlag` with a custom `_Event`
-   registration (see `dayz-examples/custom_map_icons/territory_flag.c` — note
-   the **deferred loading** requirement when overriding base-tracked objects).
-2. Attach metadata to the event label/params: owner name, member count, level
-   (`ExpansionTerritoryFlagBase.GetTerritory()` exposes all of it server-side).
-3. Lootmaster's `server/cftools-service.js` `normalizeEvent()` already passes
-   `displayName` through; extend it to parse the structured label if adopted.
+```
+<b>Northwood</b><br/>Flag Level: 87 %<br/>Remaining Lifetime: ~ 41 hours<br/>
+Owner: PlayerOne (76561198000000000)<br/>
+Territory: #4 &middot; Level 2 &middot; 3 member(s)<br/>
+<b>Members</b>:<br/>&nbsp;&nbsp;PlayerTwo (76561198000000001) - Moderator
+```
 
-Alternative without touching GameLabs: the spacecat mod adds a `territories[]`
-array to its 5-second `/ingest/snapshot` push (owner/members/level/position),
-and Lootmaster's `buildLiveSnapshot` merges it into the `territories` layer by
-position proximity (~5 m). This keeps all enrichment on the existing transport
-and is the recommended path since we control both ends.
+The takeover works by never calling `_SetEventInstance()`, which leaves GameLabs'
+handle pointing at its own unregistered event and makes its hourly maintenance tick
+a permanent no-op. One benign `RegisterEvent - failed (_reference already added)`
+per flag per hour in GameLabs' debug log is expected, not a bug.
+
+### Parsing it back (`server/cftools-service.js`)
+
+That whole string arrives verbatim as the event's `display_name`, so
+`parseTerritoryTooltip()` turns it into `LiveEvent.territory`
+(`name`, `flagLevel`, `lifetimeHours`, `owner`, `territoryId`, `level`,
+`memberCount`, `members[]`, `membersOmitted`) and replaces `displayName` with the
+plain territory name — otherwise every consumer of `displayName` (marker title,
+panel heading, GameLabs action label) renders raw markup.
+
+Four things the parser has to get right, each with a regression test:
+
+- **Entity decoding.** The mod escapes player-supplied text (`SGL_Text.EscapeHtml`)
+  because the panel renders HTML, so `&amp;` must be decoded *last* — decoding it
+  first would turn a literal `&amp;lt;` into `<`.
+- **Config-dependent shapes.** `territory_show_uids: false` yields bare names;
+  an unknown name yields a bare UID; `territory_show_members: false` drops the
+  roster entirely. Every field is therefore optional.
+- **Roster position, not indentation.** The `&nbsp;&nbsp;` indent is cosmetic and
+  collapses with the rest of the whitespace; member lines are identified by
+  following the `Members:` header instead.
+- **Rank split, not name split.** A member called `Bob - the - Builder` must split
+  on the trailing rank, so the pattern anchors on `Admin|Moderator|Member` at the
+  end rather than on the first ` - `.
+
+Parsing is best-effort by design: unrecognised lines are skipped, and a tooltip
+with no labelled line at all returns null, leaving the event untouched. A flag
+still showing GameLabs' baseline marker — or a future wording change in the mod —
+degrades to the previous behaviour rather than blanking the panel.
+
+`memberCount` is Expansion's own `NumberOfMembers()`: it includes the owner and
+ignores the `territory_max_members` display cap, so it can exceed `members.length`.
+`membersOmitted` carries the difference the mod reported as `... and N more`.
+
+The `territories[]`-on-`/ingest/snapshot` alternative previously recommended here
+is no longer needed and was not built.
 
 ## Non-goals
 

@@ -39,6 +39,42 @@ export interface LiveVehicle {
   health: number | null;
 }
 
+/** A player referenced from a territory tooltip. Either half may be absent: the mod
+ *  omits UIDs when `territory_show_uids` is off, and prints a bare UID when Expansion
+ *  has no name for that member. */
+export interface LivePlayerRef {
+  name: string | null;
+  steamId: string | null;
+}
+
+export interface LiveTerritoryMember extends LivePlayerRef {
+  /** 'Admin' | 'Moderator' | 'Member' — plain words, not Expansion's #STR_ keys. */
+  rank: string;
+}
+
+/**
+ * Territory detail parsed from the enriched GameLabs tooltip that `spacecat_gamelabs`
+ * publishes. Every field is optional because the mod's config can switch parts off
+ * (`territory_show_members`, `territory_show_uids`) and because parsing is best-effort.
+ */
+export interface LiveTerritoryInfo {
+  name: string | null;
+  /** Refresher charge, whole percent. */
+  flagLevel: number | null;
+  /** Remaining lifetime, whole hours. */
+  lifetimeHours: number | null;
+  owner: LivePlayerRef | null;
+  territoryId: number | null;
+  level: number | null;
+  /** Expansion's own count — includes the owner and ignores the display cap, so it
+   *  can exceed `members.length`. */
+  memberCount: number | null;
+  /** Roster excluding the owner, capped by the mod's `territory_max_members`. */
+  members: LiveTerritoryMember[];
+  /** How many members the mod dropped to honour that cap. */
+  membersOmitted: number;
+}
+
 export interface LiveEvent {
   id: string | null;
   /** 'helicrash' | 'contaminated_area' | 'territory_flag' | custom _Event types | 'unknown' */
@@ -54,6 +90,8 @@ export interface LiveEvent {
   moved?: boolean;
   /** First position the backend ever observed for this entity. */
   spawnPosition?: [number, number, number];
+  /** Present on territory flags whose tooltip the backend could parse. */
+  territory?: LiveTerritoryInfo;
 }
 
 /** One map layer's payload; `stale` = served from cache during a rate-limit/outage. */

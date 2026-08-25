@@ -81,15 +81,15 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
           event('e2', 'Land_Wreck_hb01_aban1_police_DE', 'wreck', at(2100, 2100)),
           event('e3', 'StaticObj_Wreck_Train_742_Red_DE', 'wreck', at(2200, 2200)),
           event('e4', 'KMUC Keycard', 'unknown', at(4000, 4000)), // loose on the ground
-          event('e5', 'Staff', 'unknown', at(1000.5, 1000.5)),    // in VeeDub_Orange cargo
+          event('e5', 'Staff', 'unknown', at(1000.5, 1000.5)),    // sits on a vehicle, but still world-placed
           event('e6', 'Camp Event', 'unknown', at(2300, 2300)),
           event('e7', 'Smokey Grenade', 'unknown', at(2400, 2400)),
           event('e8', 'Convoy', 'unknown', at(2500, 2500)),
           { ...event('e9', 'Mjolnir Head', 'unknown', at(2600, 2600)), moved: true }, // left its spawn point
-          event('e10', 'Mjolnir Handle', 'unknown', at(3840, 11520)), // carried by Alice
+          event('e10', 'Mjolnir Handle', 'unknown', at(3840, 11520)), // shares Alice's position
           event('e11', 'Submarine', 'unknown', at(2700, 2700)),
           event('e12', 'ExpansionAirdropContainer_Military', 'unknown', at(2800, 2800)),
-          event('e13', 'Punch Card', 'unknown', at(2800, 2800)),  // inside the airdrop container
+          event('e13', 'Punch Card', 'unknown', at(2800, 2800)),  // shares the airdrop's position
           event('e14', 'ScientificBriefcase', 'unknown', at(2900, 2900)),
         ],
       },
@@ -250,16 +250,26 @@ describe('LiveMapView marker projection', () => {
     expect(iconIn('ScientificBriefcase')).toBe('briefcase');
   });
 
-  it('tints stored items silver when co-located with a container, vehicle, or player', async () => {
+  // Containment is decided upstream by spacecat_gamelabs, which simply does not
+  // publish a marker for an item on a player or in cargo. So sharing a position
+  // with a player/vehicle/container means nothing here — only the spawn ledger's
+  // `moved` flag still greys a marker.
+  it('greys only items the spawn ledger reports as moved, not co-located ones', async () => {
     const container = await render();
     const glyphClass = (title: string) =>
       (container.querySelector(`button[title="${title}"] svg`) as SVGElement | null)?.getAttribute('class') ?? '';
 
-    expect(glyphClass('Punch Card')).toContain('text-slate-300');       // inside the airdrop container
-    expect(glyphClass('Staff')).toContain('text-slate-300');            // in vehicle cargo
-    expect(glyphClass('Mjolnir Handle')).toContain('text-slate-300');   // carried by a player
-    expect(glyphClass('Mjolnir Head')).toContain('text-slate-300');     // moved from its spawn point (ledger)
-    expect(glyphClass('KMUC Keycard')).not.toContain('text-slate-300'); // loose at its spawn point
+    expect(glyphClass('Mjolnir Head')).toContain('text-slate-300');       // moved from its spawn point
+
+    // Co-location is no longer evidence of storage — these keep their own tints.
+    expect(glyphClass('Punch Card')).not.toContain('text-slate-300');
+    expect(glyphClass('Punch Card')).toContain('text-pink-400');
+    expect(glyphClass('Staff')).not.toContain('text-slate-300');
+    expect(glyphClass('Staff')).toContain('text-purple-400');
+    expect(glyphClass('Mjolnir Handle')).not.toContain('text-slate-300');
+    expect(glyphClass('Mjolnir Handle')).toContain('text-fuchsia-400');
+
+    expect(glyphClass('KMUC Keycard')).not.toContain('text-slate-300');
     expect(glyphClass('KMUC Keycard')).toContain('text-violet-400');
     // Containers themselves never go silver.
     expect(glyphClass('ExpansionAirdropContainer_Military')).toContain('text-cyan-400');

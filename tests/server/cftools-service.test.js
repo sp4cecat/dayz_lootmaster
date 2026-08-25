@@ -379,6 +379,103 @@ describe('spawn ledger', () => {
   });
 });
 
+describe('territory tooltip parsing', () => {
+  // Exactly the shape SGL_TerritoryFlag.c builds: <b> title, <br/> separators,
+  // &middot; between the Territory fields, &nbsp; roster indent.
+  const tooltip = [
+    '<b>Northwood</b>',
+    'Flag Level: 87 %',
+    'Remaining Lifetime: ~ 41 hours',
+    'Owner: PlayerOne (76561198000000000)',
+    'Territory: #4 &middot; Level 2 &middot; 3 member(s)',
+    '<b>Members</b>:',
+    '&nbsp;&nbsp;PlayerTwo (76561198000000001) - Moderator',
+    '&nbsp;&nbsp;PlayerThree (76561198000000002) - Member',
+  ].join('<br/>');
+
+  const flagWith = (displayName) => ({
+    at: 1, stale: false,
+    data: { entities: [{ id: 'f1', classname: 'TerritoryFlag', display_name: displayName, position: [1000, 0, 2000] }] },
+  });
+
+  const territoryFrom = async (displayName) => {
+    cf.getEvents.mockResolvedValueOnce(flagWith(displayName));
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    return snap.territories.items[0];
+  };
+
+  it('parses the enriched tooltip into structured fields', async () => {
+    const flag = await territoryFrom(tooltip);
+    expect(flag.territory).toMatchObject({
+      name: 'Northwood',
+      flagLevel: 87,
+      lifetimeHours: 41,
+      owner: { name: 'PlayerOne', steamId: '76561198000000000' },
+      territoryId: 4,
+      level: 2,
+      memberCount: 3,
+      membersOmitted: 0,
+    });
+    expect(flag.territory.members).toEqual([
+      { name: 'PlayerTwo', steamId: '76561198000000001', rank: 'Moderator' },
+      { name: 'PlayerThree', steamId: '76561198000000002', rank: 'Member' },
+    ]);
+  });
+
+  it('replaces the markup displayName with the plain territory name', async () => {
+    // Otherwise the marker title and panel heading render a wall of HTML.
+    const flag = await territoryFrom(tooltip);
+    expect(flag.displayName).toBe('Northwood');
+  });
+
+  it('decodes the entities the mod escapes player-supplied text with', async () => {
+    const flag = await territoryFrom(
+      '<b>Ben &amp; Jerry&#39;s &lt;HQ&gt;</b><br/>Owner: A&amp;B (76561198000000000)<br/>Territory: #3 &middot; Level 1 &middot; 1 member(s)',
+    );
+    expect(flag.territory.name).toBe("Ben & Jerry's <HQ>");
+    expect(flag.territory.owner.name).toBe('A&B');
+  });
+
+  it('handles an empty roster and a bare-UID owner', async () => {
+    const flag = await territoryFrom(
+      '<b>Camp</b><br/>Owner: 76561198000000009<br/>Territory: #7 &middot; Level 1 &middot; 1 member(s)<br/><b>Members</b>: none',
+    );
+    expect(flag.territory.owner).toEqual({ name: null, steamId: '76561198000000009' });
+    expect(flag.territory.members).toEqual([]);
+  });
+
+  it('records how many members the mod capped off the roster', async () => {
+    const flag = await territoryFrom(
+      '<b>Big</b><br/>Territory: #1 &middot; Level 3 &middot; 40 member(s)<br/><b>Members</b>:<br/>&nbsp;&nbsp;B (76561198000000001) - Member<br/>&nbsp;&nbsp;... and 38 more',
+    );
+    expect(flag.territory.memberCount).toBe(40);
+    expect(flag.territory.members).toHaveLength(1);
+    expect(flag.territory.membersOmitted).toBe(38);
+  });
+
+  it('keeps names intact when territory_show_uids is off', async () => {
+    const flag = await territoryFrom(
+      '<b>Quiet</b><br/>Owner: Solo<br/>Territory: #2 &middot; Level 1 &middot; 2 member(s)<br/><b>Members</b>:<br/>&nbsp;&nbsp;Mate - Admin',
+    );
+    expect(flag.territory.owner).toEqual({ name: 'Solo', steamId: null });
+    expect(flag.territory.members[0]).toEqual({ name: 'Mate', steamId: null, rank: 'Admin' });
+  });
+
+  it('splits a member name containing " - " on the rank, not the name', async () => {
+    const flag = await territoryFrom(
+      '<b>T</b><br/>Territory: #1 &middot; Level 1 &middot; 2 member(s)<br/><b>Members</b>:<br/>&nbsp;&nbsp;Bob - the - Builder (76561198000000005) - Moderator',
+    );
+    expect(flag.territory.members[0]).toMatchObject({ name: 'Bob - the - Builder', rank: 'Moderator' });
+  });
+
+  it('leaves an unrecognised tooltip untouched rather than blanking it', async () => {
+    // A flag still on GameLabs' own baseline marker, or a future wording change.
+    const flag = await territoryFrom('Territory Flag');
+    expect(flag.territory).toBeUndefined();
+    expect(flag.displayName).toBe('Territory Flag');
+  });
+});
+
 describe('resolveActionCode', () => {
   const actions = [
     { actionCode: 'CFCloud_TeleportPlayer' },

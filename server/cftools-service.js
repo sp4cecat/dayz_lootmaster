@@ -294,6 +294,150 @@ function normalizeEvent(e) {
 const isTerritory = (ev) =>
     ev.type === 'territory_flag' || (ev.className && /territoryflag/i.test(ev.className));
 
+// ---- territory tooltip parsing ----
+//
+// spacecat_gamelabs (the @CW_Gamelabs replacement) takes over each territory flag's
+// GameLabs marker and gives it an enriched HTML tooltip, built in SGL_TerritoryFlag.c:
+//
+//   <b>Northwood</b><br/>Flag Level: 87 %<br/>Remaining Lifetime: ~ 41 hours<br/>
+//   Owner: PlayerOne (76561198000000000)<br/>
+//   Territory: #4 &middot; Level 2 &middot; 3 member(s)<br/>
+//   <b>Members</b>:<br/>&nbsp;&nbsp;PlayerTwo (76561198000000001) - Moderator
+//
+// That whole string arrives verbatim as the event's display_name, so without this the
+// panel renders a wall of markup. Parsing is deliberately best-effort: unrecognised
+// lines are skipped, and a tooltip that yields nothing returns null so the event is
+// left exactly as it is. A flag still showing GameLabs' own baseline marker, or a
+// future wording change in the mod, therefore degrades to the old behaviour instead
+// of blanking the panel.
+//
+// The mod escapes player- and territory-supplied text (SGL_Text.EscapeHtml) because
+// the panel renders this as HTML, so decoding entities here is required to get the
+// original names back.
+
+const HTML_ENTITIES = [
+    ['&lt;', '<'],
+    ['&gt;', '>'],
+    ['&quot;', '"'],
+    ['&#39;', "'"],
+    ['&nbsp;', ' '],
+    ['&middot;', '\u00b7'],
+];
+
+function decodeEntities(s) {
+    let out = String(s);
+    for (const [entity, ch] of HTML_ENTITIES) out = out.split(entity).join(ch);
+    // '&amp;' last: decoding it first would turn a literal '&amp;lt;' into '<'.
+    return out.split('&amp;').join('&');
+}
+
+// Split the tooltip into plain-text lines: <br/> is the separator, every other tag is
+// dropped, entities are decoded and runs of whitespace collapse (the &nbsp; roster
+// indent is presentational — roster membership is tracked by position instead).
+function tooltipLines(html) {
+    return String(html)
+        .split(/<br\s*\/?>/i)
+        .map(seg => decodeEntities(seg.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+}
+
+const RE_FLAG_LEVEL = /^Flag Level:\s*([\d.]+)\s*%$/i;
+const RE_LIFETIME = /^Remaining Lifetime:\s*~?\s*([\d.]+)\s*hours?$/i;
+const RE_TERRITORY = /^Territory:\s*#(\d+)\s*\u00b7\s*Level\s*(\d+)\s*\u00b7\s*(\d+)\s*member\(s\)$/i;
+const RE_OWNER = /^Owner:\s*(.+)$/i;
+const RE_MEMBERS_HEAD = /^Members:\s*(.*)$/i;
+const RE_MEMBER = /^(.*?)\s+-\s+(Admin|Moderator|Member)$/i;
+const RE_MORE = /^\.\.\.\s*and\s+(\d+)\s+more$/i;
+
+const finite = (v) => (Number.isFinite(v) ? v : null);
+
+// "Name (76561198000000000)" | "76561198000000000" | "Name". Which of the three you get
+// depends on territory_show_uids and on whether Expansion knows the player's name.
+function parsePlayerRef(raw) {
+    const s = String(raw).trim();
+    const withUid = /^(.*?)\s*\((\d{5,25})\)$/.exec(s);
+    if (withUid) return { name: withUid[1].trim() || null, steamId: withUid[2] };
+    if (/^\d{5,25}$/.test(s)) return { name: null, steamId: s };
+    return { name: s || null, steamId: null };
+}
+
+const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+
+/**
+ * Parse an enriched territory tooltip into structured fields, or null when the string
+ * carries nothing recognisable. Exported for tests; callers use enrichTerritory.
+ */
+export function parseTerritoryTooltip(html) {
+    if (!html || typeof html !== 'string') return null;
+    const lines = tooltipLines(html);
+    if (!lines.length) return null;
+
+    const out = {
+        name: null,
+        flagLevel: null,
+        lifetimeHours: null,
+        owner: null,
+        territoryId: null,
+        level: null,
+        // Expansion's own count — includes the owner, and is unaffected by the
+        // territory_max_members display cap, so it can exceed members.length.
+        memberCount: null,
+        members: [],
+        membersOmitted: 0,
+    };
+    let inRoster = false;
+    // Counts only the LABELLED lines. A bare name is not enough to call something an
+    // enriched tooltip — otherwise an ordinary marker label parses into an all-null
+    // object that the panel would render as an empty block.
+    let matched = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        let m;
+
+        if ((m = RE_MEMBERS_HEAD.exec(line))) {
+            matched++;
+            // "<b>Members</b>: none" flattens to "Members: none" — header, but no roster.
+            inRoster = !/^none$/i.test(m[1].trim());
+            continue;
+        }
+        if (inRoster) {
+            if ((m = RE_MORE.exec(line))) { out.membersOmitted = Number(m[1]); continue; }
+            if ((m = RE_MEMBER.exec(line))) {
+                out.members.push({ ...parsePlayerRef(m[1]), rank: titleCase(m[2]) });
+            }
+            // Anything else inside the roster is skipped rather than guessed at.
+            continue;
+        }
+        if ((m = RE_FLAG_LEVEL.exec(line))) { out.flagLevel = finite(Number(m[1])); matched++; continue; }
+        if ((m = RE_LIFETIME.exec(line))) { out.lifetimeHours = finite(Number(m[1])); matched++; continue; }
+        if ((m = RE_TERRITORY.exec(line))) {
+            out.territoryId = finite(Number(m[1]));
+            out.level = finite(Number(m[2]));
+            out.memberCount = finite(Number(m[3]));
+            matched++;
+            continue;
+        }
+        if ((m = RE_OWNER.exec(line))) { out.owner = parsePlayerRef(m[1]); matched++; continue; }
+        // The first line is the territory name (bold in the source markup). Only claimed
+        // when it matched none of the labelled patterns above.
+        if (i === 0) out.name = line;
+    }
+
+    return matched ? out : null;
+}
+
+// Attach the parsed tooltip and replace displayName with the plain territory name, so
+// every existing consumer (marker title, panel heading, GameLabs action label) reads
+// cleanly without each having to know about the markup.
+function enrichTerritory(ev) {
+    const parsed = parseTerritoryTooltip(ev.displayName);
+    if (!parsed) return ev;
+    ev.territory = parsed;
+    if (parsed.name) ev.displayName = parsed.name;
+    return ev;
+}
+
 // ---- spawn ledger ----
 //
 // No server log records tracked-item spawns with positions (verified against
@@ -432,7 +576,7 @@ export async function buildLiveSnapshot(profile, layers) {
                     out.events = { at, stale, items: events.filter(e => !isTerritory(e)) };
                 }
                 if (want.has('territories')) {
-                    out.territories = { at, stale, items: events.filter(isTerritory) };
+                    out.territories = { at, stale, items: events.filter(isTerritory).map(enrichTerritory) };
                 }
             })
             .catch((err) => {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from '@/components/base/badges/badges';
 import { X, User, Car, MapPin, Flag, Wifi } from 'lucide-react';
-import type { LiveEvent, LivePlayer, LiveSnapshot, LiveVehicle } from '@/types/cftools';
+import type { LiveEvent, LivePlayer, LiveSnapshot, LiveTerritoryInfo, LivePlayerRef, LiveVehicle } from '@/types/cftools';
 import type { MarkerSelection } from './LiveMarkers';
 import type { CfToolsStatus } from '@/hooks/useCfToolsStatus';
 
@@ -44,6 +44,60 @@ function PanelHeader({ icon: Icon, title, onClear }: { icon: React.ElementType; 
         <X size={14} />
       </button>
     </div>
+  );
+}
+
+/** Name if we have one, else the bare UID — the mod guarantees at least one. */
+const playerRefLabel = (p: LivePlayerRef) => p.name || p.steamId || 'Unknown';
+
+/**
+ * Territory rows parsed from the enriched GameLabs tooltip (spacecat_gamelabs).
+ * Every row is conditional: the mod's config can switch UIDs or the whole roster
+ * off, and a flag still on GameLabs' baseline marker yields no `territory` at all.
+ * Steam64s go in `title` rather than inline so a long UID can't crowd out the name.
+ */
+function TerritoryDetail({ info }: { info: LiveTerritoryInfo }) {
+  const idLabel = info.territoryId != null
+    ? `#${info.territoryId}${info.level != null ? ` · Level ${info.level}` : ''}`
+    : info.level != null ? `Level ${info.level}` : null;
+
+  return (
+    <>
+      {info.owner && (
+        <Row label="Owner">
+          <span title={info.owner.steamId || undefined}>{playerRefLabel(info.owner)}</span>
+        </Row>
+      )}
+      {idLabel && <Row label="Territory">{idLabel}</Row>}
+      {info.flagLevel != null && <Row label="Flag level">{`${info.flagLevel}%`}</Row>}
+      {info.lifetimeHours != null && <Row label="Lifetime">{`~${info.lifetimeHours} h`}</Row>}
+      {info.memberCount != null && <Row label="Members">{info.memberCount}</Row>}
+
+      {/* Roster excludes the owner (already shown above) and may be capped by the mod. */}
+      {info.members.length > 0 && (
+        <ul className="pt-1.5 space-y-1">
+          {info.members.map((m, i) => (
+            <li
+              key={m.steamId || m.name || String(i)}
+              className="flex items-center justify-between gap-2"
+            >
+              <span
+                className="text-xs text-gray-900 dark:text-white truncate"
+                title={m.steamId || undefined}
+              >
+                {playerRefLabel(m)}
+              </span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 shrink-0">{m.rank}</span>
+            </li>
+          ))}
+          {info.membersOmitted > 0 && (
+            <li className="text-[10px] text-gray-400 dark:text-gray-500">
+              {`and ${info.membersOmitted} more not shown`}
+            </li>
+          )}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -123,6 +177,7 @@ export default function LiveSidePanel({
         <Row label="Type">{event.type.replace(/_/g, ' ')}</Row>
         <Row label="Class">{event.className || '—'}</Row>
         <Row label="Position">{fmtPos(event.position)}</Row>
+        {event.territory && <TerritoryDetail info={event.territory} />}
         {event.moved !== undefined && (
           <Row label="Status">
             {event.moved ? 'moved — dropped, stored, or carried' : 'at spawn location'}
