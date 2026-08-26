@@ -8,7 +8,7 @@ import {
   faGavel, faWandMagic, faStar, faParachuteBox, faTicket, faBriefcase,
 } from '@fortawesome/free-solid-svg-icons';
 import { cx } from '@/utils/cx';
-import type { LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
+import type { LiveAi, LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
 
 /**
  * Live-map overlay markers. All of them live on the untransformed overlay layer
@@ -21,7 +21,7 @@ import type { LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
  */
 
 export interface MarkerSelection {
-  kind: 'player' | 'vehicle' | 'event' | 'territory';
+  kind: 'player' | 'vehicle' | 'event' | 'territory' | 'ai';
   id: string;
 }
 
@@ -118,6 +118,30 @@ function MarkerButton({ px, py, selected, dimmed, title, onSelect, children }: B
   );
 }
 
+/**
+ * The dot shared by the player and AI markers. Same geometry and same selected
+ * treatment; only the resting tint differs, so the map reads as one system and an
+ * admin can still tell a bot from a person at a glance. Extracted rather than
+ * duplicated so the two can't drift apart.
+ */
+const PLAYER_TONE = 'bg-orange-500/60 border-orange-200/80';
+const AI_TONE = 'bg-green-500/60 border-green-200/80';
+
+function MarkerDot({ testId, tone, selected, className }: {
+  testId: string; tone: string; selected: boolean; className?: string;
+}) {
+  return (
+    <span
+      data-testid={testId}
+      className={cx(
+        'block h-3.5 w-3.5 rounded-full border shadow-md transition-transform',
+        selected ? 'bg-primary-400/70 border-primary-100 scale-125' : tone,
+        className,
+      )}
+    />
+  );
+}
+
 /** Pointer travel (px) beyond which a press on a player dot becomes a drag. */
 const DRAG_SLOP = 4;
 
@@ -202,16 +226,11 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDra
         )}
         style={{ left: px, top: py }}
       >
-        <span
-          data-testid="player-dot"
-          className={cx(
-            'block h-3.5 w-3.5 rounded-full border shadow-md transition-transform',
-            selected
-              ? 'bg-primary-400/70 border-primary-100 scale-125'
-              : 'bg-orange-500/60 border-orange-200/80',
-            drag && 'opacity-30',
-            !drag && 'hover:scale-125',
-          )}
+        <MarkerDot
+          testId="player-dot"
+          tone={PLAYER_TONE}
+          selected={selected}
+          className={cx(drag && 'opacity-30', !drag && 'hover:scale-125')}
         />
         {hover && !drag && (
           <span
@@ -235,13 +254,66 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDra
           className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex flex-col items-center"
           style={{ left: px + drag.dx, top: py + drag.dy }}
         >
-          <span className="block h-3.5 w-3.5 rounded-full border shadow-md bg-orange-500/60 border-orange-200/80" />
+          <span className={cx('block h-3.5 w-3.5 rounded-full border shadow-md', PLAYER_TONE)} />
           <span className="mt-0.5 px-1 rounded bg-black/70 text-[9px] font-medium text-white whitespace-nowrap leading-tight">
             {drag.x}, {drag.z}
           </span>
         </span>
       )}
     </>
+  );
+}
+
+/**
+ * Expansion AI render as a translucent GREEN dot — the same shape as the orange
+ * player dot, so the map reads as one system, with a different hue so a bot and a
+ * person are distinguishable at a glance.
+ *
+ * Deliberately NOT draggable, unlike PlayerMarker. Drag-to-teleport resolves to a
+ * GameLabs action with `actionContext: 'player'` keyed by steam64, and an AI has
+ * neither a steam64 nor a CF Tools session — the call could only fail or, worse,
+ * resolve against some other entity. There is no object-context teleport in
+ * ACTION_PATTERNS either, so the gesture has no correct destination. Omitting it
+ * beats rendering a grab cursor that silently does nothing.
+ */
+export function AiMarker({ ai, px, py, selected, dimmed, onSelect }: {
+  ai: LiveAi; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={ai.name}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={cx(
+        'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1 cursor-pointer',
+        selected && 'z-10',
+        dimmed && 'opacity-50',
+      )}
+      style={{ left: px, top: py }}
+    >
+      <MarkerDot testId="ai-dot" tone={AI_TONE} selected={selected} className="hover:scale-125" />
+      {hover && (
+        <span
+          role="tooltip"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-gray-900/95 text-left whitespace-nowrap pointer-events-none z-20 shadow-lg"
+        >
+          <span className="block text-[10px] font-semibold text-white leading-tight">{ai.name}</span>
+          {ai.faction && (
+            <span className="block text-[9px] text-gray-300 leading-tight">{ai.faction}</span>
+          )}
+          <span className="block text-[9px] text-gray-300 leading-tight">
+            HP: {ai.health != null ? Math.round(ai.health) : 'n/a'}
+          </span>
+          <span className="block text-[9px] text-gray-300 leading-tight">
+            Hands: {ai.handItemLabel || ai.handItem || 'n/a'}
+          </span>
+        </span>
+      )}
+    </button>
   );
 }
 

@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "spacecat DayZ mod → receiver ingest contract",
-    "version": "1.0.0",
-    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat/spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:4317`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick)."
+    "version": "1.1.0",
+    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nUNKNOWN-VALUE CONVENTIONS — read this before writing a consumer. A numeric field the game cannot supply arrives as `-1` (never a reading); a string arrives as `\"\"`; a whole object arrives as `null` or is omitted. A receiver must collapse **all three** to \"unknown\". Absence alone is NOT a reliable signal: Enforce's `JsonSerializer` writes every declared member of a class and cannot omit one per-instance, so a field that is meaningless for a given row still appears, carrying its sentinel. Treating `-1` as a value is how you end up rendering \"Level -1\" and a blank owner name.\n\nARRAY ABSENCE vs EMPTINESS is meaningful and distinct: a top-level array key that is **missing or null** means no source for it is registered at all (e.g. no territory mod installed, or AI collection switched off); a key **present and empty** means a source is active and reported zero rows. Consumers should surface those differently — otherwise a server running hundreds of AI silently looks identical to one with the feature disabled.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat/spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:4317`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick)."
   },
   "servers": [
     { "url": "http://127.0.0.1:4317", "description": "Your service, at whatever host:port you set as the mod's baseUrl" }
@@ -16,7 +16,7 @@
     "/ingest/snapshot": {
       "post": {
         "tags": ["push"],
-        "summary": "Receive a live snapshot (players + heartbeat + map)",
+        "summary": "Receive a live snapshot (players, AI, territories, heartbeat + map)",
         "description": "Sent every snapshotInterval seconds. Contains the full current state; there is no delta — just replace your latest snapshot. MUST return 2xx (this is the mod's reachability probe that gates the catalog send).",
         "operationId": "ingestSnapshot",
         "requestBody": {
@@ -127,7 +127,8 @@
         "type": "object",
         "description": "Heartbeat. fps is present only when a frame timeslice is known; weather only when available.",
         "properties": {
-          "online": { "type": "integer" },
+          "online": { "type": "integer", "description": "REAL players only. Expansion AI and logged-out bodies still in the world are excluded — both are PlayerBase instances returned by GetGame().GetPlayers(), and counting them inflated this number before v1.1.0." },
+          "ai": { "type": "integer", "description": "AI characters detected this tick; 0 when detection is off. Ships alongside `online` so the drop in `online` at v1.1.0 is visibly accounted for." },
           "uptime": { "type": "integer", "description": "Seconds since mod init." },
           "fps": { "type": "number" },
           "year": { "type": "integer" },
@@ -138,19 +139,96 @@
           "weather": { "$ref": "#/components/schemas/Weather" }
         }
       },
+      "AiInfo": {
+        "type": "object",
+        "description": "One AI character. Field-for-field the same stat block as PlayerInfo (so both can render through one code path), plus AI identity. Written flat rather than as an allOf on PlayerInfo because PlayerInfo's `id`/`steamId` mean BI account ids, which an AI does not have. Same -1/\"\" conventions as everything else here.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Effectively REQUIRED, and stable for the entity's lifetime — the mod sends \"<netLow>:<netHigh>\". This is the map marker key and the selection id; fall back to an array index and the selected AI changes under the admin's cursor on every poll."
+          },
+          "cls": { "type": "string", "description": "Config classname, e.g. \"eAI_SurvivorM_Mirek\"." },
+          "name": { "type": "string", "description": "Display name; \"\" means the receiver should substitute `cls` or a generic label." },
+          "faction": { "type": "string", "description": "Expansion AI faction; \"\" without the AI compat PBO." },
+          "group": { "type": "string", "description": "Patrol/group name; \"\" without the AI compat PBO." },
+          "groupId": { "type": "integer", "description": "-1 when unknown." },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "health": { "type": "number" },
+          "blood": { "type": "number" },
+          "shock": { "type": "number" },
+          "energy": { "type": "number", "description": "-1 when the engine never declared the stat." },
+          "water": { "type": "number", "description": "-1 when undeclared." },
+          "heatComfort": { "type": "number", "description": "-1 when undeclared." },
+          "alive": { "type": "integer", "enum": [0, 1] },
+          "hands": { "type": "string", "description": "Classname in hands; \"\" when empty-handed." },
+          "source": {
+            "type": "string",
+            "enum": ["expansion", "heuristic"],
+            "description": "Which classifier answered. \"expansion\" is an exact eAIBase cast from the AI compat PBO; \"heuristic\" is the core's classname-prefix fallback, which is close but not authoritative. Surface the difference rather than hiding it."
+          }
+        }
+      },
+      "TerritoryMember": {
+        "type": "object",
+        "description": "One territory roster entry. `rank` and `permissions` are mutually exclusive in practice — Expansion has ranks, BasicTerritories has a permission bitmask — and NEITHER is guaranteed.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Effectively REQUIRED, and the only value guaranteed present: the BI GUID (PlayerIdentity.GetId()), which is what BOTH territory systems persist. NOT a steam64."
+          },
+          "steamId": { "type": "string", "description": "Resolved from the mod's persistent GUID ledger. \"\" when that GUID has never been seen logging in." },
+          "name": { "type": "string", "description": "The territory system's own cached name where it has one (Expansion), else the ledger name. \"\" when unresolvable — the receiver should then fall back to showing `id`." },
+          "rank": { "type": "string", "enum": ["admin", "moderator", "member", ""], "description": "Plain word, never a #STR_ localisation key (a dedicated server has no localisation table). \"\" under a system with no ranks." },
+          "permissions": { "type": "integer", "description": "BasicTerritories permission bitmask; -1 under a system with no such concept." },
+          "permissionNames": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "The bitmask already decoded into words, e.g. [\"build\",\"dismantle\"]. Decoded mod-side, using the territory mod's OWN constants — the bit layout is that mod's private ABI, so a receiver that hard-codes the numbers silently mis-renders every roster after a version bump. Prefer these over `permissions`."
+          },
+          "online": { "type": "boolean", "description": "This GUID is connected right now. Arrives as 1/0 (Enforce bool)." }
+        }
+      },
+      "TerritoryInfo": {
+        "type": "object",
+        "description": "One territory flag. Two territory systems can be live at once and expose different things, so this is ONE shape with per-field sentinels rather than a union: a field the registering system cannot supply carries \"\" or -1. `pos` is the only field that must be usable — a row without it cannot be placed on a map and should be dropped.",
+        "properties": {
+          "key": { "type": "string", "description": "\"<round(x)>_<round(z)>\". Position-derived, so it is stable across server restarts — unlike any script handle. Use it to correlate rows between polls." },
+          "cls": { "type": "string", "description": "Flag config classname." },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "system": { "type": "string", "enum": ["basic", "expansion", ""], "description": "The system that filled ownership/roster below. \"\" means NO territory compat answered — the row still carries real vanilla flag state, but nothing is claimed about ownership." },
+          "systems": { "type": "array", "items": { "type": "string" }, "description": "Every compat that contributed. Normally one entry; more only if a flag is registered in both systems, in which case field-level first-writer-wins applies." },
+          "ownerId": { "type": "string", "description": "BI GUID; \"\" when unclaimed or no system answered." },
+          "ownerSteamId": { "type": "string", "description": "\"\" when the ledger could not resolve it." },
+          "ownerName": { "type": "string", "description": "\"\" when unresolved." },
+          "claimed": { "type": "boolean", "description": "A territory system reports a non-empty owner. Arrives as 1/0." },
+          "name": { "type": "string", "description": "Territory name. \"\" under BasicTerritories, which has no such concept — not a gap, the honest answer." },
+          "territoryId": { "type": "integer", "description": "-1 under BasicTerritories." },
+          "level": { "type": "integer", "description": "Expansion territory level; -1 under BasicTerritories. NOT the same thing as flag charge — see refresher01." },
+          "memberCount": { "type": "integer", "description": "Roster size BEFORE any cap, and always excluding the owner. Normalised mod-side because the two systems disagree: Expansion's NumberOfMembers() includes the owner and BasicTerritories' excludes it. -1 when no system answered." },
+          "members": { "type": "array", "items": { "$ref": "#/components/schemas/TerritoryMember" }, "description": "Never includes the owner. May be shorter than memberCount — see membersTruncated." },
+          "membersTruncated": { "type": "boolean", "description": "The roster was longer than the mod's territoryMaxMembers cap. Arrives as 1/0. Without this a capped roster is indistinguishable from a small one." },
+          "refresher01": { "type": "number", "description": "Flag refresher charge, 0..1 (vanilla, always available). Multiply by 100 for the percentage the in-game flag shows." },
+          "active": { "type": "boolean", "description": "Refresher currently running. Arrives as 1/0." },
+          "objects": { "type": "integer", "description": "Base-building objects inside the territory radius, counted by the mod itself (GetObjectsAtPosition3D + IsRefresherSignalingViable). -1 means NEVER SCANNED, which is emphatically not the same as 0 — render it as unknown." },
+          "cargo": { "type": "integer", "description": "Cargo items across those objects. Same -1/0 distinction." },
+          "radius": { "type": "number", "description": "Radius the counts were taken at, metres; -1 when never scanned. Worth preferring over a server-wide setting when two territory mods with different sizes are live." },
+          "scanAge": { "type": "integer", "description": "Seconds since that scan; -1 when never scanned. Counts are refreshed on a budgeted round-robin, NOT per snapshot, so they are deliberately allowed to be stale — this is how stale." }
+        }
+      },
       "MapEnt": {
         "type": "object",
         "properties": {
           "label": { "type": "string" },
-          "type": { "type": "string", "enum": ["player", "vehicle", "event"] },
+          "type": { "type": "string", "enum": ["player", "ai", "vehicle", "event"] },
           "pos": { "$ref": "#/components/schemas/Position" }
         }
       },
       "WorldMap": {
         "type": "object",
-        "description": "Live positions. vehicles/events are empty arrays in v1; players populate.",
+        "description": "Live positions. vehicles/events are empty arrays in v1; players and ai populate.",
         "properties": {
           "players": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
+          "ai": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
           "vehicles": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } },
           "events": { "type": "array", "items": { "$ref": "#/components/schemas/MapEnt" } }
         }
@@ -159,7 +237,17 @@
         "type": "object",
         "description": "Full current live state; sent whole each tick (no deltas).",
         "properties": {
-          "players": { "type": "array", "items": { "$ref": "#/components/schemas/PlayerInfo" } },
+          "players": { "type": "array", "items": { "$ref": "#/components/schemas/PlayerInfo" }, "description": "REAL players only — see ServerInfo.online." },
+          "ai": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AiInfo" },
+            "description": "Expansion AI characters. ABSENT/null when AI collection is switched off; PRESENT AND EMPTY when detection ran and found none. Whole-state replacement each tick, like players — a receiver must CLEAR this layer when the mod goes stale rather than holding the last known list, or dead bots haunt the map after a game-server restart."
+          },
+          "territories": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TerritoryInfo" },
+            "description": "One row per territory flag in the world. ABSENT/null when territory collection is switched off; PRESENT AND EMPTY when it ran and there are no flags. Rows appear even with no territory mod installed (carrying vanilla flag state and system:\"\")."
+          },
           "server": { "$ref": "#/components/schemas/ServerInfo" },
           "worldMap": { "$ref": "#/components/schemas/WorldMap" }
         }
@@ -174,7 +262,7 @@
           "inventorySlot": { "type": "array", "items": { "type": "string" } },
           "attachments": { "type": "array", "items": { "type": "string" } },
           "magazines": { "type": "array", "items": { "type": "string" }, "description": "Compatible magazine classes (CfgWeapons magazines[]); empty for non-weapons." },
-          "cargoSize": { "type": "array", "items": { "type": "integer" } },
+          "cargoSize": { "type": "array", "items": { "type": "integer" }, "description": "Its own cargo grid as [width, height]; empty when the class declares none." },
           "isContainer": { "type": "integer", "enum": [0, 1], "description": "1 if the class descends from Container_Base/DeployableContainer_Base; holds cargo even when itemsCargoSize is absent (grid lives in the p3d). The mod's Enforce JsonSerializer emits bool as 1/0." },
           "isDeployable": { "type": "integer", "enum": [0, 1], "description": "1 if the class can be placed/deployed into the world (base-building kits, tents, traps, fireplaces, garden plots, deployable containers). Used to scope Expansion base-building deployable pickers. The mod's Enforce JsonSerializer emits bool as 1/0." },
           "weight": { "type": "number" },

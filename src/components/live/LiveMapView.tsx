@@ -3,7 +3,7 @@ import { Modal } from '../base/modal/modal';
 import { Badge } from '../base/badges/badges';
 import { Button } from '../base/button/button';
 import { MapZoomControls } from '../MapZoomControls';
-import { Radio, Users, Car, MapPin, Flag, Settings } from 'lucide-react';
+import { Radio, Users, Car, MapPin, Flag, Bot, Settings } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
@@ -17,7 +17,7 @@ import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
 import {
-  EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker,
+  AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker,
   type MarkerSelection,
 } from './LiveMarkers';
 
@@ -32,6 +32,7 @@ interface LiveMapViewProps {
 
 const LAYER_META: { key: LiveLayerKey; label: string; icon: React.ElementType }[] = [
   { key: 'players', label: 'Players', icon: Users },
+  { key: 'ai', label: 'AI', icon: Bot },
   { key: 'vehicles', label: 'Vehicles', icon: Car },
   { key: 'events', label: 'Events', icon: MapPin },
   { key: 'territories', label: 'Territories', icon: Flag },
@@ -45,6 +46,9 @@ const REASON_HINTS: Record<string, string> = {
   no_grant: 'The CF Tools application has no grant for this server.',
   rate_limited: 'CF Tools rate limit hit — data resumes shortly.',
   unreachable: 'CF Tools Cloud is unreachable.',
+  // Mod-sourced layers — these describe the companion mod, not CF Tools.
+  mod_offline: 'The spacecat_dayz_server_api mod is not reporting — check it is loaded and its baseUrl points here.',
+  mod_no_ai: 'The mod is connected but sent no AI list — set "ai": true in $profile:spacecat/spacecat_api.json.',
 };
 
 /**
@@ -60,7 +64,7 @@ export default function LiveMapView({
   const { status } = useCfToolsStatus(selectedProfileId);
 
   const [enabledLayers, setEnabledLayers] = useState<Set<LiveLayerKey>>(
-    () => new Set<LiveLayerKey>(['players', 'vehicles', 'events', 'territories']),
+    () => new Set<LiveLayerKey>(['players', 'ai', 'vehicles', 'events', 'territories']),
   );
   const layers = useMemo(() => [...enabledLayers], [enabledLayers]);
   const { snapshot, loading } = useLiveSnapshot(selectedProfileId, layers, status.connected);
@@ -85,6 +89,10 @@ export default function LiveMapView({
         ? { context: 'vehicle', referenceKey: v.id, label: v.displayName || v.className || 'Vehicle', className: v.className }
         : world;
     }
+    // AI have no steam64 and no GameLabs entity reference, so no contextual action can
+    // target one. Explicit rather than relying on the lookup below failing to find the
+    // id and falling through to `world` by accident.
+    if (selection.kind === 'ai') return world;
     const list = selection.kind === 'territory' ? snapshot.territories?.items : snapshot.events?.items;
     const e = list?.find((x, i) => (x.id || String(i)) === selection.id);
     return e?.id
@@ -268,7 +276,11 @@ export default function LiveMapView({
                         territory={t}
                         px={p.px}
                         py={p.py}
-                        radiusPx={view.projectLen(territoryRadius)}
+                        /* The mod reports the radius its own scan used, per flag. That
+                           matters when two territory mods with different sizes are
+                           live — one server-wide setting is then wrong for half of
+                           them. Falls back to the Expansion setting. */
+                        radiusPx={view.projectLen(t.territory?.radius ?? territoryRadius)}
                         selected={isSel('territory', id)}
                         dimmed={snapshot.territories?.stale}
                         onSelect={() => setSelection({ kind: 'territory', id })}
@@ -305,6 +317,25 @@ export default function LiveMapView({
                         selected={isSel('vehicle', id)}
                         dimmed={snapshot.vehicles?.stale}
                         onSelect={() => setSelection({ kind: 'vehicle', id })}
+                      />
+                    );
+                  })}
+
+                  {/* Between vehicles and players on purpose: under players so a bot
+                      never hides a survivor, over vehicles so an AI in a car stays
+                      clickable. */}
+                  {enabledLayers.has('ai') && snapshot.ai?.items.map((a, i) => {
+                    const id = a.id || String(i);
+                    const p = view.project(a.position[0], a.position[2]);
+                    return (
+                      <AiMarker
+                        key={`a-${id}`}
+                        ai={a}
+                        px={p.px}
+                        py={p.py}
+                        selected={isSel('ai', id)}
+                        dimmed={snapshot.ai?.stale}
+                        onSelect={() => setSelection({ kind: 'ai', id })}
                       />
                     );
                   })}

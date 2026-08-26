@@ -5,7 +5,10 @@
  * House style: reads never 5xx. Every builder returns a shape with
  * `connected` and, when false, a `reason` from the shared vocabulary:
  * not_configured | no_api_id | no_profile | auth_failed | no_grant |
- * rate_limited | unreachable.
+ * rate_limited | unreachable | mod_offline | mod_no_ai.
+ *
+ * The last two belong to layers sourced from the companion mod rather than from CF
+ * Tools, so they describe the mod's reachability, not the Data API's.
  *
  * Layer freshness: /live responses carry per-layer { at, stale, items } so a
  * rate-limited or erroring upstream dims that one layer instead of blanking
@@ -24,8 +27,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-// Accepts [x,y,z] (DayZ world: y = height) or {x,y,z}; returns [x,y,z] or null.
+// Accepts [x,y,z] (DayZ world: y = height), {x,y,z}, or an Enforce vector rendered
+// as a string ("<7500, 300, 2500>" from vector.ToString(), or "7500 300 2500");
+// returns [x,y,z] or null. GameLabs' `_ServerEvent.position` is a typed Enforce
+// `vector`, and how that lands in JSON is the mod's choice, not ours — a shape we
+// don't recognise drops the entity from the map entirely, so accept all three.
 function normPosition(pos) {
+    if (typeof pos === 'string') {
+        const parts = pos.replace(/[<>]/g, '').split(/[\s,]+/).filter(Boolean).map(Number);
+        if (parts.length >= 2) return normPosition(parts);
+        return null;
+    }
     if (Array.isArray(pos) && pos.length >= 2) {
         const x = num(pos[0]);
         const y = num(pos[1]) ?? 0;
@@ -203,6 +215,20 @@ function modAlive(v) {
     return null;
 }
 
+// Same idea as modStat, for strings. Enforce's JsonSerializer writes every declared
+// member of a class and cannot omit one per-instance, so a field that is meaningless
+// for a given row still arrives — as "". Absence alone is therefore not a usable
+// signal and both forms have to collapse to null.
+const modStr = (v) => {
+    if (typeof v !== 'string') return null;
+    const s = v.trim();
+    return s ? s : null;
+};
+
+// Both territory systems key members by BI GUID, which is not numeric. A purely
+// numeric 15-20 digit id is a steam64 that arrived under the generic `id` key.
+const looksSteam64 = (s) => typeof s === 'string' && /^\d{15,20}$/.test(s);
+
 function enrichFromMod(players) {
     // A stale or absent mod must not blank fields CF Tools might have set.
     if (!ingest.modConnected()) return players;
@@ -265,6 +291,15 @@ function normalizeVehicle(v) {
     };
 }
 
+// The marker label, which for a territory flag is the whole enriched tooltip and
+// therefore the only channel the territory detail arrives on. GameLabs uploads it as
+// `displayName` (`_ServerEvent` in Scripts/3_Game/API/definitions.c); the Data API is
+// snake_case elsewhere, so `display_name` is the other likely spelling. `name` /
+// `label` / `title` are accepted last because `_ServerEvent` has no field by those
+// names — if one shows up it can only be this one renamed.
+const eventLabel = (e) =>
+    e.display_name || e.displayName || e.name || e.label || e.title || null;
+
 // Event `type` keys the icon; territory flags are split into their own layer.
 function normalizeEvent(e) {
     if (!e || typeof e !== 'object') return null;
@@ -286,7 +321,7 @@ function normalizeEvent(e) {
         id: e.id || e.reference || null,
         type: type || 'unknown',
         className,
-        displayName: e.display_name || e.displayName || null,
+        displayName: eventLabel(e),
         position,
     };
 }
@@ -431,11 +466,260 @@ export function parseTerritoryTooltip(html) {
 // every existing consumer (marker title, panel heading, GameLabs action label) reads
 // cleanly without each having to know about the markup.
 function enrichTerritory(ev) {
-    const parsed = parseTerritoryTooltip(ev.displayName);
-    if (!parsed) return ev;
+    const raw = ev.displayName;
+    const parsed = parseTerritoryTooltip(raw);
+    if (!parsed) {
+        // Nothing labelled to parse, but the label may still be markup — GameLabs' own
+        // baseline flag marker emits <b>/<br/> too. Flatten it to its first plain line
+        // so the marker title and panel heading never render tags as text.
+        if (raw && /[<&]/.test(raw)) ev.displayName = tooltipLines(raw)[0] || null;
+        return ev;
+    }
     ev.territory = parsed;
     if (parsed.name) ev.displayName = parsed.name;
+    ev.origin = 'gamelabs';
     return ev;
+}
+
+// ---- companion-mod territories ----
+//
+// Two sources now feed the territories layer: the GameLabs tooltip parsed above, and
+// `territories[]` on the companion mod's /ingest/snapshot.
+//
+// The mod wins per-field. The tooltip is a lossy, config-gated, string-formatted
+// projection of the same state — territory_show_uids strips steam64s,
+// territory_show_members drops the roster entirely, territory_max_members truncates
+// it, and it exists at all only if spacecat_gamelabs_compat_expansion is installed AND
+// ordered correctly. The mod reads the territory modules in-process on the game server.
+// Where both have a value the mod's is at least as good; where the mod has none the
+// tooltip may still know, hence field-level fill rather than wholesale replacement.
+
+const TERRITORY_JOIN_EPS_M = 5;
+
+function normModTerritoryMember(m) {
+    if (!m || typeof m !== 'object') return null;
+    const id = modStr(m.id);
+    const steamId = modStr(m.steamId) || (looksSteam64(id) ? id : null);
+    return {
+        id,
+        name: modStr(m.name),
+        steamId,
+        rank: modStr(m.rank),
+        permissions: modStat(m.permissions),
+        permissionNames: Array.isArray(m.permissionNames)
+            ? m.permissionNames.map(modStr).filter(Boolean)
+            : [],
+        online: modAlive(m.online),
+    };
+}
+
+// Returns a full LiveEvent-shaped row, so an unmatched mod territory can be appended
+// to the layer directly rather than needing a second shape downstream.
+function normModTerritory(t) {
+    if (!t || typeof t !== 'object') return null;
+    // normPosition, NOT normSessionPosition: the mod sends world [x, y, z] while CF
+    // Tools GSM sessions send [x, z, height]. Mixing them up puts every row on the
+    // wrong axis, which looks entirely plausible on a square map.
+    const position = normPosition(t.pos || t.position);
+    if (!position) return null; // same drop rule as vehicles and events
+
+    const members = Array.isArray(t.members)
+        ? t.members.map(normModTerritoryMember).filter(Boolean)
+        : [];
+    const name = modStr(t.name);
+    const refresher = modStat(t.refresher01);
+
+    const info = {
+        // Every key LiveTerritoryInfo declares is present (null when unknown), so no
+        // panel consumer can trip over an undefined members array.
+        name,
+        // The tooltip reports whole percent; refresher01 is 0..1. Convert so both
+        // sources land in the same unit.
+        flagLevel: refresher === null ? null : Math.round(refresher * 100),
+        lifetimeHours: null, // the mod does not compute this; the tooltip may still know
+        owner: t.ownerId || t.ownerName || t.ownerSteamId
+            ? normModTerritoryMember({
+                id: t.ownerId, name: t.ownerName, steamId: t.ownerSteamId, permissions: -1,
+            })
+            : null,
+        territoryId: modStat(t.territoryId),
+        level: modStat(t.level),
+        memberCount: modStat(t.memberCount) ?? members.length,
+        members,
+        // The mod sends the whole roster up to its own cap and reports truncation
+        // separately; there is no tooltip-style "and N more" line to carry over.
+        membersOmitted: 0,
+        // mod-only
+        objectCount: modStat(t.objects),
+        cargoCount: modStat(t.cargo),
+        radius: modStat(t.radius),
+        scanAge: modStat(t.scanAge),
+        membersTruncated: modAlive(t.membersTruncated) === true,
+        source: modStr(t.system) || 'unknown',
+    };
+
+    const key = modStr(t.key);
+    return {
+        // Prefixed because GameLabs event ids and the mod's flag keys are unrelated
+        // identifiers from different mods — without this they could collide in the
+        // marker keyspace.
+        id: `mod:${key || `${Math.round(position[0])}:${Math.round(position[2])}`}`,
+        type: 'territory_flag',
+        className: modStr(t.cls) || 'TerritoryFlag',
+        displayName: name,
+        position,
+        origin: 'mod',
+        territory: info,
+    };
+}
+
+// null when the mod carries no territory source at all (key absent), which is a
+// different claim from an empty array ("a source ran and found no flags").
+function modTerritoryRows() {
+    const snap = ingest.getSnapshot().data;
+    if (!snap || !Array.isArray(snap.territories)) return null;
+    return snap.territories.map(normModTerritory).filter(Boolean);
+}
+
+/**
+ * Join mod rows onto GameLabs rows by position, then merge field-by-field.
+ *
+ * Position is the only join available: the GameLabs `_ServerEvent.id` and the mod's
+ * flag key are unrelated handles from different mods. Flags do not move, so this is
+ * stable — the same reasoning that makes the spawn ledger's SPAWN_EPS_M work. The
+ * epsilon is larger here (5 m vs 2 m) because this compares two INDEPENDENT observers
+ * of one object rather than one observer against itself over time, and it is still far
+ * below the minimum spacing any territory mod enforces, so it cannot cross-assign
+ * neighbouring flags.
+ */
+function mergeModTerritories(glItems, modRows) {
+    // Score every candidate pair, then consume greedily nearest-first, so two adjacent
+    // flags cannot both claim the same mod row.
+    const pairs = [];
+    for (let gi = 0; gi < glItems.length; gi++) {
+        for (let mi = 0; mi < modRows.length; mi++) {
+            const dx = glItems[gi].position[0] - modRows[mi].position[0];
+            const dz = glItems[gi].position[2] - modRows[mi].position[2];
+            const d2 = dx * dx + dz * dz;
+            if (d2 <= TERRITORY_JOIN_EPS_M * TERRITORY_JOIN_EPS_M) pairs.push({ gi, mi, d2 });
+        }
+    }
+    pairs.sort((a, b) => a.d2 - b.d2);
+
+    const usedGl = new Set();
+    const usedMod = new Set();
+    for (const { gi, mi } of pairs) {
+        if (usedGl.has(gi) || usedMod.has(mi)) continue;
+        usedGl.add(gi);
+        usedMod.add(mi);
+
+        const ev = glItems[gi];
+        const modInfo = modRows[mi].territory;
+        const merged = { ...(ev.territory || {}) };
+        for (const k of Object.keys(modInfo)) {
+            if (modInfo[k] !== null && modInfo[k] !== undefined) merged[k] = modInfo[k];
+        }
+        // The mod's roster is complete, so it replaces wholesale rather than merging
+        // element-wise — and that invalidates the tooltip's display-cap remainder,
+        // which would otherwise claim "and N more" on top of a full list.
+        if (modInfo.members.length) {
+            merged.members = modInfo.members;
+            merged.membersOmitted = 0;
+        }
+        ev.territory = merged;
+        ev.origin = 'mixed';
+        if (modInfo.name) ev.displayName = modInfo.name;
+    }
+
+    // Unmatched mod rows become markers of their own.
+    //
+    // This deliberately breaks the "never create rows" rule that enrichFromMod follows,
+    // and the difference is not an inconsistency. That rule exists because the PLAYERS
+    // layer has an authoritative roster (CF Tools sessions) and a phantom player row is
+    // a false claim about who is online, with destructive admin actions (kick, ban,
+    // teleport) hanging off its steam64. Territories have no authoritative roster: the
+    // GameLabs feed is itself best-effort and only exists if that mod is installed and
+    // enriching. A flag reported by the server-side mod is read from the territory
+    // module in-process, which is strictly closer to the source than a tooltip string
+    // round-tripped through GameLabs → CF Tools Cloud → our parser. And a territory
+    // marker exposes no destructive per-entity action. Creating rows is correct here
+    // and was not there — please don't "restore consistency" by removing this.
+    const extra = modRows.filter((_, mi) => !usedMod.has(mi));
+    return glItems.concat(extra);
+}
+
+/**
+ * The single place that decides the territories layer's shape. Called from both the
+ * success and failure paths of the GameLabs events fetch.
+ */
+function buildTerritoryLayer({ glItems, at, stale, glError }) {
+    // Mirrors enrichFromMod's first line: a stale mod contributes nothing anywhere, so
+    // a mod restart can never blank tooltip-sourced detail.
+    const modRows = ingest.modConnected() ? modTerritoryRows() : null;
+
+    if (!modRows || !modRows.length) {
+        return glError ? { error: glError, items: [] } : { at, stale, items: glItems };
+    }
+
+    const items = mergeModTerritories(glItems, modRows);
+
+    if (glError) {
+        // GameLabs is gone but the mod is not. The layer HAS data, so it must not carry
+        // `error` — the UI reads that as "empty, show unavailable". Report provenance.
+        return { at: ingest.getSnapshot().at, stale: false, items, source: 'mod' };
+    }
+    return {
+        at,
+        stale,
+        items,
+        source: items.some(i => i.origin !== 'gamelabs') ? 'mixed' : 'gamelabs',
+    };
+}
+
+// ---- companion-mod AI ----
+
+function normModAi(a) {
+    if (!a || typeof a !== 'object') return null;
+    const position = normPosition(a.pos || a.position); // world [x,y,z] — see normModTerritory
+    if (!position) return null;
+    const className = modStr(a.cls) || null;
+    const handItem = modStr(a.hands);
+    const detail = handItem ? ingest.getTypeDetail(handItem) : null;
+    return {
+        id: modStr(a.id),
+        name: modStr(a.name) || className || 'AI',
+        className,
+        faction: modStr(a.faction),
+        group: modStr(a.group),
+        groupId: modStat(a.groupId),
+        position,
+        health: modStat(a.health),
+        blood: modStat(a.blood),
+        shock: modStat(a.shock),
+        energy: modStat(a.energy),
+        water: modStat(a.water),
+        alive: modAlive(a.alive),
+        handItem,
+        handItemLabel: (detail && detail.displayName) || null,
+        source: modStr(a.source) || 'unknown',
+    };
+}
+
+/**
+ * The AI layer, whose ONLY source is the mod.
+ *
+ * That makes staleness behave differently from every other mod-fed field: for players
+ * the mod merely enriches, so going stale means "stop overwriting". Here it must CLEAR
+ * the layer — holding the last known list would paint permanent ghost markers across
+ * the map after the game server restarts.
+ */
+function buildAiLayer() {
+    if (!ingest.modConnected()) return { error: 'mod_offline', items: [] };
+    const { data, at } = ingest.getSnapshot();
+    // Key absent = AI collection is switched off mod-side. Distinct from an empty
+    // array, which means detection ran and genuinely found none.
+    if (!data || !Array.isArray(data.ai)) return { error: 'mod_no_ai', items: [] };
+    return { at, stale: false, items: data.ai.map(normModAi).filter(Boolean) };
 }
 
 // ---- spawn ledger ----
@@ -533,14 +817,19 @@ export function _resetSpawnLedger() {
 
 /**
  * Combined live snapshot for the map. `layers` is a Set/array of
- * 'players' | 'vehicles' | 'events' | 'territories'. Each requested layer
+ * 'players' | 'vehicles' | 'events' | 'territories' | 'ai'. Each requested layer
  * resolves independently: { at, stale, items } on success, { error: reason,
  * items: [] } on failure — one failing upstream never blanks the others.
+ *
+ * 'ai' is the first layer with no CF Tools upstream at all: it comes wholly from the
+ * companion mod's snapshot, and degrades with mod_offline / mod_no_ai.
  */
 export async function buildLiveSnapshot(profile, layers) {
     const bound = resolveBinding(profile);
     if (bound.error) return { connected: false, reason: bound.error };
-    const want = new Set(layers && layers.length ? layers : ['players', 'vehicles', 'events', 'territories']);
+    const want = new Set(layers && layers.length
+        ? layers
+        : ['players', 'vehicles', 'events', 'territories', 'ai']);
     const out = { connected: true, apiId: bound.apiId };
 
     const tasks = [];
@@ -576,17 +865,71 @@ export async function buildLiveSnapshot(profile, layers) {
                     out.events = { at, stale, items: events.filter(e => !isTerritory(e)) };
                 }
                 if (want.has('territories')) {
-                    out.territories = { at, stale, items: events.filter(isTerritory).map(enrichTerritory) };
+                    out.territories = buildTerritoryLayer({
+                        glItems: events.filter(isTerritory).map(enrichTerritory), at, stale,
+                    });
                 }
             })
             .catch((err) => {
                 if (want.has('events')) out.events = { error: reasonOf(err), items: [] };
-                if (want.has('territories')) out.territories = { error: reasonOf(err), items: [] };
+                // The mod can carry this layer on its own, so a dead GameLabs upstream
+                // is not necessarily an empty layer.
+                if (want.has('territories')) {
+                    out.territories = buildTerritoryLayer({ glItems: [], glError: reasonOf(err) });
+                }
             }));
+    }
+
+    // Mod-sourced only — no CF Tools upstream to fail, hence no try/catch.
+    if (want.has('ai')) {
+        out.ai = buildAiLayer();
     }
 
     await Promise.all(tasks);
     return out;
+}
+
+// ---- raw payload diagnostic ----
+
+/**
+ * The untouched upstream GameLabs payload for one entity kind.
+ *
+ * Every normalisation step here is a guess about field names that CF Tools does not
+ * document — `_ServerEvent` (GameLabs' own upload struct) is camelCase, the Data API
+ * is snake_case elsewhere, and a rename anywhere in between silently empties a layer:
+ * an unrecognised envelope key yields no entities at all, an unrecognised position
+ * drops each entity, and an unrecognised label strips the territory tooltip that the
+ * whole territory panel is parsed from. All three look identical from the map.
+ *
+ * So report the shape rather than infer it. `envelopeKeys` and `keys` answer "what is
+ * it actually called" in one request; `entities` carries the first `limit` verbatim.
+ * Entity telemetry only — no credentials are in this payload.
+ */
+export async function buildRawEntities(profile, kind, limit) {
+    const bound = resolveBinding(profile);
+    if (bound.error) return { connected: false, reason: bound.error };
+    try {
+        const { at, stale, data } = kind === 'vehicles'
+            ? await cf.getVehicles(bound.apiId)
+            : await cf.getEvents(bound.apiId);
+        const entities = entityList(data);
+        const keys = [...new Set(entities.flatMap(
+            e => (e && typeof e === 'object') ? Object.keys(e) : [],
+        ))].sort();
+        return {
+            connected: true,
+            at,
+            stale: !!stale,
+            // Empty when `entityList` found no array it recognises — i.e. the envelope
+            // itself was renamed, which is the one failure that yields zero markers.
+            envelopeKeys: (data && typeof data === 'object') ? Object.keys(data) : [],
+            count: entities.length,
+            keys,
+            entities: entities.slice(0, limit),
+        };
+    } catch (err) {
+        return { connected: false, reason: reasonOf(err) };
+    }
 }
 
 // ---- GameLabs actions ----

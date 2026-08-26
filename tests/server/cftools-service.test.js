@@ -27,7 +27,8 @@ import * as cf from '../../server/cftools-client.js';
 import * as cfg from '../../server/cftools-config.js';
 import * as ingest from '../../server/ingest-store.js';
 import {
-  buildStatus, buildLiveSnapshot, resolveActionCode, spawnLoadout, teleportPlayer, _resetSpawnLedger,
+  buildStatus, buildLiveSnapshot, buildRawEntities, resolveActionCode, spawnLoadout, teleportPlayer,
+  _resetSpawnLedger,
 } from '../../server/cftools-service.js';
 
 const PROFILE = { id: 'p1', name: 'Test', serverPath: 'X:\\srv', missionName: 'dayzOffline.chernarusplus' };
@@ -473,6 +474,296 @@ describe('territory tooltip parsing', () => {
     const flag = await territoryFrom('Territory Flag');
     expect(flag.territory).toBeUndefined();
     expect(flag.displayName).toBe('Territory Flag');
+  });
+
+  it('flattens an unparsed markup tooltip so the panel title has no raw tags', async () => {
+    const flag = await territoryFrom('<b>Territory Flag</b><br/>Something we do not recognise');
+    expect(flag.territory).toBeUndefined();
+    expect(flag.displayName).toBe('Territory Flag');
+  });
+});
+
+// The field names below are not documented by CF Tools. GameLabs uploads camelCase
+// (`_ServerEvent` in Scripts/3_Game/API/definitions.c) while the Data API is snake_case
+// elsewhere, so each of these renames silently empties part of the map instead of
+// erroring — which is exactly how a territory flag ends up clickable but blank.
+describe('GameLabs payload shape tolerance', () => {
+  const TOOLTIP = '<b>Northwood</b><br/>Owner: PlayerOne (76561198000000000)'
+    + '<br/>Territory: #4 &middot; Level 2 &middot; 3 member(s)';
+
+  const eventsPayload = (entity) => ({ at: 1, stale: false, data: { entities: [entity] } });
+
+  it('reads the tooltip from `name` when the label field is renamed', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload({
+      id: 'f1', className: 'TerritoryFlag', name: TOOLTIP, position: [1000, 0, 2000],
+    }));
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    expect(snap.territories.items[0].territory).toMatchObject({ name: 'Northwood', territoryId: 4 });
+  });
+
+  it('accepts an Enforce vector serialised as a string instead of dropping the entity', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload({
+      id: 'f1', className: 'TerritoryFlag', displayName: TOOLTIP, position: '<1000, 5.5, 2000>',
+    }));
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    expect(snap.territories.items).toHaveLength(1);
+    expect(snap.territories.items[0].position).toEqual([1000, 5.5, 2000]);
+  });
+
+  it('accepts a space-separated vector string too', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload({
+      id: 'e1', classname: 'Wreck_UH1Y', position: '7500 300 2500',
+    }));
+    const snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items[0].position).toEqual([7500, 300, 2500]);
+  });
+
+  it('still drops an entity whose position is unusable', async () => {
+    cf.getEvents.mockResolvedValueOnce(eventsPayload({ id: 'e1', classname: 'X', position: 'nope' }));
+    const snap = await buildLiveSnapshot(PROFILE, ['events']);
+    expect(snap.events.items).toEqual([]);
+  });
+});
+
+describe('buildRawEntities', () => {
+  it('reports the envelope and entity key names, and caps the sample', async () => {
+    cf.getEvents.mockResolvedValueOnce({
+      at: 7, stale: false,
+      data: {
+        status: true,
+        entities: [
+          { id: 'a', className: 'TerritoryFlag', displayName: '<b>N</b>', position: [1, 0, 2] },
+          { id: 'b', className: 'SeaChest', icon: 'box-open', position: [3, 0, 4] },
+        ],
+      },
+    });
+    const raw = await buildRawEntities(PROFILE, 'events', 1);
+    expect(raw.connected).toBe(true);
+    expect(raw.envelopeKeys).toEqual(['status', 'entities']);
+    expect(raw.keys).toEqual(['className', 'displayName', 'icon', 'id', 'position']);
+    expect(raw.count).toBe(2);
+    expect(raw.entities).toHaveLength(1);
+    expect(raw.entities[0]).toEqual({ id: 'a', className: 'TerritoryFlag', displayName: '<b>N</b>', position: [1, 0, 2] });
+  });
+
+  it('reports an unrecognised envelope as zero entities with its key names intact', async () => {
+    cf.getEvents.mockResolvedValueOnce({ at: 7, stale: false, data: { status: true, markers: [{ id: 'a' }] } });
+    const raw = await buildRawEntities(PROFILE, 'events', 25);
+    expect(raw.count).toBe(0);
+    expect(raw.envelopeKeys).toEqual(['status', 'markers']);
+  });
+
+  it('degrades with a reason rather than throwing', async () => {
+    cf.getEvents.mockRejectedValueOnce(new cf.CfToolsError('no_grant', 'nope'));
+    expect(await buildRawEntities(PROFILE, 'events', 25)).toEqual({ connected: false, reason: 'no_grant' });
+  });
+});
+
+// The mod reads BasicTerritories/Expansion in-process on the game server, so it is a
+// strictly better source than the GameLabs tooltip — but the tooltip is still the only
+// source when the mod is stale, so the two have to coexist rather than one replacing
+// the other.
+describe('companion-mod territories', () => {
+  const TOOLTIP = '<b>Northwood</b><br/>Flag Level: 87 %<br/>Remaining Lifetime: ~ 41 hours'
+    + '<br/>Owner: PlayerOne (76561198000000000)'
+    + '<br/>Territory: #4 &middot; Level 2 &middot; 3 member(s)';
+
+  const glFlagAt = (x, z, displayName = TOOLTIP) => {
+    cf.getEvents.mockResolvedValueOnce({
+      at: 5, stale: false,
+      data: { entities: [{ id: 'f1', classname: 'TerritoryFlag', display_name: displayName, position: [x, 0, z] }] },
+    });
+  };
+  const modUp = (territories) => {
+    ingest.modConnected.mockReturnValue(true);
+    ingest.getSnapshot.mockReturnValue({ data: { territories }, at: 99 });
+  };
+  // A row shaped exactly as the mod's SpacecatTerritoryInfo serialises it, sentinels
+  // and all — "" for an undeclared string, -1 for an undeclared number, 1/0 for bools.
+  const modFlag = (over = {}) => ({
+    key: '1000_2000', cls: 'TerritoryFlag', pos: [1000, 0, 2000],
+    system: 'basic', systems: ['basic'],
+    ownerId: 'GUID-OWNER', ownerSteamId: '76561198000000000', ownerName: 'PlayerOne', claimed: 1,
+    name: '', territoryId: -1, level: -1,
+    memberCount: 2,
+    members: [
+      { id: 'GUID-A', steamId: '76561198000000001', name: 'Bob', rank: '', perms: 6, permissionNames: ['build', 'dismantle'], online: 1 },
+      { id: 'GUID-B', steamId: '', name: '', rank: '', perms: -1, permissionNames: [], online: 0 },
+    ],
+    membersTruncated: 0,
+    refresher01: 0.42, active: 1,
+    objects: 73, cargo: 412, radius: 150, scanAge: 30,
+    ...over,
+  });
+
+  it('merges the mod row onto the GameLabs flag it matches by position', async () => {
+    glFlagAt(1000, 2000);
+    modUp([modFlag()]);
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+
+    expect(snap.territories.items).toHaveLength(1);
+    const t = snap.territories.items[0];
+    expect(t.origin).toBe('mixed');
+    expect(t.territory.objectCount).toBe(73);
+    expect(t.territory.cargoCount).toBe(412);
+    // The mod's roster is complete, so it replaces the tooltip's capped one.
+    expect(t.territory.members.map(m => m.id)).toEqual(['GUID-A', 'GUID-B']);
+    // ...and the tooltip fills what the mod does not compute.
+    expect(t.territory.lifetimeHours).toBe(41);
+  });
+
+  it('collapses the mod\'s "" and -1 sentinels to null rather than rendering them', async () => {
+    // No GameLabs flag to merge with, so what survives is purely the mod's row.
+    cf.getEvents.mockResolvedValueOnce({ at: 5, stale: false, data: { entities: [] } });
+    modUp([modFlag()]);
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    const t = snap.territories.items[0].territory;
+
+    // BasicTerritories declares no territory name, id or level at all — the mod sends
+    // "" / -1 for those, and rendering them literally gives "Level -1".
+    expect(t.name).toBeNull();
+    expect(t.territoryId).toBeNull();
+    expect(t.level).toBeNull();
+    expect(t.lifetimeHours).toBeNull();
+    // A member the GUID ledger could not resolve keeps its id and nothing more.
+    const unresolved = t.members.find(m => m.id === 'GUID-B');
+    expect(unresolved).toMatchObject({ name: null, steamId: null, permissions: null, rank: null });
+    // refresher01 is 0..1 on the wire; the tooltip reports whole percent. Both land
+    // in the same unit so the panel does not have to know which source it got.
+    expect(t.flagLevel).toBe(42);
+  });
+
+  // The other half of "mod wins per-field": where the mod's value is a sentinel, the
+  // tooltip's real value must survive rather than being overwritten with null.
+  it('lets the tooltip fill fields the mod declares as undeclared', async () => {
+    glFlagAt(1000, 2000);
+    modUp([modFlag()]); // territoryId/level are -1, name is ""
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    const t = snap.territories.items[0].territory;
+
+    expect(t.territoryId).toBe(4);
+    expect(t.level).toBe(2);
+    expect(t.name).toBe('Northwood');
+    // ...while the mod still wins where it actually has a value.
+    expect(t.flagLevel).toBe(42); // not the tooltip's 87
+  });
+
+  it('appends a mod flag that no GameLabs marker matches', async () => {
+    glFlagAt(1000, 2000);
+    modUp([modFlag(), modFlag({ key: '5000_6000', pos: [5000, 0, 6000] })]);
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+
+    expect(snap.territories.items).toHaveLength(2);
+    const appended = snap.territories.items.find(i => i.origin === 'mod');
+    expect(appended.id).toBe('mod:5000_6000');
+    expect(appended.type).toBe('territory_flag');
+    expect(appended.position).toEqual([5000, 0, 6000]);
+  });
+
+  it('does not cross-assign a mod row to a flag beyond the join epsilon', async () => {
+    glFlagAt(1000, 2000);
+    modUp([modFlag({ key: '1050_2000', pos: [1050, 0, 2000] })]); // 50 m away
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    expect(snap.territories.items).toHaveLength(2);
+    expect(snap.territories.items.map(i => i.origin).sort()).toEqual(['gamelabs', 'mod']);
+  });
+
+  it('carries the layer from the mod alone when the GameLabs upstream fails', async () => {
+    cf.getEvents.mockRejectedValueOnce(new cf.CfToolsError('no_grant', 'nope'));
+    modUp([modFlag()]);
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+
+    expect(snap.territories.items).toHaveLength(1);
+    expect(snap.territories.source).toBe('mod');
+    // Must NOT carry `error` — the UI reads that as "empty, show unavailable".
+    expect(snap.territories.error).toBeUndefined();
+  });
+
+  it('leaves the tooltip-only layer exactly as it was when the mod is stale', async () => {
+    glFlagAt(1000, 2000);
+    ingest.modConnected.mockReturnValue(false);
+    ingest.getSnapshot.mockReturnValue({ data: { territories: [modFlag()] }, at: 99 });
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+
+    const t = snap.territories.items[0];
+    expect(t.origin).toBe('gamelabs');
+    expect(t.territory.objectCount).toBeUndefined();
+    expect(t.territory.name).toBe('Northwood');
+  });
+
+  it('drops a mod row with no usable position instead of placing it at the origin', async () => {
+    glFlagAt(1000, 2000);
+    modUp([modFlag({ key: 'bad', pos: null })]);
+    const snap = await buildLiveSnapshot(PROFILE, ['territories']);
+    expect(snap.territories.items).toHaveLength(1);
+    expect(snap.territories.items[0].origin).toBe('gamelabs');
+  });
+});
+
+describe('companion-mod AI layer', () => {
+  const aiRow = (over = {}) => ({
+    id: '12:34', cls: 'eAI_SurvivorM_Mirek', name: 'Mirek',
+    faction: 'Raiders', group: 'Patrol-1', groupId: 7,
+    pos: [7500, 300, 2500],
+    health: 88, blood: 5000, shock: 100, energy: -1, water: -1, heatComfort: -1,
+    alive: 1, hands: 'M4A1', source: 'expansion',
+    ...over,
+  });
+  const modUp = (ai) => {
+    ingest.modConnected.mockReturnValue(true);
+    ingest.getSnapshot.mockReturnValue({ data: { ai }, at: 42 });
+  };
+
+  it('builds the layer from the mod snapshot', async () => {
+    modUp([aiRow()]);
+    ingest.getTypeDetail.mockReturnValue({ displayName: 'M4-A1' });
+    const snap = await buildLiveSnapshot(PROFILE, ['ai']);
+
+    expect(snap.ai.items).toHaveLength(1);
+    expect(snap.ai.items[0]).toMatchObject({
+      id: '12:34', name: 'Mirek', className: 'eAI_SurvivorM_Mirek',
+      faction: 'Raiders', groupId: 7, health: 88, alive: true,
+      handItem: 'M4A1', handItemLabel: 'M4-A1', source: 'expansion',
+    });
+    // -1 is "the engine never declared this stat", not a reading.
+    expect(snap.ai.items[0].energy).toBeNull();
+    expect(snap.ai.items[0].water).toBeNull();
+  });
+
+  // The mod's pos is world [x, y, z]; CF Tools GSM sessions are [x, z, height] and go
+  // through normSessionPosition. Using the wrong one here puts every AI on the wrong
+  // axis, which looks entirely plausible on a square map.
+  it('reads pos as world [x, y, z], not as a CF Tools session vector', async () => {
+    modUp([aiRow({ pos: [7500, 300, 2500] })]);
+    const snap = await buildLiveSnapshot(PROFILE, ['ai']);
+    expect(snap.ai.items[0].position).toEqual([7500, 300, 2500]);
+  });
+
+  // The mod is this layer's ONLY source, so staleness must clear it. Holding the last
+  // known list would paint permanent ghost bots after a game-server restart.
+  it('clears the layer when the mod goes stale rather than freezing it', async () => {
+    ingest.modConnected.mockReturnValue(false);
+    ingest.getSnapshot.mockReturnValue({ data: { ai: [aiRow()] }, at: 42 });
+    const snap = await buildLiveSnapshot(PROFILE, ['ai']);
+    expect(snap.ai).toEqual({ error: 'mod_offline', items: [] });
+  });
+
+  // Key absent = AI collection switched off mod-side; empty array = it ran and found
+  // none. Those are different claims and the UI says so.
+  it('distinguishes "no AI source" from "a source that found none"', async () => {
+    modUp(undefined);
+    expect((await buildLiveSnapshot(PROFILE, ['ai'])).ai).toEqual({ error: 'mod_no_ai', items: [] });
+
+    modUp([]);
+    const ran = await buildLiveSnapshot(PROFILE, ['ai']);
+    expect(ran.ai.items).toEqual([]);
+    expect(ran.ai.error).toBeUndefined();
+  });
+
+  it('falls back to the classname when the mod has no display name', async () => {
+    modUp([aiRow({ name: '' })]);
+    const snap = await buildLiveSnapshot(PROFILE, ['ai']);
+    expect(snap.ai.items[0].name).toBe('eAI_SurvivorM_Mirek');
   });
 });
 

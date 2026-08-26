@@ -1,7 +1,11 @@
 import React from 'react';
 import { Badge } from '@/components/base/badges/badges';
-import { X, User, Car, MapPin, Flag, Wifi } from 'lucide-react';
-import type { LiveEvent, LivePlayer, LiveSnapshot, LiveTerritoryInfo, LivePlayerRef, LiveVehicle } from '@/types/cftools';
+import { X, User, Car, MapPin, Flag, Bot, Wifi } from 'lucide-react';
+import { cx } from '@/utils/cx';
+import type {
+  LiveAi, LiveEvent, LivePlayer, LiveSnapshot, LiveTerritoryInfo, LiveTerritoryMember,
+  LivePlayerRef, LiveVehicle,
+} from '@/types/cftools';
 import type { MarkerSelection } from './LiveMarkers';
 import type { CfToolsStatus } from '@/hooks/useCfToolsStatus';
 
@@ -47,57 +51,152 @@ function PanelHeader({ icon: Icon, title, onClear }: { icon: React.ElementType; 
   );
 }
 
-/** Name if we have one, else the bare UID — the mod guarantees at least one. */
-const playerRefLabel = (p: LivePlayerRef) => p.name || p.steamId || 'Unknown';
+/**
+ * Name if we have one, else the steam64, else the territory system's raw id.
+ *
+ * That last fallback is load-bearing rather than defensive: both BasicTerritories and
+ * Expansion key members by BI GUID, and the mod resolves those to names through a
+ * ledger of who has logged in. A member who has never been seen since the ledger was
+ * created resolves to nothing, and showing the GUID beats showing "Unknown".
+ */
+const playerRefLabel = (p: LivePlayerRef | LiveTerritoryMember) =>
+  p.name || p.steamId || (p as LiveTerritoryMember).id || 'Unknown';
+
+/** Ranks (Expansion) and permissions (BasicTerritories) are alternatives, and a
+ *  member may legitimately have neither. */
+function memberQualifier(m: LiveTerritoryMember): string | null {
+  if (m.rank) return m.rank;
+  if (m.permissionNames && m.permissionNames.length) return m.permissionNames.join(', ');
+  // Only reached when the mod sent a raw mask it could not decode.
+  if (m.permissions != null) return `#${m.permissions}`;
+  return null;
+}
 
 /**
- * Territory rows parsed from the enriched GameLabs tooltip (spacecat_gamelabs).
- * Every row is conditional: the mod's config can switch UIDs or the whole roster
- * off, and a flag still on GameLabs' baseline marker yields no `territory` at all.
- * Steam64s go in `title` rather than inline so a long UID can't crowd out the name.
+ * Territory rows, from either the enriched GameLabs tooltip (spacecat_gamelabs) or
+ * the companion mod's snapshot. Every row is conditional: the tooltip's config can
+ * switch UIDs or the whole roster off, the two territory systems expose genuinely
+ * different fields, and a flag on GameLabs' baseline marker yields no `territory`
+ * at all. Steam64s go in `title` rather than inline so a long UID can't crowd out
+ * the name.
  */
 function TerritoryDetail({ info }: { info: LiveTerritoryInfo }) {
   const idLabel = info.territoryId != null
     ? `#${info.territoryId}${info.level != null ? ` · Level ${info.level}` : ''}`
     : info.level != null ? `Level ${info.level}` : null;
 
+  const owner = info.owner as LiveTerritoryMember | null;
+  // null means never scanned, which is emphatically not the same as zero — the mod
+  // refreshes these on a budgeted round-robin, so a fresh flag has no counts yet.
+  const hasCounts = info.objectCount != null || info.cargoCount != null;
+
   return (
     <>
-      {info.owner && (
+      {owner && (
         <Row label="Owner">
-          <span title={info.owner.steamId || undefined}>{playerRefLabel(info.owner)}</span>
+          <span title={owner.steamId || owner.id || undefined}>{playerRefLabel(owner)}</span>
         </Row>
       )}
       {idLabel && <Row label="Territory">{idLabel}</Row>}
       {info.flagLevel != null && <Row label="Flag level">{`${info.flagLevel}%`}</Row>}
       {info.lifetimeHours != null && <Row label="Lifetime">{`~${info.lifetimeHours} h`}</Row>}
       {info.memberCount != null && <Row label="Members">{info.memberCount}</Row>}
+      {hasCounts && (
+        <Row label="Objects">
+          {info.objectCount != null ? info.objectCount : '—'}
+          {info.cargoCount != null && (
+            <span className="text-gray-500 dark:text-gray-400">{` · ${info.cargoCount} cargo`}</span>
+          )}
+        </Row>
+      )}
 
-      {/* Roster excludes the owner (already shown above) and may be capped by the mod. */}
+      {/* Roster excludes the owner (already shown above) and may be capped. */}
       {info.members.length > 0 && (
         <ul className="pt-1.5 space-y-1">
           {info.members.map((m, i) => (
             <li
-              key={m.steamId || m.name || String(i)}
+              key={m.steamId || m.id || m.name || String(i)}
               className="flex items-center justify-between gap-2"
             >
               <span
-                className="text-xs text-gray-900 dark:text-white truncate"
-                title={m.steamId || undefined}
+                className={cx(
+                  'text-xs truncate',
+                  m.online
+                    ? 'text-primary-600 dark:text-primary-400 font-medium'
+                    : 'text-gray-900 dark:text-white',
+                )}
+                title={m.steamId || m.id || undefined}
               >
                 {playerRefLabel(m)}
               </span>
-              <span className="text-[10px] text-gray-500 dark:text-gray-400 shrink-0">{m.rank}</span>
+              {memberQualifier(m) && (
+                <span className="text-[10px] text-gray-500 dark:text-gray-400 shrink-0 truncate max-w-[45%]">
+                  {memberQualifier(m)}
+                </span>
+              )}
             </li>
           ))}
-          {info.membersOmitted > 0 && (
+          {(info.membersOmitted > 0 || info.membersTruncated) && (
             <li className="text-[10px] text-gray-400 dark:text-gray-500">
-              {`and ${info.membersOmitted} more not shown`}
+              {info.membersOmitted > 0
+                ? `and ${info.membersOmitted} more not shown`
+                : 'roster truncated by the mod’s cap'}
             </li>
           )}
         </ul>
       )}
     </>
+  );
+}
+
+/**
+ * Detail for a selected AI. Read-only by design — no admin action can target an AI
+ * (GameLabs player actions key on steam64, which an AI does not have), so unlike the
+ * player card this one has no action bar slot.
+ */
+function AiDetail({ ai }: { ai: LiveAi }) {
+  return (
+    <>
+      <Row label="Type">{ai.className || '—'}</Row>
+      {ai.faction && <Row label="Faction">{ai.faction}</Row>}
+      {ai.group && <Row label="Group">{ai.group}</Row>}
+      <Row label="Position">{fmtPos(ai.position)}</Row>
+      {ai.alive !== null && <Row label="State">{ai.alive ? 'alive' : 'dead'}</Row>}
+      {ai.health != null && <Row label="Health">{Math.round(ai.health)}</Row>}
+      {ai.blood != null && <Row label="Blood">{Math.round(ai.blood)}</Row>}
+      {ai.shock != null && <Row label="Shock">{Math.round(ai.shock)}</Row>}
+      <Row label="Hands">{ai.handItemLabel || ai.handItem || '—'}</Row>
+      {/* The mod's classname heuristic is close but not authoritative, so say which
+          answer this row came from rather than implying certainty. */}
+      {ai.source === 'heuristic' && (
+        <p className="pt-2 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+          Identified by classname, not by the AI framework — load
+          spacecat_dayz_server_api_compat_expansionai for an exact match.
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Shown when a territory flag carries no parsed detail, in place of the silence that
+ * used to be the only symptom. The two causes need different fixes and are told apart
+ * by whether the marker had a label at all:
+ *
+ *  - label present, unparsed — the flag is still on GameLabs' own baseline marker, so
+ *    `spacecat_gamelabs_compat_expansion` is not enriching it (absent from the mod
+ *    chain, ordered ahead of Expansion, or the flag has no territory registered on it).
+ *  - no label — the tooltip never reached us, which is a payload-shape problem rather
+ *    than a mod one. `GET /api/cftools/raw/events` reports the field names upstream
+ *    actually sent.
+ */
+function TerritoryUnavailable({ hasLabel }: { hasLabel: boolean }) {
+  return (
+    <p className="pt-2 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+      {hasLabel
+        ? 'No territory detail — this flag is still on GameLabs’ own marker. Check @spacecat_gamelabs_compat_expansion is loaded and that a territory is registered on the flag.'
+        : 'No territory detail — GameLabs sent no label for this flag. Check /api/cftools/raw/events for the payload shape.'}
+    </p>
   );
 }
 
@@ -117,10 +216,22 @@ export default function LiveSidePanel({
     const layer = kind === 'event' ? snapshot?.events : snapshot?.territories;
     return layer?.items.find((e, i) => (e.id || String(i)) === id);
   };
+  const findAi = (id: string): LiveAi | undefined =>
+    snapshot?.ai?.items.find((a, i) => (a.id || String(i)) === id);
 
   let body: React.ReactNode = null;
 
-  if (selection?.kind === 'player') {
+  if (selection?.kind === 'ai') {
+    const ai = findAi(selection.id);
+    body = ai ? (
+      <div>
+        <PanelHeader icon={Bot} title={ai.name} onClear={onClearSelection} />
+        <AiDetail ai={ai} />
+      </div>
+    ) : (
+      <p className="text-xs text-gray-400">No longer reported.</p>
+    );
+  } else if (selection?.kind === 'player') {
     const player = findPlayer(selection.id);
     body = player ? (
       <div>
@@ -178,6 +289,9 @@ export default function LiveSidePanel({
         <Row label="Class">{event.className || '—'}</Row>
         <Row label="Position">{fmtPos(event.position)}</Row>
         {event.territory && <TerritoryDetail info={event.territory} />}
+        {selection.kind === 'territory' && !event.territory && (
+          <TerritoryUnavailable hasLabel={!!event.displayName} />
+        )}
         {event.moved !== undefined && (
           <Row label="Status">
             {event.moved ? 'moved — dropped, stored, or carried' : 'at spawn location'}
@@ -194,6 +308,7 @@ export default function LiveSidePanel({
     // Server summary
     const layers: { label: string; layer?: { items: unknown[]; stale?: boolean; error?: string } }[] = [
       { label: 'Players', layer: snapshot?.players },
+      { label: 'AI', layer: snapshot?.ai },
       { label: 'Vehicles', layer: snapshot?.vehicles },
       { label: 'Events', layer: snapshot?.events },
       { label: 'Territories', layer: snapshot?.territories },

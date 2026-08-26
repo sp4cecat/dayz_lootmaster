@@ -94,6 +94,16 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
         ],
       },
       territories: { at: 1, stale: false, items: [] },
+      ai: {
+        at: 1, stale: false,
+        items: [{
+          id: 'ai1', name: 'Mirek', className: 'eAI_SurvivorM_Mirek',
+          faction: 'Raiders', group: 'Patrol-1', groupId: 7,
+          position: at(3840, 11520), // same spot as Alice — AI must paint UNDER players
+          health: 88, blood: 5000, shock: 100, energy: null, water: null,
+          alive: true, handItem: 'M4A1', handItemLabel: 'M4-A1', source: 'expansion',
+        }],
+      },
     },
     loading: false,
   }),
@@ -175,6 +185,54 @@ describe('LiveMapView marker projection', () => {
     expect(tip.textContent).toContain('Alice');
     expect(tip.textContent).toContain('HP: 87');
     expect(tip.textContent).toContain('Hands: M4A1');
+  });
+
+  // The whole point of the colour split: an admin has to be able to tell a bot from a
+  // person at a glance, without clicking either.
+  it('renders Expansion AI as a green dot, distinct from the orange player dot', async () => {
+    const container = await render();
+    const marker = container.querySelector('button[aria-label="Mirek"]') as HTMLElement;
+    expect(marker).toBeTruthy();
+
+    const dot = marker.querySelector('[data-testid="ai-dot"]') as HTMLElement;
+    expect(dot).toBeTruthy();
+    expect(dot.className).toContain('bg-green-500/60');
+    expect(dot.className).not.toContain('bg-orange-500/60');
+    expect(marker.querySelector('svg')).toBeNull(); // a dot, not a glyph — same as players
+  });
+
+  it('projects AI through the same transform as players and shows a hover tooltip', async () => {
+    const container = await render();
+    const marker = container.querySelector('button[aria-label="Mirek"]') as HTMLElement;
+    // Same world position as Alice, so it must land on the same pixel.
+    expect(parseFloat(marker.style.left)).toBeCloseTo(150, 5);
+    expect(parseFloat(marker.style.top)).toBeCloseTo(150, 5);
+
+    await act(async () => {
+      marker.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    const tip = marker.querySelector('[role="tooltip"]') as HTMLElement;
+    expect(tip.textContent).toContain('Mirek');
+    expect(tip.textContent).toContain('Raiders');
+    expect(tip.textContent).toContain('HP: 88');
+    expect(tip.textContent).toContain('Hands: M4-A1');
+  });
+
+  // Drag-to-teleport resolves to a GameLabs player-context action keyed by steam64,
+  // which an AI does not have. A grab cursor that silently no-ops would be worse than
+  // no gesture at all.
+  it('does not make AI draggable', async () => {
+    const container = await render();
+    const marker = container.querySelector('button[aria-label="Mirek"]') as HTMLElement;
+    expect(marker.className).not.toContain('cursor-grab');
+    expect(marker.className).toContain('cursor-pointer');
+  });
+
+  // Paint order: AI sit under players, so a bot standing on a survivor never hides them.
+  it('paints AI before players in DOM order', async () => {
+    const container = await render();
+    const dots = Array.from(container.querySelectorAll('[data-testid="ai-dot"], [data-testid="player-dot"]'));
+    expect(dots.map(d => d.getAttribute('data-testid'))).toEqual(['ai-dot', 'player-dot']);
   });
 
   it('prefers the catalog display name over the raw classname for hands', async () => {

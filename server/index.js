@@ -1808,6 +1808,16 @@ async function handleCftoolsRoute(url, req, res) {
         return true;
     }
 
+    // Shape diagnostic: the untouched GameLabs payload, for when a layer renders but
+    // a field on it is missing (e.g. a territory flag with no parsed tooltip). Reports
+    // the envelope and entity key names so a Data API rename is visible, not inferred.
+    if (route === 'raw/events' || route === 'raw/vehicles') {
+        if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 25, 1), 200);
+        json(res, 200, await cftoolsService.buildRawEntities(profile, route.slice(4), limit));
+        return true;
+    }
+
     // Remaining routes all need a resolved binding up-front.
     const bound = cftoolsService.resolveBinding(profile);
 

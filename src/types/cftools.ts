@@ -48,31 +48,91 @@ export interface LivePlayerRef {
 }
 
 export interface LiveTerritoryMember extends LivePlayerRef {
-  /** 'Admin' | 'Moderator' | 'Member' — plain words, not Expansion's #STR_ keys. */
-  rank: string;
+  /** 'Admin' | 'Moderator' | 'Member' — plain words, not Expansion's #STR_ keys.
+   *  Empty/null under a territory system that has permissions instead of ranks. */
+  rank: string | null;
+  /** The territory system's own key for this member. Under BasicTerritories and
+   *  Expansion alike this is a BI GUID, NOT a steam64 — which is why `name` may be
+   *  null even though the member plainly exists. Only present on mod-sourced rows. */
+  id?: string | null;
+  /** BasicTerritories permission bitmask; null under a ranks-based system. */
+  permissions?: number | null;
+  /** The bitmask already decoded into words by the mod, e.g. ['build','dismantle'].
+   *  Prefer these over `permissions` — the bit layout is the territory mod's private
+   *  ABI and is deliberately not replicated here. */
+  permissionNames?: string[];
+  /** Whether this member is connected right now. */
+  online?: boolean | null;
 }
 
 /**
- * Territory detail parsed from the enriched GameLabs tooltip that `spacecat_gamelabs`
- * publishes. Every field is optional because the mod's config can switch parts off
- * (`territory_show_members`, `territory_show_uids`) and because parsing is best-effort.
+ * Territory detail, from either of two sources: the enriched GameLabs tooltip that
+ * `spacecat_gamelabs` publishes, or `territories[]` on the companion mod's snapshot
+ * (which wins per-field where both have a value).
+ *
+ * Every field is independently optional. The mod's config can switch parts off
+ * (`territory_show_members`, `territory_show_uids`), tooltip parsing is best-effort,
+ * and the two territory systems genuinely expose different things — Expansion has a
+ * name/id/level and ranks, BasicTerritories has none of those but has permissions.
  */
 export interface LiveTerritoryInfo {
   name: string | null;
   /** Refresher charge, whole percent. */
   flagLevel: number | null;
-  /** Remaining lifetime, whole hours. */
+  /** Remaining lifetime, whole hours. Tooltip-only; the mod does not compute it. */
   lifetimeHours: number | null;
-  owner: LivePlayerRef | null;
+  owner: LiveTerritoryMember | LivePlayerRef | null;
   territoryId: number | null;
   level: number | null;
-  /** Expansion's own count — includes the owner and ignores the display cap, so it
-   *  can exceed `members.length`. */
+  /** Roster size excluding the owner. Can exceed `members.length` when a display cap
+   *  applied — see `membersOmitted` (tooltip) and `membersTruncated` (mod). */
   memberCount: number | null;
-  /** Roster excluding the owner, capped by the mod's `territory_max_members`. */
+  /** Roster excluding the owner. */
   members: LiveTerritoryMember[];
-  /** How many members the mod dropped to honour that cap. */
+  /** How many members the tooltip dropped to honour `territory_max_members`. */
   membersOmitted: number;
+
+  // ---- mod-sourced only (absent on tooltip-only rows) ----
+  /** Base-building objects inside the territory radius. null = never scanned, which
+   *  is NOT the same as 0 — the mod scans on a budgeted round-robin, not per tick. */
+  objectCount?: number | null;
+  /** Cargo items across those objects. Same null-vs-0 distinction. */
+  cargoCount?: number | null;
+  /** Radius the counts were taken at, metres. Worth preferring over the server-wide
+   *  Expansion setting when two territory mods with different sizes are live. */
+  radius?: number | null;
+  /** Seconds since that scan; null when never scanned. */
+  scanAge?: number | null;
+  /** The roster was longer than the mod's own cap. */
+  membersTruncated?: boolean;
+  /** Which territory system registered this flag: 'basic' | 'expansion' | 'unknown'. */
+  source?: string;
+}
+
+/**
+ * An Expansion AI character, from the companion mod's snapshot only — CF Tools has no
+ * concept of them. Carries the same stat block as LivePlayer so both render through
+ * one code path; rendered as a green map dot against the player's orange.
+ */
+export interface LiveAi {
+  /** Stable for the entity's lifetime. Marker key and selection id. */
+  id: string | null;
+  name: string;
+  className: string | null;
+  faction: string | null;
+  group: string | null;
+  groupId: number | null;
+  position: [number, number, number];
+  health: number | null;
+  blood: number | null;
+  shock: number | null;
+  energy: number | null;
+  water: number | null;
+  alive: boolean | null;
+  handItem: string | null;
+  handItemLabel: string | null;
+  /** 'expansion' = an exact eAIBase check; 'heuristic' = the mod's classname fallback. */
+  source: string;
 }
 
 export interface LiveEvent {
@@ -90,8 +150,11 @@ export interface LiveEvent {
   moved?: boolean;
   /** First position the backend ever observed for this entity. */
   spawnPosition?: [number, number, number];
-  /** Present on territory flags whose tooltip the backend could parse. */
+  /** Present on territory flags the backend could resolve from either source. */
   territory?: LiveTerritoryInfo;
+  /** Where this row came from: 'gamelabs' (tooltip), 'mod' (companion-mod snapshot),
+   *  or 'mixed' (both, merged). Only set on territory rows. */
+  origin?: string;
 }
 
 /** One map layer's payload; `stale` = served from cache during a rate-limit/outage. */
@@ -100,6 +163,8 @@ export interface LiveLayer<T> {
   stale?: boolean;
   /** Set when this layer's upstream failed; items is then []. */
   error?: string;
+  /** Which source produced the items: 'gamelabs' | 'mod' | 'mixed'. Territories only. */
+  source?: string;
   items: T[];
 }
 
@@ -110,6 +175,7 @@ export interface LiveSnapshot {
   vehicles?: LiveLayer<LiveVehicle>;
   events?: LiveLayer<LiveEvent>;
   territories?: LiveLayer<LiveEvent>;
+  ai?: LiveLayer<LiveAi>;
 }
 
-export type LiveLayerKey = 'players' | 'vehicles' | 'events' | 'territories';
+export type LiveLayerKey = 'players' | 'vehicles' | 'events' | 'territories' | 'ai';
