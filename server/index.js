@@ -20,6 +20,8 @@ import {mkdir, readFile, stat, appendFile, readdir, cp, rm, rename, open} from '
 import crypto from 'node:crypto';
 import moment from 'moment';
 import * as ingest from './ingest-store.js';
+import * as history from './history-store.js';
+import {simplifyToBudget} from './simplify-path.js';
 import * as cftoolsConfig from './cftools-config.js';
 import * as cftools from './cftools-client.js';
 import * as cftoolsService from './cftools-service.js';
@@ -1590,7 +1592,14 @@ async function handleIngestRoute(pathname, req, res) {
 
     // POST /ingest/snapshot — full live state each tick (no deltas).
     if (parts.length === 2 && parts[1] === 'snapshot' && req.method === 'POST') {
-        ingest.setSnapshot(await parseBody());
+        const body = await parseBody();
+        ingest.setSnapshot(body);
+        // History is a TEE, never a dependency. This route MUST return 2xx: the mod
+        // treats any non-2xx as an error and un-latches catalog delivery, so a full
+        // disk or a corrupt DB would cost us the item catalog as well as history.
+        // recordSnapshot swallows its own errors and tracks them for /api/history/stats;
+        // this catch is the belt to that braces.
+        try { history.recordSnapshot(body); } catch { /* never fails the ingest */ }
         send(res, 200, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json' });
         return true;
     }
@@ -1700,6 +1709,144 @@ async function handleItemsRoute(url, req, res) {
             return true;
         }
         await runItemScan(res, Number(player.pos[0]), Number(player.pos[2]), radius);
+        return true;
+    }
+
+    notFound(res);
+    return true;
+}
+
+// ---- Player history (recorded from the companion mod's snapshot stream) ----
+// Profile-independent, like /ingest and /api/catalog: the data source is the mod,
+// not a server profile. House style for reads — never 5xx. An unavailable store
+// answers 200 { available: false, reason } so the tool can render its own empty
+// state instead of showing a transport error for a feature that is merely off.
+
+/** Default span when the caller supplies no range: the last 6 hours. */
+const HISTORY_DEFAULT_SPAN_MS = 6 * 60 * 60 * 1000;
+/** Points per track after decimation. Enough to draw; small enough to send. */
+const HISTORY_DEFAULT_BUDGET = 2000;
+const HISTORY_MAX_BUDGET = 20000;
+
+// Resolve ?from/?to into an epoch-ms range. Both optional; `to` defaults to now
+// and `from` to HISTORY_DEFAULT_SPAN_MS before it.
+function historyRange(url) {
+    const now = Date.now();
+    const toRaw = Number(url.searchParams.get('to'));
+    const fromRaw = Number(url.searchParams.get('from'));
+    const to = Number.isFinite(toRaw) && toRaw > 0 ? toRaw : now;
+    const from = Number.isFinite(fromRaw) && fromRaw >= 0 ? fromRaw : to - HISTORY_DEFAULT_SPAN_MS;
+    return { from: Math.min(from, to), to: Math.max(from, to) };
+}
+
+async function handleHistoryRoute(url, req, res) {
+    const parts = url.pathname.split('/').filter(Boolean); // ['api','history',...]
+    if (parts[0] !== 'api' || parts[1] !== 'history') return false;
+    const route = parts.slice(2).join('/');
+
+    if (req.method !== 'GET') { methodNotAllowed(res); return true; }
+
+    // GET /api/history/stats — volume, span and recorder health. Always answers,
+    // even when recording is off, because "off" is exactly what the UI needs told.
+    if (route === 'stats') {
+        json(res, 200, history.stats());
+        return true;
+    }
+
+    const st = history.stats();
+    if (!st.enabled) {
+        json(res, 200, { available: false, reason: 'disabled', items: [] });
+        return true;
+    }
+    if (!st.ready) {
+        json(res, 200, { available: false, reason: 'error', error: st.lastError, items: [] });
+        return true;
+    }
+
+    const { from, to } = historyRange(url);
+
+    // GET /api/history/players?from&to — who has samples in the window.
+    if (route === 'players') {
+        json(res, 200, { available: true, from, to, items: history.listPlayers({ from, to }) });
+        return true;
+    }
+
+    // GET /api/history/track?ids=a,b&from&to&max= — decimated paths, one per player.
+    if (route === 'track') {
+        const ids = (url.searchParams.get('ids') || '')
+            .split(',').map(s => s.trim()).filter(Boolean);
+        if (!ids.length) { badRequest(res, 'ids query parameter is required.'); return true; }
+
+        const rawMax = Number(url.searchParams.get('max'));
+        const budget = Number.isFinite(rawMax) && rawMax >= 2
+            ? Math.min(rawMax, HISTORY_MAX_BUDGET)
+            : HISTORY_DEFAULT_BUDGET;
+
+        // Two-stage decimation. The SQL stride caps what is ever materialised (a
+        // week of one player is ~120k rows); RDP then trims to the budget while
+        // keeping the corners a stride alone would clip. Both stages report, so a
+        // thinned track is never silently presented as complete.
+        //
+        // RDP runs PER RUN OF PRESENCE, not across the whole track. Simplifying
+        // across an absence would let it drop the very points that mark where the
+        // player left and came back, and a `gap` flag that survives on one point
+        // but not its neighbour describes an absence that starts nowhere.
+        const tracks = history.queryTrack({ pids: ids, from, to }).map(t => {
+            const runs = [];
+            for (const p of t.points) {
+                if (p.gap || !runs.length) runs.push([]);
+                runs[runs.length - 1].push(p);
+            }
+            // Share the budget by run length so one long run cannot starve the rest.
+            const total = t.points.length || 1;
+            const points = runs.flatMap((run) => {
+                const share = Math.max(2, Math.round(budget * (run.length / total)));
+                const simplified = simplifyToBudget(run, share);
+                // simplifyToBudget copies points, so re-assert the run boundary: the
+                // first point of every run after the first still opens an absence.
+                if (simplified.length) simplified[0] = { ...simplified[0], gap: run[0].gap };
+                return simplified;
+            });
+            return {
+                ...t,
+                points,
+                runs: runs.length,
+                sampled: points.length,
+                simplified: points.length < t.points.length,
+            };
+        });
+        json(res, 200, { available: true, from, to, budget, items: tracks });
+        return true;
+    }
+
+    // GET /api/history/at?ts&tol — one row per player nearest an instant (seek).
+    if (route === 'at') {
+        const ts = Number(url.searchParams.get('ts'));
+        if (!Number.isFinite(ts)) { badRequest(res, 'ts query parameter is required.'); return true; }
+        const rawTol = Number(url.searchParams.get('tol'));
+        const tol = Number.isFinite(rawTol) && rawTol > 0 ? rawTol : 30000;
+        json(res, 200, { available: true, ts, tol, items: history.queryAt({ ts, tol }) });
+        return true;
+    }
+
+    // GET /api/history/area?x&z&radius&from&to — presence intervals in a circle.
+    if (route === 'area') {
+        const x = Number(url.searchParams.get('x'));
+        const z = Number(url.searchParams.get('z'));
+        if (!Number.isFinite(x) || !Number.isFinite(z)) {
+            badRequest(res, 'x and z query parameters are required and must be numeric.');
+            return true;
+        }
+        const rawRadius = Number(url.searchParams.get('radius'));
+        // No 200 m cap here, unlike /items: that limit is the game engine's spatial
+        // query cost, and this is an indexed read of rows we already hold.
+        const radius = Number.isFinite(rawRadius) && rawRadius > 0 ? rawRadius : 100;
+        const rawGap = Number(url.searchParams.get('gap'));
+        const gapMs = Number.isFinite(rawGap) && rawGap > 0 ? rawGap : 60000;
+        json(res, 200, {
+            available: true, from, to, center: { x, z }, radius,
+            items: history.queryArea({ x, z, radius, from, to, gapMs }),
+        });
         return true;
     }
 
@@ -2085,6 +2232,12 @@ const server = http.createServer(async (req, res) => {
         // Live world-item scan (profile-independent; round-trips a scanItems command to the mod)
         if (pathname === '/items' || pathname.startsWith('/items/')) {
             if (await handleItemsRoute(url, req, res)) return;
+        }
+
+        // Recorded player history (profile-independent; sourced from the mod's snapshot
+        // stream, so it must be reachable on a server with no CF Tools binding at all)
+        if (pathname.startsWith('/api/history')) {
+            if (await handleHistoryRoute(url, req, res)) return;
         }
 
         // CF Tools Cloud proxy (resolves its own profile; /app and /grants are profile-independent)
@@ -3733,5 +3886,16 @@ server.listen(PORT, async () => {
     // restart keeps it until the mod's next catalog push. The mod latches
     // catalog delivery after one success, so it won't resend just for our bounce.
     await ingest.loadPersistedCatalog();
+    // Open the history database and start the retention timer. Recording is a tee
+    // off /ingest/snapshot, so a failure here degrades the history tool and leaves
+    // everything else — including the live map — untouched.
+    if (history.init()) {
+        history.startRetention();
+        const h = history.stats();
+        console.log(`History recording to ${h.dbFile} (${h.rows} rows, `
+            + `${h.retention.fullDays}d full / ${h.retention.thinDays}d thinned)`);
+    } else {
+        console.log('History recording is off (set HISTORY_ENABLED=1 and Node >= 22.5 to enable).');
+    }
     console.log(`XML persistence server listening on http://localhost:${PORT}`);
 });

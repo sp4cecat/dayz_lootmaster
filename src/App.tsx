@@ -28,6 +28,7 @@ import { LoadoutDesigner } from './components/LoadoutDesigner';
 import { SpawnableTypesManager } from './components/SpawnableTypesManager';
 import HeatMapModal from './components/HeatMapModal';
 import ItemScanModal from './components/ItemScanModal';
+import PlayerHistoryView from './components/history/PlayerHistoryView';
 import LiveMapView from './components/live/LiveMapView';
 import ServerStatsView from './components/live/ServerStatsView';
 import LeaderboardView from './components/live/LeaderboardView';
@@ -466,8 +467,17 @@ export default function App() {
                                 isPanel={true}
                             />
                         )}
+                        {view === 'map-tools:player-history' && (
+                            <PlayerHistoryView
+                                onClose={() => setView('cle')}
+                                selectedProfileId={selectedProfileId}
+                                missionName={selectedProfile?.missionName}
+                                isPanel={true}
+                                onOpenAdmRecords={() => setView('tools:adm')}
+                            />
+                        )}
                         {view === 'mission-files:random-presets' && (
-                            <RandomPresetsModal 
+                            <RandomPresetsModal
                                 onClose={() => setView('cle')}
                                 randomPresets={randomPresets}
                                 setRandomPresets={setRandomPresets}

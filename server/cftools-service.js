@@ -22,36 +22,11 @@ import crypto from 'node:crypto';
 import * as cf from './cftools-client.js';
 import * as cfg from './cftools-config.js';
 import * as ingest from './ingest-store.js';
+// Mod wire-format sentinel handling is shared with the history recorder so the
+// live and stored views of a snapshot can never disagree about what "unknown" is.
+import { num, modStat, modStr, modAlive, normPosition, looksSteam64 } from './mod-wire.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-
-// Accepts [x,y,z] (DayZ world: y = height), {x,y,z}, or an Enforce vector rendered
-// as a string ("<7500, 300, 2500>" from vector.ToString(), or "7500 300 2500");
-// returns [x,y,z] or null. GameLabs' `_ServerEvent.position` is a typed Enforce
-// `vector`, and how that lands in JSON is the mod's choice, not ours — a shape we
-// don't recognise drops the entity from the map entirely, so accept all three.
-function normPosition(pos) {
-    if (typeof pos === 'string') {
-        const parts = pos.replace(/[<>]/g, '').split(/[\s,]+/).filter(Boolean).map(Number);
-        if (parts.length >= 2) return normPosition(parts);
-        return null;
-    }
-    if (Array.isArray(pos) && pos.length >= 2) {
-        const x = num(pos[0]);
-        const y = num(pos[1]) ?? 0;
-        const z = num(pos.length >= 3 ? pos[2] : pos[1]);
-        if (x === null || z === null) return null;
-        return [x, pos.length >= 3 ? (y ?? 0) : 0, z];
-    }
-    if (pos && typeof pos === 'object') {
-        const x = num(pos.x), z = num(pos.z);
-        if (x === null || z === null) return null;
-        return [x, num(pos.y) ?? 0, z];
-    }
-    return null;
-}
 
 function reasonOf(err) {
     return (err && err.reason) || 'unreachable';
@@ -196,39 +171,10 @@ function normalizePlayer(session) {
  * Join key is steam64: the mod sends `PlayerIdentity.GetPlainId()`, the same
  * value CF Tools reports as `gamedata.steam64`. In-game name is the fallback
  * for rows where CF Tools has no steam64 yet (still authenticating).
+ *
+ * modStat / modStr / modAlive (the -1 and "" sentinel collapses) live in
+ * ./mod-wire.js — shared with the history recorder.
  */
-// The mod's StatValue() returns -1 for a stat the engine doesn't declare, which
-// is "unknown", not a reading — collapse it (and any other negative) to null.
-const modStat = (v) => {
-    const n = num(v);
-    return n === null || n < 0 ? null : n;
-};
-
-// The mod declares `alive` as an Enforce `bool`, but its JsonSerializer emits
-// bools as 1/0 — hence the `integer, enum [0,1]` in openapi-ingest.json (same
-// quirk buildCatalogDetail works around for the catalog's boolean flags).
-// Accept true/false too in case that ever changes, and only claim knowledge
-// when the field is actually present.
-function modAlive(v) {
-    if (v === true || v === 1) return true;
-    if (v === false || v === 0) return false;
-    return null;
-}
-
-// Same idea as modStat, for strings. Enforce's JsonSerializer writes every declared
-// member of a class and cannot omit one per-instance, so a field that is meaningless
-// for a given row still arrives — as "". Absence alone is therefore not a usable
-// signal and both forms have to collapse to null.
-const modStr = (v) => {
-    if (typeof v !== 'string') return null;
-    const s = v.trim();
-    return s ? s : null;
-};
-
-// Both territory systems key members by BI GUID, which is not numeric. A purely
-// numeric 15-20 digit id is a steam64 that arrived under the generic `id` key.
-const looksSteam64 = (s) => typeof s === 'string' && /^\d{15,20}$/.test(s);
-
 function enrichFromMod(players) {
     // A stale or absent mod must not blank fields CF Tools might have set.
     if (!ingest.modConnected()) return players;

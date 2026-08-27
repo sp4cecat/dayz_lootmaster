@@ -1,0 +1,151 @@
+import { describe, it, expect } from 'vitest';
+import {
+  TRAIL_HOLD_MS, indexAtOrBefore, sampleTrackAt, trailPoints,
+} from '../../src/utils/trackSampling';
+import type { HistoryPoint } from '../../src/types/history';
+
+const pt = (ts: number, x: number, z: number, over: Partial<HistoryPoint> = {}): HistoryPoint => ({
+  ts, x, y: 300, z,
+  health: 100, blood: 5000, shock: 100, energy: null, water: null,
+  alive: true, hands: null, gap: false,
+  ...over,
+});
+
+// A five-sample walk east, one mod tick (5 s) apart.
+const walk = [
+  pt(1000, 0, 0),
+  pt(6000, 10, 0),
+  pt(11000, 20, 0),
+  pt(16000, 30, 0),
+  pt(21000, 40, 0),
+];
+
+describe('indexAtOrBefore', () => {
+  it('finds the bracketing sample', () => {
+    expect(indexAtOrBefore(walk, 1000)).toBe(0);
+    expect(indexAtOrBefore(walk, 8000)).toBe(1);
+    expect(indexAtOrBefore(walk, 21000)).toBe(4);
+    expect(indexAtOrBefore(walk, 99999)).toBe(4);
+  });
+
+  it('reports -1 before the track starts', () => {
+    expect(indexAtOrBefore(walk, 0)).toBe(-1);
+  });
+
+  it('handles an empty track', () => {
+    expect(indexAtOrBefore([], 1000)).toBe(-1);
+  });
+});
+
+describe('sampleTrackAt', () => {
+  it('returns an exact sample without interpolating', () => {
+    const s = sampleTrackAt(walk, 6000)!;
+    expect(s.x).toBe(10);
+    expect(s.interpolated).toBe(false);
+  });
+
+  it('interpolates between two samples', () => {
+    const s = sampleTrackAt(walk, 8500)!;   // halfway between 6000 and 11000
+    expect(s.x).toBeCloseTo(15);
+    expect(s.interpolated).toBe(true);
+  });
+
+  it('takes non-positional fields from the real sample, not the interpolation', () => {
+    // Health cannot be meaningfully averaged across a tick, and a made-up reading
+    // shown next to a real timestamp is worse than a slightly stale true one.
+    const t = [pt(0, 0, 0, { health: 100, hands: 'M4A1' }), pt(5000, 10, 0, { health: 20 })];
+    const s = sampleTrackAt(t, 2500)!;
+    expect(s.point.health).toBe(100);
+    expect(s.point.hands).toBe('M4A1');
+  });
+
+  it('returns null before the track begins', () => {
+    expect(sampleTrackAt(walk, 0)).toBeNull();
+  });
+
+  it('holds the final position briefly, then drops the marker', () => {
+    expect(sampleTrackAt(walk, 21000 + 10_000)).not.toBeNull();
+    expect(sampleTrackAt(walk, 21000 + TRAIL_HOLD_MS + 1)).toBeNull();
+  });
+
+  it('refuses to glide across a flagged absence', () => {
+    // The single most misleading thing this view could do is draw a survivor
+    // smoothly crossing the map during six hours of being logged out.
+    const split = [pt(0, 0, 0), pt(6 * 3600_000, 10000, 10000, { gap: true })];
+    // Just after the first sample: still shown at their last known spot.
+    expect(sampleTrackAt(split, 10_000)!.x).toBe(0);
+    // Deep inside the absence: gone, not halfway across the map.
+    expect(sampleTrackAt(split, 3 * 3600_000)).toBeNull();
+  });
+
+  it('interpolates across a long interval that is NOT flagged as an absence', () => {
+    // The regression that a duration-based test causes on real data: decimation
+    // collapses an hour of straight walking to two points, and reading that
+    // interval as a logout renders nobody at all.
+    const decimated = [pt(0, 0, 0), pt(3600_000, 3600, 0)];
+    const mid = sampleTrackAt(decimated, 1800_000);
+    expect(mid).not.toBeNull();
+    expect(mid!.x).toBeCloseTo(1800);
+    expect(mid!.interpolated).toBe(true);
+  });
+
+  it('resumes after an absence ends', () => {
+    const rejoin = [
+      pt(0, 0, 0),
+      pt(6 * 3600_000, 9000, 9000, { gap: true }),
+      pt(6 * 3600_000 + 5000, 9010, 9000),
+    ];
+    const after = sampleTrackAt(rejoin, 6 * 3600_000 + 2500)!;
+    expect(after.x).toBeCloseTo(9005);
+  });
+
+  it('handles an empty track', () => {
+    expect(sampleTrackAt([], 1000)).toBeNull();
+  });
+
+  it('does not divide by zero on duplicate timestamps', () => {
+    const dupes = [pt(1000, 5, 5), pt(1000, 7, 7)];
+    expect(() => sampleTrackAt(dupes, 1000)).not.toThrow();
+  });
+});
+
+describe('trailPoints', () => {
+  it('returns a flat x,z list of the recent past', () => {
+    const trail = trailPoints(walk, 21000, 20000);
+    expect(trail.length % 2).toBe(0);
+    expect(trail.length / 2).toBeGreaterThan(1);
+    // Ends at the current position.
+    expect(trail.slice(-2)).toEqual([40, 0]);
+  });
+
+  it('honours the trail window', () => {
+    const short = trailPoints(walk, 21000, 6000);   // ~1 tick back
+    const long = trailPoints(walk, 21000, 30000);   // the whole track
+    expect(short.length).toBeLessThan(long.length);
+  });
+
+  it('stops at a flagged absence rather than drawing across it', () => {
+    const split = [pt(0, 0, 0), pt(5000, 10, 0), pt(6 * 3600_000, 9000, 9000, { gap: true })];
+    const trail = trailPoints(split, 6 * 3600_000, 24 * 3600_000);
+    // Only the point after the absence survives, so there is no segment to draw.
+    expect(trail.length / 2).toBeLessThanOrEqual(1);
+  });
+
+  it('spans a long unflagged interval, because that is continuous movement', () => {
+    const decimated = [pt(0, 0, 0), pt(3600_000, 3600, 0)];
+    const trail = trailPoints(decimated, 3600_000, 24 * 3600_000);
+    expect(trail.length / 2).toBeGreaterThanOrEqual(2);
+  });
+
+  it('returns nothing before the track starts', () => {
+    expect(trailPoints(walk, 0, 60000)).toEqual([]);
+  });
+
+  it('returns nothing for a zero-length window', () => {
+    expect(trailPoints(walk, 21000, 0)).toEqual([]);
+  });
+
+  it('handles an empty track', () => {
+    expect(trailPoints([], 1000, 60000)).toEqual([]);
+  });
+});
