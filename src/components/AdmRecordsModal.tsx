@@ -6,7 +6,7 @@ import { Checkbox } from './base/checkbox/checkbox';
 import { Modal } from './base/modal/modal';
 import { cx } from '../utils/cx';
 import { apiFetch } from '../utils/api';
-import { FileText, MapPin, Users, Download, AlertTriangle } from 'lucide-react';
+import { FileText, MapPin, Users, Download, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import moment from 'moment';
 import { 
   CalendarDateTime, 
@@ -39,10 +39,13 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'warning' | 'success'; text: string } | null>(null);
 
-  // Optional spatial filter
+  // Optional spatial filter. Axes follow the engine convention: X easting, Z northing,
+  // Y elevation. The log's pos=<> writes them as <x, z, y>, so the northing the user
+  // filters on is the 2nd value in the log line -- see tryParseLinePos in server/index.js.
   const [x, setX] = useState('');
-  const [y, setY] = useState('');
+  const [z, setZ] = useState('');
   const [radius, setRadius] = useState('');
   const [playersInRadiusOnly, setPlayersInRadiusOnly] = useState(false);
 
@@ -51,11 +54,18 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastText, setLastText] = useState('');
 
-  // Enable the checkbox only if all three numeric values are set and > 0
-  const canRadiusFilter = (() => {
-    const xn = Number(x), yn = Number(y), rn = Number(radius);
-    return Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0;
+  // The spatial filter is active only when all three fields are non-blank and numeric.
+  // Blankness is tested on the string, not on Number(v) !== 0 -- otherwise a legitimate
+  // coordinate of 0 silently disables the filter and the whole log comes back.
+  const spatial = (() => {
+    if (![x, z, radius].every(v => String(v).trim() !== '')) return null;
+    const xn = Number(x), zn = Number(z), rn = Number(radius);
+    if (!Number.isFinite(xn) || !Number.isFinite(zn) || !(rn > 0)) return null;
+    return { xn, zn, rn };
   })();
+
+  // Enable the checkbox only if the spatial filter would actually be applied
+  const canRadiusFilter = !!spatial;
 
   // Auto-uncheck if inputs become invalid
   useEffect(() => {
@@ -69,16 +79,20 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
     return moment(d).format('YYYY-MM-DD_HH-mm-ss');
   };
 
+  // Mirrors the server's tryParseLineId so ids harvested here match the ones it filters on.
+  // Must not be greedy past the closing paren: lines without a pos= (e.g. "is connecting")
+  // end in "...=)" and a \S+ capture would swallow the ")".
+  const parseLineId = (line: string): string | null => /\(id=([^)\s=]+=?)/i.exec(line)?.[1] ?? null;
+
   // Parse unique players and their aliases from content
   const parsePlayersFromText = (text: string): Player[] => {
     const map = new Map<string, Set<string>>();
     const lines = text.split(/\r?\n/);
     for (const line of lines) {
       if (!/Player/i.test(line)) continue;
-      const idMatch = /\(id=([^=]+=)/i.exec(line);
+      const id = parseLineId(line);
       const aliasMatch = /Player "([^"]+)"/i.exec(line);
-      if (!idMatch) continue;
-      const id = idMatch[1];
+      if (!id) continue;
       const alias = aliasMatch ? aliasMatch[1] : undefined;
       if (!map.has(id)) map.set(id, new Set());
       if (alias) map.get(id)!.add(alias);
@@ -112,8 +126,8 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
       // Filter lines by selected ids (keep order)
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i];
-        const m = /\(id=(\S+)\s/i.exec(line);
-        if (m && selectedIds.has(m[1])) {
+        const id = parseLineId(line);
+        if (id && selectedIds.has(id)) {
           out.push(line);
         }
       }
@@ -151,6 +165,7 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
 
   const fetchAdminLog = async () => {
     setError(null);
+    setNotice(null);
     if (!start || !end) {
       setError('Please choose both start and end.');
       return;
@@ -164,14 +179,14 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
       return;
     }
 
-    // Spatial filter validation: require all of x, y, radius or none
+    // Spatial filter validation: require all of x, z, radius or none
     const hasX = String(x).trim() !== '';
-    const hasY = String(y).trim() !== '';
+    const hasZ = String(z).trim() !== '';
     const hasR = String(radius).trim() !== '';
-    const anySet = hasX || hasY || hasR;
-    const allSet = hasX && hasY && hasR;
+    const anySet = hasX || hasZ || hasR;
+    const allSet = hasX && hasZ && hasR;
     if (anySet && !allSet) {
-      setError('You must set a value for EACH of x, y and radius or leave them blank');
+      setError('You must set a value for EACH of x, z and radius or leave them blank');
       return;
     }
 
@@ -182,10 +197,14 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
         end: eM.clone().utcOffset(600, true).format('YYYY-MM-DD HH:mm:ss')
       };
 
-      const xn = Number(x), yn = Number(y), rn = Number(radius);
-      const hasSpatial = Number.isFinite(xn) && Number.isFinite(yn) && Number.isFinite(rn) && xn !== 0 && yn !== 0 && rn > 0;
-      if (hasSpatial) {
-        Object.assign(payload, { x: xn, y: yn, radius: rn, expandByIds: !!playersInRadiusOnly });
+      if (spatial) {
+        // Send `z` -- the server's primary key. Its `y` fallback is only for legacy clients.
+        Object.assign(payload, {
+          x: spatial.xn,
+          z: spatial.zn,
+          radius: spatial.rn,
+          expandByIds: !!playersInRadiusOnly
+        });
       }
 
       const res = await apiFetch(`/api/logs/adm`, {
@@ -202,16 +221,55 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
       }
       const text = await res.text();
 
+      // Server-side diagnostics (see Access-Control-Expose-Headers on /api/logs/adm).
+      // If these read back as null the headers are not being exposed by the API.
+      const num = (name: string) => {
+        const raw = res.headers.get(name);
+        if (raw == null) return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+      };
+      const matchCount = num('X-Adm-Match-Count');
+      const filesFound = num('X-Adm-Files-Found');
+      const filesDated = num('X-Adm-Files-Dated');
+      const linesInRange = num('X-Adm-Lines-In-Range');
+      const nearest = num('X-Adm-Nearest-Distance');
+
       // Parse players for "Refine Records Further"
       setPlayers(parsePlayersFromText(text));
       setSelectedIds(new Set());
       setLastText(text);
 
+      if (matchCount === 0) {
+        // Nothing matched -- explain why instead of downloading a header-only file
+        let msg: string;
+        if (filesFound === 0) {
+          msg = 'No .ADM files were found in this profile\'s log_storage folder. Check that the profile\'s server path is correct and that the server has written logs.';
+        } else if (linesInRange === 0) {
+          msg = `No ADM records at all fall in that date range (${filesFound} log file${filesFound === 1 ? '' : 's'} scanned). The logs may not cover those dates.`;
+        } else if (spatial && nearest != null) {
+          msg = `0 of ${linesInRange} records in range were within ${spatial.rn} m of (${spatial.xn}, ${spatial.zn}). The nearest player position was ${nearest.toFixed(1)} m away — try a radius of at least ${Math.ceil(nearest)} m.`;
+        } else if (spatial) {
+          msg = `0 of ${linesInRange} records in range were within ${spatial.rn} m of (${spatial.xn}, ${spatial.zn}), and none of them carried a position at all.`;
+        } else {
+          msg = '0 records matched.';
+        }
+        if (filesDated != null && filesFound != null && filesDated < filesFound) {
+          msg += ` (${filesFound - filesDated} log file${filesFound - filesDated === 1 ? ' was' : 's were'} skipped — unrecognised filename date.)`;
+        }
+        setNotice({ tone: 'warning', text: msg });
+        return;
+      }
+
+      if (matchCount != null) {
+        setNotice({ tone: 'success', text: `${matchCount} record${matchCount === 1 ? '' : 's'} matched — downloading.` });
+      }
+
       // Download the returned content as file
       const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
 
-      const filterPart = hasSpatial
-        ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_y${String(y).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
+      const filterPart = spatial
+        ? `__pos_x${String(x).replace(/[^0-9.-]+/g, '')}_z${String(z).replace(/[^0-9.-]+/g, '')}_r${String(radius).replace(/[^0-9.-]+/g, '')}`
         : '';
 
       const filename = `${formatForFilename(start)}_to_${formatForFilename(end)}${filterPart}.ADM`;
@@ -273,11 +331,11 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
               type="number"
               step="any"
             />
-            <Input 
-              label="Y Coordinate" 
-              placeholder="e.g. 7214" 
-              value={y} 
-              onChange={e => setY(e.target.value)} 
+            <Input
+              label="Z (northing)"
+              placeholder="e.g. 7214"
+              value={z}
+              onChange={e => setZ(e.target.value)}
               type="number"
               step="any"
             />
@@ -291,6 +349,10 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
               min="0"
             />
           </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            The log writes <code>pos=&lt;x, z, y&gt;</code>, so Z is the <strong>2nd</strong> value in a log line —
+            the map northing. The 3rd value is Y (elevation) and is not used for the radius.
+          </p>
           <Checkbox
             label="Return ALL position data for players appearing in this target radius"
             isSelected={playersInRadiusOnly}
@@ -342,6 +404,20 @@ export default function AdmRecordsModal({ onClose, selectedProfileId, isPanel = 
                 Tip: Select players above to refine the already downloaded log file.
               </p>
             </div>
+          </div>
+        )}
+
+        {notice && (
+          <div className={cx(
+            "flex items-start gap-2 p-3 border rounded-lg text-sm",
+            notice.tone === 'warning'
+              ? "bg-warning-50 border-warning-200 text-warning-700 dark:bg-warning-900/10 dark:border-warning-800 dark:text-warning-400"
+              : "bg-success-50 border-success-200 text-success-700 dark:bg-success-900/10 dark:border-success-800 dark:text-success-400"
+          )}>
+            {notice.tone === 'warning'
+              ? <AlertTriangle size={18} className="shrink-0 mt-px" />
+              : <CheckCircle2 size={18} className="shrink-0 mt-px" />}
+            <span>{notice.text}</span>
           </div>
         )}
 

@@ -196,6 +196,8 @@ function corsHeaders() {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS,DELETE',
         'Access-Control-Allow-Headers': 'Content-Type, X-Editor-ID, X-Profile-ID',
+        // Custom diagnostic headers are invisible to cross-origin fetch() unless exposed
+        'Access-Control-Expose-Headers': 'X-Adm-Files-Found, X-Adm-Files-Dated, X-Adm-Lines-In-Range, X-Adm-Match-Count, X-Adm-Nearest-Distance',
     };
 }
 
@@ -1194,7 +1196,9 @@ function tryParseLineTime(line) {
     return m ? m[1] : null;
 }
 
-// Extract pos=<x, y, z>; returns {x, z} or null (planar X/Z distance, y is vertical/height)
+// Extract a world position; returns {x, z} or null. Distance is planar X/Z -- Y is vertical
+// (elevation) and never participates. Note ADM's pos=<> writes the axes as <x, z, y>, while a
+// raw engine vector is <x, y, z>; the two branches below account for that difference.
 function tryParseLinePos(line) {
     // 1. pos=<X, Z, Y> (Player status in ADM logs)
     let m = /pos\s*=?\s*<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>/i.exec(line);
@@ -1333,9 +1337,20 @@ async function collectExpansionRecordsInRange(start, end, posFilter, idSet, path
     return lines;
 }
 
-async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
+/**
+ * @param stats optional out-param; when supplied it is populated with diagnostics
+ *              ({filesFound, filesDated, linesInRange, nearestDistance}) so callers can
+ *              explain an empty result instead of just returning nothing.
+ */
+async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths, stats) {
     const root = paths.logsDirPath;
     const files = await listAdmFiles(root);
+    if (stats) {
+        stats.filesFound = files.length;
+        stats.filesDated = 0;
+        stats.linesInRange = 0;
+        stats.nearestDistance = Infinity;
+    }
 
     // Read all files and capture their start datetime (from filename) and lines
     const fileBuckets = [];
@@ -1351,6 +1366,7 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
         const rows = text.split(/\r?\n/);
         fileBuckets.push({path: f, startDate, rows});
     }
+    if (stats) stats.filesDated = fileBuckets.length;
 
     // Order files by their start datetime (earlier first), tie-breaker by path
     fileBuckets.sort((a, b) => {
@@ -1387,6 +1403,7 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
 
             // Ensure the adjusted datetime lies within the requested range
             if (dt < start || dt > end) continue;
+            if (stats) stats.linesInRange += 1;
 
             // If idSet provided, it takes priority (ignore positional filter)
             if (useIds) {
@@ -1398,6 +1415,9 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
                 const dx = pos.x - posFilter.x;
                 const dz = pos.z - posFilter.z;
                 const dist = Math.hypot(dx, dz);
+                // Track the closest in-range position even when it falls outside the radius,
+                // so an empty result can suggest how far the radius would have to reach.
+                if (stats && dist < stats.nearestDistance) stats.nearestDistance = dist;
                 if (dist > posFilter.radius) continue;
             }
 
@@ -2810,10 +2830,14 @@ const server = http.createServer(async (req, res) => {
                 const hasFilter = Number.isFinite(xf) && Number.isFinite(zf) && Number.isFinite(rf);
                 const expandByIds = !!data.expandByIds;
 
+                // Diagnostics so the client can explain an empty result rather than
+                // silently handing back a header-only file.
+                const stats = {};
+
                 let lines;
                 if (hasFilter) {
                     // Pass 1: collect within radius to determine unique ids
-                    const spatialLines = await collectAdmRecordsInRange(start, end, {x: xf, z: zf, radius: rf}, undefined, paths);
+                    const spatialLines = await collectAdmRecordsInRange(start, end, {x: xf, z: zf, radius: rf}, undefined, paths, stats);
                     const idSet = new Set();
                     for (const row of spatialLines) {
                         const id = tryParseLineId(row);
@@ -2828,7 +2852,7 @@ const server = http.createServer(async (req, res) => {
                         lines = spatialLines;
                 } else {
                     // No spatial filtering; single pass
-                    lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);
+                    lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths, stats);
                 }
 
                 // The extract is written in the server's local time, exactly like the
@@ -2840,10 +2864,18 @@ const server = http.createServer(async (req, res) => {
                 const content = [header, ...lines].join('\n');
 
                 const filename = `${startLocal.stamp}_to_${endLocal.stamp}.ADM`;
-                send(res, 200, content, {
+                const admHeaders = {
                     'Content-Type': 'text/plain; charset=utf-8',
-                    'Content-Disposition': `attachment; filename="${filename}"`
-                });
+                    'Content-Disposition': `attachment; filename="${filename}"`,
+                    'X-Adm-Files-Found': String(stats.filesFound ?? 0),
+                    'X-Adm-Files-Dated': String(stats.filesDated ?? 0),
+                    'X-Adm-Lines-In-Range': String(stats.linesInRange ?? 0),
+                    'X-Adm-Match-Count': String(lines.length)
+                };
+                if (hasFilter && Number.isFinite(stats.nearestDistance)) {
+                    admHeaders['X-Adm-Nearest-Distance'] = stats.nearestDistance.toFixed(1);
+                }
+                send(res, 200, content, admHeaders);
             } catch (e) {
                 console.error('ADM fetch error:', e);
                 send(res, 500, JSON.stringify({error: 'Failed to fetch ADM records'}), {'Content-Type': 'application/json'});
