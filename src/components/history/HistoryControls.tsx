@@ -45,6 +45,9 @@ interface HistoryControlsProps {
   onSelectOnly: (pid: string) => void;
   onClearPlayers: () => void;
   onHoverPlayer?: (pid: string | null) => void;
+  /** Full span of recorded data, from /api/history/stats. Drives the "All" preset. */
+  dataFrom?: number | null;
+  dataTo?: number | null;
 }
 
 /**
@@ -62,6 +65,8 @@ export default function HistoryControls({
   mode, onModeChange, from, to, onRangeChange,
   players, playersLoading, selected, onTogglePlayer, onSelectOnly, onClearPlayers,
   onHoverPlayer,
+  dataFrom,
+  dataTo,
 }: HistoryControlsProps) {
   const selectedSet = new Set(selected);
   const indexOf = (pid: string) => selected.indexOf(pid);
@@ -106,7 +111,30 @@ export default function HistoryControls({
               {p.label}
             </button>
           ))}
+          {/* Imported admin logs can predate every relative preset by years, which
+              leaves the map blank with no clue why. This jumps to whatever the
+              store actually holds. */}
+          {!!dataFrom && !!dataTo && (
+            <button
+              type="button"
+              onClick={() => onRangeChange(dataFrom, dataTo)}
+              title={`All recorded data: ${new Date(dataFrom).toLocaleString()} to ${new Date(dataTo).toLocaleString()}`}
+              className="flex-1 px-1.5 py-1 rounded-md text-[11px] font-medium border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              All
+            </button>
+          )}
         </div>
+        {/* An empty roster inside a range the data does not cover is the single most
+            likely confusion after an import, so name the cause rather than showing
+            an empty list. */}
+        {!playersLoading && !players.length && !!dataFrom && !!dataTo
+          && (from > dataTo || to < dataFrom) && (
+          <p className="text-[11px] text-warning-700 dark:text-warning-400">
+            No data in this range. Recorded history runs{' '}
+            {new Date(dataFrom).toLocaleDateString()} – {new Date(dataTo).toLocaleDateString()}.
+          </p>
+        )}
         <DatePicker
           label="From"
           value={toCalendar(from)}

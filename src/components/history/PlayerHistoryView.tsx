@@ -145,6 +145,15 @@ export default function PlayerHistoryView({
             <>
               <Badge color="brand" size="sm">{stats.rows.toLocaleString()} samples</Badge>
               <Badge color="gray" size="sm">{stats.players} players</Badge>
+              {/* Imported rows are ~5 min apart against the mod's ~5 s, so the mix
+                  changes what a track means. Say so rather than implying one source. */}
+              {!!stats.bySrc?.adm && (
+                <span title="Backfilled from admin logs (~5 min resolution)">
+                  <Badge color="warning" size="sm">
+                    {stats.bySrc.adm.toLocaleString()} imported
+                  </Badge>
+                </span>
+              )}
             </>
           )}
           {stats && (
@@ -191,6 +200,8 @@ export default function PlayerHistoryView({
                 onSelectOnly={(pid) => setSelected([pid])}
                 onClearPlayers={() => setSelected([])}
                 onHoverPlayer={setHovered}
+                dataFrom={stats?.from ?? null}
+                dataTo={stats?.to ?? null}
               />
             </div>
 

@@ -91,6 +91,8 @@ export interface HistoryStats {
   from: number | null;
   to: number | null;
   bytes: number | null;
+  /** Row counts by provenance: the mod's live stream vs imported admin logs. */
+  bySrc?: { mod: number; adm: number };
   writes: number;
   failures: number;
   lastWriteAt: number | null;

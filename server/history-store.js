@@ -159,6 +159,17 @@ const MIGRATIONS = [
             ) WITHOUT ROWID;
         `);
     },
+
+    // v2 — provenance, so backfilled admin-log rows are distinguishable from the
+    // mod's live stream. Without this the two are indistinguishable and the gap
+    // rule below cannot work: ADM samples land ~5 min apart, so every one of them
+    // would read as an absence, shatter the path and render nothing.
+    (d) => {
+        d.exec(`
+            ALTER TABLE player_pos ADD COLUMN src TEXT NOT NULL DEFAULT 'mod';
+            ALTER TABLE player_pos ADD COLUMN run_start INTEGER;
+        `);
+    },
 ];
 
 /**
@@ -332,6 +343,62 @@ function toPosRow(p, at, srv, pidPrefix = '') {
 
 const boolToInt = (b) => (b === null ? null : b ? 1 : 0);
 
+/**
+ * Bulk-insert rows backfilled from admin logs. Returns the number actually stored.
+ *
+ * Two differences from recordSnapshot, both load-bearing:
+ *
+ * **OR IGNORE, not OR REPLACE.** A mod sample and an imported sample can land on
+ * the same (pid, ts). The mod's is better in every way — real blood, shock and
+ * hands, a recorded rather than inferred clock — so it must win. Ignoring also
+ * makes re-importing an archive a no-op instead of a rewrite, which is what lets
+ * the user re-run an import without thinking about it.
+ *
+ * **src='adm'.** See ADM_PRESENCE_GAP_MS: consumers have to be able to tell a
+ * 5-minute roster cadence from a 5-second stream, or absence detection misfires.
+ *
+ * Unlike the ingest tee this DOES throw. An import is a foreground action the user
+ * asked for and is watching, so a failure must surface rather than be swallowed.
+ */
+export function recordAdmRows(rows, srv = DEFAULT_SRV) {
+    if (!ready && !init()) return 0;
+    if (!Array.isArray(rows) || !rows.length) return 0;
+
+    const insPos = db.prepare(`
+        INSERT OR IGNORE INTO player_pos
+            (srv, pid, ts, x, y, z, cell, health, blood, shock, energy, water, alive, hands, src, run_start)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'adm', ?)`);
+    const insSeen = db.prepare(`
+        INSERT INTO player_seen (srv, pid, name, steam_id, first_seen, last_seen)
+        VALUES (?,?,?,?,?,?)
+        ON CONFLICT(srv, pid) DO UPDATE SET
+            first_seen = MIN(first_seen, excluded.first_seen),
+            last_seen  = MAX(last_seen,  excluded.last_seen),
+            name       = COALESCE(player_seen.name, excluded.name),
+            steam_id   = COALESCE(player_seen.steam_id, excluded.steam_id)`);
+
+    let inserted = 0;
+    db.exec('BEGIN');
+    try {
+        for (const r of rows) {
+            if (!Number.isFinite(r.x) || !Number.isFinite(r.z) || !Number.isFinite(r.ts)) continue;
+            const res = insPos.run(
+                srv, r.pid, r.ts, r.x, r.y, r.z, cellFor(r.x, r.z),
+                r.health, r.blood ?? null, r.shock ?? null, r.energy, r.water,
+                boolToInt(r.alive ?? null), null, r.runStart ?? null,
+            );
+            inserted += res.changes || 0;
+            insSeen.run(srv, r.pid, r.name ?? null, r.steamId ?? null, r.ts, r.ts);
+        }
+        db.exec('COMMIT');
+    } catch (err) {
+        try { db.exec('ROLLBACK'); } catch { /* transaction already unwound */ }
+        recordFailure(err);
+        throw err;
+    }
+    return inserted;
+}
+
 function recordServerTick(server, at, srv) {
     if (!server || typeof server !== 'object') return;
     const w = server.weather && typeof server.weather === 'object' ? server.weather : {};
@@ -360,9 +427,12 @@ const asPoint = (r) => ({
     water: r.water,
     alive: r.alive === null ? null : r.alive === 1,
     hands: r.hands,
+    // Where this sample came from: the mod's 5 s stream, or an imported admin log.
+    // Exposed so the UI can be honest about a track's real resolution.
+    src: r.src || 'mod',
     // True when the player was ABSENT between the previous point and this one.
     // Only ever set here, from the raw sampling — see queryTrack.
-    gap: r.dt !== null && r.dt !== undefined && r.dt > PRESENCE_GAP_MS,
+    gap: r.isGap === 1,
 });
 
 /**
@@ -371,6 +441,25 @@ const asPoint = (r) => ({
  * dozen missed ticks — comfortably past a server stutter, well short of a logout.
  */
 export const PRESENCE_GAP_MS = 60_000;
+
+/**
+ * The same threshold for rows backfilled from admin logs.
+ *
+ * DayZ writes its positioned player roster every ~5 minutes, so the mod's
+ * one-minute rule would mark literally every imported sample as an absence —
+ * shattering each track into single points that draw nothing. Twenty minutes
+ * clears several missed roster dumps while still being far short of a session.
+ */
+export const ADM_PRESENCE_GAP_MS = 20 * 60_000;
+
+/**
+ * Per-row absence threshold, chosen by the row's own source.
+ *
+ * Inlined rather than bound: node:sqlite binds every JS number as REAL, and a
+ * REAL comparison here would be subtly wrong in the same way the float division
+ * in prune() was. These are module constants, never user input.
+ */
+const GAP_MS_SQL = `CASE WHEN src = 'adm' THEN ${ADM_PRESENCE_GAP_MS} ELSE ${PRESENCE_GAP_MS} END`;
 
 /** Players with at least one sample in [from, to]. */
 export function listPlayers({ from, to, srv = DEFAULT_SRV } = {}) {
@@ -434,16 +523,22 @@ export function queryTrack({ pids, from, to, maxRows = 20000, srv = DEFAULT_SRV 
     // forward. Rows on either side of a real absence are kept regardless of the
     // stride, so thinning can never erase a gap boundary.
     const rows = db.prepare(`
-        SELECT pid, ts, x, y, z, health, blood, shock, energy, water, alive, hands, dt
+        SELECT pid, ts, x, y, z, health, blood, shock, energy, water, alive, hands, src,
+               CASE WHEN runStartFlag = 1 OR dt > gapMs THEN 1 ELSE 0 END AS isGap
           FROM (
             SELECT *,
                    ROW_NUMBER() OVER (PARTITION BY pid ORDER BY ts) AS rn,
                    ts - LAG(ts)  OVER (PARTITION BY pid ORDER BY ts) AS dt,
-                   LEAD(ts) OVER (PARTITION BY pid ORDER BY ts) - ts AS dtNext
+                   LEAD(ts) OVER (PARTITION BY pid ORDER BY ts) - ts AS dtNext,
+                   ${GAP_MS_SQL} AS gapMs,
+                   run_start AS runStartFlag,
+                   LEAD(run_start) OVER (PARTITION BY pid ORDER BY ts) AS nextRunStart
               FROM player_pos
              WHERE srv = ? AND pid IN (${holes}) AND ts BETWEEN ? AND ?
           )
-         WHERE (rn - 1) % ? = 0 OR dt > ${PRESENCE_GAP_MS} OR dtNext > ${PRESENCE_GAP_MS}
+         WHERE (rn - 1) % ? = 0
+            OR dt > gapMs OR dtNext > gapMs
+            OR runStartFlag = 1 OR nextRunStart = 1
          ORDER BY pid, ts`).all(srv, ...ids, from, to, stride);
 
     const byPid = new Map();
@@ -484,7 +579,7 @@ function nameMap(pids, srv) {
 export function queryAt({ ts, tol = 30000, srv = DEFAULT_SRV }) {
     if (!ready && !init()) return [];
     const rows = db.prepare(`
-        SELECT pid, ts, x, y, z, health, blood, shock, energy, water, alive, hands
+        SELECT pid, ts, x, y, z, health, blood, shock, energy, water, alive, hands, src
           FROM (
             SELECT *, ROW_NUMBER() OVER (PARTITION BY pid ORDER BY ABS(ts - ?)) AS rn
               FROM player_pos
@@ -573,11 +668,20 @@ export function stats(srv = DEFAULT_SRV) {
         const players = db.prepare(
             'SELECT COUNT(*) AS c FROM player_seen WHERE srv = ?',
         ).get(srv).c;
+        // Split by provenance so the tool can say what a range is actually made of.
+        // "4 million rows" reads very differently when most of them are 5-minute
+        // admin-log backfill rather than 5-second mod samples.
+        const bySrc = { mod: 0, adm: 0 };
+        for (const r of db.prepare(
+            'SELECT src, COUNT(*) AS c FROM player_pos WHERE srv = ? GROUP BY src',
+        ).all(srv)) {
+            bySrc[r.src] = r.c;
+        }
         let bytes = null;
         try { bytes = statSync(DB_FILE).size; } catch { /* :memory: has no file */ }
         return {
             ...base, ready: true,
-            rows: agg.rows, players, from: agg.lo, to: agg.hi, bytes,
+            rows: agg.rows, players, from: agg.lo, to: agg.hi, bytes, bySrc,
         };
     } catch (err) {
         recordFailure(err);
@@ -607,8 +711,18 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
     try {
         db.exec('BEGIN');
         try {
+            // Imported admin-log rows are exempt from retention, and the exemption
+            // is the whole reason the import is worth having. An archive is almost
+            // always OLDER than the drop cutoff — backfilling 2022 logs into a
+            // 90-day window would delete every row on the next hourly pass.
+            //
+            // They are also cheap to keep (a 5-minute roster cadence, not 5-second)
+            // and impossible to recover once the operator deletes the log archive,
+            // whereas mod rows are replaced continuously by the live stream. If this
+            // ever needs a bound, it should be an explicit "forget imported range"
+            // action, not a silent age sweep.
             const dropped = db.prepare(
-                'DELETE FROM player_pos WHERE srv = ? AND ts < ?',
+                "DELETE FROM player_pos WHERE srv = ? AND ts < ? AND src <> 'adm'",
             ).run(srv, dropCutoff);
             result.dropped = Number(dropped.changes || 0);
 
@@ -621,7 +735,7 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
             // Row-value IN needs SQLite 3.15+; Node bundles far newer.
             const thinned = db.prepare(`
                 DELETE FROM player_pos
-                 WHERE srv = ? AND ts < ? AND ts >= ?
+                 WHERE srv = ? AND ts < ? AND ts >= ? AND src <> 'adm'
                    AND (pid, ts) NOT IN (
                         SELECT pid, MIN(ts) FROM player_pos
                          WHERE srv = ? AND ts < ? AND ts >= ?

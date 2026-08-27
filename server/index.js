@@ -22,6 +22,7 @@ import moment from 'moment';
 import * as ingest from './ingest-store.js';
 import * as history from './history-store.js';
 import {simplifyToBudget} from './simplify-path.js';
+import * as admImport from './adm-import.js';
 import * as cftoolsConfig from './cftools-config.js';
 import * as cftools from './cftools-client.js';
 import * as cftoolsService from './cftools-service.js';
@@ -1739,6 +1740,53 @@ function historyRange(url) {
     return { from: Math.min(from, to), to: Math.max(from, to) };
 }
 
+// ----- ADM import job -------------------------------------------------------
+//
+// One import at a time, tracked in memory. Deliberately not persisted: a job that
+// did not finish is not resumable anyway (the process holding the transaction is
+// gone), and a stale "running" record surviving a restart would be worse than no
+// record at all. Re-running an import is cheap and idempotent — see recordAdmRows.
+
+let admJob = null;
+
+function startAdmImport({ files, offsetMinutes, ledger, root }) {
+    const controller = new AbortController();
+    admJob = {
+        running: true,
+        startedAt: Date.now(),
+        finishedAt: null,
+        root,
+        offsetMinutes,
+        totalFiles: files.filter(f => !f.skip).length,
+        progress: null,
+        result: null,
+        error: null,
+        controller,
+    };
+
+    // Intentionally not awaited: the route returns 202 and the client polls.
+    admImport.importAdmArchive({
+        files, offsetMinutes, ledger, srv: 'default',
+        signal: controller.signal,
+        onProgress: (p) => { if (admJob) admJob.progress = p; },
+    }).then((result) => {
+        if (!admJob) return;
+        admJob.result = result;
+        admJob.aborted = controller.signal.aborted;
+    }).catch((err) => {
+        if (admJob) admJob.error = err.message;
+    }).finally(() => {
+        if (admJob) { admJob.running = false; admJob.finishedAt = Date.now(); }
+    });
+}
+
+function admJobState() {
+    if (!admJob) return { running: false, idle: true };
+    const { controller, ...rest } = admJob;
+    void controller;
+    return { ...rest, idle: false };
+}
+
 async function handleHistoryRoute(url, req, res) {
     const parts = url.pathname.split('/').filter(Boolean); // ['api','history',...]
     if (parts[0] !== 'api' || parts[1] !== 'history') return false;
@@ -2623,6 +2671,82 @@ const server = http.createServer(async (req, res) => {
                 send(res, 200, JSON.stringify({players: report}), {'Content-Type': 'application/json'});
             } catch {
                 send(res, 500, JSON.stringify({error: 'Failed to generate stash report'}), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // ----- ADM -> history import -----
+        //
+        // These sit behind the profile gate, unlike the rest of /api/history/*.
+        // The import needs serverPath to find both the log archive and the mod's
+        // GUID ledger, and neither is knowable without a profile.
+
+        // GET preview: what would be imported, and in which timezone.
+        if (pathname === '/api/logs/adm/scan') {
+            if (req.method !== 'GET') { methodNotAllowed(res); return; }
+            try {
+                const root = url.searchParams.get('root') || paths.logsDirPath;
+                const [scan, ledger] = await Promise.all([
+                    admImport.scanAdmArchive(root),
+                    admImport.readGuidLedger(profile.serverPath),
+                ]);
+                send(res, 200, JSON.stringify({
+                    root,
+                    defaultRoot: paths.logsDirPath,
+                    offset: scan.offset,
+                    ledger: { ok: ledger.ok, size: ledger.size, path: ledger.path, error: ledger.error || null },
+                    files: scan.files.map(f => ({
+                        path: f.path,
+                        bytes: f.bytes,
+                        startsAt: f.header ? admImport.headerInstant(f.header, scan.offset.offsetMinutes) : null,
+                        detectedOffset: f.detected ? f.detected.offsetMinutes : null,
+                        detectedSource: f.detected ? f.detected.source : null,
+                        confident: !!f.confident,
+                        skip: f.skip,
+                    })),
+                }), {'Content-Type': 'application/json'});
+            } catch (e) {
+                send(res, 500, JSON.stringify({error: `Failed to scan logs: ${e.message}`}), {'Content-Type': 'application/json'});
+            }
+            return;
+        }
+
+        // POST start an import; GET poll it; DELETE cancel it.
+        if (pathname === '/api/logs/adm/import') {
+            if (req.method === 'GET') {
+                send(res, 200, JSON.stringify(admJobState()), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method === 'DELETE') {
+                admJob?.controller.abort();
+                send(res, 200, JSON.stringify(admJobState()), {'Content-Type': 'application/json'});
+                return;
+            }
+            if (req.method !== 'POST') { methodNotAllowed(res); return; }
+            if (admJob && admJob.running) {
+                // An import is a long write against one database; two at once would
+                // interleave transactions and make the progress meaningless.
+                send(res, 409, JSON.stringify({error: 'An import is already running', job: admJobState()}),
+                    {'Content-Type': 'application/json'});
+                return;
+            }
+            try {
+                const data = JSON.parse(await readBody(req) || '{}');
+                const root = data.root || paths.logsDirPath;
+                const scan = await admImport.scanAdmArchive(root);
+                const offsetMinutes = Number.isFinite(data.offsetMinutes)
+                    ? Number(data.offsetMinutes)
+                    : scan.offset.offsetMinutes;
+                const only = Array.isArray(data.paths) && data.paths.length
+                    ? new Set(data.paths.map(String))
+                    : null;
+                const files = only ? scan.files.filter(f => only.has(f.path)) : scan.files;
+                const ledger = await admImport.readGuidLedger(profile.serverPath);
+
+                startAdmImport({ files, offsetMinutes, ledger: ledger.map, root });
+                send(res, 202, JSON.stringify(admJobState()), {'Content-Type': 'application/json'});
+            } catch (e) {
+                send(res, 500, JSON.stringify({error: `Failed to start import: ${e.message}`}), {'Content-Type': 'application/json'});
             }
             return;
         }

@@ -8,6 +8,7 @@ import { Badge } from '@/components/base/badges/badges';
 import { getMapMetadata } from '@/consts/maps';
 import { apiFetch } from '@/utils/api';
 import CfToolsSettings from '@/components/live/CfToolsSettings';
+import AdmImportPanel from '@/components/history/AdmImportPanel';
 
 interface Profile {
   id: string;
@@ -255,6 +256,8 @@ export default function ProfileManager({
                     </div>
 
                     {selectedProfileId && <CfToolsSettings selectedProfileId={selectedProfileId} />}
+
+                    {selectedProfileId && <AdmImportPanel selectedProfileId={selectedProfileId} />}
 
                     <div className="p-4 bg-primary-50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/20 flex items-start gap-3">
                         <AlertCircle className="text-primary-600 dark:text-primary-400 shrink-0 mt-0.5" size={18} />
