@@ -10,7 +10,7 @@ import {
   useAreaQuery, useHistoryPlayers, useHistoryStats, useHistoryTracks,
 } from '@/hooks/useHistoryData';
 import { usePlaybackClock } from '@/hooks/usePlaybackClock';
-import { sampleTrackAt, trailPoints } from '@/utils/trackSampling';
+import { presenceSegments, sampleTrackAt, trailPoints } from '@/utils/trackSampling';
 import type { AreaSelection, HistoryMode } from '@/types/history';
 import HistoryControls from './HistoryControls';
 import TrackLayer from './TrackLayer';
@@ -69,7 +69,24 @@ export default function PlayerHistoryView({
   const { tracks, loading: tracksLoading, error: tracksError } =
     useHistoryTracks(selected, range.from, range.to);
   const areaQuery = useAreaQuery();
-  const clock = usePlaybackClock(range.from, range.to);
+
+  // Presence of whoever is selected, which is what playback is actually about.
+  const segments = useMemo(() => presenceSegments(tracks), [tracks]);
+
+  /**
+   * Playback runs over the selected players' own data, not the picked range.
+   *
+   * The two are the same length for a live server watched over an afternoon, and
+   * wildly different for a backfilled archive: a fortnight-wide range in which
+   * one player appears for 8% of the time leaves the playhead days short of the
+   * first sample, on an empty map, with no indication anything is working.
+   */
+  const playback = useMemo(() => {
+    if (!segments.length) return { from: range.from, to: range.to };
+    return { from: segments[0].from, to: segments[segments.length - 1].to };
+  }, [segments, range.from, range.to]);
+
+  const clock = usePlaybackClock(playback.from, playback.to, { segments });
 
   // The area mode owns the drag, so the pan/zoom hook must yield the pointer to it.
   // `isGestureBlocked` is the seam the hook provides for exactly this.
@@ -350,8 +367,9 @@ export default function PlayerHistoryView({
               {mode === 'playback' && (
                 <PlaybackBar
                   clock={clock}
-                  from={range.from}
-                  to={range.to}
+                  from={playback.from}
+                  to={playback.to}
+                  segments={segments}
                   status={
                     selected.length === 0
                       ? 'Select players to replay'

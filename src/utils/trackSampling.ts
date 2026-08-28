@@ -100,6 +100,76 @@ export function sampleTrackAt(
   };
 }
 
+/** A stretch of wall-clock time in which at least one track has a position. */
+export interface PresenceSegment {
+  from: number;
+  to: number;
+}
+
+/**
+ * When the selected players were actually present, as merged intervals.
+ *
+ * Playback windows are set by the range picker, but presence is set by the data,
+ * and the two can differ by orders of magnitude. A backfilled admin-log archive
+ * spans weeks while any one player is online for a few percent of it, so a
+ * playhead advancing at a fixed multiple of real time spends almost all of its
+ * time on an empty map. These intervals are what lets the transport skip that
+ * dead air, and what the scrubber draws so an operator can see where the data is
+ * instead of inferring it from a marker that never appears.
+ *
+ * Segment ends carry the same `holdMs` grace `sampleTrackAt` applies, so a
+ * segment covers exactly the span in which a marker is drawn — no more.
+ */
+export function presenceSegments(
+  tracks: { points: HistoryPoint[] }[],
+  holdMs = TRAIL_HOLD_MS,
+): PresenceSegment[] {
+  const raw: PresenceSegment[] = [];
+
+  for (const t of tracks) {
+    const points = t.points;
+    let runStart = -1;
+    for (let i = 0; i < points.length; i++) {
+      // `gap` marks the first sample AFTER an absence, so it closes the run
+      // before it rather than opening one.
+      if (points[i].gap && runStart >= 0) {
+        raw.push({ from: points[runStart].ts, to: points[i - 1].ts + holdMs });
+        runStart = i;
+      } else if (runStart < 0) {
+        runStart = i;
+      }
+    }
+    if (runStart >= 0 && points.length) {
+      raw.push({ from: points[runStart].ts, to: points[points.length - 1].ts + holdMs });
+    }
+  }
+
+  raw.sort((a, b) => a.from - b.from);
+
+  const merged: PresenceSegment[] = [];
+  for (const seg of raw) {
+    const last = merged[merged.length - 1];
+    if (last && seg.from <= last.to) last.to = Math.max(last.to, seg.to);
+    else merged.push({ ...seg });
+  }
+  return merged;
+}
+
+/**
+ * `ts` itself when someone is present then, otherwise the start of the next
+ * stretch of presence — or null once the last one has passed.
+ *
+ * The playhead is only ever moved forwards, never back, so a caller can use this
+ * to advance without ever re-showing time the viewer has already watched.
+ */
+export function nextPresence(segments: PresenceSegment[], ts: number): number | null {
+  for (const seg of segments) {
+    if (ts < seg.from) return seg.from;
+    if (ts <= seg.to) return ts;
+  }
+  return null;
+}
+
 /**
  * The slice of a track within `trailMs` before `ts`, as a flat [x, z, x, z, ...].
  *

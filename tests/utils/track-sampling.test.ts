@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TRAIL_HOLD_MS, indexAtOrBefore, sampleTrackAt, trailPoints,
+  TRAIL_HOLD_MS, indexAtOrBefore, nextPresence, presenceSegments, sampleTrackAt, trailPoints,
 } from '../../src/utils/trackSampling';
 import type { HistoryPoint } from '../../src/types/history';
 
@@ -148,4 +148,77 @@ describe('trailPoints', () => {
   it('handles an empty track', () => {
     expect(trailPoints([], 1000, 60000)).toEqual([]);
   });
+});
+
+describe('presenceSegments', () => {
+    const HOUR = 3600_000;
+
+    it('turns one unbroken track into one segment', () => {
+        const [seg] = presenceSegments([{ points: walk }]);
+        expect(seg).toEqual({ from: 1000, to: 21000 + TRAIL_HOLD_MS });
+    });
+
+    it('splits on a flagged absence, not on a long quiet interval', () => {
+        // The distinction the whole playback path turns on: decimation leaves big
+        // intervals inside continuous movement, and only `gap` means "was gone".
+        const points = [
+            pt(0, 0, 0), pt(HOUR, 100, 0),                       // decimated, still present
+            pt(6 * HOUR, 200, 0, { gap: true }), pt(7 * HOUR, 300, 0),
+        ];
+        const segs = presenceSegments([{ points }]);
+        expect(segs).toHaveLength(2);
+        expect(segs[0]).toEqual({ from: 0, to: HOUR + TRAIL_HOLD_MS });
+        expect(segs[1].from).toBe(6 * HOUR);
+    });
+
+    it('merges overlapping presence across players', () => {
+        // Two players online together is one stretch worth watching, not two.
+        const a = [pt(0, 0, 0), pt(HOUR, 1, 0)];
+        const b = [pt(HOUR / 2, 5, 5), pt(2 * HOUR, 6, 5)];
+        expect(presenceSegments([{ points: a }, { points: b }]))
+            .toEqual([{ from: 0, to: 2 * HOUR + TRAIL_HOLD_MS }]);
+    });
+
+    it('keeps separate players apart when they never overlap', () => {
+        const a = [pt(0, 0, 0), pt(HOUR, 1, 0)];
+        const b = [pt(10 * HOUR, 5, 5), pt(11 * HOUR, 6, 5)];
+        expect(presenceSegments([{ points: a }, { points: b }])).toHaveLength(2);
+    });
+
+    it('returns nothing for an empty selection', () => {
+        expect(presenceSegments([])).toEqual([]);
+        expect(presenceSegments([{ points: [] }])).toEqual([]);
+    });
+});
+
+describe('nextPresence', () => {
+    const segs = [{ from: 100, to: 200 }, { from: 1000, to: 1100 }];
+
+    it('leaves a time inside a segment alone', () => {
+        expect(nextPresence(segs, 150)).toBe(150);
+        expect(nextPresence(segs, 100)).toBe(100);
+        expect(nextPresence(segs, 200)).toBe(200);
+    });
+
+    it('jumps forward over dead air', () => {
+        // The reason playback was unusable over an imported archive: 46 hours of
+        // nothing between the window start and the first sample.
+        expect(nextPresence(segs, 0)).toBe(100);
+        expect(nextPresence(segs, 500)).toBe(1000);
+    });
+
+    it('reports the end once the last segment has passed', () => {
+        expect(nextPresence(segs, 2000)).toBeNull();
+    });
+
+    it('never moves the playhead backwards', () => {
+        for (const ts of [0, 99, 100, 150, 201, 999, 1050, 1101]) {
+            const next = nextPresence(segs, ts);
+            if (next !== null) expect(next).toBeGreaterThanOrEqual(ts);
+        }
+    });
+
+    it('is a no-op without segments', () => {
+        expect(nextPresence([], 1234)).toBeNull();
+    });
 });
