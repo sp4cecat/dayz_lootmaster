@@ -34,10 +34,34 @@ export interface GuidLedgerInfo {
   error: string | null;
 }
 
+/** One offset the chosen zone resolves to somewhere in the archive. */
+export interface ZoneOffsetSpan {
+  minutes: number;
+  files: number;
+  /** "AEDT" for a zone, "UTC+10:00" for a bare offset. */
+  label: string;
+}
+
+/** The chosen zone, held up against what the files' own timestamps imply. */
+export interface ZoneCheck {
+  timeZone: string | null;
+  /** Set instead of `timeZone` when the import is pinned to a fixed offset. */
+  offsetMinutes: number | null;
+  /** More than one entry means the archive straddles a daylight-saving change. */
+  offsets: ZoneOffsetSpan[];
+  agree: number;
+  conflict: number;
+  /** What the disagreeing files said instead, so the conflict is actionable. */
+  conflictOffset: number | null;
+}
+
 export interface AdmScan {
   root: string;
   defaultRoot: string;
+  /** The zone configured on the profile, whatever this scan was previewed with. */
+  profileTimeZone: string;
   offset: OffsetVote;
+  zone: ZoneCheck;
   ledger: GuidLedgerInfo;
   files: AdmScanFile[];
 }
@@ -53,6 +77,8 @@ export interface AdmImportResult {
   events: number;
   resolved: number;
   unresolved: number;
+  /** Rows inside an hour daylight saving replayed; placed by file order. */
+  ambiguous: number;
   unresolvedGuids: number;
   firstTs: number | null;
   lastTs: number | null;
@@ -65,7 +91,8 @@ export interface AdmImportJob {
   startedAt?: number;
   finishedAt?: number | null;
   root?: string;
-  offsetMinutes?: number;
+  timeZone?: string | null;
+  offsetMinutes?: number | null;
   totalFiles?: number;
   progress?: (AdmImportResult & { current: string }) | null;
   result?: AdmImportResult | null;

@@ -17,6 +17,8 @@ NODE_ENV=development node server/index.js
 ```
 
 - **Port:** `PORT` env var, default **4317**.
+- **Log timezone:** `LOG_TIMEZONE` env var (an IANA name such as `Australia/Sydney`),
+  used for profiles that have no `logTimeZone` of their own. Defaults to the host's zone.
 - **Dev mode** (`--dev` or `NODE_ENV=development`): if `../example dayz server directory` exists, a non-persisted test profile is prepended:
   `{ id: "example-dev-data", name: "Example Server (Dev Data)", missionName: "empty.deerisle" }`. It is stripped before `profiles.json` is ever written.
 
@@ -27,8 +29,17 @@ NODE_ENV=development node server/index.js
 The server operates against one **profile** at a time, selected per request. Profiles live in `server/profiles.json`:
 
 ```json
-{ "id": "<uuid>", "name": "My Server", "serverPath": "C:/…/serverfiles", "missionName": "dayzOffline.chernarusplus" }
+{ "id": "<uuid>", "name": "My Server", "serverPath": "C:/…/serverfiles", "missionName": "dayzOffline.chernarusplus", "logTimeZone": "Australia/Sydney" }
 ```
+
+`logTimeZone` is the IANA zone the **game server's** clock runs in. DayZ logs record a
+bare wall clock with no zone, so this is the only thing that turns a log line into a
+moment; it is used by ADM Records, the Expansion log reader, the stash report and the
+ADM history import. It must be a zone name rather than an offset because half the world
+observes daylight saving — Australia/Sydney is +11:00 (AEDT) from October to April and
++10:00 (AEST) otherwise, and a fixed offset is silently an hour out for half of every
+archive. Falls back to `LOG_TIMEZONE`, then to the zone this host is in. All conversion
+lives in `server/log-clock.js`.
 
 `GET` responses additionally include a dynamically-detected `addons` array (not persisted). Add-on detection probes the server directory:
 

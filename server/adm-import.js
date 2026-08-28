@@ -22,9 +22,12 @@ import { readdir, readFile, stat, open } from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import { join } from 'node:path';
 import {
-    parseAdmHeader, parseAdmFilenameDate, parseAdmFile, fieldsToMs,
+    parseAdmHeader, parseAdmFilenameDate, parseAdmFile,
     detectOffsetMinutes, lastWallSecond,
 } from './adm-parse.js';
+import {
+    createWallResolver, resolveWall, normalizeTimeZone, hostTimeZone, zoneLabel, fmtOffset,
+} from './log-clock.js';
 import * as history from './history-store.js';
 
 /** Archives nest by season/date/instance; deep enough for any sane layout. */
@@ -34,9 +37,9 @@ const HEAD_BYTES = 4096;
 /** Enough of the tail to be sure of catching at least one timestamped line. */
 const TAIL_BYTES = 64 * 1024;
 /**
- * Fallback when the archive gives no usable clock signal. Matches the offset the
- * existing ADM Records reader hardcodes, so behaviour is unchanged rather than
- * newly wrong when detection fails.
+ * Fallback when the archive gives no usable clock signal at all. Only ever used
+ * to seed the offset vote; the import itself runs off a zone, which the profile
+ * supplies and the user can correct.
  */
 export const DEFAULT_OFFSET_MINUTES = 600;
 /**
@@ -67,8 +70,24 @@ export async function walkAdmFiles(root, depth = 0) {
     return out;
 }
 
-/** A parsed header plus a chosen offset, as an absolute instant. */
-export const headerInstant = (header, offsetMinutes) => fieldsToMs(header, offsetMinutes);
+/**
+ * A parsed header read in `zone` — an IANA zone name, or `{ offsetMinutes }` for
+ * a fixed offset — as an absolute instant.
+ */
+export const headerInstant = (header, zone) => resolveWall(header, zone).ms;
+
+/**
+ * Whatever the caller gave us, as something log-clock can resolve against: an
+ * IANA zone name, or `{ offsetMinutes }`. A bare number is read as minutes,
+ * because falling back to this machine's zone when someone meant UTC would be a
+ * silent hour or ten of error.
+ */
+export function toZone(spec) {
+    if (typeof spec === 'string') return normalizeTimeZone(spec) || hostTimeZone;
+    if (Number.isFinite(spec)) return { offsetMinutes: Number(spec) };
+    if (spec && Number.isFinite(spec.offsetMinutes)) return { offsetMinutes: Number(spec.offsetMinutes) };
+    return hostTimeZone;
+}
 
 /** The nearest ancestor folder named like a unix timestamp, in ms. DayZ names crash dirs this way. */
 function numericDirMs(filePath) {
@@ -100,7 +119,7 @@ async function readEnds(path, size) {
  * Reads only the head and tail of each file, so previewing a multi-gigabyte
  * archive costs two seeks per file rather than a full parse.
  */
-export async function scanAdmArchive(root) {
+export async function scanAdmArchive(root, zoneSpec) {
     const paths = await walkAdmFiles(root);
     const files = [];
 
@@ -141,7 +160,60 @@ export async function scanAdmArchive(root) {
           - Date.UTC(b.header.y, b.header.mon, b.header.d, b.header.h, b.header.mi, b.header.s)
         : 0));
 
-    return { root, files, offset: voteOffset(files) };
+    const zone = toZone(zoneSpec);
+    return { root, files, offset: voteOffset(files), zone: checkZone(files, zone) };
+}
+
+/** "AEDT" for a zone name, "UTC+10:00" for a bare offset. */
+const labelFor = (ms, zone) =>
+    (typeof zone === 'string' ? zoneLabel(ms, zone) : fmtOffset(zone.offsetMinutes));
+
+/**
+ * Hold the chosen zone up against what the files' own timestamps imply.
+ *
+ * The zone is a property of the server, not of the archive, so it is configured
+ * rather than discovered — but a wrong one is invisible in the output, and an
+ * hour of error puts a player on the other side of a firefight. So every file's
+ * detected offset is compared against what the zone says it should have been on
+ * that date, and the disagreement is reported rather than smoothed over.
+ *
+ * Only the mtime signal is used as evidence. The folder signal is loose enough
+ * that it would manufacture conflicts (see voteOffset).
+ */
+export function checkZone(files, zone) {
+    const offsets = new Map();
+    let agree = 0;
+    let conflict = 0;
+    let conflictOffset = null;
+
+    for (const f of files) {
+        if (!f.header) continue;
+        const at = resolveWall(f.header, zone);
+        const predicted = at.offsetMinutes;
+        const seen = offsets.get(predicted);
+        if (seen) seen.files += 1;
+        // Label from an instant the offset was actually in force, so a zone name
+        // reads back as the AEDT/AEST an operator recognises.
+        else offsets.set(predicted, { minutes: predicted, files: 1, label: labelFor(at.ms, zone) });
+
+        if (!f.confident || f.detected?.source !== 'mtime') continue;
+        if (f.detected.offsetMinutes === predicted) agree += 1;
+        else {
+            conflict += 1;
+            if (conflictOffset === null) conflictOffset = f.detected.offsetMinutes;
+        }
+    }
+
+    return {
+        timeZone: typeof zone === 'string' ? zone : null,
+        offsetMinutes: typeof zone === 'object' ? zone.offsetMinutes : null,
+        // More than one offset means the archive straddles a daylight-saving
+        // change — the exact case a single fixed offset gets wrong.
+        offsets: [...offsets.values()].sort((a, b) => a.minutes - b.minutes),
+        agree,
+        conflict,
+        conflictOffset,
+    };
 }
 
 /**
@@ -247,12 +319,18 @@ export const UNRESOLVED_PREFIX = 'guid:';
  * position so they cannot be rows themselves. Instead they set `runStart` on the
  * player's next positioned sample, which is what stops the map drawing a line
  * across a logout.
+ *
+ * **Time.** Each observation's wall clock is resolved through `zone` in file
+ * order, so a file that runs through the end of daylight saving lands on the
+ * right side of the change instead of an hour of it jumping backwards.
  */
-export function rowsForFile(observations, baseFields, offsetMinutes) {
-    const baseMs = fieldsToMs({ ...baseFields, h: 0, mi: 0, s: 0 }, offsetMinutes);
+export function rowsForFile(observations, baseFields, zoneSpec) {
+    const zone = toZone(zoneSpec);
+    const resolve = createWallResolver(zone);
     const byKey = new Map();
     const pendingRunStart = new Set();
     let events = 0;
+    let ambiguous = 0;
 
     for (const o of observations) {
         if (o.kind === 'connect' || o.kind === 'disconnect') {
@@ -262,7 +340,13 @@ export function rowsForFile(observations, baseFields, offsetMinutes) {
         }
         if (o.x === null) continue;               // nothing to place on a map
 
-        const ts = baseMs + o.offsetSec * 1000;
+        const sec = o.secOfDay;
+        const at = resolve({
+            y: baseFields.y, mon: baseFields.mon, d: baseFields.d + (o.dayOffset || 0),
+            h: Math.floor(sec / 3600), mi: Math.floor(sec / 60) % 60, s: sec % 60,
+        });
+        if (at.ambiguous) ambiguous += 1;
+        const ts = at.ms;
         const key = `${o.guid} ${ts}`;
         const existing = byKey.get(key);
         if (existing) {
@@ -283,7 +367,7 @@ export function rowsForFile(observations, baseFields, offsetMinutes) {
         byKey.set(key, row);
     }
 
-    return { rows: [...byKey.values()].sort((a, b) => a.ts - b.ts), events };
+    return { rows: [...byKey.values()].sort((a, b) => a.ts - b.ts), events, ambiguous };
 }
 
 /** Keep the more informative of two readings for the same player-second. */
@@ -305,11 +389,12 @@ function mergeInto(row, o) {
  * observations rather than the archive's.
  */
 export async function importAdmArchive({
-    files, offsetMinutes, ledger, srv, onProgress, signal,
+    files, zone: zoneSpec, ledger, srv, onProgress, signal,
 }) {
+    const zone = toZone(zoneSpec);
     const totals = {
         files: 0, skipped: 0, rows: 0, inserted: 0, events: 0,
-        resolved: 0, unresolved: 0,
+        resolved: 0, unresolved: 0, ambiguous: 0,
         unresolvedGuids: new Set(),
         firstTs: null, lastTs: null,
         errors: [],
@@ -328,8 +413,9 @@ export async function importAdmArchive({
             continue;
         }
 
-        const { rows, events } = rowsForFile(parseAdmFile(text), f.header, offsetMinutes);
+        const { rows, events, ambiguous } = rowsForFile(parseAdmFile(text), f.header, zone);
         totals.events += events;
+        totals.ambiguous += ambiguous;
 
         const mapped = rows.map((r) => {
             const hit = ledger.get(r.guid);
@@ -376,6 +462,9 @@ export async function importAdmArchive({
 const summarise = (t) => ({
     files: t.files, skipped: t.skipped, rows: t.rows, inserted: t.inserted,
     events: t.events, resolved: t.resolved, unresolved: t.unresolved,
+    // Rows inside a replayed daylight-saving hour. Placed by file order, but the
+    // wall clock alone could not have told them apart.
+    ambiguous: t.ambiguous,
     unresolvedGuids: t.unresolvedGuids.size,
     firstTs: t.firstTs, lastTs: t.lastTs,
     errors: t.errors.slice(0, 10),

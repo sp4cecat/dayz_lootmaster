@@ -18,9 +18,13 @@
  * ledger. This module just reports the GUID it found.
  *
  * **Time.** Lines carry a wall clock ("17:56:45") with no date and no zone. The
- * date comes from the file header; the zone has to be inferred (see
- * detectOffsetMinutes) because nothing in the file records it.
+ * date comes from the file header; the zone is a server property the user
+ * supplies (see log-clock.js), and detectOffsetMinutes below infers a candidate
+ * from the file's own timestamps so that choice can be checked rather than
+ * trusted.
  */
+
+import { createDayCounter, wallToMs } from './log-clock.js';
 
 /** `AdminLog started on 2025-01-04 at 17:50:50` — the only date inside the file. */
 const HEADER_RE = /AdminLog started on (\d{4})-(\d{2})-(\d{2}) at (\d{1,2}):(\d{2}):(\d{2})/;
@@ -77,9 +81,13 @@ export function parseAdmFilenameDate(filePath) {
     };
 }
 
-/** Calendar fields + a UTC offset in minutes -> an absolute instant. */
+/**
+ * Calendar fields + a UTC offset in minutes -> an absolute instant.
+ * Offset-only, so daylight saving is the caller's problem; use log-clock's
+ * `wallToMs` with a zone name where a zone is known.
+ */
 export function fieldsToMs(f, offsetMinutes) {
-    return Date.UTC(f.y, f.mon, f.d, f.h, f.mi, f.s) - offsetMinutes * 60_000;
+    return wallToMs(f, { offsetMinutes });
 }
 
 /**
@@ -170,27 +178,28 @@ function toObservation(m, secOfDay) {
 }
 
 /**
- * Walk a whole file's lines into observations with resolved seconds-since-base.
+ * Walk a whole file's lines into observations, tagging each with the day of the
+ * file it falls on.
  *
  * ADM has no date on its lines, so a file spanning midnight restarts its clock.
- * A backwards jump is treated as a new day — the same rule the existing ADM
- * Records reader uses, and it holds as long as the log is written in order.
+ * The rollover rule is shared with every other log reader here (see
+ * `createDayCounter`), because a backwards clock is not always midnight: lines
+ * can interleave, and the end of daylight saving replays a whole hour.
+ *
+ * `dayOffset` plus `secOfDay` is the wall-clock reading; turning it into an
+ * instant needs a zone and happens in adm-import.js.
  */
 export function parseAdmFile(text) {
     const rows = text.split(/\r?\n/);
     const out = [];
-    let dayOffset = 0;
-    let lastSec = null;
+    const advance = createDayCounter();
 
     for (const row of rows) {
         const obs = parseAdmLine(row);
         if (!obs.length) continue;
-        const sec = obs[0].secOfDay;
-        // Guard the rollover with a real threshold: two lines that share a second
-        // can arrive out of order without meaning midnight passed.
-        if (lastSec !== null && sec < lastSec - 60) dayOffset += 1;
-        lastSec = sec;
+        const dayOffset = advance(obs[0].secOfDay);
         for (const o of obs) {
+            o.dayOffset = dayOffset;
             o.offsetSec = dayOffset * 86400 + o.secOfDay;
             out.push(o);
         }

@@ -1,14 +1,26 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
+import { Select } from '@/components/base/select/select';
 import { Badge } from '@/components/base/badges/badges';
 import { FileClock, FolderSearch, AlertTriangle, Clock, Users, Database } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import type { AdmScan, AdmImportJob } from '@/types/admImport';
 import { fmtOffset } from '@/utils/formatOffset';
+import { zoneOptions } from '@/utils/timezones';
 
 /** Poll interval while an import is running. Imports are fast; this is for honesty, not suspense. */
 const POLL_MS = 700;
+
+/**
+ * Sentinel for "none of these zones — use a raw offset".
+ *
+ * Not a real zone, and deliberately not a valid IANA name so it can never be sent
+ * to the server by accident. The escape hatch exists for archives from a server
+ * whose location nobody remembers; a zone is the right answer everywhere else,
+ * because only a zone knows about daylight saving.
+ */
+const FIXED_OFFSET = '__fixed__';
 
 const fmtBytes = (n: number) => (
     n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB`
@@ -32,9 +44,14 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
     const [scan, setScan] = useState<AdmScan | null>(null);
     const [scanning, setScanning] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [offsetOverride, setOffsetOverride] = useState<string>('');
+    const [zoneChoice, setZoneChoice] = useState<string>('');
+    const [offsetOverride, setOffsetOverride] = useState<string>('600');
     const [job, setJob] = useState<AdmImportJob | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const zones = useMemo(
+        () => [...zoneOptions(), { label: 'Fixed offset (no daylight saving)', value: FIXED_OFFSET }],
+        [],
+    );
 
     const stopPolling = useCallback(() => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -65,16 +82,27 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
         }, POLL_MS);
     }, [selectedProfileId, stopPolling]);
 
-    const runScan = useCallback(async () => {
+    /**
+     * `zone` overrides the profile's setting for this preview. Re-scanning on a
+     * zone change is what makes the panel honest: the dates it lists and the
+     * agreement count it reports are both read through the chosen zone.
+     */
+    const runScan = useCallback(async (zone?: string) => {
         setScanning(true);
         setError(null);
         try {
-            const qs = root.trim() ? `?root=${encodeURIComponent(root.trim())}` : '';
+            const params = new URLSearchParams();
+            if (root.trim()) params.set('root', root.trim());
+            if (zone && zone !== FIXED_OFFSET) params.set('timeZone', zone);
+            const qs = params.toString() ? `?${params}` : '';
             const res = await apiFetch(`/api/logs/adm/scan${qs}`, { profileId: selectedProfileId });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Scan failed');
+            const data: AdmScan = await res.json();
+            if (!res.ok) throw new Error((data as unknown as { error?: string }).error || 'Scan failed');
             setScan(data);
             if (!root.trim()) setRoot(data.defaultRoot);
+            setZoneChoice((prev) => prev || data.zone.timeZone || data.profileTimeZone);
+            // Seed the fixed-offset box from what the files themselves suggest, so
+            // switching to it starts from evidence rather than from zero.
             setOffsetOverride(String(data.offset.offsetMinutes));
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -84,6 +112,11 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
         }
     }, [root, selectedProfileId]);
 
+    const chooseZone = useCallback((next: string) => {
+        setZoneChoice(next);
+        if (scan) runScan(next);
+    }, [scan, runScan]);
+
     const startImport = useCallback(async () => {
         setError(null);
         try {
@@ -91,10 +124,9 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
                 method: 'POST',
                 profileId: selectedProfileId,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    root: scan?.root,
-                    offsetMinutes: Number(offsetOverride),
-                }),
+                body: JSON.stringify(zoneChoice === FIXED_OFFSET
+                    ? { root: scan?.root, offsetMinutes: Number(offsetOverride) }
+                    : { root: scan?.root, timeZone: zoneChoice }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Import failed to start');
@@ -103,7 +135,7 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         }
-    }, [scan, offsetOverride, selectedProfileId, poll]);
+    }, [scan, zoneChoice, offsetOverride, selectedProfileId, poll]);
 
     const cancelImport = useCallback(async () => {
         await apiFetch('/api/logs/adm/import', { method: 'DELETE', profileId: selectedProfileId })
@@ -138,7 +170,7 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
                     placeholder="Log folder (defaults to the profile's log_storage)"
                     aria-label="Log folder"
                 />
-                <Button color="secondary" onClick={runScan} disabled={scanning || running}>
+                <Button color="secondary" onClick={() => runScan(zoneChoice || undefined)} disabled={scanning || running}>
                     <FolderSearch size={16} className="mr-1.5" />
                     {scanning ? 'Scanning…' : 'Scan'}
                 </Button>
@@ -161,38 +193,76 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
                             value={scan.ledger.ok ? `${scan.ledger.size} known` : 'Not found'} />
                     </div>
 
-                    {/* The timezone is inferred, never recorded, so it is shown rather than assumed. */}
+                    {/*
+                      * Admin logs carry a wall clock and nothing else, so the zone is a
+                      * setting rather than a fact in the data. It is shown, checked
+                      * against the files themselves, and left editable.
+                      */}
                     <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 dark:bg-gray-900/40 dark:border-gray-700">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Log timezone</span>
-                            <Input
-                                className="w-28"
-                                value={offsetOverride}
-                                onChange={e => setOffsetOverride(typeof e === 'string' ? e : e.target.value)}
-                                aria-label="UTC offset in minutes"
+                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 shrink-0">Log timezone</span>
+                            <Select
+                                className="w-72"
+                                size="sm"
+                                options={zones}
+                                value={zoneChoice}
+                                onChange={e => chooseZone(e.target.value)}
+                                aria-label="Log timezone"
                             />
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                                minutes = {fmtOffset(Number(offsetOverride) || 0)}
-                            </span>
-                            {scan.offset.source === 'default' ? (
-                                <Badge color="warning" size="sm">Not detected — assuming +10:00</Badge>
-                            ) : (
-                                <Badge color="success" size="sm">
-                                    Detected from {scan.offset.source === 'mtime' ? 'file times' : 'log folders'}
-                                    {' '}({scan.offset.votes}/{scan.offset.total} files)
-                                </Badge>
+                            {zoneChoice === FIXED_OFFSET && (
+                                <>
+                                    <Input
+                                        className="w-24"
+                                        value={offsetOverride}
+                                        onChange={e => setOffsetOverride(typeof e === 'string' ? e : e.target.value)}
+                                        aria-label="UTC offset in minutes"
+                                    />
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                                        minutes = {fmtOffset(Number(offsetOverride) || 0)}
+                                    </span>
+                                </>
                             )}
+                            {zoneChoice !== FIXED_OFFSET && scan.zone.offsets.map(o => (
+                                <Badge key={o.minutes} color="gray" size="sm">
+                                    {o.label} {fmtOffset(o.minutes)} · {o.files} file(s)
+                                </Badge>
+                            ))}
                         </div>
+
+                        {/* Two offsets across one archive is daylight saving, and the
+                          * single reason this is a zone picker and not a number box. */}
+                        {zoneChoice !== FIXED_OFFSET && scan.zone.offsets.length > 1 && (
+                            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                                This archive spans a daylight-saving change. Each file is read at the
+                                offset that was in force on its own date — a single fixed offset would
+                                put half of them an hour out.
+                            </p>
+                        )}
+
                         <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                            Admin logs record a wall clock with no timezone. This is inferred by comparing
-                            each file&apos;s last entry against its modification time. Get it wrong and every
-                            imported position lands at the wrong moment, so check it before importing.
+                            Admin logs record a wall clock with no timezone, so this is the server&apos;s
+                            setting rather than something in the files. Get it wrong and every imported
+                            position lands at the wrong moment.
                         </p>
-                        {scan.offset.disagreement > 0 && (
+
+                        {/* The files' own mtimes are independent evidence for the choice. */}
+                        {scan.zone.conflict > 0 ? (
                             <p className="mt-1.5 text-xs text-warning-700 dark:text-warning-400 flex items-start gap-1.5">
                                 <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                                {scan.offset.disagreement} file(s) disagreed. That usually means the archive was
-                                copied or edited, which rewrites the timestamps this relies on.
+                                {scan.zone.conflict} file(s) were last written at{' '}
+                                {fmtOffset(scan.zone.conflictOffset ?? 0)}, which this timezone does not
+                                account for on those dates. Either the archive was copied (which rewrites
+                                the timestamps this check relies on) or the timezone is wrong.
+                            </p>
+                        ) : scan.zone.agree > 0 ? (
+                            <p className="mt-1.5 text-xs text-success-700 dark:text-success-400">
+                                Confirmed against {scan.zone.agree} file(s) whose last entry matches when
+                                they were last written.
+                            </p>
+                        ) : (
+                            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                No file in this archive kept a usable modification time, so nothing here
+                                can check the timezone for you.
                             </p>
                         )}
                     </div>
@@ -238,7 +308,17 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
                                     <> · {(result.rows - result.inserted).toLocaleString()} already present</>
                                 )}
                             </p>
-                            <p>{fmtDate(result.firstTs)} → {fmtDate(result.lastTs)}</p>
+                            <p>
+                                {fmtDate(result.firstTs)} → {fmtDate(result.lastTs)}
+                                {job.timeZone && <> · read as {job.timeZone}</>}
+                                {job.offsetMinutes != null && <> · read at {fmtOffset(job.offsetMinutes)}</>}
+                            </p>
+                            {result.ambiguous > 0 && (
+                                <p>
+                                    {result.ambiguous.toLocaleString()} row(s) fell in an hour daylight
+                                    saving replayed and were placed by the order they appear in the log.
+                                </p>
+                            )}
                             {result.unresolved > 0 && (
                                 <p className="text-warning-700 dark:text-warning-400">
                                     {result.unresolvedGuids} player(s) could not be matched to a Steam ID and are

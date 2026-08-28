@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { voteOffset, rowsForFile, UNRESOLVED_PREFIX, DEFAULT_OFFSET_MINUTES } from '../../server/adm-import.js';
+import {
+    voteOffset, rowsForFile, checkZone, toZone, UNRESOLVED_PREFIX, DEFAULT_OFFSET_MINUTES,
+} from '../../server/adm-import.js';
 import { parseAdmFile } from '../../server/adm-parse.js';
 import * as history from '../../server/history-store.js';
 
@@ -107,6 +109,91 @@ describe('rowsForFile', () => {
         ]);
         expect(rows.map(r => r.guid)).toEqual(['G2', 'G1']);
         expect(rows[1].ts - rows[0].ts).toBe(25_000);
+    });
+});
+
+describe('rowsForFile in a zone that observes daylight saving', () => {
+    const SYD = 'Australia/Sydney';
+    const at = (t, x = 1) => `${t} | Player "A" (id=G1 pos=<${x}, 2, 3>)`;
+    const build = (date, lines) => rowsForFile(parseAdmFile(lines.join('\n')), date, SYD);
+
+    it('reads the same wall clock as a different instant either side of the change', () => {
+        // The live server is Australia/Sydney: +11:00 in January, +10:00 in July.
+        // A fixed offset is silently an hour out for half of every archive.
+        const jan = build({ y: 2025, mon: 0, d: 4 }, [at('17:50:50')]);
+        const jul = build({ y: 2025, mon: 6, d: 4 }, [at('17:50:50')]);
+        expect(new Date(jan.rows[0].ts).toISOString()).toBe('2025-01-04T06:50:50.000Z');
+        expect(new Date(jul.rows[0].ts).toISOString()).toBe('2025-07-04T07:50:50.000Z');
+    });
+
+    it('keeps a track moving forwards through the hour the clock repeats', () => {
+        // 2025-04-06: 03:00 AEDT becomes 02:00 AEST. The log replays 02:00-02:59,
+        // and reading the second pass as the first sends the player back in time.
+        const { rows, ambiguous } = build({ y: 2025, mon: 3, d: 6 }, [
+            at('01:59:00', 1), at('02:30:00', 2), at('02:00:00', 3), at('02:40:00', 4), at('03:10:00', 5),
+        ]);
+        expect(rows.map(r => r.x)).toEqual([1, 2, 3, 4, 5]);
+        for (let i = 1; i < rows.length; i++) expect(rows[i].ts).toBeGreaterThan(rows[i - 1].ts);
+        // Three readings fell inside the repeated hour and could not have been
+        // placed by the wall clock alone.
+        expect(ambiguous).toBe(3);
+    });
+
+    it('does not read the repeated hour as a new day', () => {
+        const { rows } = build({ y: 2025, mon: 3, d: 6 }, [at('02:30:00', 1), at('02:00:00', 2)]);
+        expect(rows[1].ts - rows[0].ts).toBe(30 * 60_000);
+    });
+});
+
+describe('checkZone', () => {
+    const SYD = 'Australia/Sydney';
+    const file = (mon, d, detectedOffset) => ({
+        header: { y: 2025, mon, d, h: 12, mi: 0, s: 0 },
+        confident: detectedOffset !== undefined,
+        detected: detectedOffset === undefined ? null : { offsetMinutes: detectedOffset, source: 'mtime' },
+    });
+
+    it('confirms a zone the files own timestamps agree with', () => {
+        const r = checkZone([file(0, 4, 660), file(0, 5, 660)], SYD);
+        expect(r).toMatchObject({ timeZone: SYD, agree: 2, conflict: 0 });
+        expect(r.offsets).toEqual([{ minutes: 660, files: 2, label: 'AEDT' }]);
+    });
+
+    it('reports a zone the files contradict, and what they said instead', () => {
+        // Australia/Brisbane never leaves +10:00, so a January archive written at
+        // +11:00 is evidence the wrong state was picked.
+        const r = checkZone([file(0, 4, 660), file(0, 5, 660)], 'Australia/Brisbane');
+        expect(r).toMatchObject({ agree: 0, conflict: 2, conflictOffset: 660 });
+    });
+
+    it('shows both offsets when the archive straddles a change', () => {
+        const r = checkZone([file(2, 1), file(4, 1)], SYD);
+        expect(r.offsets.map(o => o.label)).toEqual(['AEST', 'AEDT']);
+    });
+
+    it('ignores the loose folder signal as evidence', () => {
+        const loose = { ...file(0, 4, 480), detected: { offsetMinutes: 480, source: 'logdir' } };
+        expect(checkZone([loose], SYD)).toMatchObject({ agree: 0, conflict: 0 });
+    });
+
+    it('describes a fixed offset without pretending it is a zone', () => {
+        const r = checkZone([file(0, 4, 600)], toZone({ offsetMinutes: 600 }));
+        expect(r).toMatchObject({ timeZone: null, offsetMinutes: 600, agree: 1 });
+        expect(r.offsets[0].label).toBe('UTC+10:00');
+    });
+});
+
+describe('toZone', () => {
+    it('takes a zone name, a bare offset, or an offset object', () => {
+        expect(toZone('Australia/Sydney')).toBe('Australia/Sydney');
+        expect(toZone(660)).toEqual({ offsetMinutes: 660 });
+        expect(toZone({ offsetMinutes: 0 })).toEqual({ offsetMinutes: 0 });
+    });
+
+    it('reads 0 as UTC rather than falling back to this machine', () => {
+        // A silent fallback here would put a whole archive out by however many
+        // hours the Lootmaster host happens to sit from the game server.
+        expect(toZone(0)).toEqual({ offsetMinutes: 0 });
     });
 });
 

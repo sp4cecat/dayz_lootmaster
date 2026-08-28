@@ -23,6 +23,9 @@ import * as ingest from './ingest-store.js';
 import * as history from './history-store.js';
 import {simplifyToBudget} from './simplify-path.js';
 import * as admImport from './adm-import.js';
+import {
+    createDayClock, localFields, wallToMs, normalizeTimeZone, hostTimeZone,
+} from './log-clock.js';
 import * as cftoolsConfig from './cftools-config.js';
 import * as cftools from './cftools-client.js';
 import * as cftoolsService from './cftools-service.js';
@@ -206,6 +209,50 @@ function isSafeName(s) {
     return typeof s === 'string' && /^[A-Za-z0-9._-]+$/.test(s);
 }
 
+/**
+ * Which timezone a profile's game server writes its logs in.
+ *
+ * DayZ logs a bare wall clock, so this is the only thing that turns a log line
+ * into a moment. It used to be hardcoded to UTC+10, which is wrong for half the
+ * year anywhere that observes daylight saving — Australia/Sydney is on AEDT
+ * (+11:00) from October to April. Configured per profile because it is a
+ * property of the game server, not of this machine.
+ */
+function logTimeZoneFor(profile) {
+    return normalizeTimeZone(profile?.logTimeZone)
+        // eslint-disable-next-line no-undef
+        || normalizeTimeZone(process.env.LOG_TIMEZONE)
+        || hostTimeZone;
+}
+
+/** The datetime formats the log-query UI sends. Wall clock only — no zone. */
+const SERVER_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+
+/**
+ * Read an operator-typed datetime as the game server's local time.
+ *
+ * The picker shows, and the operator thinks in, the times printed in the logs —
+ * so the range they type has to be resolved through the same zone the logs are
+ * read in, or a search misses the first or last hour of what it should return.
+ * Returns epoch ms, or null if the string is not one of the accepted shapes.
+ */
+function parseServerLocal(s, timeZone) {
+    const m = SERVER_LOCAL_RE.exec(typeof s === 'string' ? s.trim() : '');
+    if (!m) return null;
+    return wallToMs({
+        y: Number(m[1]), mon: Number(m[2]) - 1, d: Number(m[3]),
+        h: Number(m[4] || 0), mi: Number(m[5] || 0), s: Number(m[6] || 0),
+    }, timeZone);
+}
+
+/** An instant as the server's local clock would have shown it, for headers and filenames. */
+function serverLocalParts(ms, timeZone) {
+    const f = localFields(ms, timeZone);
+    const p = (n) => String(n).padStart(2, '0');
+    const date = `${f.y}-${p(f.mon + 1)}-${p(f.d)}`;
+    return { date, time: `${p(f.h)}:${p(f.mi)}:${p(f.s)}`, stamp: `${date}_${p(f.h)}-${p(f.mi)}-${p(f.s)}` };
+}
+
 function getPaths(profile) {
     if (!profile) return null;
     const { serverPath, missionName } = profile;
@@ -230,6 +277,9 @@ function getPaths(profile) {
         dbDirPath: join(missionPath, 'db'),
         logsDirPath: join(serverPath, 'log_storage'),
         expansionLogsDirPath: join(profilesPath, 'ExpansionMod', 'Logs'),
+        // Carried alongside the paths because every log reader needs it to make
+        // sense of the files it finds there.
+        logTimeZone: logTimeZoneFor(profile),
         missionPath,
         profilesPath
     };
@@ -949,7 +999,7 @@ async function generateStashReport(start, end, paths) {
         } catch {
             continue;
         }
-        const startDate = parseAdmStartDate(f);
+        const startDate = parseAdmStartDate(f, paths.logTimeZone);
         if (!startDate) continue;
         buckets.push({path: f, startDate, rows: text.split(/\r?\n/)});
     }
@@ -975,14 +1025,10 @@ async function generateStashReport(start, end, paths) {
     };
 
     for (const bucket of buckets) {
-        // Compute UTC+10 "midnight" for the file date, as an absolute instant
-        const tzOffsetMs = 10 * 60 * 60 * 1000;
-        const shifted = new Date(bucket.startDate.getTime() + tzOffsetMs); // shift to get UTC+10 calendar components
-        const baseMidnightUtcPlus10Ms = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), 0, 0, 0) - tzOffsetMs;
-        const baseDate = new Date(baseMidnightUtcPlus10Ms);
-
-        let dayOffset = 0;
-        let lastSec = null;
+        // Lines carry a time of day and nothing else, so they are read against the
+        // file's own local date in the server's zone.
+        const clock = createDayClock(
+            localFields(bucket.startDate.getTime(), paths.logTimeZone), paths.logTimeZone);
 
         for (const row of bucket.rows) {
             const t = tryParseLineTime(row);
@@ -991,14 +1037,7 @@ async function generateStashReport(start, end, paths) {
             const sec = hmsToSec(t);
             if (sec == null) continue;
 
-            if (lastSec != null && sec < lastSec) {
-                // Midnight rollover within the same file
-                dayOffset += 1;
-            }
-            lastSec = sec;
-
-            // Build per-line timestamp as base + dayOffset + seconds-of-day (all anchored to UTC+10)
-            const dt = new Date(baseDate.getTime() + dayOffset * 24 * 60 * 60 * 1000 + sec * 1000);
+            const dt = new Date(clock.at(sec));
 
             // Time constraint (open-ended if missing)
             if (start && dt < start) continue;
@@ -1118,33 +1157,31 @@ async function listAdmFiles(logsRoot) {
     return out;
 }
 
-function parseAdmStartDate(filePath) {
-    // Interpret filename timestamps as local time in UTC+10 and convert to an absolute instant.
-    // Supports patterns like:
+function parseAdmStartDate(filePath, timeZone) {
+    // The filename records the server's local time, so it is read in the server's
+    // zone rather than a fixed offset. Supports patterns like:
     //  - YYYY-MM-DD_HH-MM-SS
     //  - YYYY-MM-DD-HH-MM-SS
     //  - YYYYMMDD_HHMMSS
     //  - YYYY-MM-DD (defaults time to 00:00:00)
     const name = String(filePath).split(/[\\/]/).pop() || '';
-    const tzOffsetMs = 10 * 60 * 60 * 1000;
 
     let m;
     // Full datetime variants
     m = name.match(/(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})[T _-]?(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})/);
     if (m) {
-        const y = Number(m[1]), mon = Number(m[2]) - 1, d = Number(m[3]);
-        const h = Number(m[4]), mi = Number(m[5]), s = Number(m[6]);
-        // Convert "UTC+10 local time" to UTC instant by subtracting the offset
-        const utcMs = Date.UTC(y, mon, d, h, mi, s) - tzOffsetMs;
-        const dt = new Date(utcMs);
+        const dt = new Date(wallToMs({
+            y: Number(m[1]), mon: Number(m[2]) - 1, d: Number(m[3]),
+            h: Number(m[4]), mi: Number(m[5]), s: Number(m[6]),
+        }, timeZone));
         return isNaN(dt.getTime()) ? null : dt;
     }
     // Date-only
     m = name.match(/(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})/);
     if (m) {
-        const y = Number(m[1]), mon = Number(m[2]) - 1, d = Number(m[3]);
-        const utcMs = Date.UTC(y, mon, d, 0, 0, 0) - tzOffsetMs;
-        const dt = new Date(utcMs);
+        const dt = new Date(wallToMs({
+            y: Number(m[1]), mon: Number(m[2]) - 1, d: Number(m[3]), h: 0, mi: 0, s: 0,
+        }, timeZone));
         return isNaN(dt.getTime()) ? null : dt;
     }
 
@@ -1202,17 +1239,16 @@ async function listExpansionLogFiles(logsRoot) {
     return out;
 }
 
-function parseExpLogStartDate(filePath) {
-    // ExpLog_YYYY-MM-DD_HH-mm-ss.log — interpret as UTC+10 local time
+function parseExpLogStartDate(filePath, timeZone) {
+    // ExpLog_YYYY-MM-DD_HH-mm-ss.log — the server's local time, same as .ADM.
     const name = String(filePath).split(/[\\/]/).pop() || '';
-    const tzOffsetMs = 10 * 60 * 60 * 1000;
 
     const m = name.match(/ExpLog_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/i);
     if (m) {
-        const y = Number(m[1]), mon = Number(m[2]) - 1, d = Number(m[3]);
-        const h = Number(m[4]), mi = Number(m[5]), s = Number(m[6]);
-        const utcMs = Date.UTC(y, mon, d, h, mi, s) - tzOffsetMs;
-        const dt = new Date(utcMs);
+        const dt = new Date(wallToMs({
+            y: Number(m[1]), mon: Number(m[2]) - 1, d: Number(m[3]),
+            h: Number(m[4]), mi: Number(m[5]), s: Number(m[6]),
+        }, timeZone));
         return isNaN(dt.getTime()) ? null : dt;
     }
     return null;
@@ -1237,7 +1273,7 @@ async function collectExpansionRecordsInRange(start, end, posFilter, idSet, path
         } catch {
             continue;
         }
-        const startDate = parseExpLogStartDate(f);
+        const startDate = parseExpLogStartDate(f, paths.logTimeZone);
         if (!startDate) continue;
         const rows = text.split(/\r?\n/);
         fileBuckets.push({path: f, startDate, rows});
@@ -1264,14 +1300,8 @@ async function collectExpansionRecordsInRange(start, end, posFilter, idSet, path
 
     // For each file (in start-date order), walk lines in original order and include those within range
     for (const bucket of fileBuckets) {
-        // Compute UTC+10 "midnight" for the file date, as an absolute instant
-        const tzOffsetMs = 10 * 60 * 60 * 1000;
-        const shifted = new Date(bucket.startDate.getTime() + tzOffsetMs);
-        const baseMidnightUtcPlus10Ms = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), 0, 0, 0) - tzOffsetMs;
-        const baseDate = new Date(baseMidnightUtcPlus10Ms);
-
-        let dayOffset = 0;
-        let lastSec = null;
+        const clock = createDayClock(
+            localFields(bucket.startDate.getTime(), paths.logTimeZone), paths.logTimeZone);
 
         for (const row of bucket.rows) {
             const t = tryParseExpLineTime(row);
@@ -1280,12 +1310,7 @@ async function collectExpansionRecordsInRange(start, end, posFilter, idSet, path
             const sec = hmsToSec(t);
             if (sec == null) continue;
 
-            if (lastSec != null && sec < lastSec) {
-                dayOffset += 1;
-            }
-            lastSec = sec;
-
-            const dt = new Date(baseDate.getTime() + dayOffset * 24 * 60 * 60 * 1000 + sec * 1000);
+            const dt = new Date(clock.at(sec));
 
             if (dt < start || dt > end) continue;
 
@@ -1321,7 +1346,7 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
         } catch {
             continue;
         }
-        const startDate = parseAdmStartDate(f);
+        const startDate = parseAdmStartDate(f, paths.logTimeZone);
         if (!startDate) continue;
         const rows = text.split(/\r?\n/);
         fileBuckets.push({path: f, startDate, rows});
@@ -1348,14 +1373,8 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
 
     // For each file (in start-date order), walk lines in original order and include those within range
     for (const bucket of fileBuckets) {
-        // Compute UTC+10 "midnight" for the file date, as an absolute instant
-        const tzOffsetMs = 10 * 60 * 60 * 1000;
-        const shifted = new Date(bucket.startDate.getTime() + tzOffsetMs); // shift to get UTC+10 calendar components
-        const baseMidnightUtcPlus10Ms = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), 0, 0, 0) - tzOffsetMs;
-        const baseDate = new Date(baseMidnightUtcPlus10Ms);
-
-        let dayOffset = 0;
-        let lastSec = null;
+        const clock = createDayClock(
+            localFields(bucket.startDate.getTime(), paths.logTimeZone), paths.logTimeZone);
 
         for (const row of bucket.rows) {
             const t = tryParseLineTime(row);
@@ -1364,14 +1383,7 @@ async function collectAdmRecordsInRange(start, end, posFilter, idSet, paths) {
             const sec = hmsToSec(t);
             if (sec == null) continue;
 
-            if (lastSec != null && sec < lastSec) {
-                // Midnight rollover within the same file
-                dayOffset += 1;
-            }
-            lastSec = sec;
-
-            // Build per-line timestamp as base + dayOffset + seconds-of-day (all anchored to UTC+10)
-            const dt = new Date(baseDate.getTime() + dayOffset * 24 * 60 * 60 * 1000 + sec * 1000);
+            const dt = new Date(clock.at(sec));
 
             // Ensure the adjusted datetime lies within the requested range
             if (dt < start || dt > end) continue;
@@ -1749,14 +1761,15 @@ function historyRange(url) {
 
 let admJob = null;
 
-function startAdmImport({ files, offsetMinutes, ledger, root }) {
+function startAdmImport({ files, zone, ledger, root }) {
     const controller = new AbortController();
     admJob = {
         running: true,
         startedAt: Date.now(),
         finishedAt: null,
         root,
-        offsetMinutes,
+        timeZone: typeof zone === 'string' ? zone : null,
+        offsetMinutes: typeof zone === 'object' ? zone.offsetMinutes : null,
         totalFiles: files.filter(f => !f.skip).length,
         progress: null,
         result: null,
@@ -1766,7 +1779,7 @@ function startAdmImport({ files, offsetMinutes, ledger, root }) {
 
     // Intentionally not awaited: the route returns 202 and the client polls.
     admImport.importAdmArchive({
-        files, offsetMinutes, ledger, srv: 'default',
+        files, zone, ledger, srv: 'default',
         signal: controller.signal,
         onProgress: (p) => { if (admJob) admJob.progress = p; },
     }).then((result) => {
@@ -2320,7 +2333,10 @@ const server = http.createServer(async (req, res) => {
                         id: crypto.randomUUID(),
                         name: data.name,
                         serverPath: resolve(data.serverPath),
-                        missionName: data.missionName
+                        missionName: data.missionName,
+                        // Stored only when the runtime recognises it; a junk zone
+                        // here would silently fall back and misdate every log line.
+                        logTimeZone: normalizeTimeZone(data.logTimeZone) || hostTimeZone
                     };
                     profiles.push(newProfile);
                     await saveProfiles();
@@ -2457,6 +2473,10 @@ const server = http.createServer(async (req, res) => {
                     const body = await readBody(req);
                     const data = JSON.parse(body || '{}');
                     profiles[index] = { ...profiles[index], ...data, id: profileId };
+                    if ('logTimeZone' in data) {
+                        profiles[index].logTimeZone =
+                            normalizeTimeZone(data.logTimeZone) || hostTimeZone;
+                    }
                     await saveProfiles();
                     groupFolderCaches.delete(profileId);
                     groupFilesCaches.delete(profileId);
@@ -2686,19 +2706,25 @@ const server = http.createServer(async (req, res) => {
             if (req.method !== 'GET') { methodNotAllowed(res); return; }
             try {
                 const root = url.searchParams.get('root') || paths.logsDirPath;
+                // The zone comes from the profile; an explicit one lets the panel
+                // preview a different choice before committing to it.
+                const zone = admImport.toZone(
+                    url.searchParams.get('timeZone') || paths.logTimeZone);
                 const [scan, ledger] = await Promise.all([
-                    admImport.scanAdmArchive(root),
+                    admImport.scanAdmArchive(root, zone),
                     admImport.readGuidLedger(profile.serverPath),
                 ]);
                 send(res, 200, JSON.stringify({
                     root,
                     defaultRoot: paths.logsDirPath,
+                    profileTimeZone: paths.logTimeZone,
                     offset: scan.offset,
+                    zone: scan.zone,
                     ledger: { ok: ledger.ok, size: ledger.size, path: ledger.path, error: ledger.error || null },
                     files: scan.files.map(f => ({
                         path: f.path,
                         bytes: f.bytes,
-                        startsAt: f.header ? admImport.headerInstant(f.header, scan.offset.offsetMinutes) : null,
+                        startsAt: f.header ? admImport.headerInstant(f.header, zone) : null,
                         detectedOffset: f.detected ? f.detected.offsetMinutes : null,
                         detectedSource: f.detected ? f.detected.source : null,
                         confident: !!f.confident,
@@ -2733,17 +2759,20 @@ const server = http.createServer(async (req, res) => {
             try {
                 const data = JSON.parse(await readBody(req) || '{}');
                 const root = data.root || paths.logsDirPath;
-                const scan = await admImport.scanAdmArchive(root);
-                const offsetMinutes = Number.isFinite(data.offsetMinutes)
-                    ? Number(data.offsetMinutes)
-                    : scan.offset.offsetMinutes;
+                // A zone name is the normal case. A bare offset is the escape hatch
+                // for an archive from a server whose zone nobody remembers.
+                const zone = admImport.toZone(
+                    Number.isFinite(data.offsetMinutes) && !data.timeZone
+                        ? { offsetMinutes: Number(data.offsetMinutes) }
+                        : (data.timeZone || paths.logTimeZone));
+                const scan = await admImport.scanAdmArchive(root, zone);
                 const only = Array.isArray(data.paths) && data.paths.length
                     ? new Set(data.paths.map(String))
                     : null;
                 const files = only ? scan.files.filter(f => only.has(f.path)) : scan.files;
                 const ledger = await admImport.readGuidLedger(profile.serverPath);
 
-                startAdmImport({ files, offsetMinutes, ledger: ledger.map, root });
+                startAdmImport({ files, zone, ledger: ledger.map, root });
                 send(res, 202, JSON.stringify(admJobState()), {'Content-Type': 'application/json'});
             } catch (e) {
                 send(res, 500, JSON.stringify({error: `Failed to start import: ${e.message}`}), {'Content-Type': 'application/json'});
@@ -2762,29 +2791,14 @@ const server = http.createServer(async (req, res) => {
                 body = await readBody(req);
                 const data = JSON.parse(body || '{}');
 
-                // Parse input timestamps as UTC+10 local times using moment
-                const parseUtcPlus10 = (s) => {
-                    if (typeof s !== 'string') return moment.invalid();
-                    const formats = [
-                        'YYYY-MM-DDTHH:mm:ss',
-                        'YYYY-MM-DD HH:mm:ss',
-                        'YYYY-MM-DDTHH:mm',
-                        'YYYY-MM-DD HH:mm',
-                        'YYYY-MM-DD'
-                    ];
-                    const m = moment(s, formats, true);
-                    if (!m.isValid()) return moment.invalid();
-                    return m.utcOffset(600, true).utc();
-                };
-
-                const startM = parseUtcPlus10(data.start);
-                const endM = parseUtcPlus10(data.end);
-                if (!data.start || !data.end || !startM.isValid() || !endM.isValid() || startM.isAfter(endM)) {
+                const startMs = parseServerLocal(data.start, paths.logTimeZone);
+                const endMs = parseServerLocal(data.end, paths.logTimeZone);
+                if (startMs === null || endMs === null || startMs > endMs) {
                     badRequest(res, 'Invalid start/end datetimes.');
                     return;
                 }
-                const start = startM.toDate();
-                const end = endM.toDate();
+                const start = new Date(startMs);
+                const end = new Date(endMs);
 
                 // Use X/Z for planar distance; accept data.z primarily, fall back to legacy data.y for compatibility
                 const xf = Number(data.x);
@@ -2817,11 +2831,15 @@ const server = http.createServer(async (req, res) => {
                     lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);
                 }
 
-                // Prepend header with start datetime in UTC+10 and build filename using moment
-                const header = `AdminLog started on ${startM.clone().utcOffset(600).format('YYYY-MM-DD')} at ${startM.clone().utcOffset(600).format('HH:mm:ss')}`;
+                // The extract is written in the server's local time, exactly like the
+                // logs it came from, so anything that reads .ADM files — including
+                // this product's own importer — reads it back correctly.
+                const startLocal = serverLocalParts(startMs, paths.logTimeZone);
+                const endLocal = serverLocalParts(endMs, paths.logTimeZone);
+                const header = `AdminLog started on ${startLocal.date} at ${startLocal.time}`;
                 const content = [header, ...lines].join('\n');
 
-                const filename = `${startM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}_to_${endM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}.ADM`;
+                const filename = `${startLocal.stamp}_to_${endLocal.stamp}.ADM`;
                 send(res, 200, content, {
                     'Content-Type': 'text/plain; charset=utf-8',
                     'Content-Disposition': `attachment; filename="${filename}"`
@@ -2844,28 +2862,14 @@ const server = http.createServer(async (req, res) => {
                 body = await readBody(req);
                 const data = JSON.parse(body || '{}');
 
-                const parseUtcPlus10 = (s) => {
-                    if (typeof s !== 'string') return moment.invalid();
-                    const formats = [
-                        'YYYY-MM-DDTHH:mm:ss',
-                        'YYYY-MM-DD HH:mm:ss',
-                        'YYYY-MM-DDTHH:mm',
-                        'YYYY-MM-DD HH:mm',
-                        'YYYY-MM-DD'
-                    ];
-                    const m = moment(s, formats, true);
-                    if (!m.isValid()) return moment.invalid();
-                    return m.utcOffset(600, true).utc();
-                };
-
-                const startM = parseUtcPlus10(data.start);
-                const endM = parseUtcPlus10(data.end);
-                if (!data.start || !data.end || !startM.isValid() || !endM.isValid() || startM.isAfter(endM)) {
+                const startMs = parseServerLocal(data.start, paths.logTimeZone);
+                const endMs = parseServerLocal(data.end, paths.logTimeZone);
+                if (startMs === null || endMs === null || startMs > endMs) {
                     badRequest(res, 'Invalid start/end datetimes.');
                     return;
                 }
-                const start = startM.toDate();
-                const end = endM.toDate();
+                const start = new Date(startMs);
+                const end = new Date(endMs);
 
                 const xf = Number(data.x);
                 let zf = Number(data.z);
@@ -2894,10 +2898,12 @@ const server = http.createServer(async (req, res) => {
                     lines = await collectExpansionRecordsInRange(start, end, undefined, undefined, paths);
                 }
 
-                const header = `ExpansionLog started on ${startM.clone().utcOffset(600).format('YYYY-MM-DD')} at ${startM.clone().utcOffset(600).format('HH:mm:ss')}`;
+                const startLocal = serverLocalParts(startMs, paths.logTimeZone);
+                const endLocal = serverLocalParts(endMs, paths.logTimeZone);
+                const header = `ExpansionLog started on ${startLocal.date} at ${startLocal.time}`;
                 const content = [header, ...lines].join('\n');
 
-                const filename = `${startM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}_to_${endM.clone().utcOffset(600).format('YYYY-MM-DD_HH-mm-ss')}.log`;
+                const filename = `${startLocal.stamp}_to_${endLocal.stamp}.log`;
                 send(res, 200, content, {
                     'Content-Type': 'text/plain; charset=utf-8',
                     'Content-Disposition': `attachment; filename="${filename}"`
@@ -3262,28 +3268,14 @@ const server = http.createServer(async (req, res) => {
                 body = await readBody(req);
                 const data = JSON.parse(body || '{}');
 
-                const parseUtcPlus10 = (s) => {
-                    if (typeof s !== 'string') return moment.invalid();
-                    const formats = [
-                        'YYYY-MM-DDTHH:mm:ss',
-                        'YYYY-MM-DD HH:mm:ss',
-                        'YYYY-MM-DDTHH:mm',
-                        'YYYY-MM-DD HH:mm',
-                        'YYYY-MM-DD'
-                    ];
-                    const m = moment(s, formats, true);
-                    if (!m.isValid()) return moment.invalid();
-                    return m.utcOffset(600, true).utc();
-                };
-
-                const startM = parseUtcPlus10(data.start);
-                const endM = parseUtcPlus10(data.end);
-                if (!data.start || !data.end || !startM.isValid() || !endM.isValid() || startM.isAfter(endM)) {
+                const startMs = parseServerLocal(data.start, paths.logTimeZone);
+                const endMs = parseServerLocal(data.end, paths.logTimeZone);
+                if (startMs === null || endMs === null || startMs > endMs) {
                     badRequest(res, 'Invalid start/end datetimes.');
                     return;
                 }
-                const start = startM.toDate();
-                const end = endM.toDate();
+                const start = new Date(startMs);
+                const end = new Date(endMs);
                 const dataType = data.dataType || 'all';
 
                 const lines = await collectAdmRecordsInRange(start, end, undefined, undefined, paths);

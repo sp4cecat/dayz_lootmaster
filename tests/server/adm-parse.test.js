@@ -115,6 +115,28 @@ describe('parseAdmFile', () => {
         expect(b.offsetSec - a.offsetSec).toBe(20);
     });
 
+    it('does not roll over when daylight saving replays an hour', () => {
+        // A server in Australia/Sydney writes 02:00-02:59 twice each April. Reading
+        // the repeat as midnight would move the rest of the file a day forward.
+        const text = [
+            '02:59:00 | Player "A" (id=G1 pos=<1, 2, 3>)',
+            '02:00:00 | Player "A" (id=G1 pos=<4, 5, 6>)',
+        ].join('\n');
+        const [a, b] = parseAdmFile(text);
+        expect(a.dayOffset).toBe(0);
+        expect(b.dayOffset).toBe(0);
+    });
+
+    it('tags every observation with the day of the file it falls on', () => {
+        // The day is all the parser can say; the instant needs a zone, which it
+        // deliberately knows nothing about.
+        const text = [
+            '23:59:50 | Player "A" (id=G1 pos=<1, 2, 3>)',
+            '00:00:10 | Player "A" (id=G1 pos=<4, 5, 6>)',
+        ].join('\n');
+        expect(parseAdmFile(text).map(o => o.dayOffset)).toEqual([0, 1]);
+    });
+
     it('does not roll over on same-second reordering', () => {
         // Two lines written in the same second can land out of order; treating that
         // as midnight would shift the rest of the file a full day.

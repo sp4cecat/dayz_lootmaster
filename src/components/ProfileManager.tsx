@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Button } from '@/components/base/button/button';
 import { Input } from '@/components/base/input/input';
 import { cx } from '@/utils/cx';
@@ -9,12 +9,16 @@ import { getMapMetadata } from '@/consts/maps';
 import { apiFetch } from '@/utils/api';
 import CfToolsSettings from '@/components/live/CfToolsSettings';
 import AdmImportPanel from '@/components/history/AdmImportPanel';
+import { Select } from '@/components/base/select/select';
+import { browserTimeZone, zoneOptions } from '@/utils/timezones';
 
 interface Profile {
   id: string;
   name: string;
   serverPath: string;
   missionName: string;
+  /** IANA zone the game server's clock runs in; every log timestamp is read in it. */
+  logTimeZone?: string;
   addons?: string[];
 }
 
@@ -34,11 +38,14 @@ export default function ProfileManager({
     const [formData, setFormData] = useState({
         name: '',
         serverPath: '',
-        missionName: ''
+        missionName: '',
+        logTimeZone: browserTimeZone
     });
+    // Built once: there are ~400 zones and each carries a formatted offset.
+    const timeZoneOptions = useMemo(() => zoneOptions(), []);
 
     const resetForm = () => {
-        setFormData({ name: '', serverPath: '', missionName: '' });
+        setFormData({ name: '', serverPath: '', missionName: '', logTimeZone: browserTimeZone });
         setIsAdding(false);
         setEditingProfile(null);
     };
@@ -48,7 +55,8 @@ export default function ProfileManager({
         setFormData({
             name: p.name,
             serverPath: p.serverPath,
-            missionName: p.missionName
+            missionName: p.missionName,
+            logTimeZone: p.logTimeZone || browserTimeZone
         });
         setIsAdding(true);
     };
@@ -140,6 +148,14 @@ export default function ProfileManager({
                                 onChange={e => setFormData({...formData, missionName: e.target.value})}
                                 hint="The name of your mission folder in mpmissions."
                                 required
+                            />
+
+                            <Select
+                                label="Server Timezone"
+                                options={timeZoneOptions}
+                                value={formData.logTimeZone}
+                                onChange={e => setFormData({...formData, logTimeZone: e.target.value})}
+                                hint="Admin logs record a bare wall clock. This is the zone it was written in, and it decides when everything in the logs actually happened — including through daylight saving."
                             />
                         </div>
 
