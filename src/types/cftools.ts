@@ -168,9 +168,29 @@ export interface LiveLayer<T> {
   items: T[];
 }
 
+/**
+ * In-game clock and ambient temperature from the companion mod's heartbeat.
+ * Mod-sourced only — CF Tools' Data API carries none of it — so `error` is set
+ * (and the readings absent) whenever the mod is not reporting.
+ *
+ * Each reading is independently nullable: a mod build older than the one that
+ * added `temperature` still sends a usable date and time.
+ */
+export interface LiveWorldInfo {
+  at?: number;
+  error?: string;
+  /** 24-hour in-game clock. Null unless BOTH components were reported. */
+  time?: { hour: number; minute: number } | null;
+  /** In-game calendar date. Null unless BOTH month and day were reported. */
+  date?: { year: number | null; month: number; day: number } | null;
+  /** Ambient air temperature, °C at sea level. Legitimately negative. */
+  temperature?: number | null;
+}
+
 export interface LiveSnapshot {
   connected: boolean;
   reason?: string;
+  world?: LiveWorldInfo;
   players?: LiveLayer<LivePlayer>;
   vehicles?: LiveLayer<LiveVehicle>;
   events?: LiveLayer<LiveEvent>;

@@ -136,6 +136,10 @@
           "day": { "type": "integer" },
           "hour": { "type": "integer" },
           "minute": { "type": "integer" },
+          "temperature": {
+            "type": "number",
+            "description": "Ambient air temperature in Celsius at sea level, with the overcast and fog effects folded in — the same components vanilla's OutdoorThermometer reads, so it is an air temperature and NOT a wind-chill \"feels like\". -999 means the mission's WorldData was not up yet. NOTE the sentinel: unlike every other numeric here, a NEGATIVE temperature is a perfectly valid reading (a Sakhal night), so collapsing \"< 0\" to unknown the way the bounded stats are collapsed would throw away real data. Test for the sentinel, not the sign."
+          },
           "weather": { "$ref": "#/components/schemas/Weather" }
         }
       },

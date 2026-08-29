@@ -767,6 +767,89 @@ describe('companion-mod AI layer', () => {
   });
 });
 
+describe('companion-mod world clock', () => {
+  // The world block rides along on every buildLiveSnapshot call, so the requested
+  // layer still has to resolve. Set it here rather than relying on a value another
+  // describe left on the mock — vi.clearAllMocks() clears calls, not implementations.
+  beforeEach(() => {
+    cf.getSessions.mockResolvedValue({ at: 1, stale: false, data: { sessions: [] } });
+  });
+
+  const modUp = (server) => {
+    ingest.modConnected.mockReturnValue(true);
+    ingest.getSnapshot.mockReturnValue({ data: { server }, at: 42 });
+  };
+  const heartbeat = (over = {}) => ({
+    online: 3, ai: 0, uptime: 900, fps: 45,
+    year: 2020, month: 8, day: 14, hour: 8, minute: 42,
+    temperature: 12.4,
+    weather: { overcast: 0.2, rain: 0, fog: 0.1 },
+    ...over,
+  });
+
+  it('reports date, time and temperature from the heartbeat', async () => {
+    modUp(heartbeat());
+    const snap = await buildLiveSnapshot(PROFILE, ['players']);
+    expect(snap.world).toEqual({
+      at: 42,
+      time: { hour: 8, minute: 42 },
+      date: { year: 2020, month: 8, day: 14 },
+      temperature: 12.4,
+    });
+  });
+
+  // The whole point of the -999 sentinel. Temperature is the only numeric on this wire
+  // whose valid range spans zero, so the "negative means unknown" rule the bounded
+  // stats use would blank out every reading on a winter map.
+  it('keeps a sub-zero temperature and only drops the sentinel', async () => {
+    modUp(heartbeat({ temperature: -14.2 }));
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world.temperature).toBe(-14.2);
+
+    modUp(heartbeat({ temperature: -999 }));
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world.temperature).toBeNull();
+  });
+
+  // Midnight. modStat treats a negative as unknown, which is right here, but 0 is a
+  // real hour and a real minute and must survive.
+  it('renders midnight rather than dropping it as a falsy reading', async () => {
+    modUp(heartbeat({ hour: 0, minute: 0 }));
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world.time).toEqual({ hour: 0, minute: 0 });
+  });
+
+  // A mod build older than the one that added `temperature` still reports a usable
+  // clock; blanking the whole block would be a regression for anyone yet to redeploy.
+  it('still reports the clock when the mod sends no temperature', async () => {
+    const older = heartbeat();
+    delete older.temperature;
+    modUp(older);
+    const { world } = await buildLiveSnapshot(PROFILE, ['players']);
+    expect(world.temperature).toBeNull();
+    expect(world.time).toEqual({ hour: 8, minute: 42 });
+  });
+
+  // Half a clock is a wrong time on screen, which is worse than no clock.
+  it('withholds a partial clock or date rather than rendering half of one', async () => {
+    modUp(heartbeat({ minute: -1 }));
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world.time).toBeNull();
+
+    modUp(heartbeat({ day: 0 }));
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world.date).toBeNull();
+  });
+
+  // Mod-only data: CF Tools carries none of it, so a stale snapshot must clear the
+  // readout instead of leaving a frozen clock that looks live.
+  it('reports mod_offline when the mod goes stale', async () => {
+    ingest.modConnected.mockReturnValue(false);
+    ingest.getSnapshot.mockReturnValue({ data: { server: heartbeat() }, at: 42 });
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world).toEqual({ error: 'mod_offline' });
+  });
+
+  it('reports mod_offline when the mod is up but sent no heartbeat', async () => {
+    modUp(undefined);
+    expect((await buildLiveSnapshot(PROFILE, ['players'])).world).toEqual({ error: 'mod_offline' });
+  });
+});
+
 describe('resolveActionCode', () => {
   const actions = [
     { actionCode: 'CFCloud_TeleportPlayer' },

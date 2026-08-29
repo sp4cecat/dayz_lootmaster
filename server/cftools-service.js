@@ -668,6 +668,57 @@ function buildAiLayer() {
     return { at, stale: false, items: data.ai.map(normModAi).filter(Boolean) };
 }
 
+// ---- companion-mod world clock ----
+
+/**
+ * The sentinel the mod sends for "WorldData was not up yet" on `server.temperature`.
+ *
+ * Temperature is the one numeric on the ingest wire whose valid range spans zero, so
+ * it CANNOT go through modStat: that collapses every negative to null, which would
+ * silently discard every reading on a winter map. Compare against the sentinel.
+ */
+const MOD_TEMP_UNKNOWN = -999;
+
+const modTemp = (v) => {
+    const n = num(v);
+    return n === null || n <= MOD_TEMP_UNKNOWN + 1 ? null : n;
+};
+
+/**
+ * In-game clock, calendar date and ambient temperature, from the companion mod's
+ * heartbeat. CF Tools has no equivalent — none of this is in the Data API — so this
+ * block is mod-only and simply absent when the mod is not reporting.
+ *
+ * Every field is independently nullable rather than the whole block being all-or-
+ * nothing: an older mod build sends the date and no temperature, and dropping the
+ * clock because of that would be a regression for anyone who has not redeployed.
+ */
+function buildWorldInfo() {
+    if (!ingest.modConnected()) return { error: 'mod_offline' };
+    const { data, at } = ingest.getSnapshot();
+    const srv = data && typeof data.server === 'object' ? data.server : null;
+    if (!srv) return { error: 'mod_offline' };
+
+    // Hour and minute are 0-based, so modStat's "negative is unknown" rule holds, but
+    // its treatment of 0 must not: midnight is 00:00 and the zeroth minute is real.
+    const hour = modStat(srv.hour);
+    const minute = modStat(srv.minute);
+    // Month and day are 1-based; a 0 is a value the engine cannot produce, so it is
+    // as much an absence as a negative is.
+    const month = modStat(srv.month) || null;
+    const day = modStat(srv.day) || null;
+    return {
+        at,
+        // Only a complete h:m pair is a clock. Half of one is a wrong time on screen.
+        time: hour === null || minute === null ? null : { hour, minute },
+        // Same all-or-nothing rule as the clock, and for the same reason. The year is
+        // allowed to be missing on its own: month/day is a renderable date, and the
+        // in-game year is the least interesting part of it.
+        date: month === null || day === null ? null : { year: modStat(srv.year), month, day },
+        temperature: modTemp(srv.temperature),
+    };
+}
+
 // ---- spawn ledger ----
 //
 // No server log records tracked-item spawns with positions (verified against
@@ -830,6 +881,11 @@ export async function buildLiveSnapshot(profile, layers) {
     if (want.has('ai')) {
         out.ai = buildAiLayer();
     }
+
+    // Not a layer and not layer-gated: the world clock is chrome on the toolbar, not
+    // something plotted on the map, so it does not appear in `layers` and cannot be
+    // toggled off.
+    out.world = buildWorldInfo();
 
     await Promise.all(tasks);
     return out;

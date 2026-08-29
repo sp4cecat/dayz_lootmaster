@@ -3,7 +3,7 @@ import { Modal } from '../base/modal/modal';
 import { Badge } from '../base/badges/badges';
 import { Button } from '../base/button/button';
 import { MapZoomControls } from '../MapZoomControls';
-import { Radio, Users, Car, MapPin, Flag, Bot, Settings } from 'lucide-react';
+import { Radio, Users, Car, MapPin, Flag, Bot, Settings, Clock, Thermometer } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
@@ -11,7 +11,7 @@ import { useMapPanZoom } from '@/hooks/useMapPanZoom';
 import { useCfToolsStatus } from '@/hooks/useCfToolsStatus';
 import { useLiveSnapshot } from '@/hooks/useLiveSnapshot';
 import { useCfToolsActions } from '@/hooks/useCfToolsActions';
-import type { LiveLayerKey, LivePlayer } from '@/types/cftools';
+import type { LiveLayerKey, LivePlayer, LiveWorldInfo } from '@/types/cftools';
 import LiveSidePanel from './LiveSidePanel';
 import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
@@ -50,6 +50,31 @@ const REASON_HINTS: Record<string, string> = {
   mod_offline: 'The spacecat_dayz_server_api mod is not reporting — check it is loaded and its baseUrl points here.',
   mod_no_ai: 'The mod is connected but sent no AI list — set "ai": true in $profile:spacecat/spacecat_api.json.',
 };
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The in-game calendar date, e.g. "14 Aug".
+ *
+ * Formatted by hand rather than through Date/Intl on purpose: this is a world date,
+ * not an instant. Feeding it to Date would apply the VIEWER's timezone to a server's
+ * fictional calendar and could shift the day across a boundary — and the in-game year
+ * is whatever the mission sets, which is not guaranteed to be a year Date can hold.
+ */
+function formatWorldDate(date: NonNullable<LiveWorldInfo['date']>): string {
+  const month = MONTHS[date.month - 1];
+  return month ? `${date.day} ${month}` : `${date.day}/${date.month}`;
+}
+
+const formatWorldTime = (time: NonNullable<LiveWorldInfo['time']>) =>
+  `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+
+/**
+ * Ambient temperature to the nearest whole degree.
+ *
+ * `|| 0` is not redundancy: Math.round(-0.4) is -0, which renders as "-0°C".
+ */
+const formatWorldTemp = (celsius: number) => `${Math.round(celsius) || 0}°C`;
 
 /**
  * Live server map: players, vehicles, world events and territory flags from
@@ -154,6 +179,7 @@ export default function LiveMapView({
     selection?.kind === kind && selection.id === id;
 
   const playerCount = snapshot?.players?.items.length;
+  const world = snapshot?.world;
 
   return (
     <Modal
@@ -177,6 +203,30 @@ export default function LiveMapView({
           )}
           {typeof playerCount === 'number' && (
             <Badge color="brand" size="sm">{playerCount} online</Badge>
+          )}
+
+          {/* In-game clock and ambient temperature. Two badges rather than one string
+              because the readings are independently available: a mod build predating
+              `temperature` still reports the date and time, and showing that is better
+              than showing nothing until the operator redeploys. */}
+          {(world?.date || world?.time) && (
+            <span title="In-game world date and time, reported by the companion mod.">
+              <Badge color="gray" size="sm">
+                <Clock size={11} className="mr-1 shrink-0" />
+                {[
+                  world.date && formatWorldDate(world.date),
+                  world.time && formatWorldTime(world.time),
+                ].filter(Boolean).join(' · ')}
+              </Badge>
+            </span>
+          )}
+          {typeof world?.temperature === 'number' && (
+            <span title="Ambient air temperature at sea level, including cloud and fog effects.">
+              <Badge color="gray" size="sm">
+                <Thermometer size={11} className="mr-1 shrink-0" />
+                {formatWorldTemp(world.temperature)}
+              </Badge>
+            </span>
           )}
 
           <div className="flex items-center gap-1 ml-auto">
