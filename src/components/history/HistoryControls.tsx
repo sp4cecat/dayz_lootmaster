@@ -1,5 +1,5 @@
 import { CalendarDateTime, fromDate, getLocalTimeZone, toCalendarDateTime } from '@internationalized/date';
-import { Route, Play, Circle, Loader2 } from 'lucide-react';
+import { Route, Play, Circle, ListTree, Loader2 } from 'lucide-react';
 import { DatePicker } from '../base/datepicker/datepicker';
 import { Badge } from '../base/badges/badges';
 import { cx } from '@/utils/cx';
@@ -19,6 +19,7 @@ const MODES: { key: HistoryMode; label: string; icon: React.ElementType }[] = [
   { key: 'paths', label: 'Paths', icon: Route },
   { key: 'playback', label: 'Playback', icon: Play },
   { key: 'area', label: 'Area', icon: Circle },
+  { key: 'actions', label: 'Actions', icon: ListTree },
 ];
 
 /** epoch ms -> the CalendarDateTime the shared DatePicker speaks. */
@@ -78,15 +79,16 @@ export default function HistoryControls({
 
   return (
     <div className="flex flex-col gap-3 min-h-0">
-      {/* Mode */}
-      <div className="flex items-center gap-1">
+      {/* Mode. A 2x2 grid rather than one row: with four modes in a 256 px rail,
+          "Playback" and "Actions" no longer fit side by side without truncating. */}
+      <div className="grid grid-cols-2 gap-1">
         {MODES.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"
             onClick={() => onModeChange(key)}
             className={cx(
-              'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+              'flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors',
               mode === key
                 ? 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800'
                 : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-700',

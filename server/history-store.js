@@ -26,7 +26,7 @@
 import { mkdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { modStat, modStr, modAlive, normPosition } from './mod-wire.js';
+import { num, modStat, modStr, modAlive, normPosition } from './mod-wire.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -168,6 +168,60 @@ const MIGRATIONS = [
         d.exec(`
             ALTER TABLE player_pos ADD COLUMN src TEXT NOT NULL DEFAULT 'mod';
             ALTER TABLE player_pos ADD COLUMN run_start INTEGER;
+        `);
+    },
+
+    // v3 — the action log and inventory snapshots pushed by the mod's event hooks.
+    //
+    // Both are rowid tables, not WITHOUT ROWID like player_pos: an action has no
+    // natural key (two players can drop the same class at the same millisecond),
+    // and a snapshot is addressed by a stable id in a URL. AUTOINCREMENT also
+    // rules out id reuse after a delete, which matters when a rollback audit row
+    // references a snapshot id.
+    (d) => {
+        d.exec(`
+            CREATE TABLE IF NOT EXISTS action (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                srv     TEXT    NOT NULL DEFAULT 'default',
+                ts      INTEGER NOT NULL,
+                pid     TEXT,                    -- actor; null for un-attributed world events
+                kind    TEXT    NOT NULL,
+                cls     TEXT,                    -- item classname involved, when there is one
+                x REAL, y REAL, z REAL,
+                cell    INTEGER,                 -- null when the event carried no position
+                detail  TEXT,                    -- free-form, mod-supplied
+                -- Idempotency: (session, n) is the mod's own monotonic event number
+                -- within one mission run. A retried batch re-inserts nothing.
+                session TEXT,
+                n       INTEGER
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_action_seq  ON action(srv, session, n)
+                WHERE session IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS ix_action_ts   ON action(srv, ts);
+            CREATE INDEX IF NOT EXISTS ix_action_pid  ON action(srv, pid, ts);
+            CREATE INDEX IF NOT EXISTS ix_action_cell ON action(srv, cell, ts);
+
+            CREATE TABLE IF NOT EXISTS inv_snapshot (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                srv     TEXT    NOT NULL DEFAULT 'default',
+                pid     TEXT    NOT NULL,
+                ts      INTEGER NOT NULL,
+                reason  TEXT    NOT NULL,        -- connect | disconnect | death | manual
+                x REAL, y REAL, z REAL,
+                cell    INTEGER,
+                health REAL, blood REAL, shock REAL, energy REAL, water REAL,
+                -- Denormalised so the snapshot LIST never has to parse a tree.
+                items     INTEGER NOT NULL DEFAULT 0,
+                truncated INTEGER NOT NULL DEFAULT 0,
+                tree      TEXT    NOT NULL,      -- JSON; the unit of retrieval
+                session TEXT,
+                n       INTEGER
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_inv_seq ON inv_snapshot(srv, session, n)
+                WHERE session IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS ix_inv_pid ON inv_snapshot(srv, pid, ts);
         `);
     },
 ];
@@ -413,6 +467,221 @@ function recordServerTick(server, at, srv) {
     );
 }
 
+// ---- write path: actions and inventories -----------------------------------
+
+/**
+ * How stale a mod-reported event may claim to be before we stop believing it.
+ *
+ * Events carry `age` (milliseconds between the thing happening and the batch
+ * being posted) rather than an absolute timestamp, because the mod has no wall
+ * clock — `GetGame().GetTime()` counts from mission start. Subtracting age from
+ * the receive time keeps the whole store on one clock, which is the same choice
+ * recordSnapshot makes and the reason a rollback can be lined up against a path.
+ *
+ * The cap stops a garbage age from back-dating a row into the middle of an
+ * archive, where it would be indistinguishable from real evidence.
+ */
+const MAX_EVENT_AGE_MS = 60 * 60 * 1000;
+
+function instantFor(at, age) {
+    const a = num(age);
+    if (a === null || a <= 0) return at;
+    return at - Math.min(a, MAX_EVENT_AGE_MS);
+}
+
+/** Bounds on a stored inventory tree. The mod caps too; this does not trust it. */
+export const INV_MAX_NODES = 4000;
+export const INV_MAX_DEPTH = 12;
+/** Longest `detail` string kept on an action row. */
+const DETAIL_MAX = 512;
+
+/**
+ * Normalise the mod's inventory tree, applying our own node and depth caps.
+ *
+ * Returns `{ tree, count, truncated }`. `truncated` is OR-ed with whatever the mod
+ * reported: a tree that is short for either reason is short, and presenting a
+ * partial loadout as complete is what turns a rollback into a silent theft.
+ */
+export function normalizeTree(nodes, state) {
+    const s = state || { left: INV_MAX_NODES, truncated: false, depth: 0 };
+    if (!Array.isArray(nodes) || s.depth > INV_MAX_DEPTH) {
+        if (Array.isArray(nodes) && nodes.length) s.truncated = true;
+        return { tree: [], state: s };
+    }
+    const out = [];
+    for (const n of nodes) {
+        if (!n || typeof n !== 'object') continue;
+        const cls = modStr(n.cls);
+        if (!cls) continue;                      // a node we cannot name cannot be restored
+        if (s.left <= 0) { s.truncated = true; break; }
+        s.left -= 1;
+        const child = normalizeTree(n.children, { ...s, depth: s.depth + 1 });
+        // The recursion consumed budget and may have truncated; carry both back up.
+        s.left = child.state.left;
+        s.truncated = s.truncated || child.state.truncated;
+        out.push({
+            cls,
+            // "" means "not in a slot" (i.e. cargo) — a sentinel, not a slot name.
+            slot: modStr(n.slot),
+            where: modStr(n.where) || 'cargo',
+            health01: modStat(n.health01),
+            healthLevel: modStat(n.healthLevel),
+            quantity: modStat(n.quantity),
+            quantityMax: modStat(n.quantityMax),
+            row: modStat(n.row),
+            col: modStat(n.col),
+            displayName: modStr(n.displayName),
+            children: child.tree,
+        });
+    }
+    return { tree: out, state: s };
+}
+
+/** Count nodes in a normalised tree. Stored so the list view never parses JSON. */
+function countNodes(tree) {
+    let n = 0;
+    for (const node of tree) n += 1 + countNodes(node.children);
+    return n;
+}
+
+function toActionRow(e, at, srv, session) {
+    if (!e || typeof e !== 'object') return null;
+    const kind = modStr(e.kind);
+    if (!kind) return null;                      // an event with no verb is not an event
+    const pos = normPosition(e.pos);
+    const detail = modStr(e.detail);
+    const n = num(e.n);
+    return {
+        srv,
+        ts: instantFor(at, e.age),
+        pid: modStr(e.pid),
+        kind,
+        cls: modStr(e.cls),
+        x: pos ? pos[0] : null,
+        y: pos ? pos[1] : null,
+        z: pos ? pos[2] : null,
+        cell: pos ? cellFor(pos[0], pos[2]) : null,
+        detail: detail ? detail.slice(0, DETAIL_MAX) : null,
+        session,
+        n: n === null ? null : Math.trunc(n),
+    };
+}
+
+/**
+ * Record a batch of action events. Called from /ingest/events inside a try/catch,
+ * and swallows its own errors for the same reason recordSnapshot does.
+ *
+ * Insertion is OR IGNORE against (srv, session, n), so the mod can retry a batch
+ * it never saw acknowledged without duplicating half of it. That matters more
+ * here than for snapshots: a snapshot re-sent is a position we already had, but a
+ * pickup re-sent is a second pickup that never happened.
+ */
+export function recordEvents(batch, at = Date.now(), srv = DEFAULT_SRV) {
+    if (!ready && !init()) return 0;
+    if (!batch || typeof batch !== 'object') return 0;
+    const events = Array.isArray(batch.events) ? batch.events : [];
+    if (!events.length) return 0;
+    const session = modStr(batch.session);
+
+    try {
+        const ins = db.prepare(`
+            INSERT OR IGNORE INTO action
+                (srv, ts, pid, kind, cls, x, y, z, cell, detail, session, n)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+        let inserted = 0;
+        db.exec('BEGIN');
+        try {
+            for (const e of events) {
+                const r = toActionRow(e, at, srv, session);
+                if (!r) continue;
+                const res = ins.run(r.srv, r.ts, r.pid, r.kind, r.cls,
+                    r.x, r.y, r.z, r.cell, r.detail, r.session, r.n);
+                inserted += Number(res.changes || 0);
+            }
+            db.exec('COMMIT');
+        } catch (inner) {
+            try { db.exec('ROLLBACK'); } catch { /* already unwound */ }
+            throw inner;
+        }
+        lastWriteAt = at;
+        writes += 1;
+        return inserted;
+    } catch (err) {
+        recordFailure(err);
+        return 0;
+    }
+}
+
+/**
+ * Record one action originating HERE rather than in the game — currently only the
+ * rollback audit row. It carries no session, so it is exempt from the dedup index
+ * and can never collide with a mod-assigned sequence number.
+ *
+ * Unlike recordEvents this throws: an audit row that silently failed to write
+ * would leave an applied rollback with no trace, which is worse than the rollback
+ * failing outright.
+ */
+export function recordAction({ ts = Date.now(), pid = null, kind, cls = null, pos = null, detail = null }, srv = DEFAULT_SRV) {
+    if (!ready && !init()) return null;
+    const p = normPosition(pos);
+    const res = db.prepare(`
+        INSERT INTO action (srv, ts, pid, kind, cls, x, y, z, cell, detail)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+        srv, ts, pid, kind, cls,
+        p ? p[0] : null, p ? p[1] : null, p ? p[2] : null,
+        p ? cellFor(p[0], p[2]) : null,
+        detail ? String(detail).slice(0, DETAIL_MAX) : null,
+    );
+    return Number(res.lastInsertRowid);
+}
+
+/**
+ * Record one inventory snapshot. Returns the stored row's id, or null.
+ *
+ * The tree is stored as JSON in one column rather than exploded into rows. It is
+ * only ever read whole — a rollback needs every node or none of them — and a
+ * normalised item table would mean a recursive CTE on every read to answer a
+ * question nobody asks ("which players ever carried an SVD" is what the action
+ * log is for).
+ */
+export function recordInventory(payload, at = Date.now(), srv = DEFAULT_SRV) {
+    if (!ready && !init()) return null;
+    if (!payload || typeof payload !== 'object') return null;
+    const pid = modStr(payload.pid);
+    if (!pid) return null;                       // a loadout we cannot attribute is not evidence
+
+    try {
+        const { tree, state } = normalizeTree(payload.tree);
+        const pos = normPosition(payload.pos);
+        const stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : {};
+        const session = modStr(payload.session);
+        const n = num(payload.n);
+        const res = db.prepare(`
+            INSERT OR IGNORE INTO inv_snapshot
+                (srv, pid, ts, reason, x, y, z, cell,
+                 health, blood, shock, energy, water,
+                 items, truncated, tree, session, n)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+            srv, pid, instantFor(at, payload.age), modStr(payload.reason) || 'manual',
+            pos ? pos[0] : null, pos ? pos[1] : null, pos ? pos[2] : null,
+            pos ? cellFor(pos[0], pos[2]) : null,
+            modStat(stats.health), modStat(stats.blood), modStat(stats.shock),
+            modStat(stats.energy), modStat(stats.water),
+            countNodes(tree),
+            // The mod's own truncation flag OR ours — see normalizeTree.
+            (state.truncated || payload.truncated === true || payload.truncated === 1) ? 1 : 0,
+            JSON.stringify(tree),
+            session, n === null ? null : Math.trunc(n),
+        );
+        lastWriteAt = at;
+        writes += 1;
+        return res.changes ? Number(res.lastInsertRowid) : null;
+    } catch (err) {
+        recordFailure(err);
+        return null;
+    }
+}
+
 // ---- read path -------------------------------------------------------------
 
 const asPoint = (r) => ({
@@ -646,6 +915,175 @@ export function queryArea({ x, z, radius, from, to, gapMs = 60000, srv = DEFAULT
         .sort((a, b) => a.enteredAt - b.enteredAt);
 }
 
+/**
+ * Action-log query: by player, by kind, by time, and optionally by circle.
+ *
+ * The circle filter goes through the same `cell` index as queryArea and then
+ * re-tests exact planar distance, so "what happened at this base" costs an index
+ * seek over a handful of buckets rather than a scan. Rows with no position (a
+ * connect, say) are excluded when a circle is given — a location-less event
+ * cannot honestly be claimed to have happened inside one.
+ *
+ * `limit` is a hard cap, and `truncated` says whether it bit. A feed that silently
+ * stops at 500 rows reads as "nothing else happened".
+ */
+export function queryActions({
+    pids, kinds, from, to, x, z, radius, limit = 1000, srv = DEFAULT_SRV,
+} = {}) {
+    if (!ready && !init()) return { items: [], truncated: false };
+
+    const where = ['srv = ?', 'ts BETWEEN ? AND ?'];
+    const args = [srv, from, to];
+
+    const ids = (Array.isArray(pids) ? pids : pids ? [pids] : []).filter(Boolean).map(String);
+    if (ids.length) {
+        where.push(`pid IN (${ids.map(() => '?').join(',')})`);
+        args.push(...ids);
+    }
+    const kindList = (Array.isArray(kinds) ? kinds : kinds ? [kinds] : []).filter(Boolean).map(String);
+    if (kindList.length) {
+        where.push(`kind IN (${kindList.map(() => '?').join(',')})`);
+        args.push(...kindList);
+    }
+
+    const circle = Number.isFinite(x) && Number.isFinite(z) && Number.isFinite(radius) && radius > 0;
+    if (circle) {
+        const cells = cellsForCircle(x, z, radius);
+        where.push(`cell IN (${cells.map(() => '?').join(',')})`);
+        args.push(...cells);
+    }
+
+    // One extra row, so "did the limit bite" is answered without a COUNT(*).
+    const cap = Math.max(1, Math.min(limit, 10000));
+    const rows = db.prepare(`
+        SELECT id, ts, pid, kind, cls, x, y, z, detail
+          FROM action
+         WHERE ${where.join(' AND ')}
+         ORDER BY ts DESC
+         LIMIT ?`).all(...args, cap + 1);
+
+    let kept = rows;
+    if (circle) {
+        const r2 = radius * radius;
+        kept = rows.filter((r) => {
+            if (r.x === null || r.z === null) return false;
+            const dx = r.x - x, dz = r.z - z;
+            return dx * dx + dz * dz <= r2;
+        });
+    }
+    // Measured on the SQL result, not the distance-filtered one: the LIMIT bit if
+    // the database had more rows to give, whether or not the circle then discarded
+    // some of them.
+    const truncated = rows.length > cap;
+    if (kept.length > cap) kept = kept.slice(0, cap);
+
+    const names = nameMap([...new Set(kept.map(r => r.pid).filter(Boolean))], srv);
+    return {
+        truncated,
+        // Chronological for a feed, even though the LIMIT had to run newest-first.
+        items: kept.reverse().map(r => ({
+            id: r.id,
+            ts: r.ts,
+            pid: r.pid,
+            name: r.pid ? (names.get(r.pid) || null) : null,
+            kind: r.kind,
+            cls: r.cls,
+            x: r.x, y: r.y, z: r.z,
+            detail: r.detail,
+        })),
+    };
+}
+
+/** Distinct action kinds present in the window; drives the feed's filter chips. */
+export function actionKinds({ from, to, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return [];
+    return db.prepare(
+        `SELECT kind, COUNT(*) AS count FROM action
+          WHERE srv = ? AND ts BETWEEN ? AND ?
+          GROUP BY kind ORDER BY count DESC`,
+    ).all(srv, from, to);
+}
+
+/**
+ * Inventory snapshots for a player (or everyone), newest first, WITHOUT the tree.
+ *
+ * The tree is deliberately not selected: a list of a season's snapshots would be
+ * tens of megabytes of JSON to render a dozen rows of "when, why, how many items".
+ * Fetch one by id when it is actually opened.
+ */
+export function listInventory({ pid, from, to, limit = 200, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return [];
+    const where = ['srv = ?'];
+    const args = [srv];
+    if (pid) { where.push('pid = ?'); args.push(String(pid)); }
+    if (Number.isFinite(from) && Number.isFinite(to)) {
+        where.push('ts BETWEEN ? AND ?');
+        args.push(from, to);
+    }
+    const rows = db.prepare(`
+        SELECT id, pid, ts, reason, x, y, z, health, blood, shock, energy, water,
+               items, truncated
+          FROM inv_snapshot
+         WHERE ${where.join(' AND ')}
+         ORDER BY ts DESC
+         LIMIT ?`).all(...args, Math.max(1, Math.min(limit, 2000)));
+
+    const names = nameMap([...new Set(rows.map(r => r.pid))], srv);
+    return rows.map(r => ({
+        id: r.id,
+        pid: r.pid,
+        name: names.get(r.pid) || null,
+        ts: r.ts,
+        reason: r.reason,
+        pos: r.x === null ? null : { x: r.x, y: r.y, z: r.z },
+        stats: {
+            health: r.health, blood: r.blood, shock: r.shock,
+            energy: r.energy, water: r.water,
+        },
+        items: r.items,
+        truncated: r.truncated === 1,
+    }));
+}
+
+/** One snapshot with its tree parsed, or null. */
+export function getInventory(id, srv = DEFAULT_SRV) {
+    if (!ready && !init()) return null;
+    const r = db.prepare(
+        'SELECT * FROM inv_snapshot WHERE srv = ? AND id = ?',
+    ).get(srv, Number(id));
+    if (!r) return null;
+    let tree = [];
+    try {
+        tree = JSON.parse(r.tree);
+    } catch {
+        // Unparseable JSON means the row is not a loadout any more. Report it as an
+        // empty, truncated tree rather than throwing: the snapshot's metadata is
+        // still true, and a rollback will correctly refuse to restore nothing.
+        return {
+            id: r.id, pid: r.pid, name: nameMap([r.pid], srv).get(r.pid) || null,
+            ts: r.ts, reason: r.reason,
+            pos: r.x === null ? null : { x: r.x, y: r.y, z: r.z },
+            stats: { health: r.health, blood: r.blood, shock: r.shock, energy: r.energy, water: r.water },
+            items: 0, truncated: true, corrupt: true, tree: [],
+        };
+    }
+    return {
+        id: r.id,
+        pid: r.pid,
+        name: nameMap([r.pid], srv).get(r.pid) || null,
+        ts: r.ts,
+        reason: r.reason,
+        pos: r.x === null ? null : { x: r.x, y: r.y, z: r.z },
+        stats: {
+            health: r.health, blood: r.blood, shock: r.shock,
+            energy: r.energy, water: r.water,
+        },
+        items: r.items,
+        truncated: r.truncated === 1,
+        tree,
+    };
+}
+
 /** Recorder health + volume. Drives the tool's empty/unhealthy states. */
 export function stats(srv = DEFAULT_SRV) {
     const base = {
@@ -660,7 +1098,7 @@ export function stats(srv = DEFAULT_SRV) {
         recordAi: RECORD_AI,
         retention: { fullDays: FULL_DAYS, thinDays: THIN_DAYS },
     };
-    if (!ready && !init()) return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null };
+    if (!ready && !init()) return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null, actions: 0, inventories: 0 };
     try {
         const agg = db.prepare(
             'SELECT COUNT(*) AS rows, MIN(ts) AS lo, MAX(ts) AS hi FROM player_pos WHERE srv = ?',
@@ -677,15 +1115,22 @@ export function stats(srv = DEFAULT_SRV) {
         ).all(srv)) {
             bySrc[r.src] = r.c;
         }
+        // Reported separately from `rows`, not folded into it. "4 million records"
+        // would hide the fact that the action log is empty because the mod predates
+        // the event hooks — which is exactly the question the actions feed raises
+        // when it shows nothing.
+        const actions = db.prepare('SELECT COUNT(*) AS c FROM action WHERE srv = ?').get(srv).c;
+        const inventories = db.prepare('SELECT COUNT(*) AS c FROM inv_snapshot WHERE srv = ?').get(srv).c;
         let bytes = null;
         try { bytes = statSync(DB_FILE).size; } catch { /* :memory: has no file */ }
         return {
             ...base, ready: true,
             rows: agg.rows, players, from: agg.lo, to: agg.hi, bytes, bySrc,
+            actions, inventories,
         };
     } catch (err) {
         recordFailure(err);
-        return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null };
+        return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null, actions: 0, inventories: 0 };
     }
 }
 
@@ -706,7 +1151,7 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
     if (!ready && !init()) return null;
     const thinCutoff = now - FULL_DAYS * DAY_MS;
     const dropCutoff = now - THIN_DAYS * DAY_MS;
-    const result = { thinned: 0, dropped: 0, ticksThinned: 0 };
+    const result = { thinned: 0, dropped: 0, ticksThinned: 0, actionsDropped: 0, inventoriesDropped: 0 };
 
     try {
         db.exec('BEGIN');
@@ -753,6 +1198,16 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
             result.ticksThinned = Number(ticks.changes || 0);
 
             db.prepare('DELETE FROM server_tick WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
+
+            // Actions and inventories are kept at FULL fidelity to the drop cutoff
+            // and then deleted outright — never thinned. Thinning a position stream
+            // loses resolution; thinning an action log loses events, and "he picked
+            // it up at 04:12" has no coarser version that is still true.
+            const acts = db.prepare('DELETE FROM action WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
+            result.actionsDropped = Number(acts.changes || 0);
+            const invs = db.prepare('DELETE FROM inv_snapshot WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
+            result.inventoriesDropped = Number(invs.changes || 0);
+
             db.exec('COMMIT');
         } catch (inner) {
             try { db.exec('ROLLBACK'); } catch { /* already unwound */ }
@@ -760,7 +1215,7 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
         }
 
         // Incremental, never a blocking full VACUUM: this runs on a live server.
-        if (result.dropped || result.thinned) {
+        if (result.dropped || result.thinned || result.actionsDropped || result.inventoriesDropped) {
             try { db.exec('PRAGMA incremental_vacuum'); } catch { /* best effort */ }
         }
         return result;

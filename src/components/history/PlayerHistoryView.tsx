@@ -7,7 +7,8 @@ import { cx } from '@/utils/cx';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
 import { useMapPanZoom } from '@/hooks/useMapPanZoom';
 import {
-  useAreaQuery, useHistoryPlayers, useHistoryStats, useHistoryTracks,
+  useAreaQuery, useHistoryActions, useHistoryPlayers, useHistoryStats, useHistoryTracks,
+  useModOnline,
 } from '@/hooks/useHistoryData';
 import { usePlaybackClock } from '@/hooks/usePlaybackClock';
 import { presenceSegments, sampleTrackAt, trailPoints } from '@/utils/trackSampling';
@@ -18,6 +19,9 @@ import { trackColor } from '@/utils/trackColors';
 import PlaybackBar from './PlaybackBar';
 import AreaSelectLayer from './AreaSelectLayer';
 import AreaResultsPanel from './AreaResultsPanel';
+import ActionsLayer from './ActionsLayer';
+import ActionFeed from './ActionFeed';
+import InventoryPanel from './InventoryPanel';
 
 interface PlayerHistoryViewProps {
   onClose: () => void;
@@ -64,11 +68,28 @@ export default function PlayerHistoryView({
   const [selected, setSelected] = useState<string[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
   const [area, setArea] = useState<AreaSelection | null>(null);
+  const [kinds, setKinds] = useState<string[]>([]);
+  const [hoveredAction, setHoveredAction] = useState<number | null>(null);
+  // The Actions rail carries two different things about the same players, and
+  // stacking them in a 288 px column would leave neither readable.
+  const [rail, setRail] = useState<'feed' | 'loadouts'>('feed');
 
   const { players, loading: playersLoading } = useHistoryPlayers(range.from, range.to);
   const { tracks, loading: tracksLoading, error: tracksError } =
     useHistoryTracks(selected, range.from, range.to);
   const areaQuery = useAreaQuery();
+  const { online, connected: modConnected } = useModOnline();
+
+  /**
+   * The action log for the selection.
+   *
+   * Confined to the area circle only while the Area mode owns it — carrying that
+   * filter into Actions mode would silently hide every event outside a circle the
+   * operator can no longer see.
+   */
+  const actionsQuery = useHistoryActions(
+    selected, range.from, range.to, kinds, mode === 'area' ? area : null,
+  );
 
   // Presence of whoever is selected, which is what playback is actually about.
   const segments = useMemo(() => presenceSegments(tracks), [tracks]);
@@ -98,6 +119,10 @@ export default function PlayerHistoryView({
 
   const togglePlayer = useCallback((pid: string) => {
     setSelected(prev => prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]);
+  }, []);
+
+  const toggleKind = useCallback((kind: string) => {
+    setKinds(prev => prev.includes(kind) ? prev.filter(k => k !== kind) : [...prev, kind]);
   }, []);
 
   const runAreaQuery = useCallback((next: AreaSelection) => {
@@ -132,6 +157,14 @@ export default function PlayerHistoryView({
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
   }, [mode, tracks, clock.ts, colorOf]);
+
+  // The loadouts rail is single-player. First selected rather than last, so it does
+  // not move under the operator every time they add someone to the path view.
+  const focusPid = selected[0] ?? null;
+  const focusName = useMemo(
+    () => players.find(p => p.pid === focusPid)?.name ?? null,
+    [players, focusPid],
+  );
 
   const highlighted = useMemo(
     () => (hovered ? new Set([hovered]) : undefined),
@@ -244,6 +277,8 @@ export default function PlayerHistoryView({
                         them; see TrackLayer for why they are not on the overlay. */}
                     {mode !== 'area' && (
                       <TrackLayer
+                        // Dimmed context under the action markers rather than the
+                        // subject, so a pickup is placed on the route that led to it.
                         tracks={mode === 'playback' ? [] : tracks}
                         worldSize={map.worldSize}
                         highlighted={highlighted}
@@ -306,6 +341,18 @@ export default function PlayerHistoryView({
                         </div>
                       );
                     })}
+
+                    {/* Action markers. Live in Actions mode, and alongside an area
+                        query so "who was here" and "what happened here" are one
+                        picture rather than two tabs. */}
+                    {(mode === 'actions' || mode === 'area') && (
+                      <ActionsLayer
+                        actions={actionsQuery.actions}
+                        view={view}
+                        hoveredId={hoveredAction}
+                        onHoverAction={setHoveredAction}
+                      />
+                    )}
 
                     {/* Path endpoints: where each track starts and stops. */}
                     {mode === 'paths' && tracks.map((t) => {
@@ -379,7 +426,8 @@ export default function PlayerHistoryView({
               )}
             </div>
 
-            {/* Right rail: area results only — the roster lives on the left. */}
+            {/* Right rail: area results, or the action feed and loadouts. The
+                roster always lives on the left. */}
             {mode === 'area' && (
               <div className="w-72 shrink-0 flex flex-col min-h-0 border-l border-gray-200 dark:border-gray-800">
                 <AreaResultsPanel
@@ -392,6 +440,55 @@ export default function PlayerHistoryView({
                   recordedFrom={stats?.from ?? null}
                   windowFrom={range.from}
                 />
+              </div>
+            )}
+
+            {mode === 'actions' && (
+              <div className="w-80 shrink-0 flex flex-col min-h-0 border-l border-gray-200 dark:border-gray-800">
+                <div className="flex items-center gap-1 p-2 border-b border-gray-200 dark:border-gray-800 shrink-0">
+                  {(['feed', 'loadouts'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setRail(tab)}
+                      className={cx(
+                        'flex-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors capitalize',
+                        rail === tab
+                          ? 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800'
+                          : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-700',
+                      )}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {rail === 'feed' ? (
+                  <ActionFeed
+                    actions={actionsQuery.actions}
+                    kindCounts={actionsQuery.kindCounts}
+                    selectedKinds={kinds}
+                    onToggleKind={toggleKind}
+                    onClearKinds={() => setKinds([])}
+                    loading={actionsQuery.loading}
+                    error={actionsQuery.error}
+                    truncated={actionsQuery.truncated}
+                    onHoverAction={setHoveredAction}
+                    totalRecorded={stats?.actions}
+                  />
+                ) : (
+                  <InventoryPanel
+                    // One player at a time: a loadout belongs to somebody, and a
+                    // merged list of four players' snapshots answers no question
+                    // anyone asks. The roster stays multi-select for the paths.
+                    pid={focusPid}
+                    name={focusName}
+                    from={range.from}
+                    to={range.to}
+                    online={!!focusPid && online.has(focusPid)}
+                    modConnected={modConnected}
+                  />
+                )}
               </div>
             )}
           </div>

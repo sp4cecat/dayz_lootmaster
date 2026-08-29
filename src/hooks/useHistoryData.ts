@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/utils/api';
 import type {
-  AreaSelection, AreaVisit, HistoryPlayer, HistoryStats, HistoryTrack,
+  ActionKindCount, AreaSelection, AreaVisit, HistoryAction, HistoryPlayer, HistoryStats,
+  HistoryTrack, InventorySnapshot, InventorySummary, RollbackResult,
 } from '@/types/history';
 
 /**
@@ -156,4 +157,234 @@ export function useAreaQuery() {
   }, []);
 
   return { visits, loading, error, run, clear };
+}
+
+/**
+ * The action log for the selected players over the window, optionally confined to
+ * a circle.
+ *
+ * Fetched with the same request as the kind counts, because the counts describe
+ * what is in the WINDOW rather than what survived the filter — a chip list built
+ * from the filtered result would delete the very chips needed to widen it again.
+ */
+export function useHistoryActions(
+  pids: string[],
+  from: number,
+  to: number,
+  kinds: string[] = [],
+  area: AreaSelection | null = null,
+) {
+  const [actions, setActions] = useState<HistoryAction[]>([]);
+  const [kindCounts, setKindCounts] = useState<ActionKindCount[]>([]);
+  const [truncated, setTruncated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Stable keys, so a re-created array with the same contents does not re-fetch.
+  const idsKey = [...pids].sort().join(',');
+  const kindsKey = [...kinds].sort().join(',');
+  const areaKey = area ? `${area.x}:${area.z}:${area.radius}` : '';
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const params = new URLSearchParams({ from: String(from), to: String(to) });
+      if (idsKey) params.set('ids', idsKey);
+      if (kindsKey) params.set('kinds', kindsKey);
+      if (area) {
+        params.set('x', String(area.x));
+        params.set('z', String(area.z));
+        params.set('radius', String(area.radius));
+      }
+      try {
+        const res = await apiFetch(`/api/history/actions?${params}`);
+        const body = res.ok ? await res.json() : null;
+        if (cancelled) return;
+        if (body && body.available === false) {
+          setActions([]); setKindCounts([]);
+          setError(body.error || body.reason || 'History is unavailable.');
+        } else {
+          setActions(body?.items ?? []);
+          setKindCounts(body?.kinds ?? []);
+          setTruncated(!!body?.truncated);
+          setError(null);
+        }
+      } catch {
+        if (!cancelled) { setActions([]); setError('Could not reach the server.'); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // areaKey rather than `area`: the object identity changes on every drag frame.
+  }, [idsKey, kindsKey, areaKey, from, to, area]);
+
+  return { actions, kindCounts, truncated, loading, error };
+}
+
+/**
+ * A player's inventory snapshots, without their trees.
+ *
+ * `nonce` is what a fresh capture bumps: the snapshot arrives asynchronously over
+ * /ingest/inventory up to a flush interval after the mod acks, so there is nothing
+ * to await — the list is simply re-read.
+ */
+export function useInventorySnapshots(pid: string | null, from: number, to: number, nonce = 0) {
+  const [snapshots, setSnapshots] = useState<InventorySummary[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!pid) { setSnapshots([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `/api/history/inventory?pid=${encodeURIComponent(pid)}&from=${from}&to=${to}`,
+        );
+        const body = res.ok ? await res.json() : null;
+        if (!cancelled) setSnapshots(body?.items ?? []);
+      } catch {
+        if (!cancelled) setSnapshots([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pid, from, to, nonce]);
+
+  return { snapshots, loading };
+}
+
+/** One snapshot with its tree. Fetched only when a row is actually opened. */
+export function useInventoryDetail(id: number | null) {
+  const [snapshot, setSnapshot] = useState<InventorySnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (id === null) { setSnapshot(null); return; }
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/history/inventory/${id}`);
+        const body = res.ok ? await res.json() : null;
+        if (!cancelled) setSnapshot(body && body.available !== false ? body : null);
+      } catch {
+        if (!cancelled) setSnapshot(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
+
+  return { snapshot, loading };
+}
+
+/**
+ * The two actions that reach into the live game: capture a loadout now, and put a
+ * stored one back.
+ *
+ * Unlike everything else in this file these are POSTs that change the world, so
+ * they surface real errors rather than degrading to an empty state — a rollback
+ * that quietly did nothing is far worse than one that says why it refused.
+ */
+export function usePlayerRestore() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<RollbackResult | null>(null);
+
+  const captureNow = useCallback(async (playerId: string): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/history/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.error || 'The capture could not be requested.');
+        return false;
+      }
+      return true;
+    } catch {
+      setError('Could not reach the server.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const rollback = useCallback(async (
+    snapshotId: number,
+    opts: { playerId?: string; allowTruncated?: boolean; restoreStats?: boolean } = {},
+  ): Promise<RollbackResult | null> => {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await apiFetch('/api/history/rollback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshotId, ...opts }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(body?.error || 'The rollback failed.');
+        // A partial apply still comes back with counts, and those are exactly what
+        // the operator needs to see — so keep the body even on a non-2xx.
+        if (body && typeof body.applied === 'boolean') setResult(body);
+        return null;
+      }
+      setResult(body);
+      return body;
+    } catch {
+      setError('Could not reach the server.');
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => { setError(null); setResult(null); }, []);
+
+  return { busy, error, result, captureNow, rollback, reset };
+}
+
+/**
+ * Who the companion mod says is connected right now.
+ *
+ * Read from the mod's own live push rather than through CF Tools — this tool has
+ * to work on a server with no CF Tools binding, which is the whole reason it does
+ * not gate on one. Polled, unlike everything else here, because it is the only
+ * thing in the tool that describes the present rather than the record.
+ */
+export function useModOnline(pollMs = 10000) {
+  const [online, setOnline] = useState<Set<string>>(new Set());
+  const [connected, setConnected] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/history/online');
+      const body = res.ok ? await res.json() : null;
+      setConnected(!!body?.connected);
+      setOnline(new Set<string>((body?.items ?? []).map((p: { pid: string }) => p.pid)));
+    } catch {
+      setConnected(false);
+      setOnline(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    if (!pollMs) return;
+    const id = setInterval(() => { if (!document.hidden) load(); }, pollMs);
+    return () => clearInterval(id);
+  }, [load, pollMs]);
+
+  return { online, connected, reload: load };
 }

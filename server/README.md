@@ -178,12 +178,89 @@ These profile-independent routes back an in-game companion mod that pushes live 
 | `/api/catalog/types/:name` | GET | Normalized type detail + attachment graph |
 | `/ingest/snapshot` | POST | Mod pushes full live state |
 | `/ingest/catalog` | POST | Mod pushes config-derived type metadata |
+| `/ingest/events` | POST | Mod pushes a batch of action events (pickup/drop/death/…) |
+| `/ingest/inventory` | POST | Mod pushes one player's full inventory tree |
 | `/ingest/commands` | GET | Mod polls pending commands |
 | `/ingest/commands/ack` | POST | Mod acks a command result |
 | `/items` | GET | Live world-item scan around `?x&z&radius` (default 30, cap 200) |
 | `/items/near/:playerId` | GET | Same scan centred on a player's last-known position |
 
 `/items*` block until the mod responds (default 10s, `ITEM_SCAN_TIMEOUT_MS`) → `504` on timeout, `503` if the mod is disconnected.
+
+The full wire contract lives in the mod's own `openapi-ingest.json` (currently 1.2.0).
+Two conventions from it are worth restating here because they shape the storage:
+
+- **Events and inventories carry an `age`, not a timestamp.** The mod has no wall
+  clock — `GetGame().GetTime()` counts from mission start — so the backend anchors
+  every row to its own receive time. The age is capped (1 h) so a garbage value
+  cannot back-date a row into the middle of an imported archive.
+- **`(session, n)` is a dedup key.** The mod re-queues a batch it never saw
+  acknowledged, so both writes are `INSERT OR IGNORE` against it. Without that, a
+  dropped reply would invent a second pickup that never happened.
+
+`/ingest/events` and `/ingest/inventory` are the only routes with a request-body
+cap (1 MB and 2 MB). A `413` on either is safe in a way it would not be on
+`/ingest/snapshot`: only snapshot success un-latches catalog delivery, and the
+dedup key makes the mod's retry free.
+
+### Recorded history (profile-independent)
+
+`server/history-store.js` tees `/ingest/*` into a `node:sqlite` database at
+`server/.cache/history.db`. Read routes follow the house rule and never 5xx — they
+answer `200 { available: false, reason }` so the tool can render its own empty state
+for a feature that is merely switched off.
+
+| Route | Methods | Purpose |
+|---|---|---|
+| `/api/history/stats` | GET | Volume, span, recorder health. Answers even when recording is off |
+| `/api/history/online` | GET | Who the mod says is connected right now (no CF Tools needed) |
+| `/api/history/players` | GET | Players with samples in `?from&to` |
+| `/api/history/track` | GET | Decimated paths for `?ids=a,b`, `?max=` points each |
+| `/api/history/at` | GET | One row per player nearest `?ts`, within `?tol` |
+| `/api/history/area` | GET | Presence intervals inside `?x&z&radius` |
+| `/api/history/actions` | GET | Action feed; filter by `?ids`, `?kinds`, or a circle |
+| `/api/history/inventory` | GET | A player's snapshots, WITHOUT their trees |
+| `/api/history/inventory/:id` | GET | One snapshot with its full tree, names resolved |
+| `/api/history/capture` | POST | Ask the mod to snapshot a player's inventory now |
+| `/api/history/rollback` | POST | Apply a stored loadout back onto a live player |
+
+The two POSTs are action routes, not read routes: they change the game world, so
+they return real status codes (`503` mod offline, `409` player offline / snapshot
+truncated, `504` no ack in time). `/api/history/capture` returns `202` — the
+snapshot itself arrives over `/ingest/inventory` on the mod's next flush, so the
+caller re-reads the list rather than being handed a tree that does not exist yet.
+
+**A rollback duplicates items**, and there is no way around it: the economy keeps no
+record of where an item came from, so restoring a rifle the player has since traded
+puts a second one into circulation. It is stated in the confirmation dialog, refused
+outright for a snapshot whose capture was truncated (unless overridden), and written
+back into the action log as `kind: 'rollback'`. Vitals are opt-in and omitted by
+default — the commonest snapshot to restore is a death, whose recorded health is 0.
+
+Environment:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HISTORY_ENABLED` | on | `0` disables recording entirely |
+| `HISTORY_DB_FILE` | `server/.cache/history.db` | Database location |
+| `HISTORY_FULL_DAYS` | `7` | Positions kept at full 5 s fidelity |
+| `HISTORY_THIN_DAYS` | `90` | Beyond this, positions/actions/inventories are deleted |
+| `HISTORY_RECORD_AI` | off | `1` also records AI positions (40+ entities at 5 s) |
+| `ROLLBACK_TIMEOUT_MS` | `20000` | How long a rollback waits for the mod's ack |
+
+Positions are thinned to one sample per player per minute past `HISTORY_FULL_DAYS`;
+actions and inventories are never thinned, only deleted, because "he picked it up at
+04:12" has no coarser version that is still true. Rows imported from admin logs are
+exempt from retention entirely — an archive is almost always older than the drop
+cutoff, and unlike mod rows it cannot be re-recorded.
+
+Requires Node 22.5+ for `node:sqlite`. On an older Node, recording reports itself as
+unavailable through `/api/history/stats` and nothing else changes.
+
+**Trust boundary.** `/ingest/*` is unauthenticated and profile-independent, as it has
+always been — this adds durable storage and an inventory-rewriting command behind
+it. Bind the backend where only the game server can reach it. The `srv` column on
+every table is the hedge against two game servers pointing at one Lootmaster.
 
 ## Notes & caveats
 

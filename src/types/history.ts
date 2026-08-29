@@ -100,6 +100,108 @@ export interface HistoryStats {
   lastErrorAt: number | null;
   recordAi: boolean;
   retention: { fullDays: number; thinDays: number };
+  /**
+   * Action-log and inventory volume, reported separately from `rows` rather than
+   * folded into it. An empty action log usually means the running mod predates the
+   * event hooks, which is a completely different situation from a quiet server —
+   * and "4 million records" would hide it.
+   */
+  actions?: number;
+  inventories?: number;
+}
+
+/**
+ * One thing a player did, from the mod's event hooks.
+ *
+ * The mod classifies these from the engine's single inventory-transition funnel,
+ * so a `drop` means the item genuinely left the player's hierarchy for the ground
+ * — not that it was moved between two pockets.
+ */
+export interface HistoryAction {
+  id: number;
+  /** Epoch ms. The mod reports an age and the backend anchors it to its own clock. */
+  ts: number;
+  /** Actor; null for events nobody can be attributed (a CE-cleaned tent). */
+  pid: string | null;
+  name: string | null;
+  kind: string;
+  /** Item classname; null when the event is not about an item. */
+  cls: string | null;
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  /** Free-form: `killer=<id>` on a death, the container class on a stash. */
+  detail: string | null;
+}
+
+/** How many of each kind are present in a window; drives the filter chips. */
+export interface ActionKindCount {
+  kind: string;
+  count: number;
+}
+
+/** One item in a captured loadout. Meaningful only as part of its tree. */
+export interface InventoryNode {
+  cls: string;
+  /** Attachment slot name; null when in cargo or hands. */
+  slot: string | null;
+  where: 'attachment' | 'cargo' | 'hands';
+  health01: number | null;
+  healthLevel: number | null;
+  /** Ammo count for a magazine, quantity otherwise; null when it has neither. */
+  quantity: number | null;
+  quantityMax: number | null;
+  row: number | null;
+  col: number | null;
+  /** Resolved from the catalog on read, falling back to what the mod captured. */
+  displayName: string | null;
+  children: InventoryNode[];
+}
+
+/** A stored inventory snapshot without its tree — what the list view renders. */
+export interface InventorySummary {
+  id: number;
+  pid: string;
+  name: string | null;
+  ts: number;
+  reason: 'connect' | 'disconnect' | 'death' | 'manual';
+  pos: { x: number; y: number; z: number } | null;
+  stats: {
+    health: number | null; blood: number | null; shock: number | null;
+    energy: number | null; water: number | null;
+  };
+  /** Node count, denormalised so the list never has to parse a tree. */
+  items: number;
+  /**
+   * The capture hit a node or depth cap, so this loadout is SHORT. A rollback is
+   * refused unless the operator explicitly overrides — restoring a knowingly
+   * partial loadout and reporting success is how someone ends up believing they
+   * undid a bug they only half undid.
+   */
+  truncated: boolean;
+}
+
+export interface InventorySnapshot extends InventorySummary {
+  tree: InventoryNode[];
+  /** The stored JSON would not parse; metadata is still true, the tree is empty. */
+  corrupt?: boolean;
+}
+
+/** What the mod reports back after applying a rollback. */
+export interface RollbackResult {
+  applied: boolean;
+  snapshotId: number;
+  playerId: string;
+  /** Nodes the snapshot held, for comparison against `created`. */
+  expected: number;
+  result?: string;
+  created?: number;
+  failed?: number;
+  /** Rebuilt, but into cargo because the recorded slot would not take it. */
+  misplaced?: number;
+  removed?: number;
+  error?: string;
+  reason?: string;
 }
 
 /** Why the history tool has nothing to show. */
@@ -112,8 +214,8 @@ export interface HistoryEnvelope<T> {
   items: T[];
 }
 
-/** The three things the map tool can be doing. */
-export type HistoryMode = 'paths' | 'playback' | 'area';
+/** The four things the map tool can be doing. */
+export type HistoryMode = 'paths' | 'playback' | 'area' | 'actions';
 
 /** A circular map selection, in world metres. */
 export interface AreaSelection {

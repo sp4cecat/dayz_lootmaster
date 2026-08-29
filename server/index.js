@@ -1489,10 +1489,34 @@ async function readValidJsonFile(target) {
     return content;
 }
 
-async function readBody(req) {
+/**
+ * Read a request body, optionally refusing one over `maxBytes`.
+ *
+ * The cap is opt-in rather than global because the existing callers are the
+ * profile/mission writers, whose payloads are already bounded by what the editor
+ * can produce. It exists for the mod's ingest routes: an inventory tree is the
+ * first genuinely unbounded POST body on this server, and a runaway one would
+ * otherwise be buffered whole before anything got a chance to reject it.
+ *
+ * Counting bytes (not string length) because that is what the buffer costs, and
+ * destroying the socket rather than draining: a client that has already sent more
+ * than the limit is not going to be talked out of the rest of it.
+ */
+async function readBody(req, maxBytes = 0) {
     return new Promise((resolveBody, reject) => {
         const chunks = [];
-        req.on('data', (c) => chunks.push(c));
+        let size = 0;
+        req.on('data', (c) => {
+            size += c.length;
+            if (maxBytes && size > maxBytes) {
+                const err = new Error(`Request body exceeds ${maxBytes} bytes.`);
+                err.code = 'BODY_TOO_LARGE';
+                req.destroy();
+                reject(err);
+                return;
+            }
+            chunks.push(c);
+        });
         req.on('end', () => {
             // eslint-disable-next-line no-undef
             resolveBody(Buffer.concat(chunks).toString('utf8'));
@@ -1611,6 +1635,14 @@ async function handleCatalogRoute(pathname, req, res) {
     return true;
 }
 
+// Body caps for the two ingest routes that carry unbounded, mod-generated payloads.
+// Sized from what the mod actually produces: an event batch is a few hundred small
+// records, and the largest realistic inventory (a fully-kitted player with a loaded
+// backpack) serialises well under 200 KB. Both leave an order of magnitude of head-
+// room, so hitting one means something is wrong rather than merely busy.
+const INGEST_EVENTS_MAX_BYTES = 1024 * 1024;
+const INGEST_INVENTORY_MAX_BYTES = 2 * 1024 * 1024;
+
 // Handles the mod-facing /ingest/* routes (write side; no X-Profile-ID). The mod
 // PUSHES snapshots/catalog and POLLS the command queue. Every push MUST get a 2xx
 // (the mod treats non-2xx as an error and retries). Returns true if it took the request.
@@ -1637,6 +1669,53 @@ async function handleIngestRoute(pathname, req, res) {
         return true;
     }
 
+    // POST /ingest/events — a drained batch of action events (pickup/drop/death/...).
+    //
+    // Separate from /ingest/snapshot rather than piggy-backed on it, because the
+    // snapshot is the one request that gates catalog delivery and must stay small
+    // and predictable. Events are bursty: a firefight can produce a hundred in the
+    // window a single snapshot covers.
+    if (parts.length === 2 && parts[1] === 'events' && req.method === 'POST') {
+        let body;
+        try {
+            body = JSON.parse((await readBody(req, INGEST_EVENTS_MAX_BYTES)) || '{}');
+        } catch (err) {
+            // A 413 here is safe in a way it would not be on /ingest/snapshot: the
+            // mod re-queues an un-acked batch, and (session, n) makes the retry
+            // idempotent, so refusing an oversized batch costs a round trip and
+            // never the item catalog.
+            if (err.code === 'BODY_TOO_LARGE') {
+                send(res, 413, JSON.stringify({ error: err.message }), { 'Content-Type': 'application/json' });
+            } else {
+                badRequest(res, 'Malformed events batch.');
+            }
+            return true;
+        }
+        let stored = 0;
+        try { stored = history.recordEvents(body); } catch { /* never fails the ingest */ }
+        send(res, 200, JSON.stringify({ ok: true, stored }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
+    // POST /ingest/inventory — one player's full inventory tree at a moment.
+    if (parts.length === 2 && parts[1] === 'inventory' && req.method === 'POST') {
+        let body;
+        try {
+            body = JSON.parse((await readBody(req, INGEST_INVENTORY_MAX_BYTES)) || '{}');
+        } catch (err) {
+            if (err.code === 'BODY_TOO_LARGE') {
+                send(res, 413, JSON.stringify({ error: err.message }), { 'Content-Type': 'application/json' });
+            } else {
+                badRequest(res, 'Malformed inventory snapshot.');
+            }
+            return true;
+        }
+        let id = null;
+        try { id = history.recordInventory(body); } catch { /* never fails the ingest */ }
+        send(res, 200, JSON.stringify({ ok: true, id }), { 'Content-Type': 'application/json' });
+        return true;
+    }
+
     // POST /ingest/catalog — config-derived type metadata, chunked (reset->clear, else merge).
     if (parts.length === 2 && parts[1] === 'catalog' && req.method === 'POST') {
         ingest.setCatalog(await parseBody());
@@ -1648,7 +1727,13 @@ async function handleIngestRoute(pathname, req, res) {
     if (parts.length === 3 && parts[1] === 'commands' && parts[2] === 'ack' && req.method === 'POST') {
         const body = await parseBody();
         if (body.id === undefined) { badRequest(res, 'id required'); return true; }
-        const payload = body.items !== undefined ? body.items : body.result;
+        // Three ack shapes, one route. scanItems answers with `items`, a rollback
+        // with a `restore` object of per-node counts, and everything else with a
+        // bare `result` string. Checked most-specific-first so a restore's counts
+        // are never flattened to the word "ok".
+        const payload = body.items !== undefined ? body.items
+            : body.restore !== undefined ? body.restore
+                : body.result;
         const ok = ingest.ackCommand(body.id, payload);
         send(res, ok ? 200 : 404, JSON.stringify({ ok }), { 'Content-Type': 'application/json' });
         return true;
@@ -1825,12 +1910,51 @@ async function handleHistoryRoute(url, req, res) {
     if (parts[0] !== 'api' || parts[1] !== 'history') return false;
     const route = parts.slice(2).join('/');
 
+    // POST /api/history/rollback — the one write in this namespace. Handled before
+    // the GET gate, and deliberately NOT a read route: it changes the game world,
+    // so it reports real errors rather than degrading to { available: false }.
+    if (route === 'rollback' && req.method === 'POST') {
+        await handleRollback(req, res);
+        return true;
+    }
+
+    // POST /api/history/capture — ask the mod to snapshot a player's inventory now.
+    //
+    // Exists so a rollback can be shown against what the player is ACTUALLY carrying
+    // rather than against whatever was last recorded, which for a long session is
+    // their connect loadout and nothing like the truth.
+    if (route === 'capture' && req.method === 'POST') {
+        await handleCaptureInventory(req, res);
+        return true;
+    }
+
     if (req.method !== 'GET') { methodNotAllowed(res); return true; }
 
     // GET /api/history/stats — volume, span and recorder health. Always answers,
     // even when recording is off, because "off" is exactly what the UI needs told.
     if (route === 'stats') {
         json(res, 200, history.stats());
+        return true;
+    }
+
+    // GET /api/history/online — who the mod says is connected RIGHT NOW.
+    //
+    // Read straight off the live ingest store rather than through CF Tools, because
+    // this tool must work on a server with no CF Tools binding at all — the whole
+    // reason it does not gate on it. It answers one question the recorded history
+    // cannot: an inventory capture and a rollback both need a LOADED character, and
+    // a player who was here ten minutes ago is not one.
+    if (route === 'online') {
+        const live = ingest.getSnapshot();
+        const players = Array.isArray(live.data?.players) ? live.data.players : [];
+        json(res, 200, {
+            connected: ingest.modConnected(),
+            at: live.at || null,
+            items: players.map(p => ({
+                pid: p.steamId || p.id || null,
+                name: p.name || null,
+            })).filter(p => p.pid),
+        });
         return true;
     }
 
@@ -1931,8 +2055,289 @@ async function handleHistoryRoute(url, req, res) {
         return true;
     }
 
+    // GET /api/history/actions?ids&kinds&from&to&x&z&radius&limit — the action feed.
+    if (route === 'actions') {
+        const ids = (url.searchParams.get('ids') || '')
+            .split(',').map(s => s.trim()).filter(Boolean);
+        const kinds = (url.searchParams.get('kinds') || '')
+            .split(',').map(s => s.trim()).filter(Boolean);
+        const x = Number(url.searchParams.get('x'));
+        const z = Number(url.searchParams.get('z'));
+        const radius = Number(url.searchParams.get('radius'));
+        const rawLimit = Number(url.searchParams.get('limit'));
+        const limit = Number.isFinite(rawLimit) && rawLimit > 0
+            ? Math.min(rawLimit, HISTORY_ACTION_MAX)
+            : HISTORY_ACTION_DEFAULT;
+
+        const result = history.queryActions({ pids: ids, kinds, from, to, x, z, radius, limit });
+        json(res, 200, {
+            available: true, from, to, limit,
+            truncated: result.truncated,
+            // The kinds present in the window, so the filter chips show what can
+            // actually be filtered rather than a hard-coded list the mod may not
+            // even emit on this server.
+            kinds: history.actionKinds({ from, to }),
+            items: result.items,
+        });
+        return true;
+    }
+
+    // GET /api/history/inventory?pid&from&to — snapshot list, WITHOUT the trees.
+    if (route === 'inventory') {
+        const pid = url.searchParams.get('pid') || undefined;
+        json(res, 200, {
+            available: true, from, to, pid: pid ?? null,
+            items: history.listInventory({ pid, from, to }),
+        });
+        return true;
+    }
+
+    // GET /api/history/inventory/:id — one snapshot with its full tree.
+    if (parts.length === 4 && parts[2] === 'inventory') {
+        const id = Number(parts[3]);
+        if (!Number.isFinite(id)) { badRequest(res, 'Snapshot id must be numeric.'); return true; }
+        const snap = history.getInventory(id);
+        if (!snap) { notFound(res); return true; }
+        json(res, 200, { available: true, ...decorateInventory(snap) });
+        return true;
+    }
+
     notFound(res);
     return true;
+}
+
+/** Rows per action feed request. */
+const HISTORY_ACTION_DEFAULT = 500;
+const HISTORY_ACTION_MAX = 5000;
+
+/**
+ * Resolve every classname in a stored tree to its catalog display name.
+ *
+ * Done on read rather than on write on purpose: the catalog arrives from the mod
+ * after the first successful snapshot and can be re-exported at any time, so a
+ * name baked in at capture would be frozen at whatever we knew then — including
+ * "nothing at all" for a snapshot recorded before the catalog landed. The mod's
+ * own displayName is kept as the fallback for a class the catalog has dropped.
+ */
+function decorateInventory(snap) {
+    const walk = (nodes) => nodes.map((n) => ({
+        ...n,
+        displayName: ingest.getTypeDetail(n.cls)?.displayName || n.displayName || n.cls,
+        children: walk(n.children || []),
+    }));
+    return { ...snap, tree: walk(snap.tree || []) };
+}
+
+/**
+ * Re-expand our nulls into the mod's sentinels on the way back out.
+ *
+ * The store collapses `-1` and `""` to null on ingest, because a consumer that has
+ * to re-check for -1 everywhere eventually forgets somewhere and renders "Level
+ * -1". Handing those nulls straight back to the mod would be a different bug:
+ * Enforce's JsonSerializer deserialises into declared primitives, and a `null`
+ * where it expects a float is not something it can represent — it rejects the
+ * parse, and one bad node takes the WHOLE command list with it. So the boundary
+ * that collapsed them expands them again.
+ */
+function toModNode(n) {
+    return {
+        cls: n.cls,
+        slot: n.slot ?? '',
+        where: n.where || 'cargo',
+        health01: n.health01 ?? -1,
+        healthLevel: n.healthLevel ?? -1,
+        quantity: n.quantity ?? -1,
+        quantityMax: n.quantityMax ?? -1,
+        row: n.row ?? -1,
+        col: n.col ?? -1,
+        displayName: n.displayName ?? '',
+        children: toModTree(n.children),
+    };
+}
+
+function toModTree(nodes) {
+    return (Array.isArray(nodes) ? nodes : []).map(toModNode);
+}
+
+function toModStats(s) {
+    const v = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : -1);
+    return {
+        health: v(s?.health), blood: v(s?.blood), shock: v(s?.shock),
+        energy: v(s?.energy), water: v(s?.water),
+    };
+}
+
+// How long POST /api/history/rollback waits for the mod to ack. A restore rebuilds
+// an entire inventory tree entity by entity, so it is slower than a scanItems sweep
+// — but it still runs inside one server tick, and 20 s is a stall, not a slow path.
+// eslint-disable-next-line no-undef
+const ROLLBACK_TIMEOUT_MS = Number(process.env.ROLLBACK_TIMEOUT_MS || 20000);
+
+/**
+ * Ask the mod to capture a player's inventory right now.
+ *
+ * The ack only confirms the capture was QUEUED. The snapshot itself arrives over
+ * /ingest/inventory on the mod's next flush, up to `eventFlushInterval` seconds
+ * later, so the response says so and the caller polls the snapshot list rather
+ * than being handed a tree that does not exist yet. Pretending otherwise would
+ * mean either blocking for six seconds or returning a stale snapshot as if it
+ * were fresh.
+ */
+async function handleCaptureInventory(req, res) {
+    let body;
+    try {
+        body = JSON.parse((await readBody(req, 4096)) || '{}');
+    } catch {
+        badRequest(res, 'Malformed request body.');
+        return;
+    }
+    const playerId = String(body.playerId || '');
+    if (!playerId) { badRequest(res, 'playerId is required.'); return; }
+
+    if (!ingest.modConnected()) {
+        json(res, 503, { error: 'Mod not connected; a live capture is unavailable.' });
+        return;
+    }
+
+    const cmd = ingest.enqueueCommand('captureInventory', { playerId });
+    const done = await waitForCommand(cmd.id, ITEM_SCAN_TIMEOUT_MS);
+    if (!done) {
+        json(res, 504, { error: 'The mod did not respond in time; retry.' });
+        return;
+    }
+    if (done.result !== 'ok') {
+        json(res, 409, {
+            error: 'That player is not online, so there is no loaded character to read.',
+            reason: String(done.result || 'player_not_found'),
+        });
+        return;
+    }
+    // The id the snapshot will be stored under is not knowable yet — it is assigned
+    // on arrival. The caller watches the list for a newer row instead.
+    json(res, 202, { queued: true, playerId, since: Date.now() });
+}
+
+/**
+ * Apply a stored inventory snapshot back onto a live player.
+ *
+ * An action route, not a read route: it changes the game world, so every failure
+ * is a real status code. It refuses rather than half-applies when
+ *
+ *   - the mod is not connected (nothing would run the command),
+ *   - the target is not online (a character that is not loaded has no inventory
+ *     to rebuild — the engine would have nowhere to put the items), or
+ *   - the snapshot is truncated (restoring a knowingly partial loadout and
+ *     reporting success is how an operator ends up believing they undid a bug
+ *     they only half undid).
+ *
+ * Every applied rollback is written back into the action log, so the audit trail
+ * lives in the same table as the events that motivated it.
+ */
+async function handleRollback(req, res) {
+    let body;
+    try {
+        body = JSON.parse((await readBody(req, INGEST_INVENTORY_MAX_BYTES)) || '{}');
+    } catch {
+        badRequest(res, 'Malformed request body.');
+        return;
+    }
+
+    const snapshotId = Number(body.snapshotId);
+    if (!Number.isFinite(snapshotId)) { badRequest(res, 'snapshotId is required.'); return; }
+
+    const snap = history.getInventory(snapshotId);
+    if (!snap) { notFound(res); return; }
+
+    if (!ingest.modConnected()) {
+        json(res, 503, { error: 'Mod not connected; a rollback cannot be applied.' });
+        return;
+    }
+    if (snap.truncated && body.allowTruncated !== true) {
+        json(res, 409, {
+            error: 'This snapshot was truncated when it was captured, so restoring it would '
+                + 'silently drop items. Re-send with allowTruncated to apply it anyway.',
+            reason: 'truncated',
+        });
+        return;
+    }
+    if (!snap.tree.length) {
+        json(res, 409, { error: 'This snapshot recorded no items.', reason: 'empty' });
+        return;
+    }
+
+    // The target is the snapshot's own player unless the caller names another —
+    // restoring onto a different character is a legitimate admin move (a wiped
+    // account, a reinstalled server) but it must be asked for explicitly.
+    const playerId = String(body.playerId || snap.pid);
+    const live = ingest.getSnapshot().data || {};
+    const online = (Array.isArray(live.players) ? live.players : [])
+        .some(p => p.id === playerId || p.steamId === playerId);
+    if (!online) {
+        json(res, 409, {
+            error: 'That player is not online. A character that is not loaded has no '
+                + 'inventory to rebuild.',
+            reason: 'offline',
+        });
+        return;
+    }
+
+    // Vitals are opt-in and off by default, because the commonest snapshot to roll
+    // back to is a DEATH — where the recorded health is 0. Re-applying that would
+    // kill the character the operator just restored. The mod refuses a non-positive
+    // value as well, but omitting the key entirely is the clearer contract.
+    const args = { playerId, snapshotId, tree: toModTree(snap.tree) };
+    if (body.restoreStats === true) args.stats = toModStats(snap.stats);
+    const cmd = ingest.enqueueCommand('restorePlayer', args);
+    const done = await waitForCommand(cmd.id, ROLLBACK_TIMEOUT_MS);
+    if (!done) {
+        // Deliberately NOT recorded as an applied rollback: we do not know whether
+        // the mod ran it. The operator is told to check rather than reassured.
+        json(res, 504, {
+            error: 'The mod did not acknowledge the rollback in time. It may or may not '
+                + 'have been applied — check the player before retrying.',
+            reason: 'timeout',
+        });
+        return;
+    }
+
+    // The mod acks with a per-node result so a partial rebuild is reported rather
+    // than assumed complete.
+    const result = typeof done.result === 'object' && done.result !== null
+        ? done.result
+        : { result: String(done.result ?? 'ok') };
+    const applied = result.result === 'ok' || result.ok === true || result.ok === 1;
+
+    try {
+        history.recordAction({
+            pid: playerId,
+            kind: applied ? 'rollback' : 'rollback_failed',
+            pos: snap.pos ? [snap.pos.x, snap.pos.y, snap.pos.z] : null,
+            detail: JSON.stringify({
+                snapshotId,
+                snapshotTs: snap.ts,
+                reason: snap.reason,
+                expected: snap.items,
+                created: result.created ?? null,
+                failed: result.failed ?? null,
+                // Rebuilt but into the wrong container: the item is back, the
+                // loadout is not the shape it was. Worth keeping in the audit row.
+                misplaced: result.misplaced ?? null,
+                removed: result.removed ?? null,
+                error: result.error ?? null,
+            }),
+        });
+    } catch (err) {
+        // An applied rollback with no audit row is worse than a noisy log line.
+        console.error('Failed to record the rollback audit row:', err);
+    }
+
+    json(res, applied ? 200 : 502, {
+        applied,
+        snapshotId,
+        playerId,
+        expected: snap.items,
+        ...result,
+    });
 }
 
 // ---- CF Tools Cloud (Data API + GameLabs) ----
