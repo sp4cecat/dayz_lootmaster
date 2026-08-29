@@ -28,11 +28,11 @@ if not defined APP_ENV (
     exit /b 1
 )
 
-REM --- Production: if already running, offer restart / update instead of a second launch ---
-if /I "%APP_ENV%"=="production" (
-    call :is_running
-    if defined RUNNING goto production_running
-)
+REM --- If an instance is already running, offer restart / update instead of a second launch.
+REM     Ports 4317/4173 are pinned for every environment, so a second launch can only ever die
+REM     with EADDRINUSE on 4317 -- the check has to cover staging as well as production. ---
+call :is_running
+if defined RUNNING goto already_running
 
 REM --- Nothing running: offer to pull the latest changes before launching ---
 echo.
@@ -75,7 +75,7 @@ echo Both windows launched. Close them to stop the servers.
 echo.
 goto end
 
-:production_running
+:already_running
 echo.
 echo ========================================
 echo   Lootmaster is already running (port 4317/4173).
@@ -93,7 +93,7 @@ if "%ACTION%"=="1" goto do_restart
 if "%ACTION%"=="2" goto do_update
 if "%ACTION%"=="3" (
     echo.
-    echo Cancelled. Production left running.
+    echo Cancelled. Existing instance left running.
     echo.
     goto end
 )
@@ -119,7 +119,7 @@ goto end
 call :pull_install_build
 if errorlevel 1 (
     echo.
-    echo Update aborted. Production left running untouched.
+    echo Update aborted. Existing instance left untouched.
     echo.
     pause
     exit /b 1
