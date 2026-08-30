@@ -149,6 +149,16 @@ async function render() {
   return container;
 }
 
+/**
+ * Which glyph a marker drew. lucide stamps its icon name onto the svg as a
+ * `lucide-<name>` class (alongside the base `lucide` and our own tint classes),
+ * so the first such class is the icon's identity.
+ */
+function iconIn(container: Element, title: string) {
+  const cls = container.querySelector(`button[title="${title}"] svg`)?.getAttribute('class') ?? '';
+  return /lucide-([a-z0-9-]+)/.exec(cls)?.[1];
+}
+
 /** jsdom has no PointerEvent constructor; React 19 listens for the native type name. */
 function pointer(el: Element, type: string, clientX: number, clientY: number) {
   const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY });
@@ -272,42 +282,38 @@ describe('LiveMapView marker projection', () => {
     expect(container.textContent).not.toContain('Ping');
   });
 
-  it('maps modded classnames to their Font Awesome glyphs', async () => {
+  it('maps modded classnames to their outline glyphs', async () => {
     const container = await render();
-    const iconIn = (title: string) =>
-      (container.querySelector(`button[title="${title}"] svg`) as SVGElement | null)?.getAttribute('data-icon');
 
-    expect(iconIn('VeeDub_Orange')).toBe('van-shuttle');
-    expect(iconIn('RFMosquito')).toBe('helicopter-symbol');
-    expect(iconIn('Boat_01_Camo')).toBe('ship');
-    expect(iconIn('Offroad_02')).toBe('car');           // default vehicle
-    expect(iconIn('Wreck_UH1Y')).toBe('helicopter');    // heli crash site
-    expect(iconIn('Land_Wreck_hb01_aban1_police_DE')).toBe('car-burst'); // car wreck, not a helicrash
+    expect(iconIn(container, 'VeeDub_Orange')).toBe('van');
+    expect(iconIn(container, 'RFMosquito')).toBe('helicopter');
+    expect(iconIn(container, 'Boat_01_Camo')).toBe('ship');
+    expect(iconIn(container, 'Offroad_02')).toBe('car');    // default vehicle
+    expect(iconIn(container, 'Wreck_UH1Y')).toBe('flame');  // heli crash site; the heli glyph is the flyable one
+    expect(iconIn(container, 'Land_Wreck_hb01_aban1_police_DE')).toBe('car-front'); // car wreck, not a helicrash
 
     // Covered vehicles (Expansion cover entity) render silver.
     const covered = container.querySelector('button[title="Expansion_Generic_Vehicle_Cover"] svg');
-    expect(covered?.getAttribute('data-icon')).toBe('car');
+    expect(iconIn(container, 'Expansion_Generic_Vehicle_Cover')).toBe('car');
     expect(covered?.getAttribute('class')).toContain('text-slate-300');
   });
 
-  it('maps modded event classnames to their Font Awesome glyphs', async () => {
+  it('maps modded event classnames to their outline glyphs', async () => {
     const container = await render();
-    const iconIn = (title: string) =>
-      (container.querySelector(`button[title="${title}"] svg`) as SVGElement | null)?.getAttribute('data-icon');
 
-    expect(iconIn('StaticObj_Wreck_Train_742_Red_DE')).toBe('train'); // class match beats the wreck type
-    expect(iconIn('KMUC Keycard')).toBe('credit-card');
-    expect(iconIn('Staff')).toBe('staff-snake');        // bare 'staff' is FA Pro-only
-    expect(iconIn('Land_jmc_ce_oven')).toBe('campground'); // camp event, no 'camp' in the name
-    expect(iconIn('Smokey Grenade')).toBe('bomb');
-    expect(iconIn('Convoy')).toBe('truck-field-un');
-    expect(iconIn('Mjolnir Head')).toBe('gavel');
-    expect(iconIn('Mjolnir Handle')).toBe('wand-magic'); // bare 'wand' is FA Pro-only
-    expect(iconIn('Land_STAG_Submarine_Dark')).toBe('anchor');
-    expect(iconIn('ExpansionAirdropContainer_Military')).toBe('parachute-box');
-    expect(iconIn('STAG_PunchedCard')).toBe('ticket'); // 'PunchedCard', not 'Punch Card'
-    expect(iconIn('ScientificBriefcase')).toBe('briefcase');
-    expect(iconIn('jmc_atv_STAG_Green')).toBe('motorcycle'); // ATV spawn event reads as a vehicle
+    expect(iconIn(container, 'StaticObj_Wreck_Train_742_Red_DE')).toBe('train-front'); // class match beats the wreck type
+    expect(iconIn(container, 'KMUC Keycard')).toBe('credit-card');
+    expect(iconIn(container, 'Staff')).toBe('wand');
+    expect(iconIn(container, 'Land_jmc_ce_oven')).toBe('tent'); // camp event, no 'camp' in the name
+    expect(iconIn(container, 'Smokey Grenade')).toBe('bomb');
+    expect(iconIn(container, 'Convoy')).toBe('truck');
+    expect(iconIn(container, 'Mjolnir Head')).toBe('gavel');
+    expect(iconIn(container, 'Mjolnir Handle')).toBe('wand-sparkles'); // the plain wand is the Staff's
+    expect(iconIn(container, 'Land_STAG_Submarine_Dark')).toBe('anchor');
+    expect(iconIn(container, 'ExpansionAirdropContainer_Military')).toBe('package');
+    expect(iconIn(container, 'STAG_PunchedCard')).toBe('ticket'); // 'PunchedCard', not 'Punch Card'
+    expect(iconIn(container, 'ScientificBriefcase')).toBe('briefcase');
+    expect(iconIn(container, 'jmc_atv_STAG_Green')).toBe('motorbike'); // ATV spawn event reads as a vehicle
   });
 
   // Containment is decided upstream by spacecat_gamelabs, which simply does not

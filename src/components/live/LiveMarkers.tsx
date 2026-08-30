@@ -1,12 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import type { LucideIcon } from 'lucide-react';
 import {
-  faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
-  faCarBurst, faBiohazard, faFlag, faLocationDot,
-  faTrain, faCreditCard, faStaffSnake, faCampground, faBomb, faTruckFieldUn,
-  faGavel, faWandMagic, faAnchor, faParachuteBox, faTicket, faBriefcase, faMotorcycle,
-} from '@fortawesome/free-solid-svg-icons';
+  Car, Van, Helicopter, Ship, CarFront, Flame, Biohazard, Flag, MapPin,
+  TrainFront, CreditCard, Wand, Tent, Bomb, Truck,
+  Gavel, WandSparkles, Anchor, Package, Ticket, Briefcase, Motorbike,
+} from 'lucide-react';
 import { cx } from '@/utils/cx';
 import type { LiveAi, LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
 
@@ -16,8 +14,9 @@ import type { LiveAi, LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools
  * across zoom. Marker handles are pointer-events-auto and stop propagation so a
  * press doesn't arm the viewport's pan/click gesture.
  *
- * Rendered as bare Font Awesome glyphs (no badge discs) with a dark drop-shadow
- * for contrast against the map tiles.
+ * Rendered as bare outline glyphs (no badge discs) with a dark drop-shadow for
+ * contrast against the map tiles. lucide, like the rest of the app — Font
+ * Awesome's free tier only outlines ~160 icons, none of these among them.
  */
 
 export interface MarkerSelection {
@@ -28,14 +27,14 @@ export interface MarkerSelection {
 export const selectionKey = (s: MarkerSelection | null) => (s ? `${s.kind}:${s.id}` : null);
 
 /** Vehicle-class icon mapping — shared by vehicles and vehicle-spawn events. */
-export function iconForClassName(className: string | null | undefined): IconDefinition | null {
+export function iconForClassName(className: string | null | undefined): LucideIcon | null {
   if (!className) return null;
   const cn = className.toLowerCase();
-  if (cn.includes('veedub')) return faVanShuttle;
-  if (cn.includes('mosquito')) return faHelicopterSymbol;
-  if (cn.includes('boat')) return faShip;
+  if (cn.includes('veedub')) return Van;
+  if (cn.includes('mosquito')) return Helicopter;
+  if (cn.includes('boat')) return Ship;
   // jmc_atv_STAG_* and friends. Bounded so 'atv' can't match inside a longer word.
-  if (/(?:^|[^a-z])atv(?:[^a-z]|$)/.test(cn)) return faMotorcycle;
+  if (/(?:^|[^a-z])atv(?:[^a-z]|$)/.test(cn)) return Motorbike;
   return null;
 }
 
@@ -49,45 +48,50 @@ export const isCoveredVehicle = (className: string | null | undefined) =>
 
 const COVERED_TINT = 'text-slate-300';
 
-const EVENT_ICONS: Record<string, { icon: IconDefinition; tint: string }> = {
-  helicrash: { icon: faHelicopter, tint: 'text-orange-400' },
-  wreck: { icon: faCarBurst, tint: 'text-amber-400' },
-  contaminated_area: { icon: faBiohazard, tint: 'text-yellow-400' },
+/**
+ * lucide has a single helicopter glyph, so the flyable one (mosquito) keeps it
+ * and a crash site burns instead — otherwise the two would differ only by tint.
+ */
+const EVENT_ICONS: Record<string, { icon: LucideIcon; tint: string }> = {
+  helicrash: { icon: Flame, tint: 'text-orange-400' },
+  wreck: { icon: CarFront, tint: 'text-amber-400' },
+  contaminated_area: { icon: Biohazard, tint: 'text-yellow-400' },
 };
 
 /**
  * Per-server event classnames (Deer Isle mods report display-ish names like
  * "KMUC Keycard", "Camp Event"). Checked in order, first match wins — keep
- * "mjolnir head"/"handle" ahead of any broader pattern. `staff` and `wand`
- * are Pro-only in Font Awesome; staff-snake and wand-magic are the free kin.
+ * "mjolnir head"/"handle" ahead of any broader pattern. The staff gets the plain
+ * wand and Mjolnir's handle the sparkling one, so the two stay distinguishable.
  */
-const EVENT_CLASS_ICONS: Array<[RegExp, IconDefinition, string]> = [
-  [/mjolnir.*head/i, faGavel, 'text-amber-300'],
-  [/mjolnir.*handle/i, faWandMagic, 'text-fuchsia-400'],
-  [/train/i, faTrain, 'text-amber-400'],
-  [/keycard/i, faCreditCard, 'text-violet-400'],
-  [/staff/i, faStaffSnake, 'text-purple-400'],
+const EVENT_CLASS_ICONS: Array<[RegExp, LucideIcon, string]> = [
+  [/mjolnir.*head/i, Gavel, 'text-amber-300'],
+  [/mjolnir.*handle/i, WandSparkles, 'text-fuchsia-400'],
+  [/train/i, TrainFront, 'text-amber-400'],
+  [/keycard/i, CreditCard, 'text-violet-400'],
+  [/staff/i, Wand, 'text-purple-400'],
   // Land_jmc_ce_oven is the camp event's cooking oven — no 'camp' in the name.
-  [/camp|jmc_ce_oven/i, faCampground, 'text-lime-400'],
-  [/grenade/i, faBomb, 'text-stone-300'],
-  [/convoy/i, faTruckFieldUn, 'text-teal-400'],
-  [/submarine/i, faAnchor, 'text-yellow-300'],
-  [/airdrop/i, faParachuteBox, 'text-cyan-400'],
+  [/camp|jmc_ce_oven/i, Tent, 'text-lime-400'],
+  [/grenade/i, Bomb, 'text-stone-300'],
+  [/convoy/i, Truck, 'text-teal-400'],
+  [/submarine/i, Anchor, 'text-yellow-300'],
+  // lucide has no parachute — the crate the airdrop leaves behind reads as well.
+  [/airdrop/i, Package, 'text-cyan-400'],
   // Matches both the display name ("Punch Card") and the classname (STAG_PunchedCard).
-  [/punch(?:ed)?.?card/i, faTicket, 'text-pink-400'],
-  [/briefcase/i, faBriefcase, 'text-red-500'],
+  [/punch(?:ed)?.?card/i, Ticket, 'text-pink-400'],
+  [/briefcase/i, Briefcase, 'text-red-500'],
 ];
 
 const GLYPH_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
 
-function Glyph({ icon, tint, selected, size = 14 }: {
-  icon: IconDefinition; tint: string; selected: boolean; size?: number;
+function Glyph({ icon: Icon, tint, selected, size = 15 }: {
+  icon: LucideIcon; tint: string; selected: boolean; size?: number;
 }) {
   return (
-    <FontAwesomeIcon
-      icon={icon}
-      fixedWidth
-      style={{ fontSize: size }}
+    <Icon
+      size={size}
+      // Stroke-only glyphs this small vanish into busy tiles at lucide's default 2.
+      strokeWidth={2.25}
       className={cx(GLYPH_SHADOW, selected ? 'text-primary-400' : tint)}
     />
   );
@@ -324,7 +328,7 @@ export function AiMarker({ ai, px, py, selected, dimmed, onSelect }: {
 export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
   vehicle: LiveVehicle; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
 }) {
-  const icon = iconForClassName(vehicle.className) ?? faCar;
+  const icon = iconForClassName(vehicle.className) ?? Car;
   const tint = isCoveredVehicle(vehicle.className) ? COVERED_TINT : 'text-sky-400';
   return (
     <MarkerButton
@@ -337,16 +341,16 @@ export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
   );
 }
 
-function eventVisual(event: LiveEvent): { icon: IconDefinition; tint: string } {
+function eventVisual(event: LiveEvent): { icon: LucideIcon; tint: string } {
   const cn = event.className || '';
-  if (isCoveredVehicle(cn)) return { icon: faCar, tint: COVERED_TINT };
+  if (isCoveredVehicle(cn)) return { icon: Car, tint: COVERED_TINT };
   for (const [pattern, icon, tint] of EVENT_CLASS_ICONS) {
     if (pattern.test(cn)) return { icon, tint };
   }
   // Vehicle spawn events carry the vehicle classname — match those next.
   const vehicleIcon = iconForClassName(cn);
   if (vehicleIcon) return { icon: vehicleIcon, tint: 'text-sky-400' };
-  return EVENT_ICONS[event.type] ?? { icon: faLocationDot, tint: 'text-purple-400' };
+  return EVENT_ICONS[event.type] ?? { icon: MapPin, tint: 'text-purple-400' };
 }
 
 /**
@@ -391,7 +395,7 @@ export function TerritoryMarker({ territory, px, py, radiusPx, selected, dimmed,
         title={territory.displayName || 'Territory flag'}
         onSelect={onSelect}
       >
-        <Glyph icon={faFlag} tint="text-rose-400" selected={selected} />
+        <Glyph icon={Flag} tint="text-rose-400" selected={selected} />
       </MarkerButton>
     </>
   );
