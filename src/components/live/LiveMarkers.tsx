@@ -5,7 +5,7 @@ import {
   faCar, faVanShuttle, faHelicopter, faHelicopterSymbol, faShip,
   faCarBurst, faBiohazard, faFlag, faLocationDot,
   faTrain, faCreditCard, faStaffSnake, faCampground, faBomb, faTruckFieldUn,
-  faGavel, faWandMagic, faStar, faParachuteBox, faTicket, faBriefcase,
+  faGavel, faWandMagic, faAnchor, faParachuteBox, faTicket, faBriefcase, faMotorcycle,
 } from '@fortawesome/free-solid-svg-icons';
 import { cx } from '@/utils/cx';
 import type { LiveAi, LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
@@ -34,6 +34,8 @@ export function iconForClassName(className: string | null | undefined): IconDefi
   if (cn.includes('veedub')) return faVanShuttle;
   if (cn.includes('mosquito')) return faHelicopterSymbol;
   if (cn.includes('boat')) return faShip;
+  // jmc_atv_STAG_* and friends. Bounded so 'atv' can't match inside a longer word.
+  if (/(?:^|[^a-z])atv(?:[^a-z]|$)/.test(cn)) return faMotorcycle;
   return null;
 }
 
@@ -65,12 +67,14 @@ const EVENT_CLASS_ICONS: Array<[RegExp, IconDefinition, string]> = [
   [/train/i, faTrain, 'text-amber-400'],
   [/keycard/i, faCreditCard, 'text-violet-400'],
   [/staff/i, faStaffSnake, 'text-purple-400'],
-  [/camp/i, faCampground, 'text-lime-400'],
+  // Land_jmc_ce_oven is the camp event's cooking oven — no 'camp' in the name.
+  [/camp|jmc_ce_oven/i, faCampground, 'text-lime-400'],
   [/grenade/i, faBomb, 'text-stone-300'],
   [/convoy/i, faTruckFieldUn, 'text-teal-400'],
-  [/submarine/i, faStar, 'text-yellow-300'],
+  [/submarine/i, faAnchor, 'text-yellow-300'],
   [/airdrop/i, faParachuteBox, 'text-cyan-400'],
-  [/punch.?card/i, faTicket, 'text-pink-400'],
+  // Matches both the display name ("Punch Card") and the classname (STAG_PunchedCard).
+  [/punch(?:ed)?.?card/i, faTicket, 'text-pink-400'],
   [/briefcase/i, faBriefcase, 'text-red-500'],
 ];
 
