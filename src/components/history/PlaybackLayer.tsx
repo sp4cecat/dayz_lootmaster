@@ -79,19 +79,19 @@ const PlaybackDot = memo(function PlaybackDot({
       style={{ left: px, top: py }}
     >
       <div
-        className="h-3.5 w-3.5 rounded-full ring-2 ring-white/80 dark:ring-gray-900/80"
+        className="h-[8.4px] w-[8.4px] rounded-full ring-1 ring-white/80 dark:ring-gray-900/80"
         style={{ backgroundColor: color }}
       />
       {/* The pill is what keeps the name readable over both snow and dark forest;
           coloured text alone disappears against half the map. */}
       <div
-        className="absolute left-4 top-1/2 -translate-y-1/2 whitespace-nowrap px-1 py-px rounded bg-gray-900/75 text-[10px] leading-none font-medium pointer-events-none"
+        className="absolute left-2 top-1/2 -translate-y-1/2 whitespace-nowrap px-1 py-px rounded bg-gray-900/75 text-[10px] leading-none font-medium pointer-events-none"
         style={{ color }}
       >
         {name}
       </div>
       {/* Below the dot, so it never lands on top of the label above. */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-5 hidden group-hover:block whitespace-nowrap px-1.5 py-1 rounded bg-gray-900/90 text-white text-[10px] z-10">
+      <div className="absolute left-1/2 -translate-x-1/2 top-4 hidden group-hover:block whitespace-nowrap px-1.5 py-1 rounded bg-gray-900/90 text-white text-[10px] z-10">
         <div className="font-medium">{name}</div>
         <div className="text-gray-300">
           {x}, {z}

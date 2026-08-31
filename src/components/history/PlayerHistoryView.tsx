@@ -373,12 +373,12 @@ export default function PlayerHistoryView({
                       return (
                         <div key={`ends-${t.pid}`} style={{ opacity: dim ? 0.2 : 1 }}>
                           <div
-                            className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white/70"
+                            className="absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-white/70"
                             style={{ left: a.px, top: a.py, backgroundColor: color }}
                             title={`${t.name || t.pid} — start`}
                           />
                           <div
-                            className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80"
+                            className="absolute h-[8.4px] w-[8.4px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80"
                             style={{ left: b.px, top: b.py, backgroundColor: color }}
                             title={`${t.name || t.pid} — end`}
                           />

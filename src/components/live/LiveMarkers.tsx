@@ -142,8 +142,8 @@ function MarkerDot({ testId, tone, selected, className }: {
     <span
       data-testid={testId}
       className={cx(
-        'block h-3.5 w-3.5 rounded-full border shadow-md transition-transform',
-        selected ? 'bg-primary-400/70 border-primary-100 scale-125' : tone,
+        'block h-[8.4px] w-[8.4px] rounded-full border shadow-md transition-transform',
+        selected ? 'bg-primary-400/70 border-primary-100 scale-150' : tone,
         className,
       )}
     />
@@ -229,7 +229,9 @@ export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, sel
           onSelect(id);
         }}
         className={cx(
-          'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1',
+          // p-1.5 rather than p-1: the dot itself is under 9px, so the padding is
+          // what keeps the click target near the ~20px it needs to stay grabbable.
+          'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1.5',
           draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
           selected && 'z-10',
           dimmed && 'opacity-50',
@@ -240,7 +242,7 @@ export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, sel
           testId="player-dot"
           tone={PLAYER_TONE}
           selected={selected}
-          className={cx(drag && 'opacity-30', !drag && 'hover:scale-125')}
+          className={cx(drag && 'opacity-30', !drag && 'hover:scale-150')}
         />
         {hover && !drag && (
           <span
@@ -264,7 +266,7 @@ export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, sel
           className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex flex-col items-center"
           style={{ left: px + drag.dx, top: py + drag.dy }}
         >
-          <span className={cx('block h-3.5 w-3.5 rounded-full border shadow-md', PLAYER_TONE)} />
+          <MarkerDot testId="player-drag-ghost-dot" tone={PLAYER_TONE} selected={false} />
           <span className="mt-0.5 px-1 rounded bg-black/70 text-[9px] font-medium text-white whitespace-nowrap leading-tight">
             {drag.x}, {drag.z}
           </span>
@@ -300,13 +302,13 @@ export const AiMarker = memo(function AiMarker({ id, ai, px, py, selected, dimme
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className={cx(
-        'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1 cursor-pointer',
+        'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1.5 cursor-pointer',
         selected && 'z-10',
         dimmed && 'opacity-50',
       )}
       style={{ left: px, top: py }}
     >
-      <MarkerDot testId="ai-dot" tone={AI_TONE} selected={selected} className="hover:scale-125" />
+      <MarkerDot testId="ai-dot" tone={AI_TONE} selected={selected} className="hover:scale-150" />
       {hover && (
         <span
           role="tooltip"
