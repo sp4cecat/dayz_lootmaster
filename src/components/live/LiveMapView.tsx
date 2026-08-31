@@ -4,11 +4,19 @@ import { Badge } from '../base/badges/badges';
 import { Button } from '../base/button/button';
 import { MapZoomControls } from '../MapZoomControls';
 import MapImageLayer from '../map/MapImageLayer';
-import { Radio, Users, Car, MapPin, Flag, Bot, Settings, Clock, Thermometer } from 'lucide-react';
+import {
+  Radio, Users, Car, MapPin, Flag, Bot, Settings, Clock, Thermometer,
+  Copy, FileCode, Ruler, LocateFixed, Eye, Trash2, X,
+} from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
+import {
+  compassPoint, distanceBearing, formatDistance, formatPosXml, formatWorldPos,
+  type WorldPoint,
+} from '@/utils/mapGeo';
+import { centreOnContent } from '@/utils/mapTransform';
 import { useMapMetadata } from '@/hooks/useMapMetadata';
-import { useMapPanZoom } from '@/hooks/useMapPanZoom';
+import { useMapPanZoom, type MapPanZoom } from '@/hooks/useMapPanZoom';
 import { useCfToolsStatus } from '@/hooks/useCfToolsStatus';
 import { useLiveSnapshot } from '@/hooks/useLiveSnapshot';
 import { useCfToolsActions } from '@/hooks/useCfToolsActions';
@@ -17,6 +25,7 @@ import LiveSidePanel from './LiveSidePanel';
 import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
+import MapContextMenu, { type MapMenuItem } from './MapContextMenu';
 import {
   AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker, territoryAtPoint,
   type MarkerSelection,
@@ -52,6 +61,40 @@ const REASON_HINTS: Record<string, string> = {
   mod_no_ai: 'The mod is connected but sent no AI list — set "ai": true in $profile:spacecat/spacecat_api.json.',
 };
 
+/** A ruler laid on the map. `to` is null between arming the tool and the second click. */
+interface Measurement {
+  from: WorldPoint;
+  to: WorldPoint | null;
+}
+
+/** A user-dropped marker. Session-scoped — deliberately not persisted anywhere. */
+interface Pin extends WorldPoint {
+  id: number;
+}
+
+interface ContextMenuState {
+  /** Anchor in viewport px, i.e. relative to the map box. Never overlay space. */
+  x: number;
+  y: number;
+  /** Where the cursor was, in world metres. */
+  at: WorldPoint;
+  /** The marker under the cursor, if any. */
+  target: MarkerSelection | null;
+}
+
+/** What a right-clicked marker resolves to. Position is absent for a loading-in player. */
+interface MarkerInfo {
+  label: string;
+  position: WorldPoint | null;
+  steamId?: string | null;
+  /** Only entities that move are worth following. */
+  followable: boolean;
+}
+
+const KIND_LABELS: Record<MarkerSelection['kind'], string> = {
+  player: 'Player', vehicle: 'Vehicle', ai: 'AI', event: 'Event', territory: 'Territory',
+};
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
@@ -76,6 +119,52 @@ const formatWorldTime = (time: NonNullable<LiveWorldInfo['time']>) =>
  * `|| 0` is not redundancy: Math.round(-0.4) is -0, which renders as "-0°C".
  */
 const formatWorldTemp = (celsius: number) => `${Math.round(celsius) || 0}°C`;
+
+const MEASURE_SHADOW = '[filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]';
+
+const MeasureEnd = ({ px, py }: { px: number; py: number }) => (
+  <span
+    className={cx('absolute -translate-x-1/2 -translate-y-1/2 block size-2 rounded-full border border-amber-100 bg-amber-300/70', MEASURE_SHADOW)}
+    style={{ left: px, top: py }}
+  />
+);
+
+/**
+ * The ruler: two endpoints, a dashed line and a distance/bearing readout.
+ *
+ * Lives on the marker overlay, so `project()` (pan-free, zoom-aware) is the right transform
+ * for the endpoints. The `<svg>` is `inset-0` with `overflow-visible` so a line running off
+ * the map square isn't clipped at the overlay's edge.
+ */
+function MeasureLayer({ measure, view }: { measure: Measurement; view: MapPanZoom }) {
+  const a = view.project(measure.from.x, measure.from.z);
+  const b = measure.to ? view.project(measure.to.x, measure.to.z) : null;
+  const stats = measure.to ? distanceBearing(measure.from, measure.to) : null;
+
+  return (
+    <>
+      {b && (
+        <svg className="absolute inset-0 overflow-visible" aria-hidden="true">
+          <line
+            x1={a.px} y1={a.py} x2={b.px} y2={b.py}
+            className="stroke-amber-300" strokeWidth={1.5} strokeDasharray="5 4"
+          />
+        </svg>
+      )}
+      <MeasureEnd px={a.px} py={a.py} />
+      {b && <MeasureEnd px={b.px} py={b.py} />}
+      {b && stats && (
+        <span
+          data-testid="measure-readout"
+          className="absolute -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-medium text-amber-100 whitespace-nowrap shadow-lg"
+          style={{ left: (a.px + b.px) / 2, top: (a.py + b.py) / 2 }}
+        >
+          {formatDistance(stats.metres)} · {Math.round(stats.bearingDeg)}° {compassPoint(stats.bearingDeg)}
+        </span>
+      )}
+    </>
+  );
+}
 
 /**
  * Live server map: players, vehicles, world events and territory flags from
@@ -149,14 +238,28 @@ export default function LiveMapView({
     return () => { cancelled = true; };
   }, [selectedProfileId]);
 
-  // onBackgroundClick is captured by the pan/zoom hook; read the live value via a ref.
+  // Right-click extras. All client-side: nothing here touches the live server.
+  // `measure` is armed from the context menu and completed by the next left-click;
+  // `pins` and `following` are session-scoped view state.
+  const [measure, setMeasure] = useState<Measurement | null>(null);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [following, setFollowing] = useState<MarkerSelection | null>(null);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  // onBackgroundClick is captured by the pan/zoom hook; read live values via refs.
   const teleportTargetRef = useRef<LivePlayer | null>(null);
   teleportTargetRef.current = teleportTarget;
+  const measureRef = useRef<Measurement | null>(null);
+  measureRef.current = measure;
 
   const view = useMapPanZoom({
     worldSize: map.worldSize,
     nativeSize: map.tiles?.nativeSize,
     keyboardZoom: true,
+    // A manual pan means the admin wants to look somewhere else — stop fighting them for
+    // the viewport. setFollowing is stable, so this closure never goes stale.
+    onPanStart: () => setFollowing(null),
     onBackgroundClick: (hit) => {
       // In teleport mode a background click picks the destination; otherwise it
       // selects the territory it landed in, or clears the selection.
@@ -165,6 +268,13 @@ export default function LiveMapView({
         return { x: Math.round(hit.x), z: Math.round(hit.z) };
       });
       if (teleportTargetRef.current) return;
+      // Measuring: this click is the second point. Takes priority over selection so the
+      // gesture can't be stolen by a territory circle the ruler happens to end inside.
+      const pending = measureRef.current;
+      if (pending && !pending.to) {
+        setMeasure({ from: pending.from, to: { x: hit.x, z: hit.z } });
+        return;
+      }
       // A flag glyph is hard to hit when players and vehicles cluster on it, so
       // the circle counts as part of the target. This runs on the background
       // gesture rather than a hit area on the circle itself: markers stop the
@@ -193,6 +303,213 @@ export default function LiveMapView({
     setTeleportTarget(player);
     setTeleportDest({ x: clamp(dest.x), z: clamp(dest.z) });
   }, [map.worldSize]);
+
+  // --- Right-click menu ------------------------------------------------------
+  // Every item here is computed from state the app already holds: no CF Tools call, no
+  // GameLabs action, nothing that can alter the live server. Server-side actions
+  // (teleport-here, spawn-here) are meant to slot in as extra groups in `menuGroups`.
+
+  // `view` is a fresh object every render, so the centring path reads it through a ref
+  // rather than closing over it: centring writes a transform, and depending on the
+  // transform it just wrote would loop.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  /** Pin keys. A counter rather than crypto.randomUUID — pins never leave this component. */
+  const nextPinId = useRef(1);
+
+  const worldSize = map.worldSize;
+
+  /** Pan (keeping the zoom) so a world position sits at the centre of the viewport. */
+  const centreOnWorld = useCallback((x: number, z: number) => {
+    const v = viewRef.current;
+    if (!v.size) return;
+    v.applyTransform(centreOnContent(
+      v.transform,
+      (x / worldSize) * v.size,
+      // Screen Y is inverted relative to world Z.
+      (1 - z / worldSize) * v.size,
+      v.viewportBox.w,
+      v.viewportBox.h,
+    ));
+  }, [worldSize]);
+
+  /** Resolve a marker selection against the current snapshot. */
+  const markerInfo = useCallback((sel: MarkerSelection | null): MarkerInfo | null => {
+    if (!sel || !snapshot) return null;
+    const at = (p: [number, number, number]): WorldPoint => ({ x: p[0], z: p[2] });
+    if (sel.kind === 'player') {
+      const pl = snapshot.players?.items.find(p => (p.sessionId || p.steamId || p.name) === sel.id);
+      if (!pl) return null;
+      return {
+        label: pl.name,
+        position: pl.position ? at(pl.position) : null,
+        steamId: pl.steamId,
+        followable: true,
+      };
+    }
+    if (sel.kind === 'vehicle') {
+      const v = snapshot.vehicles?.items.find((x, i) => (x.id || String(i)) === sel.id);
+      if (!v) return null;
+      return {
+        label: v.displayName || v.className || 'Vehicle', position: at(v.position), followable: true,
+      };
+    }
+    if (sel.kind === 'ai') {
+      const a = snapshot.ai?.items.find((x, i) => (x.id || String(i)) === sel.id);
+      return a ? { label: a.name, position: at(a.position), followable: true } : null;
+    }
+    const list = sel.kind === 'territory' ? snapshot.territories?.items : snapshot.events?.items;
+    const e = list?.find((x, i) => (x.id || String(i)) === sel.id);
+    if (!e) return null;
+    return {
+      label: e.displayName || e.className || e.type,
+      position: at(e.position),
+      // Events and territory flags don't move; following one would just be "centre here".
+      followable: false,
+    };
+  }, [snapshot]);
+
+  const openContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Suppress the browser menu whether or not we can resolve the point — a half-working
+    // right-click that sometimes shows Chrome's menu over the map is worse than neither.
+    e.preventDefault();
+    const rect = viewRef.current.viewportEl?.getBoundingClientRect();
+    const hit = viewRef.current.toWorld(e.clientX, e.clientY);
+    if (!rect || !hit) return;
+    // Markers don't stop `contextmenu` (only pointerdown/click), so a right-click on one
+    // lands here with the marker in the event path — identify it by data attribute.
+    const el = (e.target as Element | null)?.closest?.('[data-marker-kind]');
+    const kind = el?.getAttribute('data-marker-kind') as MarkerSelection['kind'] | undefined;
+    setMenu({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      at: { x: hit.x, z: hit.z },
+      target: kind ? { kind, id: el?.getAttribute('data-marker-id') || '' } : null,
+    });
+  }, []);
+
+  const notify = useCallback((text: string) => {
+    setFeedback(text);
+    window.setTimeout(() => setFeedback(f => (f === text ? null : f)), 4000);
+  }, []);
+
+  const copy = useCallback(async (text: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify(`Copied ${what}.`);
+    } catch {
+      notify('Clipboard unavailable.');
+    }
+  }, [notify]);
+
+  // Following: recentre whenever the followed entity's position changes. Keyed on the
+  // coordinates rather than on `view`, so the transform this writes can't retrigger it.
+  const followed = following ? markerInfo(following) : null;
+  const followX = followed?.position?.x ?? null;
+  const followZ = followed?.position?.z ?? null;
+  useEffect(() => {
+    if (followX == null || followZ == null) return;
+    centreOnWorld(followX, followZ);
+  }, [followX, followZ, centreOnWorld]);
+
+  const menuTarget = menu ? markerInfo(menu.target) : null;
+
+  const menuGroups = useMemo((): MapMenuItem[][] => {
+    if (!menu) return [];
+    const { at } = menu;
+    const marker: MapMenuItem[] = [];
+
+    if (menu.target && menuTarget) {
+      const sel = menu.target;
+      // Ids are only unique within a layer — an AI and an event could both be "3".
+      const isFollowed = !!following && following.kind === sel.kind && following.id === sel.id;
+      if (menuTarget.followable) {
+        marker.push({
+          key: 'follow',
+          label: isFollowed ? 'Stop following' : 'Follow',
+          icon: Eye,
+          isDisabled: !menuTarget.position,
+          onSelect: () => setFollowing(isFollowed ? null : sel),
+        });
+      }
+      if (sel.kind === 'player' && menuTarget.steamId) {
+        marker.push({
+          key: 'copy-steam',
+          label: 'Copy Steam64',
+          icon: Copy,
+          onSelect: () => copy(menuTarget.steamId!, 'Steam64 ID'),
+        });
+      }
+      if (menuTarget.position) {
+        const p = menuTarget.position;
+        marker.push({
+          key: 'copy-marker-pos',
+          label: 'Copy its position',
+          icon: Copy,
+          onSelect: () => copy(formatWorldPos(p.x, p.z), `${menuTarget.label}'s position`),
+        });
+      }
+    }
+
+    const here: MapMenuItem[] = [
+      {
+        key: 'copy-pos',
+        label: 'Copy coordinates',
+        icon: Copy,
+        onSelect: () => copy(formatWorldPos(at.x, at.z), 'coordinates'),
+      },
+      {
+        key: 'copy-xml',
+        label: 'Copy as <pos> XML',
+        icon: FileCode,
+        onSelect: () => copy(formatPosXml(at.x, at.z), '<pos> element'),
+      },
+      {
+        key: 'measure',
+        label: 'Measure from here',
+        icon: Ruler,
+        onSelect: () => { setMeasure({ from: at, to: null }); setSelection(null); },
+      },
+      {
+        key: 'pin',
+        label: 'Drop pin',
+        icon: MapPin,
+        onSelect: () => setPins(p => [...p, { id: nextPinId.current++, x: at.x, z: at.z }]),
+      },
+      {
+        key: 'centre',
+        label: 'Centre here',
+        icon: LocateFixed,
+        onSelect: () => centreOnWorld(at.x, at.z),
+      },
+    ];
+
+    const clear: MapMenuItem[] = [];
+    if (measure) {
+      clear.push({
+        key: 'clear-measure', label: 'Clear measurement', icon: X,
+        onSelect: () => setMeasure(null),
+      });
+    }
+    if (pins.length) {
+      clear.push({
+        key: 'clear-pins', label: `Clear ${pins.length} pin${pins.length === 1 ? '' : 's'}`,
+        icon: Trash2, onSelect: () => setPins([]),
+      });
+    }
+    // Only when the marker group above doesn't already offer it for this exact entity.
+    const followedIsTarget = !!following && following.kind === menu.target?.kind
+      && following.id === menu.target?.id;
+    if (following && !followedIsTarget) {
+      clear.push({
+        key: 'clear-follow', label: `Stop following ${markerInfo(following)?.label ?? ''}`.trim(),
+        icon: X, onSelect: () => setFollowing(null),
+      });
+    }
+
+    return [marker, here, clear];
+  }, [menu, menuTarget, following, measure, pins.length, copy, centreOnWorld, markerInfo]);
 
   const toggleLayer = (key: LiveLayerKey) => {
     setEnabledLayers(prev => {
@@ -308,9 +625,12 @@ export default function LiveMapView({
             <div
               ref={view.viewportRef}
               {...view.viewportHandlers}
+              onContextMenu={openContextMenu}
               className={cx(
                 'relative flex-1 min-w-0 bg-black rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 select-none touch-none',
-                view.isPanning ? 'cursor-grabbing' : teleportTarget ? 'cursor-crosshair' : 'cursor-grab',
+                view.isPanning ? 'cursor-grabbing'
+                  : (teleportTarget || (measure && !measure.to)) ? 'cursor-crosshair'
+                    : 'cursor-grab',
               )}
             >
               {/* Teleport mode banner */}
@@ -439,13 +759,71 @@ export default function LiveMapView({
                 </div>
               )}
 
+              {/* Ruler and pins: their own overlay so they survive a snapshot-less map, and
+                  drawn over the markers. Same overlayStyle, so they pan with the map and
+                  keep a constant on-screen size — never project() into viewport space. */}
+              {view.size > 0 && (measure || pins.length > 0) && (
+                <div style={view.overlayStyle} className="pointer-events-none">
+                  {measure && <MeasureLayer measure={measure} view={view} />}
+                  {pins.map((pin) => {
+                    const p = view.project(pin.x, pin.z);
+                    return (
+                      <span
+                        key={pin.id}
+                        data-testid="map-pin"
+                        className="absolute -translate-x-1/2 -translate-y-full flex flex-col items-center"
+                        style={{ left: p.px, top: p.py }}
+                      >
+                        <MapPin
+                          size={16}
+                          strokeWidth={2.25}
+                          className="text-amber-300 [filter:drop-shadow(0_1px_1.5px_rgba(0,0,0,0.85))]"
+                        />
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
               {loading && !snapshot && (
                 <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 bg-black/30 pointer-events-none">
                   Loading live data…
                 </div>
               )}
 
+              {/* Measure mode banner, mirroring the teleport one. */}
+              {measure && !measure.to && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-medium shadow-lg">
+                  Click a second point to measure
+                  <button
+                    type="button"
+                    className="underline decoration-white/50 hover:decoration-white"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setMeasure(null); }}
+                  >
+                    cancel
+                  </button>
+                </div>
+              )}
+
+              {feedback && (
+                <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1.5 rounded-lg bg-gray-900/90 text-[11px] font-medium text-gray-100 shadow-lg pointer-events-none">
+                  {feedback}
+                </div>
+              )}
+
               {view.canZoom && <MapZoomControls map={view} />}
+
+              <MapContextMenu
+                open={!!menu}
+                x={menu?.x ?? 0}
+                y={menu?.y ?? 0}
+                header={menu?.target && menuTarget
+                  ? `${KIND_LABELS[menu.target.kind]} — ${menuTarget.label}`
+                  : formatWorldPos(menu?.at.x ?? 0, menu?.at.z ?? 0)}
+                groups={menuGroups}
+                onClose={() => setMenu(null)}
+              />
             </div>
 
             <LiveSidePanel

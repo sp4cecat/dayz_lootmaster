@@ -98,6 +98,9 @@ function Glyph({ icon: Icon, tint, selected, size = 15 }: {
 }
 
 interface BaseMarkerProps {
+  /** Identifies the marker to the map's right-click handler — see MARKER_ATTRS. */
+  kind: MarkerSelection['kind'];
+  id: string;
   px: number;
   py: number;
   selected: boolean;
@@ -107,11 +110,27 @@ interface BaseMarkerProps {
   children: React.ReactNode;
 }
 
-function MarkerButton({ px, py, selected, dimmed, title, onSelect, children }: BaseMarkerProps) {
+/**
+ * The data attributes that let the map's viewport-level `contextmenu` handler work out what
+ * was right-clicked, via `closest('[data-marker-kind]')`.
+ *
+ * Markers stop propagation on `pointerdown` and `click` but not on `contextmenu`, so a
+ * right-click already bubbles to the viewport — it just arrives with no idea what it hit.
+ * Attributes rather than an `onContextMenu` prop on all five marker components: the markers
+ * are memoised, and a per-marker callback would allocate a fresh closure on every render and
+ * defeat that (the same reasoning as the per-layer `onSelect` callbacks in LiveMapView).
+ */
+const MARKER_ATTRS = (kind: MarkerSelection['kind'], id: string) => ({
+  'data-marker-kind': kind,
+  'data-marker-id': id,
+});
+
+function MarkerButton({ kind, id, px, py, selected, dimmed, title, onSelect, children }: BaseMarkerProps) {
   return (
     <button
       type="button"
       title={title}
+      {...MARKER_ATTRS(kind, id)}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
       className={cx(
@@ -217,6 +236,7 @@ export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, sel
       <button
         type="button"
         aria-label={player.name}
+        {...MARKER_ATTRS('player', id)}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={(e) => endGesture(e, false)}
@@ -297,6 +317,7 @@ export const AiMarker = memo(function AiMarker({ id, ai, px, py, selected, dimme
     <button
       type="button"
       aria-label={ai.name}
+      {...MARKER_ATTRS('ai', id)}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onSelect(id); }}
       onMouseEnter={() => setHover(true)}
@@ -338,6 +359,7 @@ export const VehicleMarker = memo(function VehicleMarker({ id, vehicle, px, py, 
   const tint = isCoveredVehicle(vehicle.className) ? COVERED_TINT : 'text-sky-400';
   return (
     <MarkerButton
+      kind="vehicle" id={id}
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={vehicle.displayName || vehicle.className || 'Vehicle'}
       onSelect={() => onSelect(id)}
@@ -372,6 +394,7 @@ export const EventMarker = memo(function EventMarker({ id, event, px, py, select
   const { icon, tint } = eventVisual(event);
   return (
     <MarkerButton
+      kind="event" id={id}
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={event.displayName || event.className || event.type}
       onSelect={() => onSelect(id)}
@@ -400,6 +423,7 @@ export const TerritoryMarker = memo(function TerritoryMarker({ id, territory, px
         />
       )}
       <MarkerButton
+        kind="territory" id={id}
         px={px} py={py} selected={selected} dimmed={dimmed}
         title={territory.displayName || 'Territory flag'}
         onSelect={() => onSelect(id)}

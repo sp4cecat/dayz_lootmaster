@@ -123,6 +123,25 @@ export function zoomAt(
 }
 
 /**
+ * Pan — without changing the zoom — so a content-space point sits at the viewport centre.
+ *
+ * The inverse of the `viewport = content * scale + offset` relation solved for the offset
+ * that puts `(cx, cy)` at `(viewportW / 2, viewportH / 2)`. Callers are expected to pass the
+ * result through `clampTransform` (as `useMapPanZoom`'s `applyTransform` already does), which
+ * is what keeps a point near a map edge from panning the map off screen — so "centre on this"
+ * needs no edge cases of its own.
+ */
+export function centreOnContent(
+  t: MapTransform, cx: number, cy: number, viewportW: number, viewportH: number,
+): MapTransform {
+  return {
+    scale: t.scale,
+    x: viewportW / 2 - cx * t.scale,
+    y: viewportH / 2 - cy * t.scale,
+  };
+}
+
+/**
  * Clamp scale into [1, maxScale] and the pan offset so the map can never be dragged off
  * screen: centred on an axis while the image is smaller than the viewport, otherwise pinned
  * so its edges can't come inside the viewport.

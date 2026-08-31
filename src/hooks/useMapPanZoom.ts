@@ -91,6 +91,15 @@ export interface UseMapPanZoomOptions {
   /** Called when a press-and-release without meaningful travel lands on the map. */
   onBackgroundClick?: (hit: MapPointerHit) => void;
   /**
+   * Called once when a press turns into a pan (i.e. travels past CLICK_SLOP), not on every
+   * move. For tools that own the viewport between renders — the Live map's "follow this
+   * player" gives up here, because the admin has just asked to look somewhere else.
+   *
+   * A callback rather than watching `isPanning`: that flag is true only between the first
+   * move and the release, so anything reacting to it has to catch a transient render.
+   */
+  onPanStart?: () => void;
+  /**
    * Return true to suppress the background gesture — used while a marker drag owns the
    * pointer. Marker handles should also `stopPropagation()`; this is the belt to that braces.
    */
@@ -154,6 +163,7 @@ export function useMapPanZoom({
   zoomable = true,
   keyboardZoom = false,
   onBackgroundClick,
+  onPanStart,
   isGestureBlocked,
 }: UseMapPanZoomOptions): MapPanZoom {
   // A state node rather than a ref so the measurement and wheel effects can depend on it.
@@ -177,6 +187,8 @@ export function useMapPanZoom({
   blockedRef.current = isGestureBlocked;
   const clickRef = useRef(onBackgroundClick);
   clickRef.current = onBackgroundClick;
+  const panStartRef = useRef(onPanStart);
+  panStartRef.current = onPanStart;
 
   // Background press: either a click or a pan, decided by how far the pointer travels. Held
   // in a ref so pointermove doesn't re-render until the gesture actually becomes a pan.
@@ -332,6 +344,7 @@ export function useMapPanZoom({
       if (Math.hypot(dx, dy) <= CLICK_SLOP) return;
       g.panning = true;
       setIsPanning(true);
+      panStartRef.current?.();
     }
     // Absolute from the gesture start, not incremental: accumulating deltas against a clamp
     // makes the pan stick when you push past an edge and reverse.

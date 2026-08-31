@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeMaxScale, worldToViewport, worldToOverlay, worldLenToViewport, viewportToContent,
-  contentToWorld, zoomAt, clampTransform, IDENTITY_TRANSFORM,
+  contentToWorld, zoomAt, clampTransform, centreOnContent, IDENTITY_TRANSFORM,
   type MapTransform,
 } from '../../src/utils/mapTransform.ts';
 
@@ -180,5 +180,43 @@ describe('clampTransform', () => {
     expect(clampTransform({ x: 500, y: 0, scale: 4 }, size, 600, 600, 8).x).toBe(0);
     expect(clampTransform({ x: -9999, y: 0, scale: 4 }, size, 600, 600, 8).x).toBe(-1800);
     expect(clampTransform({ x: -900, y: 0, scale: 4 }, size, 600, 600, 8).x).toBe(-900);
+  });
+});
+
+describe('centreOnContent', () => {
+  const size = 600;
+
+  it('puts the requested content point exactly at the viewport centre', () => {
+    const t = { x: -123, y: 456, scale: 3 };
+    const next = centreOnContent(t, 200, 350, 900, 600);
+    // Re-apply the content->viewport relation the transform encodes.
+    expect(next.x + 200 * next.scale).toBeCloseTo(450, 9);
+    expect(next.y + 350 * next.scale).toBeCloseTo(300, 9);
+  });
+
+  it('never changes the zoom — this is a pan, not a zoom-to-fit', () => {
+    expect(centreOnContent({ x: 0, y: 0, scale: 2.5 }, 10, 20, 800, 600).scale).toBe(2.5);
+  });
+
+  it('round-trips a world position back to the viewport centre through worldToViewport', () => {
+    const worldSize = CHERNARUS;
+    const t = { x: 40, y: -90, scale: 4 };
+    const [x, z] = [3400, 11200];
+    // The same content-space conversion the map view does before calling this.
+    const next = centreOnContent(t, (x / worldSize) * size, (1 - z / worldSize) * size, 900, 600);
+    const p = worldToViewport(x, z, worldSize, size, next);
+    expect(p.px).toBeCloseTo(450, 6);
+    expect(p.py).toBeCloseTo(300, 6);
+  });
+
+  it('leaves the map on screen once clamped, even centring on a corner', () => {
+    // Bottom-right corner of the world at scale 4: centring alone would pull the map far
+    // past its edge, and clampTransform is what pulls it back. This is why the caller
+    // funnels through applyTransform rather than setting the transform directly.
+    const raw = centreOnContent({ x: 0, y: 0, scale: 4 }, size, size, 600, 600);
+    expect(raw.x).toBe(300 - 2400);
+    const clamped = clampTransform(raw, size, 600, 600, 8);
+    expect(clamped.x).toBe(-1800);
+    expect(clamped.y).toBe(-1800);
   });
 });
