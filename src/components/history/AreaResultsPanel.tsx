@@ -2,15 +2,8 @@ import { Users, FileText, Loader2, AlertTriangle } from 'lucide-react';
 import { Badge } from '../base/badges/badges';
 import { Button } from '../base/button/button';
 import { cx } from '@/utils/cx';
+import { formatDuration } from '@/utils/duration';
 import type { AreaSelection, AreaVisit } from '@/types/history';
-
-function formatDuration(ms: number): string {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {

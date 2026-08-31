@@ -1,7 +1,8 @@
 import { Play, Pause, SkipBack, SkipForward, RotateCcw, FastForward } from 'lucide-react';
 import { cx } from '@/utils/cx';
+import { formatDuration } from '@/utils/duration';
 import { PLAYBACK_SPEEDS, type PlaybackClock } from '@/hooks/usePlaybackClock';
-import type { PresenceSegment } from '@/utils/trackSampling';
+import { absenceSpans, type PresenceSegment } from '@/utils/trackSampling';
 
 /** Step size for the skip buttons: one mod tick either way. */
 const STEP_MS = 5000;
@@ -16,6 +17,64 @@ function formatClock(ts: number): string {
 
 function formatSpeed(s: number): string {
   return s >= 60 ? `${s}×` : `${s}×`;
+}
+
+/**
+ * The same presence, drawn on real time instead of the scrubber's.
+ *
+ * The scrubber above measures elapsed presence while empty stretches are being
+ * skipped, which is what keeps the thumb moving at the rate the map does — but it
+ * also means a logout of six hours and a logout of six seconds both collapse to
+ * nothing, and six sessions across a fortnight read as one continuous one. This
+ * ribbon is the calendar the scrubber is not: grey is time nobody was online.
+ *
+ * A legend, not a second control. Seeking from here would snap to the next stretch
+ * of presence whenever "Skip empty" is on, and a click that lands somewhere other
+ * than where it was aimed is worse than a click that does nothing.
+ */
+function WallClockRibbon({
+  segments, from, to, at,
+}: { segments: PresenceSegment[]; from: number; to: number; at: number }) {
+  const span = Math.max(1, to - from);
+  const pct = (t: number) => Math.min(100, Math.max(0, ((t - from) / span) * 100));
+  const gaps = absenceSpans(segments, from, to);
+
+  // Nobody logged out inside the window: the ribbon would be a solid bar restating
+  // the scrubber, so there is nothing here worth the vertical space.
+  if (!gaps.length) return null;
+
+  return (
+    <div
+      className="relative h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden"
+      title="Real elapsed time. Grey is when nobody was online."
+    >
+      {segments.map((s) => (
+        <div
+          key={s.from}
+          className="absolute inset-y-0 bg-primary-300 dark:bg-primary-700 pointer-events-none"
+          // Same hairline floor as the strip behind the scrubber: a 40-minute
+          // session inside a fortnight rounds to nothing at this scale.
+          style={{ left: `${pct(s.from)}%`, width: `max(2px, ${pct(s.to) - pct(s.from)}%)` }}
+        />
+      ))}
+      {/* Transparent, purely to carry the tooltip — the grey underneath is the
+          rail's own background, so these draw nothing. */}
+      {gaps.map((g) => (
+        <div
+          key={g.from}
+          title={`Logged out · ${formatDuration(g.to - g.from)}`}
+          className="absolute inset-y-0"
+          style={{ left: `${pct(g.from)}%`, width: `${pct(g.to) - pct(g.from)}%` }}
+        />
+      ))}
+      {/* Where the playhead really is, which is the one thing the compressed
+          scrubber above cannot say. */}
+      <div
+        className="absolute inset-y-0 w-px bg-gray-900 dark:bg-white pointer-events-none"
+        style={{ left: `${pct(at)}%` }}
+      />
+    </div>
+  );
 }
 
 interface PlaybackBarProps {
@@ -161,6 +220,10 @@ export default function PlaybackBar({ clock, from, to, status, segments = [] }: 
           className="relative w-full accent-primary-600 cursor-pointer bg-transparent"
         />
       </div>
+
+      {segments.length > 0 && (
+        <WallClockRibbon segments={segments} from={from} to={to} at={clock.ts} />
+      )}
 
       <div className="flex items-center justify-between text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">
         <span>{formatClock(from)}</span>

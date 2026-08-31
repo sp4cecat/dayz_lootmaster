@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TRAIL_HOLD_MS, indexAtOrBefore, nextPresence, presenceSegments, sampleTrackAt, trailPoints,
+  TRAIL_HOLD_MS, absenceSpans, indexAtOrBefore, nextPresence, presenceSegments,
+  sampleTrackAt, trailPoints,
 } from '../../src/utils/trackSampling';
 import type { HistoryPoint } from '../../src/types/history';
 
@@ -220,5 +221,54 @@ describe('nextPresence', () => {
 
     it('is a no-op without segments', () => {
         expect(nextPresence([], 1234)).toBeNull();
+    });
+});
+
+describe('absenceSpans', () => {
+    // The walk above, then a logout, then a second session ten minutes later.
+    const away = [
+        pt(600000, 100, 0, { gap: true }),
+        pt(605000, 110, 0),
+    ];
+
+    it('is the whole window when nobody was ever present', () => {
+        expect(absenceSpans([], 0, 1000)).toEqual([{ from: 0, to: 1000 }]);
+    });
+
+    it('is empty when presence covers the window', () => {
+        expect(absenceSpans([{ from: 0, to: 1000 }], 0, 1000)).toEqual([]);
+    });
+
+    it('finds the interior gap between two sessions', () => {
+        expect(absenceSpans([{ from: 100, to: 200 }, { from: 500, to: 900 }], 100, 900))
+            .toEqual([{ from: 200, to: 500 }]);
+    });
+
+    it('reports dead air at either end of the window', () => {
+        expect(absenceSpans([{ from: 300, to: 400 }], 0, 1000))
+            .toEqual([{ from: 0, to: 300 }, { from: 400, to: 1000 }]);
+    });
+
+    it('clamps segments that overhang the window rather than emitting negatives', () => {
+        // The bar is handed the playback span, which is clipped to the first and
+        // last sample — so a segment reaching past either end is the normal case,
+        // not a malformed one.
+        expect(absenceSpans([{ from: -500, to: 200 }, { from: 800, to: 5000 }], 0, 1000))
+            .toEqual([{ from: 200, to: 800 }]);
+        for (const s of absenceSpans([{ from: -500, to: 5000 }], 0, 1000)) {
+            expect(s.to).toBeGreaterThan(s.from);
+        }
+    });
+
+    it('is empty for an inverted or zero-width window', () => {
+        expect(absenceSpans([], 1000, 1000)).toEqual([]);
+        expect(absenceSpans([], 1000, 0)).toEqual([]);
+    });
+
+    it('complements presenceSegments over a real track with a logout', () => {
+        // The end-to-end shape: a walk, an absence, another walk.
+        const segs = presenceSegments([{ points: [...walk, ...away] }]);
+        const gaps = absenceSpans(segs, segs[0].from, segs[segs.length - 1].to);
+        expect(gaps).toEqual([{ from: 21000 + TRAIL_HOLD_MS, to: 600000 }]);
     });
 });

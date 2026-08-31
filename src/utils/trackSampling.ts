@@ -156,6 +156,37 @@ export function presenceSegments(
 }
 
 /**
+ * The complement of `segments` over [from, to] — when nobody was online.
+ *
+ * The scrubber cannot show these. It measures elapsed presence while empty
+ * stretches are being skipped, so every absence collapses to zero width there by
+ * design. Drawing them needs a wall-clock axis, which is what this feeds.
+ *
+ * Expects the merged, sorted output of `presenceSegments`; the `max` on the cursor
+ * is the only concession to a caller that hands over something else.
+ */
+export function absenceSpans(
+  segments: PresenceSegment[],
+  from: number,
+  to: number,
+): PresenceSegment[] {
+  const out: PresenceSegment[] = [];
+  if (to <= from) return out;
+
+  let cursor = from;
+  for (const seg of segments) {
+    if (seg.from > cursor) out.push({ from: cursor, to: Math.min(seg.from, to) });
+    cursor = Math.max(cursor, seg.to);
+    if (cursor >= to) break;
+  }
+  if (cursor < to) out.push({ from: cursor, to });
+
+  // A segment can start before `from` or end after `to`, which clamps a span to
+  // nothing. Zero-width absences are not absences.
+  return out.filter(s => s.to > s.from);
+}
+
+/**
  * `ts` itself when someone is present then, otherwise the start of the next
  * stretch of presence — or null once the last one has passed.
  *
