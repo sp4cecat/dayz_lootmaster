@@ -15,6 +15,7 @@ import { presenceSegments, sampleTrackAt, trailPoints } from '@/utils/trackSampl
 import type { AreaSelection, HistoryMode } from '@/types/history';
 import HistoryControls from './HistoryControls';
 import TrackLayer from './TrackLayer';
+import MapImageLayer from '../map/MapImageLayer';
 import { trackColor } from '@/utils/trackColors';
 import PlaybackBar from './PlaybackBar';
 import AreaSelectLayer from './AreaSelectLayer';
@@ -113,9 +114,18 @@ export default function PlayerHistoryView({
   // `isGestureBlocked` is the seam the hook provides for exactly this.
   const view = useMapPanZoom({
     worldSize: map.worldSize,
+    nativeSize: map.tiles?.nativeSize,
     keyboardZoom: true,
     isGestureBlocked: () => mode === 'area',
   });
+
+  // Stable identities for everything handed to the memoised rails (HistoryControls,
+  // ActionFeed). An inline arrow here is a new prop every render, which during playback
+  // means re-rendering the whole roster sixty times a second for no reason.
+  const onRangeChange = useCallback((from: number, to: number) => setRange({ from, to }), []);
+  const selectOnlyPlayer = useCallback((pid: string) => setSelected([pid]), []);
+  const clearPlayers = useCallback(() => setSelected([]), []);
+  const clearKinds = useCallback(() => setKinds([]), []);
 
   const togglePlayer = useCallback((pid: string) => {
     setSelected(prev => prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]);
@@ -242,13 +252,13 @@ export default function PlayerHistoryView({
                 onModeChange={setMode}
                 from={range.from}
                 to={range.to}
-                onRangeChange={(from, to) => setRange({ from, to })}
+                onRangeChange={onRangeChange}
                 players={players}
                 playersLoading={playersLoading}
                 selected={selected}
                 onTogglePlayer={togglePlayer}
-                onSelectOnly={(pid) => setSelected([pid])}
-                onClearPlayers={() => setSelected([])}
+                onSelectOnly={selectOnlyPlayer}
+                onClearPlayers={clearPlayers}
                 onHoverPlayer={setHovered}
                 dataFrom={stats?.from ?? null}
                 dataTo={stats?.to ?? null}
@@ -266,13 +276,7 @@ export default function PlayerHistoryView({
                 )}
               >
                 {showImage ? (
-                  <div style={view.contentStyle}>
-                    <img
-                      src={map.imagePath}
-                      alt={`${map.displayName} map`}
-                      {...view.imageProps}
-                      className="w-full h-full block pointer-events-none"
-                    />
+                  <MapImageLayer view={view} map={map}>
                     {/* Paths live INSIDE the content box so the browser transforms
                         them; see TrackLayer for why they are not on the overlay. */}
                     {mode !== 'area' && (
@@ -284,16 +288,16 @@ export default function PlayerHistoryView({
                         highlighted={highlighted}
                       />
                     )}
-                  </div>
+                  </MapImageLayer>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 pointer-events-none">
                     No map preview for "{map.displayName}"
                   </div>
                 )}
 
-                {/* Overlay: untransformed, so markers keep a constant size. */}
+                {/* Overlay: carries the pan, not the zoom, so markers keep a constant size. */}
                 {view.size > 0 && (
-                  <div className="absolute inset-0 pointer-events-none">
+                  <div style={view.overlayStyle} className="pointer-events-none">
                     {/* Playback trails, drawn per-frame in viewport space because
                         they change every frame anyway — there is no static geometry
                         for the browser to cache. */}
@@ -469,7 +473,7 @@ export default function PlayerHistoryView({
                     kindCounts={actionsQuery.kindCounts}
                     selectedKinds={kinds}
                     onToggleKind={toggleKind}
-                    onClearKinds={() => setKinds([])}
+                    onClearKinds={clearKinds}
                     loading={actionsQuery.loading}
                     error={actionsQuery.error}
                     truncated={actionsQuery.truncated}

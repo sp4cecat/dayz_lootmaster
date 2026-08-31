@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { CalendarDateTime, fromDate, getLocalTimeZone, toCalendarDateTime } from '@internationalized/date';
 import { Route, Play, Circle, ListTree, Loader2, Search } from 'lucide-react';
 import { DatePicker } from '../base/datepicker/datepicker';
@@ -64,7 +64,12 @@ interface HistoryControlsProps {
  * the ADM tooling which is pinned to UTC+10. History is stored as epoch ms precisely
  * so the presentation zone is a display concern rather than a parsing one.
  */
-export default function HistoryControls({
+/**
+ * Memoised: playback advances the playhead every animation frame, and this rail —
+ * mode buttons, range pickers and the whole roster — has nothing to do with it. Its
+ * props are stable callbacks for exactly this reason; keep them that way.
+ */
+const HistoryControls = memo(function HistoryControls({
   mode, onModeChange, from, to, onRangeChange,
   players, playersLoading, selected, onTogglePlayer, onSelectOnly, onClearPlayers,
   onHoverPlayer,
@@ -267,4 +272,6 @@ export default function HistoryControls({
       </div>
     </div>
   );
-}
+});
+
+export default HistoryControls;

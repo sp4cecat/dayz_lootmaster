@@ -1,0 +1,22 @@
+{
+  "id": "dayzoffline.sakhal",
+  "sourceSize": [
+    3713,
+    3713
+  ],
+  "nativeSize": 3713,
+  "tileSize": 512,
+  "baseSize": 1024,
+  "levels": [
+    {
+      "size": 2048,
+      "cols": 4,
+      "rows": 4
+    },
+    {
+      "size": 3713,
+      "cols": 8,
+      "rows": 8
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Loader2, AlertTriangle, ListX } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { actionKindStyle } from '@/utils/actionKinds';
@@ -68,7 +69,12 @@ interface ActionFeedProps {
  * too narrow, or the running mod has no event hooks at all — so each of those says
  * so in its own words instead of sharing one "no results".
  */
-export default function ActionFeed({
+/**
+ * Memoised: hovering an action marker on the map re-renders the view that owns this
+ * feed, and re-rendering a list of up to 5,000 rows to highlight one of them is not a
+ * trade worth making.
+ */
+const ActionFeed = memo(function ActionFeed({
   actions, kindCounts, selectedKinds, onToggleKind, onClearKinds,
   loading, error, truncated, onHoverAction, onSelectAction, totalRecorded,
 }: ActionFeedProps) {
@@ -193,4 +199,6 @@ export default function ActionFeed({
       </div>
     </div>
   );
-}
+});
+
+export default ActionFeed;

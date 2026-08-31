@@ -1,0 +1,27 @@
+{
+  "id": "empty.deerisle",
+  "sourceSize": [
+    16384,
+    16384
+  ],
+  "nativeSize": 8192,
+  "tileSize": 512,
+  "baseSize": 1024,
+  "levels": [
+    {
+      "size": 2048,
+      "cols": 4,
+      "rows": 4
+    },
+    {
+      "size": 4096,
+      "cols": 8,
+      "rows": 8
+    },
+    {
+      "size": 8192,
+      "cols": 16,
+      "rows": 16
+    }
+  ]
+}

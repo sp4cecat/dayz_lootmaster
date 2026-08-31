@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../base/modal/modal';
 import { Badge } from '../base/badges/badges';
 import { Button } from '../base/button/button';
 import { MapZoomControls } from '../MapZoomControls';
+import MapImageLayer from '../map/MapImageLayer';
 import { Radio, Users, Car, MapPin, Flag, Bot, Settings, Clock, Thermometer } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
@@ -154,6 +155,7 @@ export default function LiveMapView({
 
   const view = useMapPanZoom({
     worldSize: map.worldSize,
+    nativeSize: map.tiles?.nativeSize,
     keyboardZoom: true,
     onBackgroundClick: (hit) => {
       // In teleport mode a background click picks the destination; otherwise it
@@ -175,6 +177,22 @@ export default function LiveMapView({
         : { kind: 'territory', id: items[i].id || String(i) });
     },
   });
+
+  // One callback per layer rather than one per marker: the markers are memoised, and a
+  // closure freshly allocated on every render would defeat that entirely. They take the
+  // id as an argument for the same reason.
+  const selectTerritory = useCallback((id: string) => setSelection({ kind: 'territory', id }), []);
+  const selectEvent = useCallback((id: string) => setSelection({ kind: 'event', id }), []);
+  const selectVehicle = useCallback((id: string) => setSelection({ kind: 'vehicle', id }), []);
+  const selectAi = useCallback((id: string) => setSelection({ kind: 'ai', id }), []);
+  const selectPlayer = useCallback((id: string) => setSelection({ kind: 'player', id }), []);
+
+  const dragTeleport = useCallback((player: LivePlayer, dest: { x: number; z: number }) => {
+    // A drop off the map edge clamps to the world bounds.
+    const clamp = (v: number) => Math.min(Math.max(v, 0), Math.round(map.worldSize));
+    setTeleportTarget(player);
+    setTeleportDest({ x: clamp(dest.x), z: clamp(dest.z) });
+  }, [map.worldSize]);
 
   const toggleLayer = (key: LiveLayerKey) => {
     setEnabledLayers(prev => {
@@ -310,29 +328,24 @@ export default function LiveMapView({
                 </div>
               )}
               {showImage ? (
-                <div style={view.contentStyle}>
-                  <img
-                    src={map.imagePath}
-                    alt={`${map.displayName} map`}
-                    {...view.imageProps}
-                    className="w-full h-full block pointer-events-none"
-                  />
-                </div>
+                <MapImageLayer view={view} map={map} />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 pointer-events-none">
                   No map preview for "{map.displayName}"
                 </div>
               )}
 
-              {/* Overlay: untransformed; markers keep constant on-screen size. */}
+              {/* Overlay: carries the pan, not the zoom, so markers keep a constant
+                  on-screen size and a drag re-renders none of them. */}
               {view.size > 0 && snapshot && (
-                <div className="absolute inset-0 pointer-events-none">
+                <div style={view.overlayStyle} className="pointer-events-none">
                   {enabledLayers.has('territories') && snapshot.territories?.items.map((t, i) => {
                     const id = t.id || String(i);
                     const p = view.project(t.position[0], t.position[2]);
                     return (
                       <TerritoryMarker
                         key={`t-${id}`}
+                        id={id}
                         territory={t}
                         px={p.px}
                         py={p.py}
@@ -343,7 +356,7 @@ export default function LiveMapView({
                         radiusPx={view.projectLen(t.territory?.radius ?? territoryRadius)}
                         selected={isSel('territory', id)}
                         dimmed={snapshot.territories?.stale}
-                        onSelect={() => setSelection({ kind: 'territory', id })}
+                        onSelect={selectTerritory}
                       />
                     );
                   })}
@@ -354,13 +367,14 @@ export default function LiveMapView({
                     return (
                       <EventMarker
                         key={`e-${id}`}
+                        id={id}
                         event={e}
                         px={p.px}
                         py={p.py}
                         selected={isSel('event', id)}
                         dimmed={snapshot.events?.stale}
                         stored={e.moved === true}
-                        onSelect={() => setSelection({ kind: 'event', id })}
+                        onSelect={selectEvent}
                       />
                     );
                   })}
@@ -371,12 +385,13 @@ export default function LiveMapView({
                     return (
                       <VehicleMarker
                         key={`v-${id}`}
+                        id={id}
                         vehicle={v}
                         px={p.px}
                         py={p.py}
                         selected={isSel('vehicle', id)}
                         dimmed={snapshot.vehicles?.stale}
-                        onSelect={() => setSelection({ kind: 'vehicle', id })}
+                        onSelect={selectVehicle}
                       />
                     );
                   })}
@@ -390,12 +405,13 @@ export default function LiveMapView({
                     return (
                       <AiMarker
                         key={`a-${id}`}
+                        id={id}
                         ai={a}
                         px={p.px}
                         py={p.py}
                         selected={isSel('ai', id)}
                         dimmed={snapshot.ai?.stale}
-                        onSelect={() => setSelection({ kind: 'ai', id })}
+                        onSelect={selectAi}
                       />
                     );
                   })}
@@ -408,19 +424,15 @@ export default function LiveMapView({
                     return (
                       <PlayerMarker
                         key={`p-${id}`}
+                        id={id}
                         player={pl}
                         px={p.px}
                         py={p.py}
                         selected={isSel('player', id)}
                         dimmed={snapshot.players?.stale}
-                        onSelect={() => setSelection({ kind: 'player', id })}
+                        onSelect={selectPlayer}
                         toWorld={canDragTeleport ? view.toWorld : undefined}
-                        onDragTeleport={canDragTeleport ? (player, dest) => {
-                          // A drop off the map edge clamps to the world bounds.
-                          const clamp = (v: number) => Math.min(Math.max(v, 0), Math.round(map.worldSize));
-                          setTeleportTarget(player);
-                          setTeleportDest({ x: clamp(dest.x), z: clamp(dest.z) });
-                        } : undefined}
+                        onDragTeleport={canDragTeleport ? dragTeleport : undefined}
                       />
                     );
                   })}

@@ -1,0 +1,22 @@
+{
+  "id": "dayzoffline.enoch",
+  "sourceSize": [
+    3072,
+    3015
+  ],
+  "nativeSize": 3072,
+  "tileSize": 512,
+  "baseSize": 1024,
+  "levels": [
+    {
+      "size": 2048,
+      "cols": 4,
+      "rows": 4
+    },
+    {
+      "size": 3072,
+      "cols": 6,
+      "rows": 6
+    }
+  ]
+}

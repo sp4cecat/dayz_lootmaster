@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computeMaxScale, worldToViewport, worldLenToViewport, viewportToContent,
+  computeMaxScale, worldToViewport, worldToOverlay, worldLenToViewport, viewportToContent,
   contentToWorld, zoomAt, clampTransform, IDENTITY_TRANSFORM,
   type MapTransform,
 } from '../../src/utils/mapTransform.ts';
@@ -27,6 +27,29 @@ describe('computeMaxScale', () => {
     expect(computeMaxScale(554, 500)).toBeCloseTo(1.108, 3);
     expect(computeMaxScale(16384, 600)).toBeCloseTo(27.307, 3);
     expect(computeMaxScale(3072, 819)).toBeCloseTo(3.751, 3);
+  });
+});
+
+describe('worldToOverlay — the pan-free projection markers actually use', () => {
+  const size = 600;
+
+  it('ignores the pan entirely, so dragging the map cannot move a marker within the overlay', () => {
+    const a = worldToOverlay(4096, 8192, DEER_ISLE, size, 2);
+    for (const t of [{ x: 0, y: 0 }, { x: -900, y: 40 }, { x: 12345, y: -6789 }]) {
+      expect(worldToOverlay(4096, 8192, DEER_ISLE, size, 2)).toEqual(a);
+      // ...while the full mapping does move, by exactly the pan. That difference is what
+      // the overlay's CSS translate supplies.
+      const full = worldToViewport(4096, 8192, DEER_ISLE, size, { ...t, scale: 2 });
+      expect(full.px).toBeCloseTo(a.px + t.x, 9);
+      expect(full.py).toBeCloseTo(a.py + t.y, 9);
+    }
+  });
+
+  it('still inverts Z and still scales with zoom', () => {
+    expect(worldToOverlay(0, 0, DEER_ISLE, size, 1)).toEqual({ px: 0, py: size });
+    expect(worldToOverlay(0, DEER_ISLE, DEER_ISLE, size, 1)).toEqual({ px: 0, py: 0 });
+    expect(worldToOverlay(DEER_ISLE / 2, DEER_ISLE / 2, DEER_ISLE, size, 3))
+      .toEqual({ px: 900, py: 900 });
   });
 });
 

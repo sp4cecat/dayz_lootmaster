@@ -1,0 +1,84 @@
+{
+  "dayzoffline.chernarusplus": {
+    "id": "dayzoffline.chernarusplus",
+    "sourceSize": [
+      554,
+      554
+    ],
+    "nativeSize": 554,
+    "tileSize": 512,
+    "baseSize": 554,
+    "levels": []
+  },
+  "dayzoffline.enoch": {
+    "id": "dayzoffline.enoch",
+    "sourceSize": [
+      3072,
+      3015
+    ],
+    "nativeSize": 3072,
+    "tileSize": 512,
+    "baseSize": 1024,
+    "levels": [
+      {
+        "size": 2048,
+        "cols": 4,
+        "rows": 4
+      },
+      {
+        "size": 3072,
+        "cols": 6,
+        "rows": 6
+      }
+    ]
+  },
+  "dayzoffline.sakhal": {
+    "id": "dayzoffline.sakhal",
+    "sourceSize": [
+      3713,
+      3713
+    ],
+    "nativeSize": 3713,
+    "tileSize": 512,
+    "baseSize": 1024,
+    "levels": [
+      {
+        "size": 2048,
+        "cols": 4,
+        "rows": 4
+      },
+      {
+        "size": 3713,
+        "cols": 8,
+        "rows": 8
+      }
+    ]
+  },
+  "empty.deerisle": {
+    "id": "empty.deerisle",
+    "sourceSize": [
+      16384,
+      16384
+    ],
+    "nativeSize": 8192,
+    "tileSize": 512,
+    "baseSize": 1024,
+    "levels": [
+      {
+        "size": 2048,
+        "cols": 4,
+        "rows": 4
+      },
+      {
+        "size": 4096,
+        "cols": 8,
+        "rows": 8
+      },
+      {
+        "size": 8192,
+        "cols": 16,
+        "rows": 16
+      }
+    ]
+  }
+}

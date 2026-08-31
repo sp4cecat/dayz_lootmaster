@@ -5,6 +5,7 @@ import { Input } from './base/input/input';
 import { Slider } from './base/slider/slider';
 import { Badge } from './base/badges/badges';
 import { MapZoomControls } from './MapZoomControls';
+import MapImageLayer from './map/MapImageLayer';
 import { Boxes, Crosshair, Zap, AlertCircle, User } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { useMapMetadata } from '../hooks/useMapMetadata';
@@ -55,6 +56,7 @@ export default function ItemScanModal({ onClose, missionName, isPanel = false }:
   // primary content and only one instance is ever mounted.
   const view = useMapPanZoom({
     worldSize: map.worldSize,
+    nativeSize: map.tiles?.nativeSize,
     keyboardZoom: true,
     onBackgroundClick: (hit) => setCenter({ x: Math.round(hit.x), z: Math.round(hit.z) }),
   });
@@ -162,28 +164,19 @@ export default function ItemScanModal({ onClose, missionName, isPanel = false }:
               view.isPanning ? 'cursor-grabbing' : 'cursor-crosshair',
             )}
           >
-            {/* Content layer: the image only, carrying the pan/zoom. Stretched to the square
-                rather than object-contain — the overlay maths assume the image spans exactly
-                0..worldSize, and letterboxing inside this non-square box put every marker out. */}
+            {/* Content layer: the imagery only, carrying the pan/zoom. */}
             {showImage ? (
-              <div style={view.contentStyle}>
-                <img
-                  src={map.imagePath}
-                  alt={`${map.displayName} map`}
-                  {...view.imageProps}
-                  className="w-full h-full block pointer-events-none"
-                />
-              </div>
+              <MapImageLayer view={view} map={map} />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 pointer-events-none">
                 No map preview for "{map.displayName}"
               </div>
             )}
 
-            {/* Overlay layer: untransformed, so markers keep a constant on-screen size while
-                the scan circle, which is world-sized, scales with the map. */}
+            {/* Overlay layer: carries the pan but not the zoom, so markers keep a constant
+                on-screen size while the scan circle, which is world-sized, scales. */}
             {view.size > 0 && (
-              <div className="absolute inset-0 pointer-events-none">
+              <div style={view.overlayStyle} className="pointer-events-none">
                 {/* Scan area */}
                 <div
                   className="absolute rounded-full border-2 border-primary-400/80 bg-primary-400/10 -translate-x-1/2 -translate-y-1/2"

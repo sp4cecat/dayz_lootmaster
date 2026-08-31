@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { memo, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Car, Van, Helicopter, Ship, CarFront, Flame, Biohazard, Flag, MapPin,
@@ -162,8 +162,10 @@ const DRAG_SLOP = 4;
  * releasing asks the caller to teleport the player there. A press that never
  * travels past the slop stays a click and selects the player as before.
  */
-export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDragTeleport, toWorld }: {
-  player: LivePlayer; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
+export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, selected, dimmed, onSelect, onDragTeleport, toWorld }: {
+  id: string; player: LivePlayer; px: number; py: number; selected: boolean; dimmed?: boolean;
+  /** Takes the id so the caller can pass one stable callback for the whole layer. */
+  onSelect: (id: string) => void;
   /** Present when drag-to-teleport is available (GameLabs connected + steam64 known). */
   onDragTeleport?: (player: LivePlayer, dest: { x: number; z: number }) => void;
   /** Client (mouse) position -> world metres, from the map view. */
@@ -224,7 +226,7 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDra
         onClick={(e) => {
           e.stopPropagation();
           if (suppressClick.current) { suppressClick.current = false; return; }
-          onSelect();
+          onSelect(id);
         }}
         className={cx(
           'absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto p-1',
@@ -270,7 +272,7 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDra
       )}
     </>
   );
-}
+});
 
 /**
  * Expansion AI render as a translucent GREEN dot — the same shape as the orange
@@ -284,8 +286,9 @@ export function PlayerMarker({ player, px, py, selected, dimmed, onSelect, onDra
  * ACTION_PATTERNS either, so the gesture has no correct destination. Omitting it
  * beats rendering a grab cursor that silently does nothing.
  */
-export function AiMarker({ ai, px, py, selected, dimmed, onSelect }: {
-  ai: LiveAi; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
+export const AiMarker = memo(function AiMarker({ id, ai, px, py, selected, dimmed, onSelect }: {
+  id: string; ai: LiveAi; px: number; py: number; selected: boolean; dimmed?: boolean;
+  onSelect: (id: string) => void;
 }) {
   const [hover, setHover] = useState(false);
   return (
@@ -293,7 +296,7 @@ export function AiMarker({ ai, px, py, selected, dimmed, onSelect }: {
       type="button"
       aria-label={ai.name}
       onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      onClick={(e) => { e.stopPropagation(); onSelect(id); }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className={cx(
@@ -323,10 +326,11 @@ export function AiMarker({ ai, px, py, selected, dimmed, onSelect }: {
       )}
     </button>
   );
-}
+});
 
-export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
-  vehicle: LiveVehicle; px: number; py: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
+export const VehicleMarker = memo(function VehicleMarker({ id, vehicle, px, py, selected, dimmed, onSelect }: {
+  id: string; vehicle: LiveVehicle; px: number; py: number; selected: boolean; dimmed?: boolean;
+  onSelect: (id: string) => void;
 }) {
   const icon = iconForClassName(vehicle.className) ?? Car;
   const tint = isCoveredVehicle(vehicle.className) ? COVERED_TINT : 'text-sky-400';
@@ -334,12 +338,12 @@ export function VehicleMarker({ vehicle, px, py, selected, dimmed, onSelect }: {
     <MarkerButton
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={vehicle.displayName || vehicle.className || 'Vehicle'}
-      onSelect={onSelect}
+      onSelect={() => onSelect(id)}
     >
       <Glyph icon={icon} tint={tint} selected={selected} />
     </MarkerButton>
   );
-}
+});
 
 function eventVisual(event: LiveEvent): { icon: LucideIcon; tint: string } {
   const cn = event.className || '';
@@ -359,23 +363,25 @@ function eventVisual(event: LiveEvent): { icon: LucideIcon; tint: string } {
  * marker for an item on a player or in cargo, so anything that reaches this
  * component is world-placed — grey just means "not where it spawned".
  */
-export function EventMarker({ event, px, py, selected, dimmed, stored, onSelect }: {
-  event: LiveEvent; px: number; py: number; selected: boolean; dimmed?: boolean; stored?: boolean; onSelect: () => void;
+export const EventMarker = memo(function EventMarker({ id, event, px, py, selected, dimmed, stored, onSelect }: {
+  id: string; event: LiveEvent; px: number; py: number; selected: boolean; dimmed?: boolean; stored?: boolean;
+  onSelect: (id: string) => void;
 }) {
   const { icon, tint } = eventVisual(event);
   return (
     <MarkerButton
       px={px} py={py} selected={selected} dimmed={dimmed}
       title={event.displayName || event.className || event.type}
-      onSelect={onSelect}
+      onSelect={() => onSelect(id)}
     >
       <Glyph icon={icon} tint={stored ? COVERED_TINT : tint} selected={selected} />
     </MarkerButton>
   );
-}
+});
 
-export function TerritoryMarker({ territory, px, py, radiusPx, selected, dimmed, onSelect }: {
-  territory: LiveEvent; px: number; py: number; radiusPx: number; selected: boolean; dimmed?: boolean; onSelect: () => void;
+export const TerritoryMarker = memo(function TerritoryMarker({ id, territory, px, py, radiusPx, selected, dimmed, onSelect }: {
+  id: string; territory: LiveEvent; px: number; py: number; radiusPx: number; selected: boolean; dimmed?: boolean;
+  onSelect: (id: string) => void;
 }) {
   return (
     <>
@@ -394,13 +400,13 @@ export function TerritoryMarker({ territory, px, py, radiusPx, selected, dimmed,
       <MarkerButton
         px={px} py={py} selected={selected} dimmed={dimmed}
         title={territory.displayName || 'Territory flag'}
-        onSelect={onSelect}
+        onSelect={() => onSelect(id)}
       >
         <Glyph icon={Flag} tint="text-rose-400" selected={selected} />
       </MarkerButton>
     </>
   );
-}
+});
 
 /**
  * The territory whose circle contains a world point, as an index into `items`.

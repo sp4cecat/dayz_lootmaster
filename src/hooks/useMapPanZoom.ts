@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   IDENTITY_TRANSFORM, MapTransform, clamp, clampTransform, computeMaxScale, contentToWorld,
-  viewportToContent, worldLenToViewport, worldToViewport, zoomAt,
+  viewportToContent, worldLenToViewport, worldToOverlay, zoomAt,
 } from '@/utils/mapTransform';
 
 /**
@@ -24,15 +24,27 @@ import {
  *   1. the **viewport** — gets `viewportRef` and `viewportHandlers`, is `overflow-hidden`
  *      and `relative`, and is measured;
  *   2. the **content box** — gets `contentStyle`, and holds only things that live in map
- *      space and should scale (the `<img>`, the Heat Map's `<canvas>`);
- *   3. an **overlay** — untransformed, `absolute inset-0`, with markers positioned via
- *      `project()` so their handles, borders and labels keep a constant on-screen size
- *      while world-sized things (radius circles) scale via `projectLen()`.
+ *      space and should scale (`MapImageLayer`, the history TrackLayer);
+ *   3. an **overlay** — gets `overlayStyle`, with markers positioned via `project()` so
+ *      their handles, borders and labels keep a constant on-screen size while world-sized
+ *      things (radius circles) scale via `projectLen()`.
  *
  * Zoom is expressed as a real **layout size** on the content box rather than a CSS
  * `scale()`, so the browser rasterises the image at the zoomed resolution. A composited
  * `scale()` (especially with `will-change`) resamples one fit-sized raster, and the map
  * turns to mush at exactly the zoom levels this feature exists for.
+ *
+ * ## The pan does not go through `project()`
+ *
+ * `project()` returns positions relative to the overlay, and the overlay carries the pan
+ * as a single CSS translate (`overlayStyle`). Folding the pan into `project()` instead
+ * makes every marker's position a function of the pan, so dragging the map re-renders
+ * every marker in the tool — on the Live map that is hundreds of stateful components, on
+ * a frame budget of 16 ms. Splitting it means a pan moves one composited element and
+ * re-renders nothing; only a zoom re-projects.
+ *
+ * A corollary: `project()` is NOT in viewport/client space, so never compare its output
+ * to a `clientX`/`clientY`. Use `toWorld()`, which is unaffected, for pointer maths.
  */
 
 /** Pointer travel (px) that still counts as a click rather than the start of a pan. */
@@ -58,6 +70,13 @@ export interface MapPointerHit {
 export interface UseMapPanZoomOptions {
   /** Map extent in metres; both axes. */
   worldSize: number;
+  /**
+   * Edge of the largest available imagery, in px, when it is known up front — i.e. a tile
+   * pyramid's `nativeSize`. Supplying it makes `maxScale` correct on the very first paint
+   * instead of only after an image load, so the zoom controls stop popping into existence
+   * a moment after the map appears. Falls back to the loaded image's own size.
+   */
+  nativeSize?: number;
   /**
    * Enable wheel zoom and drag-to-pan. Zoom is capped at one image pixel per CSS pixel, so
    * maps whose image is smaller than the rendered box stay fixed. Default true.
@@ -94,7 +113,10 @@ export interface MapPanZoom {
   atMin: boolean;
   atMax: boolean;
   isPanning: boolean;
-  /** Smaller edge of the source image in px, once loaded. */
+  /**
+   * Edge of the largest available imagery in px: the declared `nativeSize` when there is
+   * one, otherwise the loaded image's own size. Null until either is known.
+   */
   naturalSize: number | null;
   /** True once the image has failed to load — render a placeholder instead. */
   imageFailed: boolean;
@@ -113,7 +135,9 @@ export interface MapPanZoom {
   };
   /** Apply to the content box. Carries the zoom as layout size and the pan as a translate. */
   contentStyle: React.CSSProperties;
-  /** World position -> viewport px. */
+  /** Apply to the marker overlay. Carries the pan only — markers never scale. */
+  overlayStyle: React.CSSProperties;
+  /** World position -> px within the overlay. Excludes the pan; see the header. */
   project: (x: number, z: number) => { px: number; py: number };
   /** World length (e.g. a radius) -> viewport px. */
   projectLen: (len: number) => number;
@@ -126,6 +150,7 @@ export interface MapPanZoom {
 
 export function useMapPanZoom({
   worldSize,
+  nativeSize,
   zoomable = true,
   keyboardZoom = false,
   onBackgroundClick,
@@ -140,7 +165,11 @@ export function useMapPanZoom({
   const [transform, setTransform] = useState<MapTransform>(IDENTITY_TRANSFORM);
   const [isPanning, setIsPanning] = useState(false);
 
-  const maxScale = zoomable ? computeMaxScale(naturalSize, size) : 1;
+  // The largest imagery we know we can show, from either source. A tile manifest reports
+  // the whole pyramid (so zoom is available before anything has decoded, and is not capped
+  // at the small base image the layer loads first); a bare <img> can only report itself.
+  const effectiveNative = Math.max(nativeSize ?? 0, naturalSize ?? 0) || null;
+  const maxScale = zoomable ? computeMaxScale(effectiveNative, size) : 1;
   const canZoom = maxScale > 1 + ZOOM_EPSILON;
 
   // Latest values for handlers that are bound once but must not read stale state.
@@ -188,8 +217,10 @@ export function useMapPanZoom({
 
   // --- Projection ----------------------------------------------------------
 
+  // Depends on scale, not on the whole transform: a pan leaves every marker's overlay
+  // position untouched, so it must not invalidate this callback.
   const project = useCallback((x: number, z: number) =>
-    worldToViewport(x, z, worldSize, size, transform), [worldSize, size, transform]);
+    worldToOverlay(x, z, worldSize, size, transform.scale), [worldSize, size, transform.scale]);
 
   const projectLen = useCallback((len: number) =>
     worldLenToViewport(len, worldSize, size, transform), [worldSize, size, transform]);
@@ -246,6 +277,41 @@ export function useMapPanZoom({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [keyboardZoom, canZoom, zoomByStep]);
 
+  // --- Pan scheduling ------------------------------------------------------
+  // A high-polling-rate mouse fires pointermove well above 60 Hz, and each one used to be
+  // a `setTransform`, i.e. a full re-render of the tool. Coalesce them onto animation
+  // frames instead; nothing can be shown between frames anyway.
+
+  const panFrameRef = useRef(0);
+  const panTargetRef = useRef<{ x: number; y: number } | null>(null);
+  // Clamp inputs read at flush time rather than captured, so the callbacks below stay
+  // stable across a resize or a zoom mid-drag.
+  const clampRef = useRef({ size, w: viewportBox.w, h: viewportBox.h, maxScale });
+  clampRef.current = { size, w: viewportBox.w, h: viewportBox.h, maxScale };
+
+  const flushPan = useCallback(() => {
+    if (panFrameRef.current) {
+      cancelAnimationFrame(panFrameRef.current);
+      panFrameRef.current = 0;
+    }
+    const target = panTargetRef.current;
+    if (!target) return;
+    panTargetRef.current = null;
+    const { size: s, w, h, maxScale: ms } = clampRef.current;
+    // Functional update: the pending frame must not apply a transform captured before a
+    // zoom that landed in between.
+    setTransform(t => clampTransform({ ...t, x: target.x, y: target.y }, s, w, h, ms));
+  }, []);
+
+  const schedulePan = useCallback((x: number, y: number) => {
+    panTargetRef.current = { x, y };
+    if (!panFrameRef.current) panFrameRef.current = requestAnimationFrame(flushPan);
+  }, [flushPan]);
+
+  useEffect(() => () => {
+    if (panFrameRef.current) cancelAnimationFrame(panFrameRef.current);
+  }, []);
+
   // --- Background gesture: click vs drag-to-pan ----------------------------
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -269,21 +335,24 @@ export function useMapPanZoom({
     }
     // Absolute from the gesture start, not incremental: accumulating deltas against a clamp
     // makes the pan stick when you push past an edge and reverse.
-    applyTransform({ ...transform, x: g.startTx + dx, y: g.startTy + dy });
-  }, [applyTransform, transform]);
+    schedulePan(g.startTx + dx, g.startTy + dy);
+  }, [schedulePan]);
 
   const endGesture = useCallback((e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
     const g = gestureRef.current;
     if (!g.active || g.pointerId !== e.pointerId) return;
     const wasClick = !g.panning && !cancelled;
     gestureRef.current = { ...g, active: false, panning: false, pointerId: -1 };
+    // Commit the last pan now rather than a frame later, so the transform is settled the
+    // instant the gesture ends.
+    flushPan();
     setIsPanning(false);
     if (wasClick) {
       // Use the press coordinates — that's what the user aimed at.
       const hit = toWorld(g.startX, g.startY);
       if (hit) clickRef.current?.(hit);
     }
-  }, [toWorld]);
+  }, [toWorld, flushPan]);
 
   const viewportHandlers = useMemo(() => ({
     onPointerDown,
@@ -311,6 +380,15 @@ export function useMapPanZoom({
     transform: `translate(${transform.x}px, ${transform.y}px)`,
   }), [size, transform]);
 
+  // Same translate as the content box, over an untransformed full-viewport layer. Markers
+  // are laid out inside it at `project()` positions, so they move with the map without
+  // scaling and without re-rendering.
+  const overlayStyle = useMemo<React.CSSProperties>(() => ({
+    position: 'absolute',
+    inset: 0,
+    transform: `translate(${transform.x}px, ${transform.y}px)`,
+  }), [transform.x, transform.y]);
+
   return {
     viewportRef: setViewportEl,
     viewportEl,
@@ -323,11 +401,12 @@ export function useMapPanZoom({
     atMin: transform.scale <= 1 + 1e-3,
     atMax: transform.scale >= maxScale - 1e-3,
     isPanning,
-    naturalSize,
+    naturalSize: effectiveNative,
     imageFailed,
     imageProps,
     viewportHandlers,
     contentStyle,
+    overlayStyle,
     project,
     projectLen,
     toWorld,

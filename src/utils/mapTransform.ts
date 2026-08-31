@@ -40,14 +40,35 @@ export function computeMaxScale(naturalSize: number | null, size: number): numbe
   return Math.max(1, naturalSize / size);
 }
 
-/** World position -> viewport px. Screen Y is inverted relative to world Z. */
+/**
+ * World position -> px within the marker overlay. Screen Y is inverted relative to world Z.
+ *
+ * This is `worldToViewport` minus the pan, and it is what the hook actually hands to
+ * consumers. The overlay carries the pan itself, as a single CSS translate: panning then
+ * moves one composited element instead of invalidating every marker's position and
+ * re-rendering the whole tool on every pointermove.
+ */
+export function worldToOverlay(
+  x: number, z: number, worldSize: number, size: number, scale: number,
+): { px: number; py: number } {
+  return {
+    px: (x / worldSize) * size * scale,
+    py: (1 - z / worldSize) * size * scale,
+  };
+}
+
+/**
+ * World position -> viewport px, pan included.
+ *
+ * The full content->viewport mapping, and the exact inverse of `viewportToContent` +
+ * `contentToWorld`. Consumers get the split version above; this is the whole relation the
+ * split has to preserve, which is what makes the zoom-about-a-point invariant testable.
+ */
 export function worldToViewport(
   x: number, z: number, worldSize: number, size: number, t: MapTransform,
 ): { px: number; py: number } {
-  return {
-    px: t.x + (x / worldSize) * size * t.scale,
-    py: t.y + (1 - z / worldSize) * size * t.scale,
-  };
+  const { px, py } = worldToOverlay(x, z, worldSize, size, t.scale);
+  return { px: t.x + px, py: t.y + py };
 }
 
 /** A world-space length (e.g. a zone radius) -> viewport px. */

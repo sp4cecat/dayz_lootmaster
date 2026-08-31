@@ -3,6 +3,7 @@ import { cx } from '@/utils/cx';
 import { MapMetadata } from '@/consts/maps';
 import { useMapPanZoom } from '@/hooks/useMapPanZoom';
 import { MapZoomControls } from './MapZoomControls';
+import MapImageLayer from './map/MapImageLayer';
 
 export interface DropLocation {
   Name?: string;
@@ -95,6 +96,7 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
 
   const view = useMapPanZoom({
     worldSize,
+    nativeSize: map.tiles?.nativeSize,
     zoomable,
     isGestureBlocked: () => dragRef.current.mode !== null,
     onBackgroundClick: (hit) => {
@@ -188,28 +190,19 @@ export const AirdropDropLocationMap: React.FC<AirdropDropLocationMapProps> = ({
         view.isPanning ? 'cursor-grabbing' : view.canZoom && !view.atMin ? 'cursor-grab' : undefined
       )}
     >
-      {/* Content layer: the image only, carrying the pan/zoom. */}
+      {/* Content layer: the imagery only, carrying the pan/zoom. */}
       {showImage ? (
-        <div style={view.contentStyle}>
-          <img
-            src={map.imagePath}
-            alt={map.displayName}
-            {...view.imageProps}
-            // Stretched, not object-cover: the overlay maths assume the image spans exactly
-            // 0..worldSize across the square, and cover would crop a non-square source
-            // (Livonia is 3072x3015) and put every marker out by up to ~119m.
-            className="block h-full w-full opacity-90 pointer-events-none"
-          />
-        </div>
+        <MapImageLayer view={view} map={map} className="opacity-90" />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 pointer-events-none">
           No map preview for "{map.displayName}"
         </div>
       )}
 
-      {/* Overlay layer: untransformed, so handles and labels keep a constant screen size. */}
+      {/* Overlay layer: carries the pan but not the zoom, so handles and labels keep a
+          constant screen size and a drag re-renders none of them. */}
       {size > 0 && (
-        <div className="absolute inset-0 pointer-events-none">
+        <div style={view.overlayStyle} className="pointer-events-none">
           {/* Radius circles — world-sized, so the diameter scales but the border stays 2px. */}
           {locations.map((loc, i) => {
             const { px, py, dia } = project(loc);

@@ -5,6 +5,7 @@ import { Button } from './base/button/button';
 import { Slider } from './base/slider/slider';
 import { Modal } from './base/modal/modal';
 import { MapZoomControls } from './MapZoomControls';
+import MapImageLayer from './map/MapImageLayer';
 import { Map as MapIcon, Maximize2, Zap, AlertCircle } from 'lucide-react';
 import moment from 'moment';
 import { useMapMetadata } from '../hooks/useMapMetadata';
@@ -64,7 +65,11 @@ export default function HeatMapModal({ onClose, selectedProfileId, missionName, 
 
     // Shared with the Airdrop, Zones and Item Scan maps. Keyboard zoom is on because the
     // map is this modal's primary content and only one instance is ever mounted.
-    const view = useMapPanZoom({ worldSize: mapMetadata.worldSize, keyboardZoom: true });
+    const view = useMapPanZoom({
+        worldSize: mapMetadata.worldSize,
+        nativeSize: mapMetadata.tiles?.nativeSize,
+        keyboardZoom: true,
+    });
     const { viewportBox, contentSize, transform, isPanning } = view;
 
     /** Points in a unit square, so they can be rasterised at whatever tier is current. */
@@ -360,19 +365,14 @@ export default function HeatMapModal({ onClose, selectedProfileId, missionName, 
                         </div>
                     )}
 
-                    {/* Content layer: just the map image, carrying the pan/zoom. */}
-                    <div style={view.contentStyle}>
-                        {showImage && (
-                            <img
-                                src={mapMetadata.imagePath}
-                                alt={`${mapMetadata.displayName} Map`}
-                                {...view.imageProps}
-                                className="w-full h-full block pointer-events-none"
-                            />
-                        )}
-                    </div>
+                    {/* Content layer: just the map imagery, carrying the pan/zoom. */}
+                    {showImage && <MapImageLayer view={view} map={mapMetadata} />}
 
-                    {/* Overlay layer: untransformed, so blobs keep a constant on-screen size. */}
+                    {/* The heat canvas stays in viewport space and applies the transform
+                        itself (see drawHeatMap), so it is deliberately NOT inside
+                        view.overlayStyle — a blob must be a constant number of CSS px at
+                        every zoom, and a content-space canvas would have to be as big as
+                        the zoomed map. */}
                     <canvas
                         ref={canvasRef}
                         className="absolute inset-0 w-full h-full pointer-events-none"

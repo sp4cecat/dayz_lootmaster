@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { useMapPanZoom, type MapPanZoom, type MapPointerHit } from '../../src/hooks/useMapPanZoom';
 import { MapZoomControls } from '../../src/components/MapZoomControls';
+import { worldToViewport } from '../../src/utils/mapTransform';
 
 // @ts-expect-error - test-only global flag not in the ambient types
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -265,5 +266,122 @@ describe('useMapPanZoom — zoom', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', bubbles: true, cancelable: true }));
     });
     expect(view.transform.scale).toBeCloseTo(1, 6);
+  });
+});
+
+/**
+ * The pan was moved out of `project()` and onto a CSS translate on the marker overlay, so
+ * that dragging the map re-renders no markers. That is only safe if the two halves still
+ * compose to exactly what a marker used to be given — otherwise every marker in the app
+ * silently drifts off the terrain under it, which no unit test of either half alone would
+ * catch.
+ */
+describe('useMapPanZoom — the overlay carries the pan', () => {
+  /** `translate(12px, -3px)` -> [12, -3]. */
+  function translationOf(style: React.CSSProperties): [number, number] {
+    const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(String(style.transform));
+    if (!m) throw new Error(`no translate in ${style.transform}`);
+    return [Number(m[1]), Number(m[2])];
+  }
+
+  const POINTS: [number, number][] = [
+    [0, 0], [WORLD, WORLD], [WORLD / 2, WORLD / 2], [1234, 9876], [WORLD, 0],
+  ];
+
+  it('places every marker exactly where the full projection would, at any pan and zoom', async () => {
+    const vp = await render();
+    await loadImage();
+
+    for (const scale of [1, 2.5, 9]) {
+      await act(async () => { view.applyTransform({ x: 0, y: 0, scale }); });
+      // Drag somewhere non-trivial; clampTransform decides where it actually lands.
+      await act(async () => {
+        pointer(vp, 'pointerdown', 400, 400);
+        pointer(vp, 'pointermove', 260, 330);
+        pointer(vp, 'pointerup', 260, 330);
+      });
+
+      const [tx, ty] = translationOf(view.overlayStyle);
+      expect(tx).toBe(view.transform.x);
+      expect(ty).toBe(view.transform.y);
+
+      for (const [x, z] of POINTS) {
+        const marker = view.project(x, z);
+        const full = worldToViewport(x, z, WORLD, view.size, view.transform);
+        expect(marker.px + tx).toBeCloseTo(full.px, 9);
+        expect(marker.py + ty).toBeCloseTo(full.py, 9);
+      }
+    }
+  });
+
+  it('does not change a projected position when only the pan changes', async () => {
+    const vp = await render();
+    await loadImage();
+    await act(async () => { view.applyTransform({ x: 0, y: 0, scale: 4 }); });
+
+    const before = view.project(WORLD / 3, WORLD / 3);
+    const panBefore = view.transform.x;
+
+    await act(async () => {
+      pointer(vp, 'pointerdown', 500, 500);
+      pointer(vp, 'pointermove', 300, 420);
+      pointer(vp, 'pointerup', 300, 420);
+    });
+
+    expect(view.transform.x).not.toBe(panBefore);   // the map really did move
+    expect(view.project(WORLD / 3, WORLD / 3)).toEqual(before);
+  });
+});
+
+/**
+ * Pointermove used to call setTransform directly, which on a high-polling-rate mouse is
+ * well over 60 re-renders of the whole tool per second. It is now coalesced onto animation
+ * frames — so the thing worth testing is that a drag still moves the map *while the button
+ * is held*, not only when it is released.
+ */
+describe('useMapPanZoom — the pan is coalesced onto animation frames', () => {
+  const frame = () => act(async () => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  });
+
+  it('applies a held drag on the next frame, without waiting for pointerup', async () => {
+    const vp = await render();
+    await loadImage();
+    await act(async () => { view.applyTransform({ x: 0, y: 0, scale: 2 }); });
+
+    await act(async () => {
+      pointer(vp, 'pointerdown', 400, 400);
+      pointer(vp, 'pointermove', 300, 300);
+    });
+    await frame();
+
+    expect(view.isPanning).toBe(true);
+    expect(view.transform.x).toBe(-100);
+    expect(view.transform.y).toBe(-100);
+
+    // Many moves in one frame collapse to the last one — that is the whole point.
+    await act(async () => {
+      pointer(vp, 'pointermove', 380, 360);
+      pointer(vp, 'pointermove', 360, 350);
+      pointer(vp, 'pointermove', 340, 340);
+    });
+    await frame();
+    expect(view.transform.x).toBe(-60);
+    expect(view.transform.y).toBe(-60);
+  });
+
+  it('commits the final position on pointerup rather than a frame later', async () => {
+    const vp = await render();
+    await loadImage();
+    await act(async () => { view.applyTransform({ x: 0, y: 0, scale: 2 }); });
+
+    await act(async () => {
+      pointer(vp, 'pointerdown', 400, 400);
+      pointer(vp, 'pointermove', 250, 250);
+      pointer(vp, 'pointerup', 250, 250);
+    });
+    // No frame awaited: a settled gesture must not leave the map lagging behind.
+    expect(view.transform.x).toBe(-150);
+    expect(view.isPanning).toBe(false);
   });
 });
