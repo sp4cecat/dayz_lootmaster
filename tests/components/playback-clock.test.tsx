@@ -155,6 +155,47 @@ describe('usePlaybackClock over sparse presence', () => {
         expect(clock.ts).toBe(later[0].from);
     });
 
+    it('keeps the playhead when a player is ADDED to the selection', () => {
+        // The whole point of a multi-player replay is building the selection up
+        // while watching it. Adding a player widens the presence the window is
+        // derived from, and re-anchoring on that threw away where you were.
+        mount(WINDOW.from, WINDOW.to, { segments: SEGMENTS });
+        act(() => clock.seek(SEGMENTS[1].from + 10 * 60_000));
+        const at = clock.ts;
+
+        // Someone who logged in earlier joins, so the window now starts sooner.
+        const wider = [{ from: T0 - 2 * HOUR, to: T0 - HOUR }, ...SEGMENTS];
+        rerender(T0 - 2 * HOUR, WINDOW.to, { segments: wider });
+
+        expect(clock.ts).toBe(at);
+    });
+
+    it('does not stop playing when a player is added mid-replay', () => {
+        mount(WINDOW.from, WINDOW.to, { segments: SEGMENTS });
+        act(() => clock.seek(SEGMENTS[0].from));
+        act(() => clock.play());
+        expect(clock.playing).toBe(true);
+
+        const wider = [{ from: T0 - 2 * HOUR, to: T0 - HOUR }, ...SEGMENTS];
+        rerender(T0 - 2 * HOUR, WINDOW.to, { segments: wider });
+
+        expect(clock.playing).toBe(true);
+    });
+
+    it('re-anchors and stops when the playhead falls outside the new window', () => {
+        mount(WINDOW.from, WINDOW.to, { segments: SEGMENTS });
+        act(() => clock.seek(SEGMENTS[1].from));
+        act(() => clock.play());
+
+        // Isolating a player who was only ever online in the first session leaves
+        // the playhead past the end of everything there now is to watch.
+        const earlier = [SEGMENTS[0]];
+        rerender(SEGMENTS[0].from, SEGMENTS[0].to, { segments: earlier });
+
+        expect(clock.ts).toBe(SEGMENTS[0].from);
+        expect(clock.playing).toBe(false);
+    });
+
     it('offers the skip control only while presence is sparse', () => {
         mount(WINDOW.from, WINDOW.to, { segments: SEGMENTS });
         expect(clock.canSkipEmpty).toBe(true);

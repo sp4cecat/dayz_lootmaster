@@ -125,9 +125,21 @@ export function usePlaybackClock(
   const skipRef = useRef(skipEmpty);
   skipRef.current = skipEmpty && canSkipEmpty;
 
-  // Re-anchor whenever the window changes, so changing the range or the selection
-  // never leaves the playhead stranded outside it — or parked in dead air.
+  // Re-anchor only when the playhead no longer has anywhere to be — outside the
+  // window, or stranded before the data starts.
+  //
+  // Re-anchoring unconditionally is what made a multi-player replay impossible to
+  // assemble while it runs. The window is derived from the selected players' own
+  // presence, so adding a player CHANGES it, and every player added mid-replay threw
+  // away where you were watching and stopped the transport.
+  //
+  // `anchor` rather than `from` is the lower bound on purpose: it already sits at the
+  // first sample, so one comparison covers both "before the window" and "parked ahead
+  // of any data". A playhead that survives into a stretch of dead air needs no
+  // handling here — the rAF loop advances through it via nextPresence next frame.
   useEffect(() => {
+    const cur = tsRef.current;
+    if (cur >= anchor && cur <= to) return;
     setTs(anchor);
     setPlaying(false);
   }, [anchor, to]);

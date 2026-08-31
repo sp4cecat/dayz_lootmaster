@@ -748,6 +748,23 @@ export function listPlayers({ from, to, srv = DEFAULT_SRV } = {}) {
 }
 
 /**
+ * Ceiling on rows materialised for a whole multi-player request.
+ *
+ * `maxRows` is a per-player budget, so without a ceiling a thirty-player selection
+ * would ask for thirty times it. This bounds the response instead; the per-player
+ * budget is reduced to fit, which is a fidelity cost shared evenly rather than one
+ * player's track being sacrificed to another's volume.
+ */
+const TOTAL_ROW_CAP = 160_000;
+
+/**
+ * Floor under the per-player budget, so TOTAL_ROW_CAP divided among many players can
+ * never thin a short session into a handful of points. A 40-minute session is ~500
+ * samples at the mod's 5 s rate — below this, striding it gains nothing anyway.
+ */
+const MIN_PER_PID = 500;
+
+/**
  * Ordered points per player over [from, to].
  *
  * Decimation is two-stage. A SQL modulo stride caps how many rows are ever
@@ -756,6 +773,16 @@ export function listPlayers({ from, to, srv = DEFAULT_SRV } = {}) {
  * applies Ramer-Douglas-Peucker to the survivors. The stride is deliberately
  * coarse and shape-blind, which is exactly why RDP runs after it rather than
  * instead of it — a stride alone clips corners, and corners are the route.
+ *
+ * ## Why the stride is per player
+ *
+ * `maxRows` is a budget PER PLAYER, and each player's stride comes from their own
+ * row count. Deriving one stride from the combined count — and then applying it per
+ * partition — lets a busy player dictate how coarsely a quiet one is sampled: select
+ * a 100 k-row player alongside a 500-row player and both get stride 6, so the quiet
+ * player loses five sixths of a track that was never over budget in the first place.
+ * The visible result is a marker that hops and interpolates in straight lines through
+ * terrain, for reasons that have nothing to do with that player's own data.
  *
  * ## Why absence is a flag and not a timestamp comparison
  *
@@ -775,22 +802,33 @@ export function queryTrack({ pids, from, to, maxRows = 20000, srv = DEFAULT_SRV 
     if (!ids.length) return [];
 
     const holes = ids.map(() => '?').join(',');
-    const total = db.prepare(
-        `SELECT COUNT(*) AS c FROM player_pos
-          WHERE srv = ? AND pid IN (${holes}) AND ts BETWEEN ? AND ?`,
-    ).get(srv, ...ids, from, to).c;
 
-    const stride = total > maxRows ? Math.ceil(total / maxRows) : 1;
+    // Each player's own volume decides their own stride, so one player's track is
+    // never coarsened by who else happens to be selected alongside them.
+    const counts = db.prepare(
+        `SELECT pid, COUNT(*) AS c FROM player_pos
+          WHERE srv = ? AND pid IN (${holes}) AND ts BETWEEN ? AND ?
+          GROUP BY pid`,
+    ).all(srv, ...ids, from, to);
+
+    // The caller's budget is the ceiling; the shared cap only ever lowers it, and
+    // the floor applies to that division rather than overriding an explicit ask.
+    const perPid = Math.min(maxRows, Math.max(MIN_PER_PID, Math.floor(TOTAL_ROW_CAP / ids.length)));
+    const strideOf = new Map(
+        counts.map(r => [r.pid, r.c > perPid ? Math.ceil(r.c / perPid) : 1]),
+    );
 
     // `rn % stride = 0` over a per-player row number: an even sample of each
     // track, not of the interleaved union (which would favour whoever was online).
     //
-    // Binding `stride` is safe here even though node:sqlite binds JS numbers as
+    // Binding the strides is safe here even though node:sqlite binds JS numbers as
     // REAL, because SQLite's `%` casts both operands to INTEGER first. `/` does
     // NOT — see the inlined bucket size in prune(), which is the same hazard.
     // `dt` is the interval back to the previous RAW sample and `dtNext` the interval
     // forward. Rows on either side of a real absence are kept regardless of the
     // stride, so thinning can never erase a gap boundary.
+    const strideCase = ids.map(() => 'WHEN ? THEN ?').join(' ');
+    const strideParams = ids.flatMap(pid => [pid, strideOf.get(pid) ?? 1]);
     const rows = db.prepare(`
         SELECT pid, ts, x, y, z, health, blood, shock, energy, water, alive, hands, src,
                CASE WHEN runStartFlag = 1 OR dt > gapMs THEN 1 ELSE 0 END AS isGap
@@ -805,10 +843,10 @@ export function queryTrack({ pids, from, to, maxRows = 20000, srv = DEFAULT_SRV 
               FROM player_pos
              WHERE srv = ? AND pid IN (${holes}) AND ts BETWEEN ? AND ?
           )
-         WHERE (rn - 1) % ? = 0
+         WHERE (rn - 1) % (CASE pid ${strideCase} ELSE 1 END) = 0
             OR dt > gapMs OR dtNext > gapMs
             OR runStartFlag = 1 OR nextRunStart = 1
-         ORDER BY pid, ts`).all(srv, ...ids, from, to, stride);
+         ORDER BY pid, ts`).all(srv, ...ids, from, to, ...strideParams);
 
     const byPid = new Map();
     for (const r of rows) {
@@ -822,7 +860,7 @@ export function queryTrack({ pids, from, to, maxRows = 20000, srv = DEFAULT_SRV 
         .map(pid => ({
             pid,
             name: names.get(pid) || null,
-            stride,
+            stride: strideOf.get(pid) ?? 1,
             points: byPid.get(pid),
         }));
 }

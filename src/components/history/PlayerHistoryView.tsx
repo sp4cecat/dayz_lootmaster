@@ -16,8 +16,9 @@ import type { AreaSelection, HistoryMode } from '@/types/history';
 import HistoryControls from './HistoryControls';
 import TrackLayer from './TrackLayer';
 import MapImageLayer from '../map/MapImageLayer';
-import { trackColor } from '@/utils/trackColors';
+import { MAX_TRACKS, TRACK_COLORS, trackColors } from '@/utils/trackColors';
 import PlaybackBar from './PlaybackBar';
+import PlaybackLayer from './PlaybackLayer';
 import AreaSelectLayer from './AreaSelectLayer';
 import AreaResultsPanel from './AreaResultsPanel';
 import ActionsLayer from './ActionsLayer';
@@ -33,8 +34,8 @@ interface PlayerHistoryViewProps {
   onOpenAdmRecords?: () => void;
 }
 
-/** How much of the past to trail behind a marker during playback. */
-const TRAIL_MS = 5 * 60 * 1000;
+/** How much of the past to trail behind a marker during playback. Adjustable. */
+const DEFAULT_TRAIL_MS = 5 * 60 * 1000;
 
 function formatBytes(n: number | null): string {
   if (n === null) return '—';
@@ -71,6 +72,7 @@ export default function PlayerHistoryView({
   const [area, setArea] = useState<AreaSelection | null>(null);
   const [kinds, setKinds] = useState<string[]>([]);
   const [hoveredAction, setHoveredAction] = useState<number | null>(null);
+  const [trailMs, setTrailMs] = useState(DEFAULT_TRAIL_MS);
   // The Actions rail carries two different things about the same players, and
   // stacking them in a 288 px column would leave neither readable.
   const [rail, setRail] = useState<'feed' | 'loadouts'>('feed');
@@ -127,9 +129,19 @@ export default function PlayerHistoryView({
   const clearPlayers = useCallback(() => setSelected([]), []);
   const clearKinds = useCallback(() => setKinds([]), []);
 
+  // Capped at the palette size: past it two players wear the same colour, and the
+  // colour is the only thing tying a marker to a name. Removal is never blocked.
   const togglePlayer = useCallback((pid: string) => {
-    setSelected(prev => prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]);
+    setSelected((prev) => {
+      if (prev.includes(pid)) return prev.filter(p => p !== pid);
+      return prev.length >= MAX_TRACKS ? prev : [...prev, pid];
+    });
   }, []);
+
+  const selectShownPlayers = useCallback(
+    (pids: string[]) => setSelected(pids.slice(0, MAX_TRACKS)),
+    [],
+  );
 
   const toggleKind = useCallback((kind: string) => {
     setKinds(prev => prev.includes(kind) ? prev.filter(k => k !== kind) : [...prev, kind]);
@@ -139,12 +151,16 @@ export default function PlayerHistoryView({
     areaQuery.run(next, range.from, range.to);
   }, [areaQuery, range.from, range.to]);
 
-  // Track index by pid, so a marker's colour matches its path and its roster swatch.
-  const colorOf = useMemo(() => {
-    const m = new Map<string, string>();
-    tracks.forEach((t, i) => m.set(t.pid, trackColor(i)));
-    return m;
-  }, [tracks]);
+  /**
+   * The one colour assignment every consumer reads — roster swatch, path, marker.
+   *
+   * Keyed off the SELECTION, not `tracks`: the server returns tracks sorted by pid
+   * and filtered to whoever actually had samples, so deriving a colour from a
+   * position in that array made the roster swatch and the line on the map disagree
+   * as soon as a second player was selected. Selection order also means adding a
+   * player never recolours the ones already being watched.
+   */
+  const colorOf = useMemo(() => trackColors(selected), [selected]);
 
   // Playback: interpolate each track to the playhead. Returns null for players who
   // were not present at that instant, so a logged-out survivor leaves the map rather
@@ -158,15 +174,39 @@ export default function PlayerHistoryView({
         return {
           pid: t.pid,
           name: t.name,
-          color: colorOf.get(t.pid) || '#f97316',
+          color: colorOf.get(t.pid) ?? TRACK_COLORS[0],
           x: at.x,
           z: at.z,
           point: at.point,
-          trail: trailPoints(t.points, clock.ts, TRAIL_MS),
+          trail: trailPoints(t.points, clock.ts, trailMs),
         };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
-  }, [mode, tracks, clock.ts, colorOf]);
+  }, [mode, tracks, clock.ts, colorOf, trailMs]);
+
+  /**
+   * Per-player presence for the transport lanes, alongside the merged `segments`.
+   *
+   * The clock keeps the merged set — skip-empty must not skip a stretch in which
+   * somebody else was online. But merged presence can only say "somebody was here",
+   * and with several players the question is whose sessions overlapped.
+   */
+  const lanes = useMemo(
+    () => tracks.map(t => ({
+      pid: t.pid,
+      name: t.name,
+      color: colorOf.get(t.pid) ?? TRACK_COLORS[0],
+      segments: presenceSegments([t]),
+    })),
+    [tracks, colorOf],
+  );
+
+  // Selected players the recorder has nothing for in this window. queryTrack simply
+  // omits them, so without this you click a name and the map does nothing.
+  const missing = useMemo(() => {
+    const have = new Set(tracks.map(t => t.pid));
+    return selected.filter(pid => !have.has(pid));
+  }, [selected, tracks]);
 
   // The loadouts rail is single-player. First selected rather than last, so it does
   // not move under the operator every time they add someone to the path view.
@@ -256,8 +296,11 @@ export default function PlayerHistoryView({
                 players={players}
                 playersLoading={playersLoading}
                 selected={selected}
+                colors={colorOf}
+                maxSelected={MAX_TRACKS}
                 onTogglePlayer={togglePlayer}
                 onSelectOnly={selectOnlyPlayer}
+                onSelectShown={selectShownPlayers}
                 onClearPlayers={clearPlayers}
                 onHoverPlayer={setHovered}
                 dataFrom={stats?.from ?? null}
@@ -285,6 +328,7 @@ export default function PlayerHistoryView({
                         // subject, so a pickup is placed on the route that led to it.
                         tracks={mode === 'playback' ? [] : tracks}
                         worldSize={map.worldSize}
+                        colors={colorOf}
                         highlighted={highlighted}
                       />
                     )}
@@ -298,53 +342,12 @@ export default function PlayerHistoryView({
                 {/* Overlay: carries the pan, not the zoom, so markers keep a constant size. */}
                 {view.size > 0 && (
                   <div style={view.overlayStyle} className="pointer-events-none">
-                    {/* Playback trails, drawn per-frame in viewport space because
-                        they change every frame anyway — there is no static geometry
-                        for the browser to cache. */}
-                    {mode === 'playback' && playbackMarkers.map((m) => {
-                      const pts: string[] = [];
-                      for (let i = 0; i < m.trail.length; i += 2) {
-                        const p = view.project(m.trail[i], m.trail[i + 1]);
-                        pts.push(`${p.px},${p.py}`);
-                      }
-                      if (pts.length < 2) return null;
-                      return (
-                        <svg key={`trail-${m.pid}`} className="absolute inset-0 w-full h-full pointer-events-none">
-                          <polyline
-                            points={pts.join(' ')}
-                            fill="none"
-                            stroke={m.color}
-                            strokeWidth={2}
-                            strokeLinecap="round"
-                            opacity={0.55}
-                          />
-                        </svg>
-                      );
-                    })}
-
-                    {mode === 'playback' && playbackMarkers.map((m) => {
-                      const p = view.project(m.x, m.z);
-                      return (
-                        <div
-                          key={`m-${m.pid}`}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 group pointer-events-auto"
-                          style={{ left: p.px, top: p.py }}
-                        >
-                          <div
-                            className="h-3.5 w-3.5 rounded-full ring-2 ring-white/80 dark:ring-gray-900/80"
-                            style={{ backgroundColor: m.color }}
-                          />
-                          <div className="absolute left-1/2 -translate-x-1/2 top-5 hidden group-hover:block whitespace-nowrap px-1.5 py-1 rounded bg-gray-900/90 text-white text-[10px] z-10">
-                            <div className="font-medium">{m.name || m.pid}</div>
-                            <div className="text-gray-300">
-                              {Math.round(m.x)}, {Math.round(m.z)}
-                              {m.point.health !== null && ` · HP ${Math.round(m.point.health)}`}
-                            </div>
-                            {m.point.hands && <div className="text-gray-300">Hands: {m.point.hands}</div>}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {/* Trails and named markers at the playhead, drawn per-frame in
+                        viewport space — they change every frame anyway, so there is
+                        no static geometry for the browser to cache. */}
+                    {mode === 'playback' && (
+                      <PlaybackLayer markers={playbackMarkers} view={view} />
+                    )}
 
                     {/* Action markers. Live in Actions mode, and alongside an area
                         query so "who was here" and "what happened here" are one
@@ -365,7 +368,7 @@ export default function PlayerHistoryView({
                       const last = t.points[t.points.length - 1];
                       const a = view.project(first.x, first.z);
                       const b = view.project(last.x, last.z);
-                      const color = colorOf.get(t.pid) || '#f97316';
+                      const color = colorOf.get(t.pid) ?? TRACK_COLORS[0];
                       const dim = !!hovered && hovered !== t.pid;
                       return (
                         <div key={`ends-${t.pid}`} style={{ opacity: dim ? 0.2 : 1 }}>
@@ -406,9 +409,9 @@ export default function PlayerHistoryView({
                 )}
                 {/* A decimated path is a shape, not every reading. Say so, rather
                     than letting it be mistaken for the full record. */}
-                {mode === 'paths' && tracks.some(t => t.simplified) && (
+                {(mode === 'paths' || mode === 'playback') && tracks.some(t => t.simplified) && (
                   <div className="absolute bottom-3 left-3 px-2 py-1 rounded bg-black/50 text-white/80 text-[10px] pointer-events-none">
-                    Paths simplified for display
+                    Tracks simplified for display
                   </div>
                 )}
 
@@ -421,10 +424,14 @@ export default function PlayerHistoryView({
                   from={playback.from}
                   to={playback.to}
                   segments={segments}
+                  lanes={lanes}
+                  trailMs={trailMs}
+                  onTrailChange={setTrailMs}
                   status={
                     selected.length === 0
                       ? 'Select players to replay'
                       : `${playbackMarkers.length} of ${tracks.length} present`
+                      + (missing.length ? ` · ${missing.length} with no samples here` : '')
                   }
                 />
               )}

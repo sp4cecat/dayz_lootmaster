@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { trackColor } from '@/utils/trackColors';
+import { TRACK_COLORS } from '@/utils/trackColors';
 import type { HistoryTrack } from '@/types/history';
 
 /**
@@ -31,6 +31,8 @@ import type { HistoryTrack } from '@/types/history';
 interface TrackLayerProps {
   tracks: HistoryTrack[];
   worldSize: number;
+  /** Colour per pid, from the selection. Never index a palette here — see trackColors. */
+  colors: ReadonlyMap<string, string>;
   /** Ids to draw at full strength; everything else dims. Empty = all full. */
   highlighted?: Set<string>;
 }
@@ -60,14 +62,14 @@ function toRuns(track: HistoryTrack, worldSize: number): string[] {
   return runs;
 }
 
-export default function TrackLayer({ tracks, worldSize, highlighted }: TrackLayerProps) {
+export default function TrackLayer({ tracks, worldSize, colors, highlighted }: TrackLayerProps) {
   const shapes = useMemo(
-    () => tracks.map((t, i) => ({
+    () => tracks.map((t) => ({
       pid: t.pid,
-      color: trackColor(i),
+      color: colors.get(t.pid) ?? TRACK_COLORS[0],
       runs: toRuns(t, worldSize),
     })),
-    [tracks, worldSize],
+    [tracks, worldSize, colors],
   );
 
   if (!tracks.length) return null;
@@ -83,7 +85,7 @@ export default function TrackLayer({ tracks, worldSize, highlighted }: TrackLaye
       {shapes.map(({ pid, color, runs }) => {
         const dim = dimOthers && !highlighted!.has(pid);
         return (
-          <g key={pid} opacity={dim ? 0.18 : 1}>
+          <g key={pid} data-pid={pid} opacity={dim ? 0.18 : 1}>
             {runs.map((points, i) => (
               <polyline
                 key={i}

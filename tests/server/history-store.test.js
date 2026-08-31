@@ -182,6 +182,65 @@ describe('queryTrack', () => {
         expect(tracks[1].points[0].ts).toBe(T0);
     });
 
+    it('does not let a busy player coarsen a quiet one', () => {
+        // The version of this that shipped derived ONE stride from the combined row
+        // count and then applied it per partition, so a quiet player was thinned by
+        // a factor set entirely by somebody else's volume — a track well under
+        // budget losing most of its points because of who else was selected.
+        for (let i = 0; i < 200; i++) {
+            history.recordSnapshot({
+                players: [player({ id: 'busy', steamId: 'busy', pos: [i, 0, 0] })],
+            }, T0 + i * 5000);
+        }
+        for (let i = 0; i < 10; i++) {
+            history.recordSnapshot({
+                players: [player({ id: 'quiet', steamId: 'quiet', pos: [0, 0, i] })],
+            }, T0 + i * 5000);
+        }
+
+        const [busy, quiet] = history.queryTrack({
+            pids: ['busy', 'quiet'], from: 0, to: T0 + 1e7, maxRows: 50,
+        });
+
+        // The quiet player is nowhere near the budget, so nothing is dropped.
+        expect(quiet.stride).toBe(1);
+        expect(quiet.points).toHaveLength(10);
+        // The busy player is over it, and is thinned on their own count alone.
+        expect(busy.stride).toBe(4);
+    });
+
+    it('reports the stride that was actually applied to each track', () => {
+        walk(100);
+        for (let i = 0; i < 10; i++) {
+            history.recordSnapshot({
+                players: [player({ id: 'quiet', steamId: 'quiet', pos: [0, 0, i] })],
+            }, T0 + i * 5000);
+        }
+        const tracks = history.queryTrack({
+            pids: ['76561198000000001', 'quiet'], from: 0, to: T0 + 1e7, maxRows: 25,
+        });
+        const byPid = Object.fromEntries(tracks.map(t => [t.pid, t.stride]));
+        expect(byPid['76561198000000001']).toBe(4);
+        expect(byPid.quiet).toBe(1);
+    });
+
+    it('selecting more players does not change any one player’s track', () => {
+        walk(100);
+        for (let i = 0; i < 100; i++) {
+            history.recordSnapshot({
+                players: [player({ id: 'other', steamId: 'other', pos: [0, 0, i] })],
+            }, T0 + i * 5000);
+        }
+        const alone = history.queryTrack({
+            pids: ['76561198000000001'], from: 0, to: T0 + 1e7, maxRows: 20,
+        })[0];
+        const together = history.queryTrack({
+            pids: ['76561198000000001', 'other'], from: 0, to: T0 + 1e7, maxRows: 20,
+        })[0];
+        expect(together.stride).toBe(alone.stride);
+        expect(together.points.map(p => p.ts)).toEqual(alone.points.map(p => p.ts));
+    });
+
     it('returns nothing for an unknown player', () => {
         walk(3);
         expect(history.queryTrack({ pids: ['nobody'], from: 0, to: T0 + 1e6 })).toEqual([]);

@@ -1845,6 +1845,14 @@ const HISTORY_DEFAULT_SPAN_MS = 6 * 60 * 60 * 1000;
 /** Points per track after decimation. Enough to draw; small enough to send. */
 const HISTORY_DEFAULT_BUDGET = 2000;
 const HISTORY_MAX_BUDGET = 20000;
+/**
+ * Ceiling on players per track request.
+ *
+ * Deliberately far looser than the 8 the UI offers: that number is a palette limit
+ * (see trackColors.ts), this one guards an unbounded IN-list and an unbounded
+ * response. The server must not depend on the client for either.
+ */
+const HISTORY_MAX_IDS = 32;
 
 // Resolve ?from/?to into an epoch-ms range. Both optional; `to` defaults to now
 // and `from` to HISTORY_DEFAULT_SPAN_MS before it.
@@ -1981,6 +1989,10 @@ async function handleHistoryRoute(url, req, res) {
         const ids = (url.searchParams.get('ids') || '')
             .split(',').map(s => s.trim()).filter(Boolean);
         if (!ids.length) { badRequest(res, 'ids query parameter is required.'); return true; }
+        if (ids.length > HISTORY_MAX_IDS) {
+            badRequest(res, `Too many players: ${ids.length} requested, ${HISTORY_MAX_IDS} maximum.`);
+            return true;
+        }
 
         const rawMax = Number(url.searchParams.get('max'));
         const budget = Number.isFinite(rawMax) && rawMax >= 2

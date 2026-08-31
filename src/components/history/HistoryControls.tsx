@@ -5,7 +5,6 @@ import { DatePicker } from '../base/datepicker/datepicker';
 import { Badge } from '../base/badges/badges';
 import { Input } from '../base/input/input';
 import { cx } from '@/utils/cx';
-import { trackColor } from '@/utils/trackColors';
 import type { HistoryMode, HistoryPlayer } from '@/types/history';
 
 /** Quick ranges, in hours back from now. */
@@ -44,8 +43,13 @@ interface HistoryControlsProps {
   players: HistoryPlayer[];
   playersLoading: boolean;
   selected: string[];
+  /** Colour per selected pid. The single source; see trackColors. */
+  colors: ReadonlyMap<string, string>;
+  /** How many players may be selected at once. */
+  maxSelected: number;
   onTogglePlayer: (pid: string) => void;
   onSelectOnly: (pid: string) => void;
+  onSelectShown: (pids: string[]) => void;
   onClearPlayers: () => void;
   onHoverPlayer?: (pid: string | null) => void;
   /** Full span of recorded data, from /api/history/stats. Drives the "All" preset. */
@@ -71,13 +75,14 @@ interface HistoryControlsProps {
  */
 const HistoryControls = memo(function HistoryControls({
   mode, onModeChange, from, to, onRangeChange,
-  players, playersLoading, selected, onTogglePlayer, onSelectOnly, onClearPlayers,
+  players, playersLoading, selected, colors, maxSelected,
+  onTogglePlayer, onSelectOnly, onSelectShown, onClearPlayers,
   onHoverPlayer,
   dataFrom,
   dataTo,
 }: HistoryControlsProps) {
   const selectedSet = new Set(selected);
-  const indexOf = (pid: string) => selected.indexOf(pid);
+  const atCap = selected.length >= maxSelected;
 
   const [query, setQuery] = useState('');
 
@@ -197,16 +202,42 @@ const HistoryControls = memo(function HistoryControls({
             </Badge>
           )}
         </div>
-        {selected.length > 0 && (
-          <button
-            type="button"
-            onClick={onClearPlayers}
-            className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline decoration-dotted"
-          >
-            clear
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* "select visible" respects the filter above it, which is the point: it
+              turns a search for a clan tag into a replay of that clan. */}
+          {!playersLoading && shown.length > 1 && !atCap && (
+            <button
+              type="button"
+              onClick={() => onSelectShown(shown.map(p => p.pid))}
+              className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline decoration-dotted"
+            >
+              select visible
+            </button>
+          )}
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={onClearPlayers}
+              className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline decoration-dotted"
+            >
+              {selected.length} selected · clear
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Multi-select is the whole point of the tool and nothing said so — the
+          interaction was documented only in a row's title attribute. */}
+      {!playersLoading && players.length > 0 && selected.length === 0 && (
+        <p className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
+          Click to add · double-click to isolate
+        </p>
+      )}
+      {atCap && (
+        <p className="text-[11px] text-warning-700 dark:text-warning-400 shrink-0">
+          {maxSelected} players maximum — colours repeat past that.
+        </p>
+      )}
 
       {/* Outside the scroll container below, so it stays pinned over a long roster. */}
       {!playersLoading && players.length > 0 && (
@@ -237,18 +268,26 @@ const HistoryControls = memo(function HistoryControls({
         )}
         {shown.map((p) => {
           const on = selectedSet.has(p.pid);
-          const i = indexOf(p.pid);
+          // Full at 8: show the refusal before the click rather than swallowing it.
+          // Double-click still isolates, which is how you switch players at the cap.
+          const blocked = atCap && !on;
           return (
             <button
               key={p.pid}
               type="button"
+              // Dimmed rather than `disabled`: a disabled button swallows dblclick
+              // too, and isolating is exactly how you swap players once full.
+              aria-disabled={blocked}
               onClick={() => onTogglePlayer(p.pid)}
               onDoubleClick={() => onSelectOnly(p.pid)}
               onMouseEnter={() => onHoverPlayer?.(p.pid)}
               onMouseLeave={() => onHoverPlayer?.(null)}
-              title={`${p.name || p.pid}\n${p.samples} samples\nDouble-click to isolate`}
+              title={blocked
+                ? `${p.name || p.pid}\n${p.samples} samples\nDouble-click to replay this player alone`
+                : `${p.name || p.pid}\n${p.samples} samples\nDouble-click to isolate`}
               className={cx(
                 'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors',
+                blocked && 'opacity-50',
                 on
                   ? 'bg-gray-100 dark:bg-gray-800'
                   : 'hover:bg-gray-50 dark:hover:bg-gray-800/50',
@@ -257,9 +296,9 @@ const HistoryControls = memo(function HistoryControls({
               <span
                 className={cx('h-2.5 w-2.5 rounded-full shrink-0 border',
                   on ? 'border-transparent' : 'border-gray-300 dark:border-gray-600')}
-                // Colour has to agree with TrackLayer, which keys off the selection
-                // order — so the swatch is only meaningful once a player is selected.
-                style={{ backgroundColor: on && i >= 0 ? trackColor(i) : 'transparent' }}
+                // The swatch only means something once selected — an unselected row
+                // has no colour, because nothing on the map is wearing one for it.
+                style={{ backgroundColor: on ? colors.get(p.pid) : 'transparent' }}
               />
               <span className={cx('flex-1 truncate text-xs',
                 on ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-400')}>

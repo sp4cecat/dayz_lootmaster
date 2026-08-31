@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import PlayerHistoryView from '../../src/components/history/PlayerHistoryView';
 import TrackLayer from '../../src/components/history/TrackLayer';
+import { MAX_TRACKS, trackColors } from '../../src/utils/trackColors';
 import type { HistoryTrack } from '../../src/types/history';
 
 // @ts-expect-error - test-only global flag not in the ambient types
@@ -109,6 +110,41 @@ async function render(props: Partial<React.ComponentProps<typeof PlayerHistoryVi
 
 const text = () => container.textContent || '';
 
+/** A HistoryTrack shaped like the server's, for the view-level tests. */
+function trackFixture(
+  pid: string, name: string, points: [number, number, number][],
+): HistoryTrack {
+  return {
+    pid, name, stride: 1, runs: 1, sampled: points.length, simplified: false,
+    points: points.map(([ts, x, z]) => ({
+      ts, x, y: 0, z, health: 100, blood: null, shock: null,
+      energy: null, water: null, alive: true, hands: null, gap: false,
+    })),
+  };
+}
+
+async function clickPlayer(name: string) {
+  const row = [...container.querySelectorAll('button')]
+    .find(b => b.textContent?.includes(name))!;
+  await act(async () => { row.click(); });
+  await act(async () => { await Promise.resolve(); });
+}
+
+/** The colour dot inside a roster row. */
+function rosterSwatch(name: string): HTMLElement | null {
+  const row = [...container.querySelectorAll('button')]
+    .find(b => b.textContent?.includes(name));
+  return row?.querySelector<HTMLElement>('span.rounded-full') ?? null;
+}
+
+/** Hex and rgb() both appear depending on whether jsdom parsed a style attribute. */
+function toRgb(c: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(c.trim());
+  if (!m) return c.trim();
+  const n = parseInt(m[1], 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
+
 describe('PlayerHistoryView', () => {
   it('renders the recorder status and roster when recording', async () => {
     mockApi();
@@ -190,6 +226,74 @@ describe('PlayerHistoryView', () => {
     expect(areaCalls[0]).toMatch(/radius=\d+/);
   });
 
+  it('gives a player the same colour on the map as in the roster', async () => {
+    // The regression this pins: the roster coloured by selection order while the
+    // paths coloured by position in `tracks`, which arrives sorted by pid and
+    // filtered to whoever had samples. With one player those agree; with two they
+    // diverge, and the swatch beside a name then belongs to somebody else's line.
+    // Selecting p2 FIRST is what makes the two orderings disagree.
+    mockApi({
+      tracks: [
+        trackFixture('p1', 'Walker', [[0, 100, 100], [5000, 200, 200]]),
+        trackFixture('p2', 'Camper', [[0, 300, 300], [5000, 400, 400]]),
+      ],
+    });
+    await render();
+
+    await clickPlayer('Camper');
+    await clickPlayer('Walker');
+
+    const swatch = rosterSwatch('Camper')!;
+    const line = [...container.querySelectorAll('polyline')]
+      .find(el => el.closest('g')?.getAttribute('data-pid') === 'p2');
+
+    expect(swatch.style.backgroundColor).not.toBe('');
+    expect(toRgb(swatch.style.backgroundColor))
+      .toBe(toRgb(line!.getAttribute('stroke')!));
+  });
+
+  it('caps the selection at the palette size', async () => {
+    // Past the palette two players wear the same colour, and colour is the only
+    // thing tying a marker to a name.
+    const many = Array.from({ length: MAX_TRACKS + 2 }, (_, i) => ({
+      pid: `q${i}`, name: `P${i}`, steamId: `q${i}`,
+      samples: 10, firstTs: 1000, lastTs: 900_000,
+    }));
+    const { fetchMock } = mockApi({ players: many });
+    await render();
+
+    for (const p of many) await clickPlayer(p.name);
+
+    const last = fetchMock.mock.calls.map(c => String(c[0]))
+      .filter(u => u.includes('/api/history/track')).pop()!;
+    const ids = new URL(last, 'http://x').searchParams.get('ids')!.split(',');
+    expect(ids).toHaveLength(MAX_TRACKS);
+    expect(text()).toContain(`${MAX_TRACKS} players maximum`);
+  });
+
+  it('names every replayed player on the map without hovering', async () => {
+    // With four survivors moving at once, "who is that dot" cannot be a hover.
+    mockApi({
+      tracks: [
+        trackFixture('p1', 'Walker', [[0, 100, 100], [5000, 200, 200]]),
+        trackFixture('p2', 'Camper', [[0, 300, 300], [5000, 400, 400]]),
+      ],
+    });
+    await render();
+    await clickPlayer('Walker');
+    await clickPlayer('Camper');
+
+    const playbackBtn = [...container.querySelectorAll('button')]
+      .find(b => b.textContent?.trim() === 'Playback')!;
+    await act(async () => { playbackBtn.click(); });
+    await act(async () => { await Promise.resolve(); });
+
+    const labels = [...container.querySelectorAll('div.pointer-events-none')]
+      .map(el => el.textContent);
+    expect(labels).toContain('Walker');
+    expect(labels).toContain('Camper');
+  });
+
   it('shows playback transport only in playback mode', async () => {
     mockApi();
     await render();
@@ -216,7 +320,13 @@ describe('TrackLayer', () => {
 
   const renderLayer = async (tracks: HistoryTrack[], worldSize = 15360) => {
     await act(async () => {
-      root.render(<TrackLayer tracks={tracks} worldSize={worldSize} />);
+      root.render(
+        <TrackLayer
+          tracks={tracks}
+          worldSize={worldSize}
+          colors={trackColors(tracks.map(t => t.pid))}
+        />,
+      );
     });
   };
 
@@ -272,6 +382,7 @@ describe('TrackLayer', () => {
         <TrackLayer
           tracks={[track('a', [[0, 0, 0], [5000, 1, 1]]), track('b', [[0, 5, 5], [5000, 6, 6]])]}
           worldSize={15360}
+          colors={trackColors(['a', 'b'])}
           highlighted={new Set(['a'])}
         />,
       );

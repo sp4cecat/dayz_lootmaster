@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import PlaybackBar from '../../src/components/history/PlaybackBar';
+import PlaybackBar, { type PresenceLane } from '../../src/components/history/PlaybackBar';
 import { usePlaybackClock } from '../../src/hooks/usePlaybackClock';
 import type { PresenceSegment } from '../../src/utils/trackSampling';
 
@@ -40,13 +40,15 @@ const SEGMENTS: PresenceSegment[] = [
     { from: T0 + 3 * HOUR, to: T0 + 4 * HOUR },
 ];
 
-function Harness({ segments }: { segments: PresenceSegment[] }) {
+function Harness({ segments, lanes }: { segments: PresenceSegment[]; lanes?: PresenceLane[] }) {
     const clock = usePlaybackClock(FROM, TO, { segments });
-    return <PlaybackBar clock={clock} from={FROM} to={TO} segments={segments} />;
+    return (
+        <PlaybackBar clock={clock} from={FROM} to={TO} segments={segments} lanes={lanes} />
+    );
 }
 
-function mount(segments: PresenceSegment[]) {
-    act(() => { root.render(<Harness segments={segments} />); });
+function mount(segments: PresenceSegment[], lanes?: PresenceLane[]) {
+    act(() => { root.render(<Harness segments={segments} lanes={lanes} />); });
 }
 
 /** The ribbon is the only element carrying this title. */
@@ -100,5 +102,59 @@ describe('PlaybackBar wall-clock ribbon', () => {
     it('is not rendered without any presence at all', () => {
         mount([]);
         expect(ribbon()).toBeNull();
+    });
+});
+
+describe('PlaybackBar per-player lanes', () => {
+    // Two players whose sessions only partly overlap — the case the merged ribbon
+    // cannot describe, because it can only say "somebody was online".
+    const LANES: PresenceLane[] = [
+        { pid: 'a', name: 'Alice', color: '#f97316', segments: [{ from: T0, to: T0 + HOUR }] },
+        {
+            pid: 'b',
+            name: 'Bob',
+            color: '#38bdf8',
+            segments: [{ from: T0 + 3 * HOUR, to: T0 + 4 * HOUR }],
+        },
+    ];
+
+    it('draws a lane per player, in that player’s colour', () => {
+        mount(SEGMENTS, LANES);
+        expect(container.textContent).toContain('Alice');
+        expect(container.textContent).toContain('Bob');
+
+        const spans = [...container.querySelectorAll<HTMLDivElement>('div[style*="background-color"]')];
+        const colours = spans.map(el => el.style.backgroundColor);
+        expect(colours).toContain('rgb(249, 115, 22)');
+        expect(colours).toContain('rgb(56, 189, 248)');
+    });
+
+    it('replaces the merged ribbon, which cannot say who was online', () => {
+        mount(SEGMENTS, LANES);
+        expect(ribbon()).toBeNull();
+    });
+
+    it('keeps the merged ribbon for a single player', () => {
+        // One player's merged presence IS that player's, so the lane would only
+        // restate it while costing a row of map height.
+        mount(SEGMENTS, [LANES[0]]);
+        expect(ribbon()).not.toBeNull();
+    });
+
+    it('dims the player who is offline at the playhead', () => {
+        // This is what makes the lanes a live legend for the map: a dim name is
+        // exactly a marker that is not being drawn.
+        mount(SEGMENTS, LANES);
+        const alice = container.querySelector('[title^="Alice"]')!;
+        const bob = container.querySelector('[title^="Bob"]')!;
+        // The playhead starts at the first sample, inside Alice's session only.
+        expect(alice.getAttribute('title')).toContain('online');
+        expect(bob.getAttribute('title')).toContain('offline');
+    });
+
+    it('renders as before when no lanes are supplied', () => {
+        mount(SEGMENTS);
+        expect(ribbon()).not.toBeNull();
+        expect(strip()).not.toBeNull();
     });
 });
