@@ -382,6 +382,7 @@ export function TerritoryMarker({ territory, px, py, radiusPx, selected, dimmed,
       {/* World-sized territory radius: scales with zoom via projectLen. */}
       {radiusPx > 0 && (
         <div
+          data-testid="territory-circle"
           className={cx(
             'absolute rounded-full border -translate-x-1/2 -translate-y-1/2 pointer-events-none',
             selected ? 'border-primary-400/90 bg-primary-400/15' : 'border-rose-400/60 bg-rose-400/10',
@@ -399,4 +400,38 @@ export function TerritoryMarker({ territory, px, py, radiusPx, selected, dimmed,
       </MarkerButton>
     </>
   );
+}
+
+/**
+ * The territory whose circle contains a world point, as an index into `items`.
+ *
+ * A flag glyph is a 16 px target that other markers routinely sit on top of, so
+ * the circle it draws doubles as its hit area — clicking anywhere inside the
+ * radius selects the territory. World-space throughout, so the answer does not
+ * change with zoom.
+ *
+ * Smallest containing circle wins. Territories nest (a compound inside a larger
+ * claim), and the inner one is always the more specific answer to "which
+ * territory did I click"; the outer one is still reachable from the ring of it
+ * that the inner does not cover.
+ */
+export function territoryAtPoint(
+  items: LiveEvent[] | undefined,
+  defaultRadius: number,
+  x: number,
+  z: number,
+): number | null {
+  let best: number | null = null;
+  let bestRadius = Infinity;
+
+  items?.forEach((t, i) => {
+    const radius = t.territory?.radius ?? defaultRadius;
+    if (!(radius > 0)) return;
+    const dx = x - t.position[0];
+    const dz = z - t.position[2];
+    if (dx * dx + dz * dz > radius * radius) return;
+    if (radius < bestRadius) { best = i; bestRadius = radius; }
+  });
+
+  return best;
 }

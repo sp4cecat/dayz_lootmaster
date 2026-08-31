@@ -110,8 +110,12 @@ function TerritoryDetail({ info }: { info: LiveTerritoryInfo }) {
         </Row>
       )}
 
-      {/* Roster excludes the owner (already shown above) and may be capped. */}
-      {info.members.length > 0 && (
+      {/* Roster excludes the owner (already shown above) and may be capped.
+          Optional-chained despite the type: every field on LiveTerritoryInfo is
+          independently optional in practice — the mod's config can switch the
+          roster off, and tooltip parsing is best-effort — and an absent one here
+          would take the whole panel down. */}
+      {!!info.members?.length && (
         <ul className="pt-1.5 space-y-1">
           {info.members.map((m, i) => (
             <li

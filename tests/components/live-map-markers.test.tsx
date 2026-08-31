@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -58,6 +58,18 @@ const vehicle = (id: string, className: string, position = at(7680, 7680)) => ({
 const event = (id: string, className: string, type: string, position = at(7680, 7680)) => ({
   id, className, type, displayName: null, position,
 });
+const territory = (id: string, position: [number, number, number], radius: number | null = null) => ({
+  ...event(id, 'TerritoryFlag', 'territory', position),
+  displayName: id,
+  territory: radius === null ? undefined : {
+    name: id, radius,
+    flagLevel: null, lifetimeHours: null, owner: null, territoryId: null, level: null,
+    memberCount: null, members: [], membersOmitted: 0,
+  },
+});
+
+// Per-test override for the territories layer; null falls back to [].
+let territoriesOverride: ReturnType<typeof territory>[] | null = null;
 
 vi.mock('@/hooks/useLiveSnapshot', () => ({
   useLiveSnapshot: () => ({
@@ -94,7 +106,7 @@ vi.mock('@/hooks/useLiveSnapshot', () => ({
           event('e15', 'jmc_atv_STAG_Green', 'unknown', at(3000, 3000)),
         ],
       },
-      territories: { at: 1, stale: false, items: [] },
+      territories: { at: 1, stale: false, items: territoriesOverride ?? [] },
       ai: {
         at: 1, stale: false,
         items: [{
@@ -115,6 +127,7 @@ vi.mock('@/contexts/CatalogContext', () => ({
 }));
 
 import LiveMapView from '../../src/components/live/LiveMapView';
+import { territoryAtPoint } from '../../src/components/live/LiveMarkers';
 
 beforeAll(() => {
   if (typeof globalThis.ResizeObserver === 'undefined') {
@@ -347,5 +360,99 @@ describe('LiveMapView marker projection', () => {
     const container = await render();
     expect(container.textContent).toContain('1 online');
     expect(container.textContent).toContain('Test Server');
+  });
+});
+
+describe('territory circle as a click target', () => {
+  // 1280 m at worldSize 15360 over a 600 px box = a 50 px radius on screen, so the
+  // circle is comfortably clickable while the 16 px flag glyph at its centre is not
+  // what the test is aiming at.
+  const RADIUS = 1280;
+  const CENTRE = at(7680, 7680);          // screen (300, 300)
+  const INSIDE = { x: 330, y: 300 };      // 768 m from the flag — on the circle, off the glyph
+  const OUTSIDE = { x: 500, y: 500 };
+
+  /** The circle div, whose border colour is how a territory reports being selected. */
+  const circle = (c: Element) => c.querySelector('[data-testid="territory-circle"]');
+  const isSelected = (c: Element) => !!circle(c)?.className.includes('border-primary-400/90');
+
+  /** The viewport carries the pan/zoom handlers; the map image is inside it. */
+  const viewport = (c: Element) => c.querySelector('.cursor-grab') as HTMLElement;
+
+  const click = async (c: Element, x: number, y: number) => {
+    const el = viewport(c);
+    await act(async () => { pointer(el, 'pointerdown', x, y); });
+    await act(async () => { pointer(el, 'pointerup', x, y); });
+  };
+
+  beforeEach(() => { territoriesOverride = [territory('Alpha', CENTRE, RADIUS)]; });
+  afterEach(() => { territoriesOverride = null; });
+
+  it('selects the territory when the circle is clicked away from the flag', async () => {
+    const container = await render();
+    expect(isSelected(container)).toBe(false);
+    await click(container, INSIDE.x, INSIDE.y);
+    expect(isSelected(container)).toBe(true);
+  });
+
+  it('clears the selection when the click lands outside every circle', async () => {
+    const container = await render();
+    await click(container, INSIDE.x, INSIDE.y);
+    expect(isSelected(container)).toBe(true);
+    await click(container, OUTSIDE.x, OUTSIDE.y);
+    expect(isSelected(container)).toBe(false);
+  });
+
+  it('pans instead of selecting when the press inside a circle turns into a drag', async () => {
+    // The reason this rides the background gesture rather than a hit area on the
+    // circle: territory circles cover a lot of map, and a drag that starts on one
+    // has to still be a pan.
+    const container = await render();
+    const el = viewport(container);
+    await act(async () => { pointer(el, 'pointerdown', INSIDE.x, INSIDE.y); });
+    await act(async () => { pointer(el, 'pointermove', INSIDE.x + 80, INSIDE.y); });
+    await act(async () => { pointer(el, 'pointerup', INSIDE.x + 80, INSIDE.y); });
+    expect(isSelected(container)).toBe(false);
+  });
+
+  it('leaves the circle inert while the territories layer is off', async () => {
+    const container = await render();
+    const toggle = container.querySelector('button[title="Territories"]') as HTMLElement;
+    await act(async () => { toggle.click(); });
+    await click(container, INSIDE.x, INSIDE.y);
+    expect(circle(container)).toBeNull();
+  });
+});
+
+describe('territoryAtPoint', () => {
+  const t = (x: number, z: number, radius: number | null) =>
+    territory('t', at(x, z), radius) as unknown as Parameters<typeof territoryAtPoint>[0][number];
+
+  it('returns the containing circle and null outside every one', () => {
+    const items = [t(1000, 1000, 100)];
+    expect(territoryAtPoint(items, 60, 1050, 1000)).toBe(0);
+    expect(territoryAtPoint(items, 60, 1000, 1099)).toBe(0);
+    expect(territoryAtPoint(items, 60, 1101, 1000)).toBeNull();
+    // Pythagoras, not a bounding box: the corner of the square is outside.
+    expect(territoryAtPoint(items, 60, 1080, 1080)).toBeNull();
+  });
+
+  it('falls back to the server-wide radius when the flag reports none', () => {
+    const items = [t(1000, 1000, null)];
+    expect(territoryAtPoint(items, 60, 1050, 1000)).toBe(0);
+    expect(territoryAtPoint(items, 60, 1070, 1000)).toBeNull();
+  });
+
+  it('prefers the smallest circle when territories nest', () => {
+    // A compound inside a larger claim: the inner one is the specific answer.
+    const items = [t(1000, 1000, 500), t(1000, 1000, 80)];
+    expect(territoryAtPoint(items, 60, 1010, 1000)).toBe(1);
+    // ...and the outer is still reachable from the ring the inner does not cover.
+    expect(territoryAtPoint(items, 60, 1200, 1000)).toBe(0);
+  });
+
+  it('is null for an empty or absent list', () => {
+    expect(territoryAtPoint([], 60, 0, 0)).toBeNull();
+    expect(territoryAtPoint(undefined, 60, 0, 0)).toBeNull();
   });
 });

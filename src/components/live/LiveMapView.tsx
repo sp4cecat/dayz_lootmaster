@@ -17,7 +17,7 @@ import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
 import {
-  AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker,
+  AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker, territoryAtPoint,
   type MarkerSelection,
 } from './LiveMarkers';
 
@@ -157,12 +157,22 @@ export default function LiveMapView({
     keyboardZoom: true,
     onBackgroundClick: (hit) => {
       // In teleport mode a background click picks the destination; otherwise it
-      // clears the selection.
+      // selects the territory it landed in, or clears the selection.
       setTeleportDest((dest) => {
         if (!teleportTargetRef.current || dest) return dest;
         return { x: Math.round(hit.x), z: Math.round(hit.z) };
       });
-      if (!teleportTargetRef.current) setSelection(null);
+      if (teleportTargetRef.current) return;
+      // A flag glyph is hard to hit when players and vehicles cluster on it, so
+      // the circle counts as part of the target. This runs on the background
+      // gesture rather than a hit area on the circle itself: markers stop the
+      // gesture arming at all, so they keep winning a click they overlap, and a
+      // drag that starts inside a circle still pans instead of selecting.
+      const items = enabledLayers.has('territories') ? snapshot?.territories?.items : undefined;
+      const i = territoryAtPoint(items, territoryRadius, hit.x, hit.z);
+      setSelection(i === null || !items
+        ? null
+        : { kind: 'territory', id: items[i].id || String(i) });
     },
   });
 
