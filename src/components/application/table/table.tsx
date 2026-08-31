@@ -25,6 +25,25 @@ import { Dropdown } from "@/components/base/dropdown/dropdown";
 import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
 import { cx } from "@/utils/cx";
 
+/**
+ * Untitled UI's table. The colour work here was already on this project's gray/primary scale,
+ * but a set of Untitled UI tokens and Tailwind v4 syntax survived and compiled to nothing:
+ * `text-fg-quaternary` / `text-fg-quaternary_hover` on the sort and tooltip icons,
+ * `ring-offset-bg-primary` on the column focus ring, `outline-hidden` and `focus-visible:z-1`
+ * (v4 spellings of `outline-none` and `z-[1]`), `nth-2:` and `selected:` (v4 / react-aria
+ * plugin variants), and `shadow-xs` / `text-md` / `h-18`, none of which are on the v3 scale.
+ *
+ * The visible consequences were real: sort arrows and the tooltip trigger drew in inherited
+ * colour with no hover feedback, and selected rows were not highlighted at all. Row selection
+ * now keys off `data-[selected]`, which react-aria sets on `Row`.
+ *
+ * One dead class is left deliberately: `scrollbar-thin` on the scroll container. It is not a
+ * Tailwind utility and is not defined in `src/index.css`, but nine components use it as a
+ * convention -- fixing it here alone would make this table inconsistent with the rest. The
+ * remedy is one `@layer utilities` rule in `index.css`, applied for all nine at once.
+ *
+ * See `base/dropdown/dropdown.tsx` for how to verify a class actually emits CSS.
+ */
 export const TableRowActionsDropdown = () => (
     <Dropdown.Root>
         <Dropdown.DotsButton />
@@ -50,7 +69,7 @@ const TableContext = createContext<{ size: "sm" | "md" }>({ size: "md" });
 const TableCardRoot = ({ children, className, size = "md", ...props }: HTMLAttributes<HTMLDivElement> & { size?: "sm" | "md" }) => {
     return (
         <TableContext.Provider value={{ size }}>
-            <div {...props} className={cx("overflow-hidden rounded-xl bg-white dark:bg-gray-900 shadow-xs ring-1 ring-gray-200 dark:ring-gray-800", className)}>
+            <div {...props} className={cx("overflow-hidden rounded-xl bg-white dark:bg-gray-900 shadow-sm ring-1 ring-gray-200 dark:ring-gray-800", className)}>
                 {children}
             </div>
         </TableContext.Provider>
@@ -83,7 +102,7 @@ const TableCardHeader = ({ title, badge, description, contentTrailing, className
         >
             <div className="flex flex-1 flex-col gap-0.5">
                 <div className="flex items-center gap-2">
-                    <h2 className="text-md font-semibold text-gray-900 dark:text-white">{title}</h2>
+                    <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>
                     {badge ? (
                         isValidElement(badge) ? (
                             badge
@@ -192,8 +211,8 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
             {...props}
             className={(state) =>
                 cx(
-                    "relative p-0 px-6 py-2 outline-hidden focus-visible:z-1 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-bg-primary focus-visible:ring-inset",
-                    selectionBehavior === "toggle" && "nth-2:pl-3",
+                    "relative p-0 px-6 py-2 outline-none focus-visible:z-[1] focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900 focus-visible:ring-inset",
+                    selectionBehavior === "toggle" && "[&:nth-child(2)]:pl-3",
                     state.allowsSorting && "cursor-pointer",
                     typeof className === "function" ? className(state) : className,
                 )
@@ -208,7 +227,7 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
 
                     {tooltip && (
                         <Tooltip title={tooltip} placement="top">
-                            <TooltipTrigger className="cursor-pointer text-fg-quaternary transition duration-100 ease-linear hover:text-fg-quaternary_hover focus:text-fg-quaternary_hover">
+                            <TooltipTrigger className="cursor-pointer text-gray-400 dark:text-gray-500 transition duration-100 ease-linear hover:text-gray-600 dark:hover:text-gray-300 focus:text-gray-600 dark:focus:text-gray-300">
                                 <HelpCircle className="size-4" />
                             </TooltipTrigger>
                         </Tooltip>
@@ -216,9 +235,9 @@ const TableHead = ({ className, tooltip, label, children, ...props }: TableHeadP
 
                     {state.allowsSorting &&
                         (state.sortDirection ? (
-                            <ArrowDown className={cx("size-3 stroke-[3px] text-fg-quaternary", state.sortDirection === "ascending" && "rotate-180")} />
+                            <ArrowDown className={cx("size-3 stroke-[3px] text-gray-400 dark:text-gray-500", state.sortDirection === "ascending" && "rotate-180")} />
                         ) : (
-                            <ChevronSelectorVertical size={12} strokeWidth={3} className="text-fg-quaternary" />
+                            <ChevronSelectorVertical size={12} strokeWidth={3} className="text-gray-400 dark:text-gray-500" />
                         ))}
                 </AriaGroup>
             )}
@@ -245,8 +264,8 @@ const TableRow = <T extends object>({ columns, children, className, highlightSel
             className={(state) =>
                 cx(
                     "relative transition-colors after:pointer-events-none hover:bg-gray-50 dark:hover:bg-gray-800/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
-                    size === "sm" ? "h-14" : "h-18",
-                    highlightSelectedRow && "selected:bg-primary-50 dark:selected:bg-primary-900/20",
+                    size === "sm" ? "h-14" : "h-[4.5rem]",
+                    highlightSelectedRow && "data-[selected]:bg-primary-50 dark:data-[selected]:bg-primary-900/20",
 
                     // Row border—using an "after" pseudo-element to avoid the border taking up space.
                     "[&>td]:after:absolute [&>td]:after:inset-x-0 [&>td]:after:bottom-0 [&>td]:after:h-px [&>td]:after:w-full [&>td]:after:bg-gray-100 dark:[&>td]:after:bg-gray-800/50 last:[&>td]:after:hidden [&>td]:focus-visible:after:opacity-0 focus-visible:[&>td]:after:opacity-0",
@@ -288,11 +307,11 @@ const TableCell = ({ className, children, size: sizeProp, ...props }: TableCellP
             {...props}
             className={(state) =>
                 cx(
-                    "relative text-sm text-tertiary dark:text-gray-400 focus-visible:z-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
+                    "relative text-sm text-tertiary dark:text-gray-400 focus-visible:z-[1] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
                     size === "sm" && "px-5 py-3",
                     size === "md" && "px-6 py-4",
 
-                    selectionBehavior === "toggle" && "nth-2:pl-3",
+                    selectionBehavior === "toggle" && "[&:nth-child(2)]:pl-3",
 
                     typeof className === "function" ? className(state) : className,
                 )

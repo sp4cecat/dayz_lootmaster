@@ -41,8 +41,8 @@ import { ToggleBase } from "../toggle/toggle";
  *
  * Everything here is now concrete gray/primary utilities with explicit `dark:` variants,
  * matching the rest of the app. If you add to this file, check the class actually emits CSS
- * before trusting it -- these failures are silent, and the same dead tokens are still present
- * in avatar.tsx, table.tsx and tooltip.tsx.
+ * before trusting it -- these failures are silent. The same tokens were fixed in avatar.tsx,
+ * table.tsx and tooltip.tsx; those files carry the same warning.
  */
 interface DropdownItemProps extends AriaMenuItemProps {
     /** The label of the item to be displayed. */

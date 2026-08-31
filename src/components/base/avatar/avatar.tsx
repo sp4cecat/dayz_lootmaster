@@ -4,6 +4,26 @@ import { cx } from "@/utils/cx";
 import { AvatarOnlineIndicator, VerifiedTick } from "./base-components";
 import { AvatarCount } from "./base-components/avatar-count";
 
+/**
+ * Untitled UI's avatar, restyled onto this project's actual palette.
+ *
+ * Same class of problem the dropdown had (see `base/dropdown/dropdown.tsx`): as vendored it
+ * used semantic tokens `tailwind.config.js` never defines -- `text-fg-quaternary` for the
+ * placeholder icon, `ring-secondary_alt` for the outer border -- plus `text-md` /
+ * `text-display-xs` (not on the v3 font-size scale), `outline-black/16` and
+ * `before:border-white/32` (bare opacity modifiers off the default scale), and
+ * `before:mask-*` (a Tailwind v4 utility on a v3.4 install). Every one of them compiled to
+ * nothing, so the placeholder icon inherited whatever colour its ancestor happened to set and
+ * `ring-1` alone drew Tailwind's default blue ring.
+ *
+ * The circle behind the placeholder is `bg-tertiary` (#475467) -- this config aliases
+ * `tertiary` to a *text* colour, so it renders dark. That is why the icon and initials are
+ * deliberately light (gray-200), not the mid-gray Untitled UI would use.
+ *
+ * These failures are silent: a dead utility looks identical to a working one in source. To
+ * check, compile the class with the CLI against `tailwind.config.js` and grep the output,
+ * remembering that Tailwind hex-escapes commas in selectors -- naive escaping reports false deaths.
+ */
 export interface AvatarProps {
     size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
     className?: string;
@@ -69,10 +89,10 @@ export interface AvatarProps {
 const styles = {
     xs: { root: "size-6", rootWithBorder: "p-px", initials: "text-xs font-semibold", icon: "size-4" },
     sm: { root: "size-8", rootWithBorder: "p-px", initials: "text-sm font-semibold", icon: "size-5" },
-    md: { root: "size-10", rootWithBorder: "p-px", initials: "text-md font-semibold", icon: "size-6" },
+    md: { root: "size-10", rootWithBorder: "p-px", initials: "text-base font-semibold", icon: "size-6" },
     lg: { root: "size-12", rootWithBorder: "p-[1.5px]", initials: "text-lg font-semibold", icon: "size-7" },
     xl: { root: "size-14", rootWithBorder: "p-0.5", initials: "text-xl font-semibold", icon: "size-8" },
-    "2xl": { root: "size-16", rootWithBorder: "p-0.5", initials: "text-display-xs font-semibold", icon: "size-8" },
+    "2xl": { root: "size-16", rootWithBorder: "p-0.5", initials: "text-2xl font-semibold", icon: "size-8" },
 };
 
 export const Avatar = ({
@@ -106,10 +126,10 @@ export const Avatar = ({
         }
 
         if (PlaceholderIcon) {
-            return <PlaceholderIcon className={cx("text-fg-quaternary", styles[size].icon)} />;
+            return <PlaceholderIcon className={cx("text-gray-200", styles[size].icon)} />;
         }
 
-        return placeholder || <User01 className={cx("text-fg-quaternary", styles[size].icon)} />;
+        return placeholder || <User01 className={cx("text-gray-200", styles[size].icon)} />;
     };
 
     const renderBadgeContent = () => {
@@ -136,7 +156,7 @@ export const Avatar = ({
                 rounded && "rounded-full",
                 // Focus styles
                 focusable && "outline-transparent group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-focus-ring",
-                border && "ring-1 ring-secondary_alt",
+                border && "ring-1 ring-gray-200 dark:ring-gray-700",
                 border && styles[size].rootWithBorder,
                 styles[size].root,
                 className,
@@ -144,11 +164,11 @@ export const Avatar = ({
         >
             <div
                 className={cx(
-                    "relative inline-flex size-full shrink-0 items-center justify-center overflow-hidden rounded-md bg-tertiary outline-[0.5px] -outline-offset-[0.5px] outline-black/16 before:inset-[0.5px]",
+                    "relative inline-flex size-full shrink-0 items-center justify-center overflow-hidden rounded-md bg-tertiary outline-[0.5px] -outline-offset-[0.5px] outline-black/[0.16] before:inset-[0.5px]",
                     rounded && "rounded-full",
                     canShowImage &&
                         size !== "xs" &&
-                        "before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-white/32 before:mask-[linear-gradient(to_bottom,black_0%,transparent_25%,transparent_75%,black_100%)]",
+                        "before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-white/[0.32] before:[mask-image:linear-gradient(to_bottom,black_0%,transparent_25%,transparent_75%,black_100%)]",
                     contentClassName,
                 )}
             >

@@ -7,6 +7,24 @@ import type {
 import { Button as AriaButton, OverlayArrow as AriaOverlayArrow, Tooltip as AriaTooltip, TooltipTrigger as AriaTooltipTrigger } from "react-aria-components";
 import { cx } from "@/utils/cx";
 
+/**
+ * Untitled UI's tooltip, restyled onto this project's actual palette.
+ *
+ * As vendored, the surface was `bg-primary-solid`, the description `text-tooltip-supporting-text`
+ * and the arrow `fill-bg-primary-solid` -- none of which `tailwind.config.js` defines, so the
+ * tooltip rendered as unstyled floating text with an invisible arrow. Same failure the dropdown
+ * had; see `base/dropdown/dropdown.tsx` for the full account.
+ *
+ * The arrow's rotation used `in-placement-*` variants from `tailwindcss-react-aria-components`,
+ * which is not installed, so the arrow always pointed up. It now rotates off `data-placement`,
+ * which react-aria sets on `OverlayArrow` itself -- hence the classes moved from the `<svg>` up
+ * to its parent, since Tailwind v3 has no parent-attribute variant.
+ *
+ * Still inert: the enter/exit animation classes (`animate-in`, `fade-in`, `zoom-in-95`,
+ * `slide-in-from-*`) need `tailwindcss-animate`, and the `in-placement-*` variants wrapping them
+ * need `tailwindcss-react-aria-components`. Neither is a dependency, so the tooltip appears and
+ * disappears instantly. Left in place so they come alive if those plugins are ever added.
+ */
 interface TooltipProps extends AriaTooltipTriggerComponentProps, Omit<AriaTooltipProps, "children"> {
     /**
      * The title of the tooltip.
@@ -66,7 +84,7 @@ export const Tooltip = ({
                 {({ isEntering, isExiting }) => (
                     <div
                         className={cx(
-                            "z-50 flex max-w-xs origin-(--trigger-anchor-point) flex-col items-start gap-1 rounded-lg bg-primary-solid px-3 shadow-lg will-change-transform",
+                            "z-50 flex max-w-xs origin-[var(--trigger-anchor-point)] flex-col items-start gap-1 rounded-lg bg-gray-900 dark:bg-gray-700 px-3 shadow-lg will-change-transform",
                             description ? "py-3" : "py-2",
 
                             isEntering &&
@@ -77,13 +95,13 @@ export const Tooltip = ({
                     >
                         <span className="text-xs font-semibold text-white">{title}</span>
 
-                        {description && <span className="text-xs font-medium text-tooltip-supporting-text">{description}</span>}
+                        {description && <span className="text-xs font-medium text-gray-300">{description}</span>}
 
                         {arrow && (
-                            <AriaOverlayArrow>
+                            <AriaOverlayArrow className="data-[placement=left]:-rotate-90 data-[placement=right]:rotate-90 data-[placement=bottom]:rotate-180">
                                 <svg
                                     viewBox="0 0 100 100"
-                                    className="size-2.5 fill-bg-primary-solid in-placement-left:-rotate-90 in-placement-right:rotate-90 in-placement-top:rotate-0 in-placement-bottom:rotate-180"
+                                    className="size-2.5 fill-gray-900 dark:fill-gray-700"
                                 >
                                     <path d="M0,0 L35.858,35.858 Q50,50 64.142,35.858 L100,0 Z" />
                                 </svg>
@@ -100,7 +118,7 @@ type TooltipTriggerProps = AriaButtonProps;
 
 export const TooltipTrigger = ({ children, className, ...buttonProps }: TooltipTriggerProps) => {
     return (
-        <AriaButton {...buttonProps} className={(values) => cx("h-max w-max outline-hidden", typeof className === "function" ? className(values) : className)}>
+        <AriaButton {...buttonProps} className={(values) => cx("h-max w-max outline-none", typeof className === "function" ? className(values) : className)}>
             {children}
         </AriaButton>
     );
