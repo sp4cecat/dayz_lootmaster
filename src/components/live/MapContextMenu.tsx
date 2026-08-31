@@ -1,7 +1,6 @@
 import { Fragment, type FC, useMemo, useRef } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
 import { Dropdown } from '../base/dropdown/dropdown';
-import { cx } from '@/utils/cx';
 
 /**
  * One entry in the map context menu. Items are plain data rather than JSX so the caller can
@@ -77,15 +76,7 @@ export default function MapContextMenu({
         className="pointer-events-none absolute size-px opacity-0"
         style={{ left: x, top: y }}
       />
-      <Dropdown.Popover
-        placement="bottom start"
-        triggerRef={anchorRef}
-        /* Concrete colours, not Dropdown's Untitled-UI defaults: this project defines
-           `primary` only as a numbered scale, so the primitive's `bg-primary` and
-           `ring-secondary_alt` resolve to no CSS and the menu renders transparent over the
-           map. Opaque is not cosmetic here — map tiles show straight through otherwise. */
-        className="w-56 border border-gray-200 bg-white shadow-xl ring-0 dark:border-gray-700 dark:bg-gray-900"
-      >
+      <Dropdown.Popover placement="bottom start" triggerRef={anchorRef}>
         {header && (
           <div className="truncate border-b border-gray-100 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:border-gray-800/50 dark:text-gray-500">
             {header}
@@ -105,14 +96,6 @@ export default function MapContextMenu({
                   label={item.label}
                   icon={item.icon}
                   isDisabled={item.isDisabled}
-                  /* Row highlight for the same reason: the primitive marks both hover and
-                     keyboard focus with `bg-primary_hover`, another undefined token, so
-                     arrow-key navigation would otherwise be invisible. The child selector
-                     reaches the inner row, which is what carries the padding and rounding. */
-                  className={cx(
-                    '[&>div]:hover:bg-gray-100 dark:[&>div]:hover:bg-gray-800',
-                    '[&>div]:data-[focused]:bg-gray-100 dark:[&>div]:data-[focused]:bg-gray-800',
-                  )}
                 />
               ))}
             </Fragment>
