@@ -1,7 +1,9 @@
+import { useMemo, useState } from 'react';
 import { CalendarDateTime, fromDate, getLocalTimeZone, toCalendarDateTime } from '@internationalized/date';
-import { Route, Play, Circle, ListTree, Loader2 } from 'lucide-react';
+import { Route, Play, Circle, ListTree, Loader2, Search } from 'lucide-react';
 import { DatePicker } from '../base/datepicker/datepicker';
 import { Badge } from '../base/badges/badges';
+import { Input } from '../base/input/input';
 import { cx } from '@/utils/cx';
 import { trackColor } from '@/utils/trackColors';
 import type { HistoryMode, HistoryPlayer } from '@/types/history';
@@ -71,6 +73,30 @@ export default function HistoryControls({
 }: HistoryControlsProps) {
   const selectedSet = new Set(selected);
   const indexOf = (pid: string) => selected.indexOf(pid);
+
+  const [query, setQuery] = useState('');
+
+  // Sorted by the label the row actually shows, so the nameless rows (which fall back
+  // to their pid) land where the operator sees them rather than where a null would.
+  // The server orders by sample count; the copy is deliberate — `players` is the
+  // hook's own state array.
+  const sorted = useMemo(
+    () => [...players].sort((a, b) => (a.name || a.pid).localeCompare(
+      b.name || b.pid, undefined, { sensitivity: 'base', numeric: true },
+    )),
+    [players],
+  );
+
+  // steamId is matchable as well as the name: pasting a steam64 out of a ban list is
+  // the other way an admin arrives at this roster.
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter(p =>
+      (p.name || '').toLowerCase().includes(q)
+      || p.pid.toLowerCase().includes(q)
+      || (p.steamId || '').toLowerCase().includes(q));
+  }, [sorted, query]);
 
   const applyPreset = (hours: number) => {
     const now = Date.now();
@@ -158,7 +184,13 @@ export default function HistoryControls({
             Players
           </h3>
           {playersLoading && <Loader2 size={12} className="animate-spin text-gray-400" />}
-          {!playersLoading && <Badge color="gray" size="sm">{players.length}</Badge>}
+          {/* While filtering, name both numbers — a bare "3" reads as a shrunken
+              dataset rather than a narrowed view of it. */}
+          {!playersLoading && (
+            <Badge color="gray" size="sm">
+              {shown.length === players.length ? players.length : `${shown.length} / ${players.length}`}
+            </Badge>
+          )}
         </div>
         {selected.length > 0 && (
           <button
@@ -171,13 +203,34 @@ export default function HistoryControls({
         )}
       </div>
 
+      {/* Outside the scroll container below, so it stays pinned over a long roster. */}
+      {!playersLoading && players.length > 0 && (
+        <Input
+          size="sm"
+          icon={Search}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onClear={() => setQuery('')}
+          placeholder="Filter players..."
+          aria-label="Filter players"
+          className="shrink-0"
+        />
+      )}
+
       <div className="flex-1 overflow-auto min-h-0 -mx-1">
         {!playersLoading && players.length === 0 && (
           <p className="px-1 text-xs text-gray-400 dark:text-gray-500">
             No players recorded in this window.
           </p>
         )}
-        {players.map((p) => {
+        {/* An empty list under a filter is not an empty window, and saying so would
+            send the operator off widening a range that was fine. */}
+        {!playersLoading && players.length > 0 && shown.length === 0 && (
+          <p className="px-1 text-xs text-gray-400 dark:text-gray-500">
+            No players match that filter.
+          </p>
+        )}
+        {shown.map((p) => {
           const on = selectedSet.has(p.pid);
           const i = indexOf(p.pid);
           return (
