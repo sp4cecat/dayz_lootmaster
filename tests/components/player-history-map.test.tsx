@@ -226,6 +226,48 @@ describe('PlayerHistoryView', () => {
     expect(areaCalls[0]).toMatch(/radius=\d+/);
   });
 
+  it('draws the area circle under the cursor in a non-square viewport', async () => {
+    // The regression this pins: AreaSelectLayer reads the pointer with toWorld()
+    // (viewport space) but drew the circle at project() coordinates (overlay
+    // space) as a plain child of the viewport, so it was missing the overlay
+    // translate. That translate is not only the pan — clampTransform centres the
+    // map square in a non-square viewport, so a landscape panel carries a
+    // constant (viewportW - size) / 2 offset with no panning at all. The other
+    // area test uses a 600x600 box, where that offset is exactly zero and the
+    // bug is invisible; this one is deliberately 900x600, so it is 150px.
+    const WIDE = 900;
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true, get: () => WIDE,
+    });
+    try {
+      mockApi();
+      await render();
+
+      const areaBtn = [...container.querySelectorAll('button')]
+        .find(b => b.textContent?.trim() === 'Area')!;
+      await act(async () => { areaBtn.click(); });
+
+      const layer = container.querySelector('.cursor-crosshair')!;
+      await act(async () => { pointer(layer, 'pointerdown', 300, 300); });
+
+      const dot = container.querySelector('.bg-primary-500') as HTMLElement;
+      expect(dot).toBeTruthy();
+
+      // The drawn centre must resolve to the cursor once the overlay translate
+      // that its container carries is added back.
+      const overlay = dot.parentElement as HTMLElement;
+      const [tx, ty] = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/
+        .exec(overlay.style.transform)!.slice(1).map(Number);
+      expect(tx).toBeCloseTo((WIDE - BOX) / 2, 0);
+      expect(parseFloat(dot.style.left) + tx).toBeCloseTo(300, 0);
+      expect(parseFloat(dot.style.top) + ty).toBeCloseTo(300, 0);
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+        configurable: true, get: () => BOX,
+      });
+    }
+  });
+
   it('gives a player the same colour on the map as in the roster', async () => {
     // The regression this pins: the roster coloured by selection order while the
     // paths coloured by position in `tracks`, which arrives sorted by pid and

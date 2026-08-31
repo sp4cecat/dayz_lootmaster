@@ -77,10 +77,18 @@ export default function AreaSelectLayer({ view, area, onChange, onCommit }: Area
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
+      {/* The hit surface above is in viewport space so the whole map stays
+          selectable, but `project()` returns OVERLAY-space positions, so the
+          drawn circle has to sit under the overlay translate. That translate is
+          not just the pan: clampTransform centres the map square in a
+          non-square viewport, so a landscape map panel carries a constant
+          (viewportW - size) / 2 offset even at rest. Drawing these as plain
+          children of the viewport put the circle that whole distance from the
+          cursor. */}
       {area && centerPt && (
-        <>
+        <div style={view.overlayStyle} className="pointer-events-none">
           <div
-            className="absolute rounded-full border-2 border-primary-400 bg-primary-400/15 pointer-events-none"
+            className="absolute rounded-full border-2 border-primary-400 bg-primary-400/15"
             style={{
               left: centerPt.px - radiusPx,
               top: centerPt.py - radiusPx,
@@ -89,16 +97,16 @@ export default function AreaSelectLayer({ view, area, onChange, onCommit }: Area
             }}
           />
           <div
-            className="absolute h-2 w-2 -ml-1 -mt-1 rounded-full bg-primary-500 ring-2 ring-white dark:ring-gray-900 pointer-events-none"
+            className="absolute h-2 w-2 -ml-1 -mt-1 rounded-full bg-primary-500 ring-2 ring-white dark:ring-gray-900"
             style={{ left: centerPt.px, top: centerPt.py }}
           />
           <div
-            className="absolute px-1.5 py-0.5 rounded bg-gray-900/80 text-white text-[10px] font-mono whitespace-nowrap pointer-events-none"
+            className="absolute px-1.5 py-0.5 rounded bg-gray-900/80 text-white text-[10px] font-mono whitespace-nowrap"
             style={{ left: centerPt.px + 8, top: centerPt.py - radiusPx - 18 }}
           >
             {area.x}, {area.z} · r {area.radius} m
           </div>
-        </>
+        </div>
       )}
 
       {!area && (
