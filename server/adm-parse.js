@@ -158,6 +158,72 @@ export function parseAdmLine(line) {
     return out;
 }
 
+/**
+ * `Dug in`/`Dug out` — a stash being buried or unearthed.
+ *
+ * Kept separate from parseAdmLine because that function answers "where was this
+ * player", and a Dug line already answers it correctly via the subject's own
+ * `pos=`. This one answers "what happened to which stash", which has a different
+ * shape and only one consumer (stash-report.js). Same grammar, two questions.
+ *
+ *   ... Dug in WaterproofBag_Orange<0x...> WaterproofBag_Orange:6455 at position <3084.36,4.30308,5334.39>
+ *   ... Dug out UndergroundStash<0x...> UndergroundStash:26280 at position <8286,187.615,11917.5>
+ *
+ * ## The axis trap
+ *
+ * The two positions on one line use DIFFERENT orders, and confusing them mirrors
+ * every stash about the map diagonal:
+ *
+ *   player  pos=<x, z, y>          DayZ's easting, northing, elevation (see PLAYER_RE)
+ *   stash   at position <x, y, z>  a raw engine vector
+ *
+ * Only the STASH position is a match key. The player's own pos drifts up to 2 m
+ * from the hole they are standing over; the stash position is bit-identical
+ * between the bury and the dig-up, so px/pz are returned for diagnostics only.
+ *
+ * `cls` is the buried CONTAINER on a dig-in (WaterproofBag_Orange, DryBag_Black,
+ * WoodenCrate...) but always UndergroundStash / UndergroundStashSnow on a dig-out
+ * — the container becomes a stash entity when buried. For the same reason the
+ * entity ids on the two halves of a stash's life never match, which is why
+ * matching has to be positional. `entityId` is provenance, never a join key.
+ *
+ * Returns null for every line that is not a dig.
+ */
+export function parseStashLine(line) {
+    const t = TIME_RE.exec(line);
+    if (!t) return null;
+    const body = t[4];
+    if (!body.startsWith('Player ')) return null;
+
+    const dug = DUG_RE.exec(body);
+    if (!dug) return null;
+
+    const p = PLAYER_RE.exec(body);
+    if (!p) return null;
+    const guid = p[3];
+    if (!guid || guid === UNKNOWN_ID) return null;
+
+    const hasPos = p[4] !== undefined;
+    return {
+        secOfDay: Number(t[1]) * 3600 + Number(t[2]) * 60 + Number(t[3]),
+        guid,
+        name: p[1] || null,
+        action: dug[1].toLowerCase() === 'in' ? 'in' : 'out',
+        cls: dug[2],
+        entityId: `${dug[2]}:${dug[3]}`,
+        // The stash, in engine order <x, y, z>.
+        x: Number(dug[4]),
+        y: Number(dug[5]),
+        z: Number(dug[6]),
+        // The player, in ADM order <x, z, y>. Diagnostics only.
+        px: hasPos ? Number(p[4]) : null,
+        pz: hasPos ? Number(p[5]) : null,
+    };
+}
+
+/** `Dug in|out <Class><0xPTR> <Class>:<netId> at position <x, y, z>` */
+const DUG_RE = /Dug (in|out) ([A-Za-z0-9_]+)<0x[0-9A-Fa-f]+>\s+[A-Za-z0-9_]+:(\d+) at position <\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*>/i;
+
 function toObservation(m, secOfDay) {
     const guid = m[3];
     if (!guid || guid === UNKNOWN_ID) return null;

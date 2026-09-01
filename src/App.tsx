@@ -545,7 +545,12 @@ export default function App() {
                             <StashReportModal
                                 onClose={() => setView('cle')}
                                 selectedProfileId={selectedProfileId}
+                                missionName={selectedProfile?.missionName}
                                 isPanel={true}
+                                onOpenPlayerHistory={(pid, from, to) => navigate(
+                                    'map-tools:player-history',
+                                    { pid, from: String(Math.round(from)), to: String(Math.round(to)) },
+                                )}
                             />
                         )}
                         {view === 'tools:lint' && (

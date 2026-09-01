@@ -23,6 +23,8 @@ import * as ingest from './ingest-store.js';
 import * as history from './history-store.js';
 import {simplifyToBudget} from './simplify-path.js';
 import * as admImport from './adm-import.js';
+import {generateStashReport} from './stash-report.js';
+import {annotateApproaches} from './stash-track.js';
 import {
     createDayClock, localFields, wallToMs, normalizeTimeZone, hostTimeZone,
 } from './log-clock.js';
@@ -282,6 +284,7 @@ function getPaths(profile) {
         // Carried alongside the paths because every log reader needs it to make
         // sense of the files it finds there.
         logTimeZone: logTimeZoneFor(profile),
+        serverPath,
         missionPath,
         profilesPath
     };
@@ -984,138 +987,23 @@ function diffTypeFields(a = {}, b = {}) {
     return specs;
 }
 
-// Build a stash report using positions matching:
-// - Parse {<x, y, z>} at end of line and use (x, z)
-// - For each "Dug out", scan backward to find the nearest prior "Dug in" within ±1 on x and z
-//   If player ids match => dugUpOwn, otherwise dugUpOthers (ignore if no prior dug-in match)
-async function generateStashReport(start, end, paths) {
-    const root = paths.logsDirPath;
-    const files = await listAdmFiles(root);
-
-    // Load buckets sorted by file start datetime (inferred from filename)
-    const buckets = [];
-    for (const f of files) {
-        let text = '';
-        try {
-            text = await readFile(f, 'utf8');
-        } catch {
-            continue;
-        }
-        const startDate = parseAdmStartDate(f, paths.logTimeZone);
-        if (!startDate) continue;
-        buckets.push({path: f, startDate, rows: text.split(/\r?\n/)});
-    }
-    buckets.sort((a, b) => {
-        const diff = a.startDate - b.startDate;
-        return diff !== 0 ? diff : String(a.path).localeCompare(String(b.path));
-    });
-
-    // Aggregate per-player
-    /** @type {Map<string, { aliases: Set<string>, dugIn: number, dugUpOwn: number, dugUpOthers: number }>} */
-    const byId = new Map();
-
-    // Collect all events in time order with positions
-    /** @type {{dt: Date, type: 'in'|'out', pid: string, alias?: string, x: number, z: number}[]} */
-    const events = [];
-    const posRe = /(?:at position\s+)?(?:\{?\s*)?<\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*>\s*\}?\s*$/;
-
-    // Helper: HH:MM:SS -> seconds of day
-    const hmsToSec = (t) => {
-        const parts = t.split(':').map(Number);
-        if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
-        return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    };
-
-    for (const bucket of buckets) {
-        // Lines carry a time of day and nothing else, so they are read against the
-        // file's own local date in the server's zone.
-        const clock = createDayClock(
-            localFields(bucket.startDate.getTime(), paths.logTimeZone), paths.logTimeZone);
-
-        for (const row of bucket.rows) {
-            const t = tryParseLineTime(row);
-            if (!t) continue;
-
-            const sec = hmsToSec(t);
-            if (sec == null) continue;
-
-            const dt = new Date(clock.at(sec));
-
-            // Time constraint (open-ended if missing)
-            if (start && dt < start) continue;
-            if (end && dt > end) continue;
-
-            // Determine event type and capture position
-            const isIn = /\bDug in\b/i.test(row);
-            const isOut = /\bDug out\b/i.test(row);
-            if (!isIn && !isOut) continue;
-
-            const idMatch = /\(id=(\S+)\s/i.exec(row);
-            if (!idMatch) continue;
-            const pid = idMatch[1];
-            const aliasMatch = /Player "([^"]+)"/i.exec(row);
-            const alias = aliasMatch ? aliasMatch[1] : undefined;
-
-            const pm = posRe.exec(row);
-            if (!pm) continue;
-            const x = Number(pm[1]);
-            const z = Number(pm[3]); // In <X, Y, Z> format at end of line, Z is 3rd
-            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
-
-            // Prime per-player entry and aliases
-            if (!byId.has(pid)) byId.set(pid, {aliases: new Set(), dugIn: 0, dugUpOwn: 0, dugUpOthers: 0});
-            if (alias) byId.get(pid).aliases.add(alias);
-
-            if (isIn) {
-                byId.get(pid).dugIn += 1;
-                events.push({dt, type: 'in', pid, alias, x, z});
-            } else if (isOut) {
-                events.push({dt, type: 'out', pid, alias, x, z});
-            }
-        }
-    }
-
-    // Events are already in ascending time order due to bucket ordering and per-file order
-    // For each 'out', scan backwards to find most recent 'in' within ±1 on x and z
-    const within = (a, b) => Math.abs(a - b) <= 1;
-
-    for (let i = 0; i < events.length; i++) {
-        const ev = events[i];
-        if (ev.type !== 'out') continue;
-        // Scan backward
-        let matched = false;
-        for (let j = i - 1; j >= 0; j--) {
-            const prev = events[j];
-            if (prev.type !== 'in') continue;
-            if (!within(prev.x, ev.x) || !within(prev.z, ev.z)) continue;
-            // Found matching dug-in
-            const entry = byId.get(ev.pid) || byId.set(ev.pid, {aliases: new Set(), dugIn: 0, dugUpOwn: 0, dugUpOthers: 0}).get(ev.pid);
-            if (prev.pid === ev.pid) entry.dugUpOwn += 1;
-            else entry.dugUpOthers += 1;
-            matched = true;
-            break;
-        }
-        // If no matching dug-in was found, ignore this dug-out (do not count)
-        if (!matched) {
-            // no-op
-        }
-    }
-
-    // Build final sorted report
-    const report = Array.from(byId.entries()).map(([id, v]) => ({
-        id,
-        aliases: Array.from(v.aliases.values()),
-        dugIn: v.dugIn,
-        dugUpOwn: v.dugUpOwn,
-        dugUpOthers: v.dugUpOthers
-    })).sort((a, b) =>
-        (b.dugIn - a.dugIn) ||
-        (b.dugUpOwn - a.dugUpOwn) ||
-        a.id.localeCompare(b.id)
-    );
-
-    return report;
+/**
+ * One edge of a report window, as epoch ms.
+ *
+ * Returns null for "not given" and `false` for "given but unparseable", so an
+ * open-ended range and a typo do not collapse into the same silent answer.
+ * Server-local wall clock is the accepted form; an ISO string is still read for
+ * clients that predate the change.
+ */
+function parseWindowEdge(value, timeZone) {
+    if (value == null || value === '') return null;
+    const local = parseServerLocal(value, timeZone);
+    if (local != null) return local;
+    const iso = new Date(value);
+    return isNaN(iso.getTime()) ? false : iso.getTime();
 }
+
+const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 
 function formatTs(d) {
@@ -3109,7 +2997,8 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // POST stash report within range; returns JSON { players: [{id, aliases[], count}] }
+        // POST stash report. Answers "who is digging up other people's stashes".
+        // See server/stash-report.js for the matching rules and the scoring model.
         if (pathname === '/api/logs/stash-report') {
             if (req.method !== 'POST') {
                 methodNotAllowed(res);
@@ -3118,16 +3007,45 @@ const server = http.createServer(async (req, res) => {
             try {
                 const body = await readBody(req);
                 const data = JSON.parse(body || '{}');
-                const start = data.start ? new Date(data.start) : null;
-                const end = data.end ? new Date(data.end) : null;
-                if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime())) || (start && end && start > end)) {
+
+                // Server-local wall clock, the same as the ADM and Expansion log
+                // tools. The operator reads times off the logs, so a picked time
+                // has to mean what the log printed rather than what their own
+                // browser's zone would make of it.
+                const start = parseWindowEdge(data.start, paths.logTimeZone);
+                const end = parseWindowEdge(data.end, paths.logTimeZone);
+                if (start === false || end === false || (start && end && start > end)) {
                     badRequest(res, 'Invalid start/end datetimes.');
                     return;
                 }
-                const report = await generateStashReport(start && !isNaN(start.getTime()) ? start : null, end && !isNaN(end.getTime()) ? end : null, paths);
-                send(res, 200, JSON.stringify({players: report}), {'Content-Type': 'application/json'});
-            } catch {
-                send(res, 500, JSON.stringify({error: 'Failed to generate stash report'}), {'Content-Type': 'application/json'});
+
+                const options = {
+                    sort: typeof data.sort === 'string' ? data.sort : undefined,
+                    minScore: Number.isFinite(data.minScore) ? clampNum(data.minScore, 0, 100) : undefined,
+                    includeLedger: data.includeLedger !== false,
+                    maxBuryAgeDays: Number.isFinite(data.maxBuryAgeDays)
+                        ? clampNum(data.maxBuryAgeDays, 1, 365) : undefined,
+                };
+                const trackLookback = Number.isFinite(data.trackLookback)
+                    ? clampNum(data.trackLookback, 5 * 60_000, 60 * 60_000) : undefined;
+                const maxLookups = Number.isFinite(data.maxTrackLookups)
+                    ? clampNum(data.maxTrackLookups, 0, 500) : undefined;
+
+                const report = await generateStashReport({
+                    paths, start, end, options,
+                    annotate: (entries) => annotateApproaches(entries, {
+                        serverPath: paths.serverPath,
+                        lookbackMs: trackLookback,
+                        maxLookups,
+                    }),
+                });
+                send(res, 200, JSON.stringify(report), {'Content-Type': 'application/json'});
+            } catch (e) {
+                console.error('Stash report failed:', e);
+                send(res, 500, JSON.stringify({
+                    error: 'Failed to generate stash report',
+                    detail: String(e && e.message || e),
+                }), {'Content-Type': 'application/json'});
             }
             return;
         }

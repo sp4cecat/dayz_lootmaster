@@ -150,8 +150,30 @@ Log timestamps are interpreted as **UTC+10**. Bodies take a `{start, end}` ISO r
 |---|---|---|
 | `/api/logs/adm` | Concatenate ADM records in range → downloadable `.ADM` | optional `x,z,radius` spatial filter, `expandByIds` |
 | `/api/logs/expansion` | Same, for Expansion `ExpLog_*.log` → downloadable `.log` | same as ADM |
-| `/api/logs/stash-report` | Aggregate dug-in/dug-up stash events per player | — |
+| `/api/logs/stash-report` | Rank players by stash-radar suspicion (see below) | `sort`, `minScore`, `includeLedger`, `maxBuryAgeDays`, `trackLookback`, `maxTrackLookups` |
 | `/api/logs/heatmap-data` | Extract coordinates for a heatmap | `dataType`: `all` \| `connect` \| `disconnect` \| `kill` |
+
+#### Stash report
+
+`stash-report.js` matches every `Dug out` to the `Dug in` that put the stash there, so
+digging up a stranger's stash can be told from digging up your own. Two things about it
+are load-bearing:
+
+- **The date range never reaches the matcher.** The bury ledger is always built from the
+  whole archive and the window is applied afterwards, to the dig-ups being reported. A
+  bury from six weeks ago is exactly what makes a dig-up today attributable, so filtering
+  lines by date first — which is what this route used to do — silently turns real thefts
+  into zeroes as the operator narrows the range.
+- **Positions match exactly.** A bury and its dig-up agree bit-for-bit on X and Z, while
+  buries routinely sit under a metre apart, so the tolerance is 0.5 m and a matched bury
+  is consumed. Anything looser attributes thefts to the wrong victim.
+
+Scoring is a set of named factors, each returned with the evidence behind it, split into
+theft factors (need a matched bury) and behaviour factors (need only the digs, so they
+still work when the victims' buries predate the logs). When the history store has movement
+samples, `stash-track.js` adjusts the score by how the digger approached — a straight run
+to a stash they had never visited counts against them, a stash on ground they have camped
+for a week counts for them. Missing movement data never raises a score.
 
 ### Loadouts (profile-independent, `server/loadouts.json`)
 

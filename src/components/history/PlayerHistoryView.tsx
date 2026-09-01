@@ -11,6 +11,7 @@ import {
   useModOnline,
 } from '@/hooks/useHistoryData';
 import { usePlaybackClock } from '@/hooks/usePlaybackClock';
+import { useHashRoute } from '@/hooks/useHashRoute';
 import { presenceSegments, sampleTrackAt, trailPoints } from '@/utils/trackSampling';
 import type { AreaSelection, HistoryMode } from '@/types/history';
 import HistoryControls from './HistoryControls';
@@ -37,6 +38,36 @@ interface PlayerHistoryViewProps {
 /** How much of the past to trail behind a marker during playback. Adjustable. */
 const DEFAULT_TRAIL_MS = 5 * 60 * 1000;
 
+/**
+ * Read a deep link's `?pid=&from=&to=` into initial state.
+ *
+ * Every value is validated rather than trusted: a hand-edited or stale hash must
+ * fall back to the normal defaults instead of leaving the view stuck on an empty
+ * range with no explanation.
+ */
+function useHistorySeed(): { pids: string[]; from: number | null; to: number | null } {
+  const { getParam } = useHashRoute();
+  return useMemo(() => {
+    const pid = getParam('pid');
+    const num = (key: string) => {
+      const raw = getParam(key);
+      if (!raw) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const from = num('from');
+    const to = num('to');
+    return {
+      pids: pid ? pid.split(',').filter(Boolean).slice(0, MAX_TRACKS) : [],
+      // Only honour a complete, ordered range; half a window is worse than none.
+      from: from != null && to != null && from < to ? from : null,
+      to: from != null && to != null && from < to ? to : null,
+    };
+    // Deliberately once: this is initial state, not a live binding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 function formatBytes(n: number | null): string {
   if (n === null) return '—';
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
@@ -62,12 +93,19 @@ export default function PlayerHistoryView({
   const map = useMapMetadata(missionName);
   const { stats, loading: statsLoading } = useHistoryStats();
 
+  // Seeded from the hash so another tool can hand this view a player and a window
+  // — the Stash report links here to show how a suspect moved around a dig. Params
+  // are read once, as initial state, so the user can then pan and re-range freely
+  // without the URL fighting them.
+  const seed = useHistorySeed();
+
   const [mode, setMode] = useState<HistoryMode>('paths');
   const [range, setRange] = useState(() => {
+    if (seed.from != null && seed.to != null) return { from: seed.from, to: seed.to };
     const now = Date.now();
     return { from: now - 6 * 3600_000, to: now };
   });
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(seed.pids);
   const [hovered, setHovered] = useState<string | null>(null);
   const [area, setArea] = useState<AreaSelection | null>(null);
   const [kinds, setKinds] = useState<string[]>([]);

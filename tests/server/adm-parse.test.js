@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     parseAdmHeader, parseAdmFilenameDate, parseAdmLine, parseAdmFile,
     fieldsToMs, snapOffsetMinutes, detectOffsetMinutes, lastWallSecond,
+    parseStashLine,
 } from '../../server/adm-parse.js';
 
 /**
@@ -220,5 +221,74 @@ describe('lastWallSecond', () => {
 
     it('returns null when the chunk has no timestamps', () => {
         expect(lastWallSecond('***** EOF *****')).toBeNull();
+    });
+});
+
+/**
+ * Stash lines, copied verbatim from the sample archive. The two positions on one
+ * line use different axis orders and the classes differ between burying and
+ * digging up, so paraphrasing these would test a grammar that does not exist.
+ */
+const DUG_IN = '04:32:46 | Player "Ghieunit" (id=z4SMj8kPUKz4l12x_cmJe3oFluOfpEc_rtb2DJ5WvHY= pos=<3084.3, 5333.8, 4.3>)Player SurvivorBase<0x0000020E8646A080> SurvivorM_Peter:43510 Dug in WaterproofBag_Orange<0x00000210C6295370> WaterproofBag_Orange:6455 at position <3084.36,4.30308,5334.39>';
+const DUG_OUT = '01:18:45 | Player "grunter" (id=C2R_pzNVPXDIHY4DSVOoTP3adfth8ZaKShogBX_VZ2k= pos=<8285.3, 11917, 187.8>)Player SurvivorBase<0x000002A1D5AB0F20> SurvivorM_Oliver:43994 Dug out UndergroundStash<0x000002A0EC07A4E0> UndergroundStash:26280 at position <8286,187.615,11917.5>';
+
+describe('parseStashLine', () => {
+    it('reads the two positions in their different axis orders', () => {
+        // The whole report hangs on this. `at position` is <x, y, z> but the
+        // player's `pos=` is <x, z, y>; reading one as the other mirrors every
+        // stash about the map diagonal and every match silently fails.
+        const s = parseStashLine(DUG_IN);
+        expect(s).toMatchObject({ x: 3084.36, y: 4.30308, z: 5334.39, px: 3084.3, pz: 5333.8 });
+    });
+
+    it('captures the container class when a stash is buried', () => {
+        expect(parseStashLine(DUG_IN)).toMatchObject({
+            action: 'in',
+            cls: 'WaterproofBag_Orange',
+            entityId: 'WaterproofBag_Orange:6455',
+            guid: 'z4SMj8kPUKz4l12x_cmJe3oFluOfpEc_rtb2DJ5WvHY=',
+            name: 'Ghieunit',
+            secOfDay: 4 * 3600 + 32 * 60 + 46,
+        });
+    });
+
+    it('reads a dig-up as a stash, not as the container it will become', () => {
+        expect(parseStashLine(DUG_OUT)).toMatchObject({
+            action: 'out', cls: 'UndergroundStash', name: 'grunter',
+            x: 8286, y: 187.615, z: 11917.5,
+        });
+    });
+
+    it('accepts the snow-map stash class', () => {
+        expect(parseStashLine(DUG_OUT.replace(/UndergroundStash/g, 'UndergroundStashSnow')))
+            .toMatchObject({ action: 'out', cls: 'UndergroundStashSnow' });
+    });
+
+    it('does not join a bury to a dig-up by entity id', () => {
+        // Burying turns a container into a stash entity, so both the class and the
+        // network id change. Matching has to be positional; this documents why.
+        expect(parseStashLine(DUG_IN).entityId)
+            .not.toBe(parseStashLine(DUG_OUT).entityId);
+    });
+
+    it('returns null for every line that is not a dig', () => {
+        for (const line of [LIST, CONNECT, DISCONNECT, DEATH, HIT, UNCONSCIOUS, BANNER, '']) {
+            expect(parseStashLine(line)).toBeNull();
+        }
+    });
+
+    it('rejects an unresolved identity', () => {
+        expect(parseStashLine(DUG_IN.replace(/id=[^\s]+ /, 'id=Unknown '))).toBeNull();
+    });
+});
+
+describe('parseAdmLine on a stash line', () => {
+    it('still yields exactly one position observation', () => {
+        // A Dug line carries the player's own position and the importer already
+        // stores it. Adding stash parsing must not change that, and must not let
+        // the `Player SurvivorBase<0x...>` fragment fabricate a second observation.
+        const obs = parseAdmLine(DUG_IN);
+        expect(obs).toHaveLength(1);
+        expect(obs[0]).toMatchObject({ kind: 'list', x: 3084.3, z: 5333.8, y: 4.3 });
     });
 });
