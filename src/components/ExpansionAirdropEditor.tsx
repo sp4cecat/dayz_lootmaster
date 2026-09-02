@@ -15,7 +15,7 @@ import {
   Maximize01, Minimize01, ChevronDown, ChevronRight, LayersThree01, LinkBroken01,
 } from '@untitledui/icons';
 import { Loadout, LoadoutNode } from '@/types/loadouts';
-import { expansionAirdropToLoadout } from '@/utils/loadouts';
+import { expansionAirdropToLoadout, normalizeExpansionLootList } from '@/utils/loadouts';
 import { missionSelectionOdds } from '@/utils/airdropSimulator';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
@@ -1829,7 +1829,11 @@ const normalizeMissionForSave = (data: any, drop: any) => ({
   ItemCount: int(data.ItemCount, -1),
   InfectedCount: int(data.InfectedCount, -1),
   AirdropPlaneClassName: str(data.AirdropPlaneClassName),
-  Loot: Array.isArray(data.Loot) ? data.Loot : [],
+  // Attachment/variant entries must be objects — a bare classname string is the legacy V1
+  // shape and makes the engine reject the whole mission (and abort LoadMissions for every
+  // file after it). The server re-applies this guard on PUT for the save paths that bypass
+  // this function.
+  Loot: normalizeExpansionLootList(data.Loot),
 });
 
 // Plain per-mission numeric fields (no inheritance). Speed/DropZoneSpeed/ItemCount/

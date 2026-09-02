@@ -7,6 +7,7 @@ import {
   loadoutToExpansionAirdrop,
   expansionAirdropToLoadout,
   migrateVariantNodes,
+  normalizeExpansionLootList,
 } from '../../src/utils/loadouts.ts';
 import type { Loadout, LoadoutNode } from '../../src/types/loadouts.ts';
 
@@ -346,6 +347,75 @@ describe('Expansion airdrop string-vs-object attachment duality', () => {
     ]);
     const out = loadoutToExpansionAirdrop(loadout, []);
     expect(out[0].Variants[0]).toEqual({ Name: 'SKS', Chance: 1.0, Attachments: [] });
+  });
+});
+
+// Regression: a live server rejected Airdrop_Area42_2.json with "Reading variable:
+// Attachments / At index 0, Expecting instance / Is not json object" because Loot[0]
+// held 20 bare classname strings. The engine aborts LoadMissions for EVERY remaining
+// mission file when that happens, so no save path may re-persist the shape.
+describe('normalizeExpansionLootList (mission Loot[] write guard)', () => {
+  it('coerces string attachments to objects while preserving loot-entry fields', () => {
+    const out = normalizeExpansionLootList([
+      {
+        Name: 'Spacecat_AmmoBox_Tan',
+        Chance: 0.75,
+        Attachments: ['Ammo_556x45', 'Ammo_556x45'],
+        QuantityPercent: -1,
+        Max: 2,
+        Min: 0,
+        Variants: [],
+      },
+    ]);
+    expect(out[0].Attachments).toEqual([
+      { Name: 'Ammo_556x45', Chance: 1.0, Attachments: [] },
+      { Name: 'Ammo_556x45', Chance: 1.0, Attachments: [] },
+    ]);
+    // The entry's own fields are untouched — only nested entries are coerced.
+    expect(out[0]).toMatchObject({ Name: 'Spacecat_AmmoBox_Tan', Chance: 0.75, QuantityPercent: -1, Max: 2, Min: 0 });
+  });
+
+  it('leaves an already-valid list structurally identical', () => {
+    const clean = [
+      {
+        Name: 'TTC_MCX_Spear',
+        Chance: 1,
+        Attachments: [{ Name: 'TTC_MCX_Mag', Chance: 1, Attachments: [] }],
+        QuantityPercent: -1,
+        Max: -1,
+        Min: 0,
+        Variants: [],
+      },
+    ];
+    expect(normalizeExpansionLootList(clean)).toEqual(clean);
+  });
+
+  it('normalizes nested and variant attachments recursively', () => {
+    const out = normalizeExpansionLootList([
+      {
+        Name: 'AKM',
+        Chance: 1,
+        Attachments: [{ Name: 'AKM_Suppressor', Chance: 1, Attachments: ['Ammo_762x39'] }],
+        Variants: ['AKM_Black'],
+      },
+    ]);
+    expect(out[0].Attachments[0].Attachments).toEqual([{ Name: 'Ammo_762x39', Chance: 1.0, Attachments: [] }]);
+    expect(out[0].Variants).toEqual([{ Name: 'AKM_Black', Chance: 1.0, Attachments: [] }]);
+  });
+
+  it('preserves entry order and count so per-entry stats stay index-aligned', () => {
+    const out = normalizeExpansionLootList([
+      { Name: 'A', Attachments: ['x'] },
+      { Name: 'B', Attachments: [] },
+      { Name: 'C', Attachments: [{ Name: 'y', Chance: 1, Attachments: [] }] },
+    ]);
+    expect(out.map((l) => l.Name)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('returns an empty list for a missing or non-array Loot', () => {
+    expect(normalizeExpansionLootList(undefined)).toEqual([]);
+    expect(normalizeExpansionLootList(null)).toEqual([]);
+    expect(normalizeExpansionLootList({} as any)).toEqual([]);
   });
 });
 

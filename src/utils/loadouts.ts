@@ -1,4 +1,4 @@
-import { Loadout, LoadoutNode, ExpansionLootVariant } from '@/types/loadouts';
+import { Loadout, LoadoutNode, ExpansionLootVariant, NormalizedExpansionLootVariant, ExpansionLoot } from '@/types/loadouts';
 import { XMLNodeKind } from '@/types/xml';
 import { escapeAttr, renderSpawnableSection, deriveSpawnableHelpers, toDamageNumber } from '@/utils/xml';
 import { buildNodeIndex, materializeLinkedClones, cloneNodeWithNewIds } from '@/utils/tree';
@@ -24,13 +24,35 @@ function damageAttrs(damage: { min: number | null; max: number | null }): Record
  * too. This is the single source of truth for the string-vs-object duality Expansion
  * exposes (see ExpansionLoot.c: ExpansionLootVariantV1.ConvertVariant).
  */
-export function normalizeExpansionVariant(v: any): ExpansionLootVariant {
+export function normalizeExpansionVariant(v: any): NormalizedExpansionLootVariant {
   if (typeof v === 'string') return { Name: v, Chance: 1.0, Attachments: [] };
   return {
     Name: v?.Name ?? '',
     Chance: v?.Chance ?? 1.0,
     Attachments: (v?.Attachments || []).map(normalizeExpansionVariant)
   };
+}
+
+/**
+ * Normalize a whole mission/container `Loot[]` for WRITING. Top-level entries keep their
+ * own fields (QuantityPercent/Max/Min); only the entries nested under Attachments and
+ * Variants are coerced string -> object, since those are what the engine rejects.
+ * Mirrored server-side by normalizeMissionLoot in server/index.js, which is the
+ * authoritative guard — this one keeps the client from sending the bad shape at all.
+ */
+export function normalizeExpansionLootList(loot: any): ExpansionLoot[] {
+  if (!Array.isArray(loot)) return [];
+  return loot.flatMap((entry: any) => {
+    if (typeof entry === 'string') return [{ ...normalizeExpansionVariant(entry), Variants: [] }];
+    if (!entry || typeof entry !== 'object') return [];
+    return [{
+      ...entry,
+      Name: entry.Name ?? '',
+      Chance: entry.Chance ?? 1.0,
+      Attachments: (entry.Attachments || []).map(normalizeExpansionVariant),
+      ...(Array.isArray(entry.Variants) ? { Variants: entry.Variants.map(normalizeExpansionVariant) } : {}),
+    }];
+  });
 }
 
 /**

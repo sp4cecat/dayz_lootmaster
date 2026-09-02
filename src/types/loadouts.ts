@@ -60,6 +60,27 @@ export interface ExpansionLootVariant {
   Attachments?: (string | ExpansionLootVariant)[];
 }
 
+// The normalized OUTPUT counterpart of ExpansionLootVariant: the only shape we are
+// allowed to WRITE back to disk. Attachments are objects, never strings — the engine
+// deserialises a mission at m_Version 3 with the current ExpansionLootVariant class
+// only (no V1 fallback), so a string entry is a hard parse error that aborts
+// ExpansionMissionModule.LoadMissions for every remaining mission file.
+// Produce one with normalizeExpansionVariant in utils/loadouts.ts.
+export interface NormalizedExpansionLootVariant {
+  Name: string;
+  Chance: number;
+  Attachments: NormalizedExpansionLootVariant[];
+}
+
+// A top-level entry in a mission's or container's `Loot[]` (Expansion's ExpansionLoot,
+// which extends ExpansionLootVariant with quantity/count fields plus Variants).
+export interface ExpansionLoot extends NormalizedExpansionLootVariant {
+  QuantityPercent?: number;
+  Max?: number;
+  Min?: number;
+  Variants?: NormalizedExpansionLootVariant[];
+}
+
 export interface Loadout {
   id: string;
   label: string;

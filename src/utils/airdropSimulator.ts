@@ -20,22 +20,28 @@
 
 export type Rng = () => number;
 
-/** The slim shape used by an entry's Attachments and Variants (ExpansionLootVariant). */
+/**
+ * The slim shape used by an entry's Attachments and Variants (ExpansionLootVariant).
+ * Entries are read as `LootEntryInput` because legacy/externally-authored files store
+ * them as bare classname strings; run one through `asVariant` before use.
+ */
 export interface ExpansionLootVariant {
   Name: string;
   Chance?: number;
-  Attachments?: ExpansionLootVariant[];
+  Attachments?: LootEntryInput[];
 }
+
+export type LootEntryInput = ExpansionLootVariant | string;
 
 /** A top-level Loot[] entry (ExpansionLoot). */
 export interface ExpansionLoot {
   Name: string;
   Chance?: number;
-  Attachments?: ExpansionLootVariant[];
+  Attachments?: LootEntryInput[];
   QuantityPercent?: number;
   Max?: number;
   Min?: number;
-  Variants?: ExpansionLootVariant[];
+  Variants?: LootEntryInput[];
 }
 
 /** One AirdropSettings.json Containers[] entry (the fields the simulator needs). */
@@ -279,14 +285,27 @@ function quantityDisplay(quantityPercent: number): QuantityDisplay {
 }
 
 /**
+ * Coerce one attachment/variant entry to object form. Files written before Expansion's
+ * m_Version 5 (or by external tools) store these as bare classname strings; without this,
+ * a string entry reads back as `Chance: undefined` -> defaults to 1 -> spawns
+ * unconditionally, with `Name: undefined`, so the simulator silently shows nonsense
+ * instead of the real odds. Matches normalizeExpansionVariant in utils/loadouts.ts, kept
+ * local so this module stays a dependency-free port of the mod runtime.
+ */
+function asVariant(v: LootEntryInput): ExpansionLootVariant {
+  return typeof v === 'string' ? { Name: v, Chance: 1.0, Attachments: [] } : v;
+}
+
+/**
  * Mirrors ExpansionLootSpawner.Spawn's attachment handling: each attachment is included
  * iff |Chance| == 1 (guaranteed) OR Chance > RandomFloat(0,1), independently. Only ONE
  * level spawns — the engine passes NULL for sub-attachments, so a spawned attachment's
  * own nested Attachments never spawn.
  */
-function spawnItem(name: string, quantityPercent: number, attachments: ExpansionLootVariant[], rng: Rng): SpawnedItem {
+function spawnItem(name: string, quantityPercent: number, attachments: LootEntryInput[], rng: Rng): SpawnedItem {
   const children: SpawnedItem[] = [];
-  for (const att of attachments ?? []) {
+  for (const raw of attachments ?? []) {
+    const att = asVariant(raw);
     const c = att.Chance ?? 1;
     if (Math.abs(c) === 1.0 || c > rng()) {
       children.push({ name: att.Name, quantity: quantityDisplay(quantityPercent), attachments: [] });
@@ -306,7 +325,7 @@ function addItem(loot: ExpansionLoot, remaining: number[], index: number, rng: R
   const variants = loot.Variants ?? [];
 
   if (variants.length > 0) {
-    const chances = variants.map((v) => v.Chance ?? 1);
+    const chances = variants.map((v) => asVariant(v).Chance ?? 1);
     const sum = chances.reduce((a, b) => a + b, 0);
     // Parent tail: variant chances < 1 behave as true probabilities (parent absorbs the
     // remainder); otherwise all values are relative weights and the parent gets weight 1.
@@ -314,8 +333,9 @@ function addItem(loot: ExpansionLoot, remaining: number[], index: number, rng: R
 
     const picked = getWeightedRandom(chances, rng);
     if (picked > -1 && picked < variants.length) {
-      name = variants[picked].Name;
-      const vatt = variants[picked].Attachments ?? [];
+      const chosen = asVariant(variants[picked]);
+      name = chosen.Name;
+      const vatt = chosen.Attachments ?? [];
       if (vatt.length > 0) attachments = vatt; // a variant's attachments REPLACE the parent's
     }
   }

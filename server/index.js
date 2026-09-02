@@ -3542,6 +3542,47 @@ const server = http.createServer(async (req, res) => {
                 return { data, changed: false };
             };
 
+            // Expansion declares attachment/variant entries as ref ExpansionLootVariant, i.e.
+            // JSON objects. Bare classname strings are the legacy V1 shape (ExpansionLoot.c:
+            // ExpansionLootVariantV1 holds a TStringArray and upgrades via ConvertVariant) —
+            // but a mission stamped m_Version 3 is read with the current classes only, so a
+            // string entry is a hard parse error that aborts ExpansionMissionModule.LoadMissions
+            // for every remaining mission file. Coerce string -> object, recursively.
+            // Mirrors normalizeExpansionVariant in src/utils/loadouts.ts (the server can't
+            // import the TS module, same as normalizeMissionDropLocation above).
+            const normalizeMissionLoot = (data) => {
+                if (!data || typeof data !== 'object' || !Array.isArray(data.Loot)) {
+                    return { data, changed: false };
+                }
+                let changed = false;
+                const variant = (v) => {
+                    if (typeof v === 'string') {
+                        changed = true;
+                        return { Name: v, Chance: 1.0, Attachments: [] };
+                    }
+                    if (!v || typeof v !== 'object') {
+                        changed = true;
+                        return null;
+                    }
+                    if (!Array.isArray(v.Attachments)) return v;
+                    return { ...v, Attachments: v.Attachments.map(variant).filter(Boolean) };
+                };
+                // Top-level loot entries keep their own fields (QuantityPercent/Max/Min);
+                // only the entries nested under Attachments/Variants are coerced.
+                const Loot = data.Loot.map(entry => {
+                    if (!entry || typeof entry !== 'object') {
+                        changed = true;
+                        return null;
+                    }
+                    const next = { ...entry };
+                    if (Array.isArray(entry.Attachments)) next.Attachments = entry.Attachments.map(variant).filter(Boolean);
+                    if (Array.isArray(entry.Variants)) next.Variants = entry.Variants.map(variant).filter(Boolean);
+                    return next;
+                }).filter(Boolean);
+
+                return changed ? { data: { ...data, Loot }, changed: true } : { data, changed: false };
+            };
+
             const profileId = req.headers['x-profile-id'];
             const profile = profiles.find(p => String(p.id).toLowerCase() === String(profileId).toLowerCase());
             if (!profile) { notFound(res); return; }
@@ -3558,11 +3599,14 @@ const server = http.createServer(async (req, res) => {
                         if (!entry.isFile() || !/^Airdrop_.+\.json$/i.test(entry.name)) continue;
                         try {
                             const raw = await readFile(join(dir, entry.name), 'utf8');
-                            const { data: norm, changed } = normalizeMissionDropLocation(JSON.parse(raw));
+                            const dropFixed = normalizeMissionDropLocation(JSON.parse(raw));
+                            const lootFixed = normalizeMissionLoot(dropFixed.data);
+                            const norm = lootFixed.data;
+                            const changed = dropFixed.changed || lootFixed.changed;
                             if (changed) {
-                                // Self-heal legacy array-form DropLocation on disk so the engine
-                                // stops rejecting the file. Back up first; never let a write
-                                // failure break the listing.
+                                // Self-heal legacy array-form DropLocation and string-form loot
+                                // attachments on disk so the engine stops rejecting the file. Back
+                                // up first; never let a write failure break the listing.
                                 try {
                                     await createBackupIfExists(join(dir, entry.name));
                                     await writeFileAtomic(join(dir, entry.name), JSON.stringify(norm, null, 4));
@@ -3593,8 +3637,11 @@ const server = http.createServer(async (req, res) => {
                 try {
                     const body = await readBody(req);
                     const parsed = JSON.parse(body || '{}');
-                    // Guard: no save path may ever persist an array-form DropLocation.
-                    const { data: norm } = normalizeMissionDropLocation(parsed);
+                    // Guard: no save path may ever persist an array-form DropLocation or a
+                    // string-form loot attachment/variant entry. Several client save paths
+                    // (LootListsTab, Locations, LootConnector) bypass normalizeMissionForSave
+                    // and would otherwise round-trip a bad shape straight back to disk.
+                    const { data: norm } = normalizeMissionLoot(normalizeMissionDropLocation(parsed).data);
                     const missionTarget = join(dir, fileName);
                     await createBackupIfExists(missionTarget);
                     await writeFileAtomic(missionTarget, JSON.stringify(norm, null, 4));
