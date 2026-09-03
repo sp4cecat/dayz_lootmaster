@@ -297,25 +297,42 @@ export default function LiveMapView({
   /**
    * Airdrop missions have no shared store — every consumer fetches them. Loaded
    * lazily on first need rather than with the map, since most sessions never open
-   * this menu, and cached for the life of the view.
+   * this menu, and cached until the profile changes.
+   *
+   * The in-flight guard is a ref rather than the `missionsLoading` state, and the
+   * effect deliberately does not cancel on close. Both were bugs: with the state in
+   * the dependency array, setting it re-ran the effect, and the re-run's cleanup
+   * cancelled the request it had itself just started — so `setMissions` never fired
+   * and the picker sat on "Loading…" forever. Cancelling on close would have been
+   * the same trap one level up, since the ref would already be claimed and reopening
+   * would never retry. Only unmount stops us writing state.
    */
+  const missionsFetchedFor = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const airdropPickerOpen = pending?.kind === 'airdrop';
+
   useEffect(() => {
-    if (pending?.kind !== 'airdrop' || missions || missionsLoading || !selectedProfileId) return;
+    if (!airdropPickerOpen || !selectedProfileId) return;
+    if (missionsFetchedFor.current === selectedProfileId) return;
+    missionsFetchedFor.current = selectedProfileId;
     setMissionsLoading(true);
-    let cancelled = false;
     (async () => {
+      let list: AirdropMissionFile[] | null = null;
       try {
         const res = await apiFetch('/api/expansion/airdrop-missions', { profileId: selectedProfileId });
         const body = res.ok ? await res.json() : null;
-        if (!cancelled) setMissions(Array.isArray(body) ? body : []);
-      } catch {
-        if (!cancelled) setMissions([]);
-      } finally {
-        if (!cancelled) setMissionsLoading(false);
-      }
+        if (Array.isArray(body)) list = body;
+      } catch { /* handled below */ }
+      // A failed load releases the claim, so closing and reopening the picker
+      // retries instead of showing the "none configured" message forever.
+      if (!list) missionsFetchedFor.current = null;
+      if (!mounted.current) return;
+      setMissions(list || []);
+      setMissionsLoading(false);
     })();
-    return () => { cancelled = true; };
-  }, [pending, missions, missionsLoading, selectedProfileId]);
+  }, [airdropPickerOpen, selectedProfileId]);
 
   // onBackgroundClick is captured by the pan/zoom hook; read live values via refs.
   const teleportTargetRef = useRef<LivePlayer | null>(null);

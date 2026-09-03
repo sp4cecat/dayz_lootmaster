@@ -21,8 +21,19 @@ const LETTERBOX = (BOX_W - SIZE) / 2;   // 150
 // dayzoffline.chernarusplus in MAP_REGISTRY -> worldSize 15360.
 const WORLD = 15360;
 
+/**
+ * Airdrop missions the fake endpoint returns, or null for "the request fails".
+ * Read lazily by the mock so a test can swap it before rendering.
+ */
+let missionsResponse: unknown[] | null = null;
+
 vi.mock('@/utils/api', () => ({
-  apiFetch: vi.fn(async () => ({ ok: false, json: async () => ({}) })),
+  apiFetch: vi.fn(async (path: string) => {
+    if (path.startsWith('/api/expansion/airdrop-missions') && missionsResponse) {
+      return { ok: true, json: async () => missionsResponse };
+    }
+    return { ok: false, json: async () => ({}) };
+  }),
   getApiBase: () => 'http://localhost:4317',
 }));
 
@@ -138,6 +149,7 @@ let writeText: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   playersOverride = null;
   capsOverride = null;
+  missionsResponse = null;
   fired.length = 0;
   writeText = vi.fn(async () => {});
   Object.defineProperty(globalThis.navigator, 'clipboard', {
@@ -491,6 +503,54 @@ describe('LiveMapView right-click server actions', () => {
     const container = await render('dayzoffline.chernarusplus', LOADOUTS);
     await rightClick(viewport(container), 400, 300);
     expect(menuItems()).toContain('Spawn loadout here…');
+  });
+
+  /**
+   * Regression: the mission list arrives.
+   *
+   * The lazy fetch used to sit in an effect that listed its own `missionsLoading`
+   * state as a dependency. Setting the flag re-ran the effect, and the re-run's
+   * cleanup cancelled the request it had just started, so the response was thrown
+   * away and the picker showed "Loading…" forever.
+   */
+  it('loads the mission list into the airdrop picker', async () => {
+    capsOverride = ALL_ACTIONS;
+    missionsResponse = [
+      { file: 'Airdrop_Military.json', data: { MissionName: 'Military', Container: 'ExpansionAirdropContainer' } },
+      { file: 'Airdrop_Broken.json', data: null, error: 'Unexpected token' },
+    ];
+    const container = await render();
+    await rightClick(viewport(container), 400, 300);
+    await press(menuItem('Start airdrop here…'));
+
+    const dialog = document.body.textContent || '';
+    expect(dialog).not.toContain('Loading…');
+    expect(dialog).toContain('Military');
+    // A mission the server could not parse is listed but not selectable.
+    const broken = [...document.querySelectorAll('button')]
+      .find(b => b.textContent?.includes('Unexpected token'));
+    expect(broken).toBeTruthy();
+    expect((broken as HTMLButtonElement).disabled).toBe(true);
+    // Nothing goes out just from opening the picker.
+    expect(fired).toHaveLength(0);
+  });
+
+  it('retries the mission list after a failed load', async () => {
+    capsOverride = ALL_ACTIONS;
+    const container = await render();
+
+    // First open: the endpoint is down, so the picker reports an empty list.
+    await rightClick(viewport(container), 400, 300);
+    await press(menuItem('Start airdrop here…'));
+    expect(document.body.textContent).toContain('No airdrop missions configured');
+    await press(dialogButton('Cancel') as HTMLElement);
+
+    // Second open: the endpoint is back. A permanently-claimed guard would have
+    // left the empty message in place.
+    missionsResponse = [{ file: 'Airdrop_Military.json', data: { MissionName: 'Military' } }];
+    await rightClick(viewport(container), 400, 300);
+    await press(menuItem('Start airdrop here…'));
+    expect(document.body.textContent).toContain('Military');
   });
 
   it('teleports the right-clicked player, and only after the confirmation', async () => {
