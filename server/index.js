@@ -2039,7 +2039,7 @@ function decorateInventory(snap) {
  * parse, and one bad node takes the WHOLE command list with it. So the boundary
  * that collapsed them expands them again.
  */
-function toModNode(n) {
+function toModNode(n, parent) {
     return {
         cls: n.cls,
         slot: n.slot ?? '',
@@ -2051,12 +2051,36 @@ function toModNode(n) {
         row: n.row ?? -1,
         col: n.col ?? -1,
         displayName: n.displayName ?? '',
-        children: toModTree(n.children),
+        parent,
     };
 }
 
-function toModTree(nodes) {
-    return (Array.isArray(nodes) ? nodes : []).map(toModNode);
+/**
+ * Flatten the stored tree into a pre-order list carrying parent indices.
+ *
+ * The mod cannot be sent the nested form. Enforce's JsonSerializer does not
+ * reliably deserialise a self-referential class: a 26-node loadout arrived at the
+ * mod as 3 nodes with no children, no parse error, and no per-node failure — a
+ * partial restore that reported itself complete, which is the exact outcome the
+ * truncation guard elsewhere in this file exists to prevent. A flat array of a
+ * non-recursive class is the shape Enforce does read reliably, and it is what
+ * every other ingest payload already uses.
+ *
+ * Pre-order matters: a parent is always emitted before its children, so the mod
+ * rebuilds in a single pass holding an index-aligned array of what it created,
+ * and never needs a node it has not built yet.
+ */
+function toModFlat(nodes) {
+    const out = [];
+    const walk = (list, parent) => {
+        for (const n of (Array.isArray(list) ? list : [])) {
+            const index = out.length;
+            out.push(toModNode(n, parent));
+            walk(n.children, index);
+        }
+    };
+    walk(nodes, -1);
+    return out;
 }
 
 function toModStats(s) {
@@ -2185,7 +2209,7 @@ async function handleRollback(req, res) {
     // back to is a DEATH — where the recorded health is 0. Re-applying that would
     // kill the character the operator just restored. The mod refuses a non-positive
     // value as well, but omitting the key entirely is the clearer contract.
-    const args = { playerId, snapshotId, tree: toModTree(snap.tree) };
+    const args = { playerId, snapshotId, flat: toModFlat(snap.tree) };
     if (body.restoreStats === true) args.stats = toModStats(snap.stats);
     const cmd = ingest.enqueueCommand('restorePlayer', args);
     const done = await waitForCommand(cmd.id, ROLLBACK_TIMEOUT_MS);
