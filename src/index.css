@@ -24,3 +24,16 @@
     @apply text-gray-50 bg-gray-950;
   }
 }
+
+@layer utilities {
+  /* Boot indicator: sliding bar for the phase before cfgeconomycore.xml reveals a
+     denominator, at which point BootProgress switches to a real width. */
+  @keyframes boot-indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+
+  .animate-boot-indeterminate {
+    animation: boot-indeterminate 1.4s ease-in-out infinite;
+  }
+}

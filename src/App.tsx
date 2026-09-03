@@ -34,6 +34,7 @@ import ServerStatsView from './components/live/ServerStatsView';
 import LeaderboardView from './components/live/LeaderboardView';
 import { Sidebar } from './components/layout/Sidebar';
 import { Breadcrumbs } from './components/layout/Breadcrumbs';
+import { BootProgress } from './components/layout/BootProgress';
 import { Button } from '@/components/base/button/button';
 import { SectionSaveButton } from '@/components/base/SectionSaveButton';
 import { NAV_ITEMS } from './consts/navigation';
@@ -222,6 +223,7 @@ export default function App() {
     if (!selectedProfileId && !loading) {
         return (
             <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-950">
+                <BootProgress />
                 <header className="bg-white border-b border-gray-200 px-8 py-6 dark:bg-gray-900 dark:border-gray-800">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome, {editorID}</h1>
                 </header>
@@ -254,6 +256,9 @@ export default function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <Breadcrumbs activeTab={view} navItems={NAV_ITEMS} />
+                {/* Boot progress. Sits outside the per-view bodies so a reload straight into
+                    the live map or loadout designer isn't silent while the pipeline runs. */}
+                <BootProgress />
                 {/* Global Warnings Banner */}
                 {loadWarnings.length > 0 && (
                     <div className="flex flex-col shrink-0 gap-px bg-gray-200 dark:bg-gray-800">

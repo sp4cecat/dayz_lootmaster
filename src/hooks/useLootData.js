@@ -19,6 +19,8 @@ import { appendChangeLogs, loadAllGrouped, saveManyTypeFiles, clearAllTypeFiles,
 import { loadAllLoadouts } from '../utils/loadoutStore.js';
 import { createHistory } from '../utils/history.js';
 import { validateUnknowns } from '../utils/validation.js';
+import { mapWithConcurrency, DEFAULT_CONCURRENCY } from '../utils/mapWithConcurrency';
+import { beginRun, declareSteps, startStep, finishStep, relabelStep, step, endRun } from '../stores/bootProgress';
 
 /**
  * @typedef {import('../utils/xml.js').Type} Type
@@ -133,13 +135,19 @@ export function useLootData() {
   const fetchWithProfile = useCallback((url, options = {}) =>
     apiFetch(url, { ...options, profileId: selectedProfileId }), [selectedProfileId]);
 
-  const loadMissionFilesFromAPI = useCallback(async (API_BASE, filesInput, warnings = []) => {
+  // `track` distinguishes the two concurrent callers (the baseline pass at
+  // refreshBaselineFromAPI and the session pass in the main load effect). Without it
+  // both would report into the same step ids and the progress ledger would silently
+  // count half the work.
+  const loadMissionFilesFromAPI = useCallback(async (API_BASE, filesInput, warnings = [], track = 'session') => {
     const filesByGroup = filesInput?.filesByGroup || filesInput;
 
     // Try to load from IndexedDB first
+    const idbStep = step(track, 'cache', `${track}:cache:mission`, 'mission files');
     const idbSpawnable = await loadMissionFile('spawnableTypesByGroup');
     const idbRandomPresets = await loadMissionFile('randomPresets');
-    
+    idbStep.done({ source: 'cache' });
+
     let nextSpawnable = idbSpawnable || {};
     let nextRandomPresets = idbRandomPresets || { presets: [] };
 
@@ -186,12 +194,22 @@ export function useLootData() {
         const rootFiles = ['cfgspawnabletypes.xml', 'cfgspawnabletype.xml'];
         if (!nextSpawnable[ROOT_SPAWNABLE_GROUP]) nextSpawnable[ROOT_SPAWNABLE_GROUP] = {};
         for (const f of rootFiles) {
+          // cfgspawnabletypes.xml is ~140 KB, so the root carries extra weight.
+          const rootStep = step(track, 'spawnable', `${track}:spawnable:__root/${f}`, `mission root ${f}`, 4);
           if (!nextSpawnable[ROOT_SPAWNABLE_GROUP][f]) {
             const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(ROOT_SPAWNABLE_GROUP)}/${encodeURIComponent(f)}`);
             if (res.ok) {
               const text = await res.text();
               nextSpawnable[ROOT_SPAWNABLE_GROUP][f] = parseSpawnableTypesXml(text);
+              rootStep.done({ source: 'network', bytes: text.length });
+            } else {
+              // Absent, not broken: the original code silently skipped non-ok responses
+              // here. Settle the step without a source so it counts toward progress but
+              // not toward the cache/network/failed tallies.
+              finishStep(`${track}:spawnable:__root/${f}`);
             }
+          } else {
+            rootStep.done({ source: 'cache' });
           }
         }
       } catch (e) {
@@ -199,29 +217,67 @@ export function useLootData() {
       }
     }
 
-    // Ensure all other groups and files from economycore are loaded if missing from IDB
+    // Ensure all other groups and files from economycore are loaded if missing from IDB.
+    // Enumerated first, then fetched concurrently; results and warnings are applied
+    // afterwards in declaration order so key insertion order and warning order match
+    // what the original sequential loop produced.
+    /** @type {{group: string, f: string}[]} */
+    const spawnTasks = [];
     for (const [group, files] of Object.entries(filesByGroup || {})) {
       if (group === 'files' || group === 'lootTypes' || group === 'filesByGroup') continue;
       if (!nextSpawnable[group]) nextSpawnable[group] = {};
-      
+
       const filesToProcess = Array.isArray(files) ? files : Object.keys(files);
+      for (const f of filesToProcess) spawnTasks.push({ group, f });
+    }
 
-      for (const f of filesToProcess) {
-        try {
-          let fileName = f.split('/').pop();
-          if (!fileName.toLowerCase().endsWith('.xml')) fileName += '.xml';
+    declareSteps(track, 'spawnable', spawnTasks.map(({ group, f }) => ({
+      id: `${track}:spawnable:${group}/${f}`,
+      label: `${group}/${f}`,
+    })));
 
-          if (!nextSpawnable[group][fileName]) {
-            const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(fileName)}`);
-            if (res.ok) {
-              const text = await res.text();
-              nextSpawnable[group][fileName] = parseSpawnableTypesXml(text);
-            }
+    /** @type {(string|null)[]} */
+    const spawnWarnings = new Array(spawnTasks.length).fill(null);
+    /** @type {{group: string, fileName: string, parsed: any}[]} */
+    const spawnResults = new Array(spawnTasks.length).fill(null);
+
+    await mapWithConcurrency(spawnTasks, DEFAULT_CONCURRENCY, async ({ group, f }, index) => {
+      const stepId = `${track}:spawnable:${group}/${f}`;
+      startStep(stepId);
+      try {
+        let fileName = f.split('/').pop();
+        if (!fileName.toLowerCase().endsWith('.xml')) fileName += '.xml';
+
+        if (!nextSpawnable[group][fileName]) {
+          const res = await fetchWithProfile(`${API_BASE}/api/spawnabletypes/${encodeURIComponent(group)}/${encodeURIComponent(fileName)}`);
+          if (res.ok) {
+            const text = await res.text();
+            spawnResults[index] = { group, fileName, parsed: parseSpawnableTypesXml(text) };
+            finishStep(stepId, { source: 'network', bytes: text.length });
+          } else {
+            // Expected absence rather than a failure. The session pass is handed the
+            // *types* file structure, so it asks for names like "types.xml" as
+            // spawnabletypes and the server rejects them — behaviour the original code
+            // silently skipped. Settling without a source keeps that honest: it counts
+            // toward progress but is not reported as an error.
+            finishStep(stepId);
           }
-        } catch (e) {
-          warnings.push(`Group "${group}" file "${f}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+        } else {
+          // Already served from IndexedDB — no request issued at all. This is the
+          // whole point of the cache/network split in the indicator.
+          finishStep(stepId, { source: 'cache' });
         }
+      } catch (e) {
+        spawnWarnings[index] = `Group "${group}" file "${f}" spawnabletypes: failed to parse XML (${String(e && e.message ? e.message : e)}).`;
+        finishStep(stepId, { error: String(e && e.message ? e.message : e) });
       }
+    });
+
+    for (const result of spawnResults) {
+      if (result) nextSpawnable[result.group][result.fileName] = result.parsed;
+    }
+    for (const warning of spawnWarnings) {
+      if (warning) warnings.push(warning);
     }
 
     // Discard cached buckets keyed by a file that isn't a spawnabletypes file of its group —
@@ -231,21 +287,40 @@ export function useLootData() {
     }
 
     // If IDB is empty for presets, load from API
+    const presetsStep = step(track, 'presets', `${track}:presets`, 'cfgrandompresets.xml');
     if (!idbRandomPresets) {
       try {
         const res = await fetchWithProfile(`${API_BASE}/api/mission/randompresets`);
-        if (res.ok) nextRandomPresets = parseRandomPresetsXml(await res.text());
+        if (res.ok) {
+          const text = await res.text();
+          nextRandomPresets = parseRandomPresetsXml(text);
+          presetsStep.done({ source: 'network', bytes: text.length });
+        } else {
+          presetsStep.fail(`HTTP ${res.status}`);
+        }
       } catch (e) {
         warnings.push(`cfgrandompresets.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+        presetsStep.fail(String(e && e.message ? e.message : e));
       }
+    } else {
+      presetsStep.done({ source: 'cache' });
     }
 
     let nextGlobals = { LootDamageMin: null, LootDamageMax: null };
+    // Never cached in IDB, so this one always hits the wire.
+    const globalsStep = step(track, 'globals', `${track}:globals`, 'globals.xml');
     try {
       const res = await fetchWithProfile(`${API_BASE}/api/mission/globals`);
-      if (res.ok) nextGlobals = parseGlobalsXml(await res.text());
+      if (res.ok) {
+        const text = await res.text();
+        nextGlobals = parseGlobalsXml(text);
+        globalsStep.done({ source: 'network', bytes: text.length });
+      } else {
+        globalsStep.fail(`HTTP ${res.status}`);
+      }
     } catch (e) {
       warnings.push(`globals.xml: failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+      globalsStep.fail(String(e && e.message ? e.message : e));
     }
 
     setSpawnableTypesByGroup(nextSpawnable);
@@ -256,13 +331,17 @@ export function useLootData() {
   }, [fetchWithProfile]);
 
   const loadProfiles = useCallback(async () => {
+    // First request of the boot, so it owns the run. Switching profiles re-runs this
+    // callback (selectedProfileId is its only dep), which correctly starts a fresh run.
+    beginRun(selectedProfileId);
+    const profileStep = step('session', 'profiles', 'session:profiles', 'server profiles');
     try {
-      const API_BASE = getApiBase();
-      const res = await fetch(`${API_BASE}/api/profiles`);
+      const res = await apiFetch('/api/profiles');
       if (res.ok) {
         const data = await res.json();
+        profileStep.done({ source: 'network' });
         setProfiles(data);
-        
+
         const storedId = localStorage.getItem('dayz-editor:selectedProfileId');
         
         // If we have a selected ID but it's not in the returned data, reset it
@@ -275,10 +354,15 @@ export function useLootData() {
           // If no profile selected but we have some, select first one if nothing was stored
           setSelectedProfileId(data[0].id);
         }
+      } else {
+        profileStep.fail(`HTTP ${res.status}`);
       }
     } catch (e) {
       console.error('Failed to load profiles:', e);
-      setError(`Failed to connect to the backend server at ${getApiBase()}. Please ensure the server is running. (${e.message})`);
+      profileStep.fail(e.message);
+      const message = `Failed to connect to the backend server at ${getApiBase()}. Please ensure the server is running. (${e.message})`;
+      setError(message);
+      endRun('error', message);
     } finally {
       setProfilesLoaded(true);
     }
@@ -295,30 +379,41 @@ export function useLootData() {
       const API_BASE = getApiBase();
       // Probe health
       let apiOk = false;
+      const connectStep = step('baseline', 'connect', 'baseline:connect', 'backend health');
       try {
         const health = await fetchWithProfile(`${API_BASE}/api/health`);
         apiOk = health.ok;
       } catch {
         apiOk = false;
       }
-      if (!apiOk) return false;
+      if (!apiOk) {
+        connectStep.fail('unreachable');
+        return false;
+      }
+      connectStep.done();
 
       // Definitions
+      const defsStep = step('baseline', 'definitions', 'baseline:definitions', 'cfglimitsdefinition.xml');
       try {
         const limitsRes = await fetchWithProfile(`${API_BASE}/api/definitions`);
         if (limitsRes.ok) {
           const txt = await limitsRes.text();
           const defs = parseLimitsXml(txt);
           setBaselineDefinitions(defs);
+          defsStep.done({ bytes: txt.length });
+        } else {
+          defsStep.fail(`HTTP ${limitsRes.status}`);
         }
       } catch {
         // ignore defs baseline failures
+        defsStep.fail('request failed');
       }
 
       /** @type {TypeFiles} */
       const baseline = {};
 
-      // Vanilla
+      // Vanilla — ~1 MB, so it carries proportionally more weight than the group files.
+      const vanillaStep = step('baseline', 'vanilla', 'baseline:vanilla', 'db/types.xml', 8);
       try {
         const vr = await fetchWithProfile(`${API_BASE}/api/types/vanilla/types`);
         if (vr.ok) {
@@ -330,24 +425,68 @@ export function useLootData() {
             return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
           });
           baseline.vanilla = { types: vanilla };
+          vanillaStep.done({ bytes: vText.length });
+        } else {
+          vanillaStep.fail(`HTTP ${vr.status}`);
         }
-      } catch { /* ignore vanilla baseline failures */ }
+      } catch { /* ignore vanilla baseline failures */ vanillaStep.fail('request failed'); }
 
       /** @type {Record<string, string[]>} */
       let sFilesWithRoot = {};
       // Additional groups via economycore
+      const econStep = step('baseline', 'economycore', 'baseline:economycore', 'cfgeconomycore.xml');
       try {
         const er = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (er.ok) {
           const eText = await er.text();
           const { order, filesByGroup, spawnableFilesByGroup: sFiles } = parseEconomyCoreXml(eText);
-          
+          econStep.done({ bytes: eText.length });
+
           // Ensure mission root spawnable types file is included in the map
           sFilesWithRoot = { ...sFiles };
           if (!sFilesWithRoot[ROOT_SPAWNABLE_GROUP]) {
             sFilesWithRoot[ROOT_SPAWNABLE_GROUP] = ['cfgspawnabletypes.xml'];
           }
           setSpawnableFilesByGroup(sFilesWithRoot);
+
+          // Enumerate first, fetch concurrently, then write results back in declaration
+          // order. Writing after the fan-out (rather than as each lands) keeps both the
+          // key insertion order and the "absent if nothing loaded" semantics identical
+          // to the original sequential loop.
+          /** @type {{group: string, fileBase: string}[]} */
+          const tasks = [];
+          for (const group of order) {
+            for (const samplePath of (filesByGroup[group] || [])) {
+              const parts = samplePath.split('/');
+              const fileName = parts[parts.length - 1] || 'types.xml';
+              tasks.push({ group, fileBase: fileName.replace(/\.xml$/i, '') });
+            }
+          }
+
+          declareSteps('baseline', 'types', tasks.map(t => ({
+            id: `baseline:types:${t.group}/${t.fileBase}`,
+            label: `${t.group}/${t.fileBase}`,
+          })));
+
+          const parsedByKey = new Map();
+          await mapWithConcurrency(tasks, DEFAULT_CONCURRENCY, async ({ group, fileBase }) => {
+            const stepId = `baseline:types:${group}/${fileBase}`;
+            startStep(stepId);
+            try {
+              const tr = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+              if (!tr.ok) {
+                finishStep(stepId, { error: `HTTP ${tr.status}` });
+                return;
+              }
+              const tText = await tr.text();
+              parsedByKey.set(`${group}/${fileBase}`, parseTypesXml(tText));
+              finishStep(stepId, { source: 'network', bytes: tText.length });
+            } catch (e) {
+              /* skip */
+              finishStep(stepId, { error: String(e && e.message ? e.message : e) });
+            }
+          });
+
           for (const group of order) {
             const filesList = filesByGroup[group] || [];
             if (filesList.length > 0) {
@@ -355,14 +494,10 @@ export function useLootData() {
                 const parts = samplePath.split('/');
                 const fileName = parts[parts.length - 1] || 'types.xml';
                 const fileBase = fileName.replace(/\.xml$/i, '');
-                try {
-                  const tr = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
-                  if (!tr.ok) continue;
-                  const tText = await tr.text();
-                  const parsed = parseTypesXml(tText);
-                  if (!baseline[group]) baseline[group] = {};
-                  baseline[group][fileBase] = parsed;
-                } catch { /* skip */ }
+                const parsed = parsedByKey.get(`${group}/${fileBase}`);
+                if (!parsed) continue;
+                if (!baseline[group]) baseline[group] = {};
+                baseline[group][fileBase] = parsed;
               }
             } else if (sFilesWithRoot[group]) {
               // Ensure group exists in baseline even if no types files, so spawnabletypes are loaded.
@@ -371,10 +506,13 @@ export function useLootData() {
               if (!baseline[group]) baseline[group] = {};
             }
           }
+        } else {
+          econStep.fail(`HTTP ${er.status}`);
         }
-      } catch { /* ignore */ }
+      } catch { /* ignore */ econStep.fail('request failed'); }
 
       // Include vanilla_overrides/types in baseline if present so diffs clear after persisting overrides
+      const overridesStep = step('baseline', 'overrides', 'baseline:overrides', 'vanilla_overrides/types');
       try {
         const or = await fetchWithProfile(`${API_BASE}/api/types/vanilla_overrides/types`);
         if (or.ok) {
@@ -382,12 +520,15 @@ export function useLootData() {
           const overrides = parseTypesXml(oText);
           if (!baseline['vanilla_overrides']) baseline['vanilla_overrides'] = {};
           baseline['vanilla_overrides']['types'] = overrides;
+          overridesStep.done({ bytes: oText.length });
+        } else {
+          overridesStep.fail(`HTTP ${or.status}`);
         }
-      } catch { /* no overrides present */ }
+      } catch { /* no overrides present */ overridesStep.fail('not present'); }
 
       if (Object.keys(baseline).length > 0 || Object.keys(sFilesWithRoot).length > 0) {
         setBaselineFiles(baseline);
-        await loadMissionFilesFromAPI(API_BASE, sFilesWithRoot, []);
+        await loadMissionFilesFromAPI(API_BASE, sFilesWithRoot, [], 'baseline');
         return true;
       }
       return false;
@@ -740,6 +881,7 @@ export function useLootData() {
     if (!profilesLoaded) return;
 
     if (!selectedProfileId) {
+      endRun('idle');
       setLoading(false);
       setError(prev => (prev && String(prev).includes('backend server')) ? prev : null);
       setDefinitions(null);
@@ -762,6 +904,7 @@ export function useLootData() {
 
         // Probe API
         let apiOk = false;
+        const connectStep = step('session', 'connect', 'session:connect', 'backend health');
         try {
           const health = await fetchWithProfile(`${API_BASE}/api/health`);
           apiOk = health.ok;
@@ -769,24 +912,39 @@ export function useLootData() {
           apiOk = false;
         }
         if (!apiOk) {
+          connectStep.fail('unreachable');
           throw new Error('Live data API is unavailable. Set dayz-editor:apiBase and start the persistence server.');
         }
+        connectStep.done();
 
         // Load definitions from API
         let defs;
+        const defsStep = step('session', 'definitions', 'session:definitions', 'cfglimitsdefinition.xml');
         try {
           const limitsRes = await fetchWithProfile(`${API_BASE}/api/definitions`);
           if (!limitsRes.ok) throw new Error('definitions missing');
           const limitsText = await limitsRes.text();
           defs = parseLimitsXml(limitsText);
+          defsStep.done({ bytes: limitsText.length });
         } catch {
+          defsStep.fail('missing or invalid');
           throw new Error('cfglimitsdefinition.xml is missing or invalid in the live data API.');
         }
 
         // Try file-level records from IndexedDB
+        const cacheStep = step('session', 'cache', 'session:cache:types', 'loot type files');
         /** @type {TypeFiles|null} */
         let files = await loadAllGrouped();
         if (files && Object.keys(files).length === 0) files = null;
+        // A warm cache is what makes a reload fast; naming the restored file count is
+        // what lets the user tell a warm boot from a cold one at a glance.
+        if (files) {
+          const cachedFileCount = Object.values(files).reduce((n, perFile) => n + Object.keys(perFile || {}).length, 0);
+          relabelStep('session:cache:types', `restored ${cachedFileCount} loot type files`);
+        } else {
+          relabelStep('session:cache:types', 'cache empty — loading from server');
+        }
+        cacheStep.done({ source: 'cache' });
 
         // Fallback: legacy flat storage to seed IDB as vanilla/types (optional)
         if (!files) {
@@ -806,6 +964,7 @@ export function useLootData() {
           const warnings = [];
 
           // 1) Vanilla base (data/db/types.xml)
+          const vanillaStep = step('session', 'vanilla', 'session:vanilla', 'db/types.xml', 8);
           try {
             const vanillaRes = await fetchWithProfile(`${API_BASE}/api/types/vanilla/types`);
             if (!vanillaRes.ok) throw new Error('vanilla types missing');
@@ -818,48 +977,91 @@ export function useLootData() {
               return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
             });
             assembledFiles.vanilla = { types: vanilla };
+            vanillaStep.done({ bytes: vanillaText.length });
           } catch {
+            vanillaStep.fail('missing');
             throw new Error('Vanilla types are missing from the live data API.');
           }
 
           // 2) Additional groups from economy core (ordered)
+          const econStep = step('session', 'economycore', 'session:economycore', 'cfgeconomycore.xml');
           try {
             const econRes = await fetchWithProfile(`${API_BASE}/api/economycore`);
             if (econRes.ok) {
               const econText = await econRes.text();
               const { order, filesByGroup } = parseEconomyCoreXml(econText);
+              econStep.done({ bytes: econText.length });
+
+              // Enumerate, fan out, then apply in declaration order — same shape as the
+              // baseline pass, so key insertion order and warning order are unchanged.
+              /** @type {{group: string, fileBase: string}[]} */
+              const tasks = [];
               for (const group of order) {
-                const filesList = filesByGroup[group] || [];
-                for (const samplePath of filesList) {
+                for (const samplePath of (filesByGroup[group] || [])) {
+                  const parts = samplePath.split('/');
+                  const fileName = parts[parts.length - 1] || 'types.xml';
+                  tasks.push({ group, fileBase: fileName.replace(/\.xml$/i, '') });
+                }
+              }
+
+              declareSteps('session', 'types', tasks.map(t => ({
+                id: `session:types:${t.group}/${t.fileBase}`,
+                label: `${t.group}/${t.fileBase}`,
+              })));
+
+              /** @type {(string|null)[]} */
+              const typeWarnings = new Array(tasks.length).fill(null);
+              const parsedByKey = new Map();
+
+              await mapWithConcurrency(tasks, DEFAULT_CONCURRENCY, async ({ group, fileBase }, index) => {
+                const stepId = `session:types:${group}/${fileBase}`;
+                startStep(stepId);
+                try {
+                  const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+                  if (!res.ok) {
+                    typeWarnings[index] = `Group "${group}" file "${fileBase}": not found or cannot be read.`;
+                    finishStep(stepId, { error: `HTTP ${res.status}` });
+                    return;
+                  }
+                  const text = await res.text();
+                  try {
+                    parsedByKey.set(`${group}/${fileBase}`, parseTypesXml(text));
+                    finishStep(stepId, { source: 'network', bytes: text.length });
+                  } catch (e) {
+                    typeWarnings[index] = `Group "${group}" file "${fileBase}": failed to parse XML (${String(e && e.message ? e.message : e)}).`;
+                    finishStep(stepId, { error: 'parse failed' });
+                  }
+                } catch {
+                  typeWarnings[index] = `Group "${group}" file "${fileBase}": request failed.`;
+                  finishStep(stepId, { error: 'request failed' });
+                }
+              });
+
+              for (const group of order) {
+                for (const samplePath of (filesByGroup[group] || [])) {
                   const parts = samplePath.split('/');
                   const fileName = parts[parts.length - 1] || 'types.xml';
                   const fileBase = fileName.replace(/\.xml$/i, '');
-                  try {
-                    const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
-                    if (!res.ok) {
-                      warnings.push(`Group "${group}" file "${fileBase}": not found or cannot be read.`);
-                      continue;
-                    }
-                    const text = await res.text();
-                    try {
-                      const parsed = parseTypesXml(text);
-                      if (!assembledFiles[group]) assembledFiles[group] = {};
-                      assembledFiles[group][fileBase] = parsed;
-                    } catch (e) {
-                      warnings.push(`Group "${group}" file "${fileBase}": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
-                    }
-                  } catch {
-                    warnings.push(`Group "${group}" file "${fileBase}": request failed.`);
-                  }
+                  const parsed = parsedByKey.get(`${group}/${fileBase}`);
+                  if (!parsed) continue;
+                  if (!assembledFiles[group]) assembledFiles[group] = {};
+                  assembledFiles[group][fileBase] = parsed;
                 }
               }
+              for (const warning of typeWarnings) {
+                if (warning) warnings.push(warning);
+              }
+            } else {
+              econStep.fail(`HTTP ${econRes.status}`);
             }
           } catch {
             // ignore extra groups if economy core is missing or invalid
+            econStep.fail('missing or invalid');
           }
 
           // 3) Include canonical overrides if present (treat like any other group)
           // Server returns an empty <types/> doc if the file doesn't exist yet.
+          const overridesStep = step('session', 'overrides', 'session:overrides', 'vanilla_overrides/types');
           try {
             const or = await fetchWithProfile(`${API_BASE}/api/types/vanilla_overrides/types`);
             if (or.ok) {
@@ -868,12 +1070,17 @@ export function useLootData() {
                 const overrides = parseTypesXml(oText);
                 // Insert overrides last so they take precedence in mergeFromFiles
                 assembledFiles['vanilla_overrides'] = { types: overrides };
+                overridesStep.done({ bytes: oText.length });
               } catch (e) {
                 warnings.push(`Group "vanilla_overrides" file "types": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+                overridesStep.fail('parse failed');
               }
+            } else {
+              overridesStep.fail(`HTTP ${or.status}`);
             }
           } catch {
             // ignore overrides if endpoint fails
+            overridesStep.fail('not present');
           }
 
           if (!Object.keys(assembledFiles).length) {
@@ -887,7 +1094,9 @@ export function useLootData() {
               records.push({ group, file, types: arr });
             }
           }
+          const persistStep = step('session', 'persist', 'session:persist', `${records.length} files to local cache`);
           await saveManyTypeFiles(records);
+          persistStep.done({ source: 'cache' });
           files = assembledFiles;
 
           // Publish any warnings discovered during build
@@ -904,7 +1113,7 @@ export function useLootData() {
         setBaselineDefinitions(defs);
         setLootFiles(files);
         const missionWarnings = [];
-        await loadMissionFilesFromAPI(API_BASE, files, missionWarnings);
+        await loadMissionFilesFromAPI(API_BASE, files, missionWarnings, 'session');
         if (missionWarnings.length > 0) {
           setLoadWarnings(prev => [...prev, ...missionWarnings]);
         }
@@ -941,10 +1150,15 @@ export function useLootData() {
         }
 
         setLoading(false);
+        // Reports 'ready' only once the baseline pass has drained too, so the bar keeps
+        // moving while that duplicate pass is still grinding over the wire.
+        endRun('ready');
       } catch (e) {
         if (!mounted) return;
-        setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
         setLoading(false);
+        endRun('error', message);
       }
     })();
     return () => { mounted = false; };
@@ -1195,6 +1409,11 @@ export function useLootData() {
    */
   const reloadFromFiles = useCallback(async () => {
     try {
+      // Its own run: this is a deliberate full re-read from disk with the caches
+      // dropped, so it is always the slow path and deserves the same progress display
+      // as a page reload. The '#reload' suffix guarantees a fresh run rather than
+      // reusing the boot run's completed steps.
+      beginRun(`${selectedProfileId}#reload:${Date.now()}`);
       setLoading(true);
       setError(null);
       setLoadWarnings([]);
@@ -1220,12 +1439,15 @@ export function useLootData() {
 
       // Reload definitions from API
       let defs;
+      const defsStep = step('session', 'definitions', 'reload:definitions', 'cfglimitsdefinition.xml');
       try {
         const limitsRes = await fetchWithProfile(`${API_BASE}/api/definitions`);
         if (!limitsRes.ok) throw new Error('definitions not found');
         const limitsText = await limitsRes.text();
         defs = parseLimitsXml(limitsText);
+        defsStep.done({ bytes: limitsText.length });
       } catch {
+        defsStep.fail('missing or invalid');
         throw new Error('Live data API is unavailable or cfglimitsdefinition.xml is missing.');
       }
 
@@ -1236,6 +1458,7 @@ export function useLootData() {
       const warnings = [];
 
       // Vanilla base (data/db/types.xml)
+      const vanillaStep = step('session', 'vanilla', 'reload:vanilla', 'db/types.xml', 8);
       try {
         const vRes = await fetchWithProfile(`${API_BASE}/api/types/vanilla/types`);
         if (vRes.ok) {
@@ -1247,19 +1470,23 @@ export function useLootData() {
             return !(n.startsWith('Land_') || n.startsWith('StaticObj_') || lower.startsWith('static_'));
           });
           assembledFiles.vanilla = { types: vanilla };
+          vanillaStep.done({ bytes: vText.length });
         } else {
           throw new Error('vanilla types not found');
         }
       } catch {
+        vanillaStep.fail('missing');
         throw new Error('Live data API is missing vanilla types.');
       }
 
       // Additional groups via cfgeconomycore
+      const econStep = step('session', 'economycore', 'reload:economycore', 'cfgeconomycore.xml');
       try {
         const econRes = await fetchWithProfile(`${API_BASE}/api/economycore`);
         if (econRes.ok) {
           const econText = await econRes.text();
           const { order, filesByGroup, spawnableFilesByGroup: sFiles } = parseEconomyCoreXml(econText);
+          econStep.done({ bytes: econText.length });
 
           // Ensure mission root spawnable types file is included in the map
           const sFilesWithRoot = { ...sFiles };
@@ -1268,38 +1495,75 @@ export function useLootData() {
           }
           setSpawnableFilesByGroup(sFilesWithRoot);
 
+          // Enumerate, fan out, then apply in declaration order — same pattern as the
+          // boot loaders, so key insertion order and warning order are unchanged.
+          /** @type {{group: string, fileBase: string}[]} */
+          const tasks = [];
+          for (const group of order) {
+            for (const samplePath of (filesByGroup[group] || [])) {
+              const parts = samplePath.split('/');
+              const fileName = parts[parts.length - 1] || 'types.xml';
+              tasks.push({ group, fileBase: fileName.replace(/\.xml$/i, '') });
+            }
+          }
+
+          declareSteps('session', 'types', tasks.map(t => ({
+            id: `reload:types:${t.group}/${t.fileBase}`,
+            label: `${t.group}/${t.fileBase}`,
+          })));
+
+          /** @type {(string|null)[]} */
+          const typeWarnings = new Array(tasks.length).fill(null);
+          const parsedByKey = new Map();
+
+          await mapWithConcurrency(tasks, DEFAULT_CONCURRENCY, async ({ group, fileBase }, index) => {
+            const stepId = `reload:types:${group}/${fileBase}`;
+            startStep(stepId);
+            try {
+              const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
+              if (!res.ok) {
+                typeWarnings[index] = `Group "${group}" file "${fileBase}": not found or cannot be read.`;
+                finishStep(stepId, { error: `HTTP ${res.status}` });
+                return;
+              }
+              const text = await res.text();
+              try {
+                parsedByKey.set(`${group}/${fileBase}`, parseTypesXml(text));
+                finishStep(stepId, { source: 'network', bytes: text.length });
+              } catch (e) {
+                typeWarnings[index] = `Group "${group}" file "${fileBase}": failed to parse XML (${String(e && e.message ? e.message : e)}).`;
+                finishStep(stepId, { error: 'parse failed' });
+              }
+            } catch {
+              typeWarnings[index] = `Group "${group}" file "${fileBase}": request failed.`;
+              finishStep(stepId, { error: 'request failed' });
+            }
+          });
 
           for (const group of order) {
-            const filesList = filesByGroup[group] || [];
-            for (const samplePath of filesList) {
+            for (const samplePath of (filesByGroup[group] || [])) {
               const parts = samplePath.split('/');
               const fileName = parts[parts.length - 1] || 'types.xml';
               const fileBase = fileName.replace(/\.xml$/i, '');
-              try {
-                const res = await fetchWithProfile(`${API_BASE}/api/types/${encodeURIComponent(group)}/${encodeURIComponent(fileBase)}`);
-                if (!res.ok) {
-                  warnings.push(`Group "${group}" file "${fileBase}": not found or cannot be read.`);
-                  continue;
-                }
-                const text = await res.text();
-                try {
-                  const parsed = parseTypesXml(text);
-                  if (!assembledFiles[group]) assembledFiles[group] = {};
-                  assembledFiles[group][fileBase] = parsed;
-                } catch (e) {
-                  warnings.push(`Group "${group}" file "${fileBase}": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
-                }
-              } catch {
-                warnings.push(`Group "${group}" file "${fileBase}": request failed.`);
-              }
+              const parsed = parsedByKey.get(`${group}/${fileBase}`);
+              if (!parsed) continue;
+              if (!assembledFiles[group]) assembledFiles[group] = {};
+              assembledFiles[group][fileBase] = parsed;
             }
           }
+          for (const warning of typeWarnings) {
+            if (warning) warnings.push(warning);
+          }
+        } else {
+          econStep.fail(`HTTP ${econRes.status}`);
         }
       } catch {
         // ignore extra groups if economy core missing
+        econStep.fail('missing or invalid');
       }
 
       // Include canonical overrides as a proper group (always last to be canonical)
+      const overridesStep = step('session', 'overrides', 'reload:overrides', 'vanilla_overrides/types');
       try {
         const or = await fetchWithProfile(`${API_BASE}/api/types/vanilla_overrides/types`);
         if (or.ok) {
@@ -1307,12 +1571,17 @@ export function useLootData() {
           try {
             const overrides = parseTypesXml(oText);
             assembledFiles['vanilla_overrides'] = { types: overrides };
+            overridesStep.done({ bytes: oText.length });
           } catch (e) {
             warnings.push(`Group "vanilla_overrides" file "types": failed to parse XML (${String(e && e.message ? e.message : e)}).`);
+            overridesStep.fail('parse failed');
           }
+        } else {
+          overridesStep.fail(`HTTP ${or.status}`);
         }
       } catch {
         // ignore if not available
+        overridesStep.fail('not present');
       }
 
       if (!Object.keys(assembledFiles).length) {
@@ -1326,8 +1595,10 @@ export function useLootData() {
           records.push({ group, file, types: arr });
         }
       }
+      const persistStep = step('session', 'persist', 'reload:persist', `${records.length} files to local cache`);
       await saveManyTypeFiles(records);
-      await loadMissionFilesFromAPI(API_BASE, assembledFiles, warnings);
+      persistStep.done({ source: 'cache' });
+      await loadMissionFilesFromAPI(API_BASE, assembledFiles, warnings, 'session');
 
       // Reset state, baselines, history, unknowns
       setDefinitions(defs);
@@ -1349,11 +1620,14 @@ export function useLootData() {
       setLoadWarnings(warnings);
 
       setLoading(false);
+      endRun('ready');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
       setLoading(false);
+      endRun('error', message);
     }
-  }, [fetchWithProfile, loadMissionFilesFromAPI]);
+  }, [fetchWithProfile, loadMissionFilesFromAPI, selectedProfileId]);
 
   /**
    * Get per-file breakdown for a group.
