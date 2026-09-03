@@ -2441,6 +2441,67 @@ async function handleCftoolsRoute(url, req, res) {
                     json(res, 200, { ok: results.every(r => r.ok), results });
                     return true;
                 }
+                // --- World-context actions: a map point, not an entity. ---
+                case 'actions/teleport-all': {
+                    if (!Array.isArray(body.players) || body.players.length === 0
+                        || !Number.isFinite(Number(body.x)) || !Number.isFinite(Number(body.z))) {
+                        badRequest(res, 'a non-empty players array, x and z are required'); return true;
+                    }
+                    const results = await cftoolsService.teleportAll(bound.apiId, body.players, {
+                        x: Number(body.x), z: Number(body.z),
+                    });
+                    // Per-player results rather than a bare ok: on a full server the
+                    // useful answer is which players didn't move, not that "it failed".
+                    json(res, 200, { ok: results.every(r => r.ok), results });
+                    return true;
+                }
+                case 'actions/spawn-world-item': {
+                    if (!body.className || !Number.isFinite(Number(body.x)) || !Number.isFinite(Number(body.z))) {
+                        badRequest(res, 'className, x and z are required'); return true;
+                    }
+                    await cftoolsService.spawnItemWorld(
+                        bound.apiId, { x: Number(body.x), z: Number(body.z) },
+                        body.className, Number(body.quantity) || 1,
+                    );
+                    break;
+                }
+                case 'actions/spawn-ai': {
+                    if (!Number.isFinite(Number(body.x)) || !Number.isFinite(Number(body.z))) {
+                        badRequest(res, 'x and z are required'); return true;
+                    }
+                    await cftoolsService.spawnAiWorld(bound.apiId, { x: Number(body.x), z: Number(body.z) }, {
+                        kind: body.kind, count: body.count, faction: body.faction, loadout: body.loadout,
+                    });
+                    break;
+                }
+                case 'actions/airdrop': {
+                    if (!body.mission || !Number.isFinite(Number(body.x)) || !Number.isFinite(Number(body.z))) {
+                        badRequest(res, 'mission, x and z are required'); return true;
+                    }
+                    await cftoolsService.startAirdrop(
+                        bound.apiId, { x: Number(body.x), z: Number(body.z) }, body.mission,
+                    );
+                    break;
+                }
+                case 'actions/spawn-pile': {
+                    if (!Number.isFinite(Number(body.x)) || !Number.isFinite(Number(body.z))) {
+                        badRequest(res, 'x and z are required'); return true;
+                    }
+                    const at = { x: Number(body.x), z: Number(body.z) };
+                    // Two shapes on purpose: `tree` is the full-fidelity single call
+                    // (needs the mod), `items` is the flat fallback that works on any
+                    // GameLabs server. The client picks based on the worldActions flags.
+                    if (body.tree) {
+                        await cftoolsService.spawnPileWorld(bound.apiId, at, body.tree);
+                        break;
+                    }
+                    if (!Array.isArray(body.items) || body.items.length === 0) {
+                        badRequest(res, 'either a tree or a non-empty items array is required'); return true;
+                    }
+                    const results = await cftoolsService.spawnPileFlat(bound.apiId, at, body.items);
+                    json(res, 200, { ok: results.every(r => r.ok), results });
+                    return true;
+                }
                 case 'gamelabs/action': {
                     if (!body.actionCode) { badRequest(res, 'actionCode is required'); return true; }
                     await cftools.postGameLabsAction(bound.apiId, {

@@ -435,6 +435,7 @@ export default function App() {
                                 missionName={selectedProfile?.missionName}
                                 isPanel={true}
                                 onOpenSettings={() => setView('profiles')}
+                                loadouts={loadouts}
                             />
                         )}
                         {view === 'live:stats' && (

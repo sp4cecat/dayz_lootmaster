@@ -7,6 +7,7 @@ import MapImageLayer from '../map/MapImageLayer';
 import {
   Radio, Users, Car, MapPin, Flag, Bot, Settings, Clock, Thermometer,
   Copy, FileCode, Ruler, LocateFixed, Eye, Trash2, X,
+  Navigation, PackagePlus, Plane, Skull,
 } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { apiFetch } from '@/utils/api';
@@ -26,6 +27,10 @@ import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
 import MapContextMenu, { type MapMenuItem } from './MapContextMenu';
+import MapSpawnPicker, { type SpawnPickerOption } from './MapSpawnPicker';
+import { buildSpawnTree, countSpawnTree, flattenSpawnTree } from '@/utils/loadoutSpawn';
+import { resolveLoadoutNode } from '@/utils/loadouts';
+import type { Loadout } from '@/types/loadouts';
 import {
   AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker, territoryAtPoint,
   type MarkerSelection,
@@ -38,6 +43,12 @@ interface LiveMapViewProps {
   isPanel?: boolean;
   /** Navigate to the Profiles screen (where CF Tools is configured). */
   onOpenSettings?: () => void;
+  /**
+   * For the "spawn a loadout here" action. Passed down rather than refetched:
+   * App already holds these (useLootData), and a second fetch could disagree
+   * with what the Loadout Designer is showing.
+   */
+  loadouts?: Loadout[];
 }
 
 const LAYER_META: { key: LiveLayerKey; label: string; icon: React.ElementType }[] = [
@@ -94,6 +105,32 @@ interface MarkerInfo {
 const KIND_LABELS: Record<MarkerSelection['kind'], string> = {
   player: 'Player', vehicle: 'Vehicle', ai: 'AI', event: 'Event', territory: 'Territory',
 };
+
+/**
+ * A server-side action armed by the right-click menu, holding the world point it
+ * will fire at. Kept as one nullable slot rather than a flag per action so two
+ * dialogs can never be open at once — they all fire against the live server.
+ */
+type PendingAction =
+  | { kind: 'teleport'; at: WorldPoint; steam64: string; name: string }
+  | { kind: 'teleport-all'; at: WorldPoint; players: { steam64: string; name: string }[] }
+  | { kind: 'spawn-ai'; at: WorldPoint }
+  | { kind: 'airdrop'; at: WorldPoint }
+  | { kind: 'loadout'; at: WorldPoint };
+
+/** What the AI spawn form collects. Faction/loadout only apply to eAI patrols. */
+interface AiSpawnForm {
+  kind: 'infected' | 'eai';
+  count: number;
+  faction: string;
+}
+
+/** One Airdrop_*.json as the missions endpoint returns it. */
+interface AirdropMissionFile {
+  file: string;
+  data: { MissionName?: string; Container?: string; Enabled?: number } | null;
+  error?: string;
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -173,7 +210,7 @@ function MeasureLayer({ measure, view }: { measure: Measurement; view: MapPanZoo
  * actions slot in via LiveSidePanel's playerActions (Phase 3).
  */
 export default function LiveMapView({
-  onClose, selectedProfileId, missionName, isPanel = false, onOpenSettings,
+  onClose, selectedProfileId, missionName, isPanel = false, onOpenSettings, loadouts,
 }: LiveMapViewProps) {
   const map = useMapMetadata(missionName);
   const { status } = useCfToolsStatus(selectedProfileId);
@@ -246,6 +283,39 @@ export default function LiveMapView({
   const [following, setFollowing] = useState<MarkerSelection | null>(null);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Server-side right-click actions. Unlike the extras above, every one of these
+  // changes the live server, so each is armed here and only fires after its
+  // confirm dialog or picker.
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [aiForm, setAiForm] = useState<AiSpawnForm>({ kind: 'infected', count: 3, faction: '' });
+  const [missions, setMissions] = useState<AirdropMissionFile[] | null>(null);
+  const [missionsLoading, setMissionsLoading] = useState(false);
+
+  const worldActions = status.capabilities?.worldActions;
+
+  /**
+   * Airdrop missions have no shared store — every consumer fetches them. Loaded
+   * lazily on first need rather than with the map, since most sessions never open
+   * this menu, and cached for the life of the view.
+   */
+  useEffect(() => {
+    if (pending?.kind !== 'airdrop' || missions || missionsLoading || !selectedProfileId) return;
+    setMissionsLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/expansion/airdrop-missions', { profileId: selectedProfileId });
+        const body = res.ok ? await res.json() : null;
+        if (!cancelled) setMissions(Array.isArray(body) ? body : []);
+      } catch {
+        if (!cancelled) setMissions([]);
+      } finally {
+        if (!cancelled) setMissionsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pending, missions, missionsLoading, selectedProfileId]);
 
   // onBackgroundClick is captured by the pan/zoom hook; read live values via refs.
   const teleportTargetRef = useRef<LivePlayer | null>(null);
@@ -403,6 +473,64 @@ export default function LiveMapView({
     }
   }, [notify]);
 
+  /**
+   * Report a server action's outcome. Batched actions (teleport-all, the flat
+   * pile) report per-target, so summarise rather than showing a bare "failed":
+   * on a full server the useful answer is *which* targets didn't take.
+   */
+  const report = useCallback((result: { ok: boolean; error?: string; results?: { ok: boolean }[] }, done: string) => {
+    if (result.results?.length) {
+      const failed = result.results.filter(r => !r.ok).length;
+      notify(failed === 0
+        ? `${done} (${result.results.length}).`
+        : `${done} — ${result.results.length - failed} of ${result.results.length} succeeded, ${failed} failed.`);
+      return;
+    }
+    notify(result.ok ? `${done}.` : (result.error || 'Action failed.'));
+  }, [notify]);
+
+  /** All connected players with a steam64 — the only ones any action can target. */
+  const targetablePlayers = useMemo(
+    () => (snapshot?.players?.items || [])
+      .filter(p => !!p.steamId)
+      .map(p => ({ steam64: p.steamId as string, name: p.name })),
+    [snapshot],
+  );
+
+  const loadoutOptions = useMemo((): SpawnPickerOption[] => (loadouts || []).map(l => ({
+    id: l.id,
+    label: l.label,
+    detail: `${l.items?.length ?? 0} top-level item${(l.items?.length ?? 0) === 1 ? '' : 's'}`,
+  })), [loadouts]);
+
+  const missionOptions = useMemo((): SpawnPickerOption[] => (missions || []).map(m => ({
+    id: m.data?.MissionName || m.file,
+    label: m.data?.MissionName || m.file.replace(/^Airdrop_/, '').replace(/\.json$/i, ''),
+    detail: m.data?.Container ? `Container: ${m.data.Container}` : undefined,
+    // A mission the server can't parse would fail at FindMission, so say so here
+    // rather than letting the action come back with an opaque no-op.
+    disabledReason: m.data ? undefined : (m.error || 'File could not be read'),
+  })), [missions]);
+
+  /**
+   * Fire a loadout as a ground pile. The tree is rolled here — chances, group
+   * picks and quantity ranges all resolve client-side — so the mod receives a
+   * decided list. Without the mod's spawn action we fall back to one world spawn
+   * per item, which loses the nesting but still puts the right things on the floor.
+   */
+  const spawnLoadoutPile = useCallback(async (loadoutId: string, at: WorldPoint) => {
+    const loadout = (loadouts || []).find(l => l.id === loadoutId);
+    if (!loadout) { notify('That loadout no longer exists.'); return; }
+    const resolved = (loadout.items || []).map(n => resolveLoadoutNode(n, loadouts || []));
+    const tree = buildSpawnTree(resolved);
+    if (tree.length === 0) { notify(`${loadout.label} rolled empty — nothing spawned.`); return; }
+    const count = countSpawnTree(tree);
+    const result = worldActions?.spawnPile
+      ? await actions.spawnPile(at.x, at.z, tree)
+      : await actions.spawnPileFlat(at.x, at.z, flattenSpawnTree(tree));
+    report(result, `Spawned ${loadout.label} (${count} item${count === 1 ? '' : 's'})`);
+  }, [loadouts, actions, worldActions, notify, report]);
+
   // Following: recentre whenever the followed entity's position changes. Keyed on the
   // coordinates rather than on `view`, so the transform this writes can't retrigger it.
   const followed = following ? markerInfo(following) : null;
@@ -450,6 +578,62 @@ export default function LiveMapView({
           onSelect: () => copy(formatWorldPos(p.x, p.z), `${menuTarget.label}'s position`),
         });
       }
+    }
+
+    // Actions that change the live server. Each is hidden unless the server
+    // actually advertises the backing GameLabs action, so a stock GameLabs
+    // install shows teleport and the item spawn, and nothing that would 404.
+    const server: MapMenuItem[] = [];
+    if (status.capabilities?.gameLabs) {
+      // Prefer the right-clicked marker; otherwise act on the current selection,
+      // which is what makes this the inverse of the drag gesture — pick the
+      // player first, then right-click where they should end up.
+      const sel = menu.target?.kind === 'player' ? menuTarget
+        : (selection?.kind === 'player' ? markerInfo(selection) : null);
+      if (sel?.steamId) {
+        server.push({
+          key: 'teleport-here',
+          label: `Teleport ${sel.label} here`,
+          icon: Navigation,
+          onSelect: () => setPending({
+            kind: 'teleport', at, steam64: sel.steamId!, name: sel.label,
+          }),
+        });
+      }
+      if (targetablePlayers.length > 1) {
+        server.push({
+          key: 'teleport-all',
+          label: `Teleport all ${targetablePlayers.length} players here`,
+          icon: Users,
+          onSelect: () => setPending({ kind: 'teleport-all', at, players: targetablePlayers }),
+        });
+      }
+    }
+    if (worldActions?.spawnAi) {
+      server.push({
+        key: 'spawn-ai',
+        label: 'Spawn AI here…',
+        icon: Skull,
+        onSelect: () => setPending({ kind: 'spawn-ai', at }),
+      });
+    }
+    if (worldActions?.airdrop) {
+      server.push({
+        key: 'airdrop',
+        label: 'Start airdrop here…',
+        icon: Plane,
+        onSelect: () => setPending({ kind: 'airdrop', at }),
+      });
+    }
+    // The flat fallback still needs the stock world spawn, so require one of the two.
+    if (worldActions?.spawnPile || worldActions?.spawnItem) {
+      server.push({
+        key: 'spawn-loadout',
+        label: 'Spawn loadout here…',
+        icon: PackagePlus,
+        isDisabled: !loadouts?.length,
+        onSelect: () => setPending({ kind: 'loadout', at }),
+      });
     }
 
     const here: MapMenuItem[] = [
@@ -508,8 +692,11 @@ export default function LiveMapView({
       });
     }
 
-    return [marker, here, clear];
-  }, [menu, menuTarget, following, measure, pins.length, copy, centreOnWorld, markerInfo]);
+    return [marker, server, here, clear];
+  }, [
+    menu, menuTarget, following, measure, pins.length, copy, centreOnWorld, markerInfo,
+    selection, status.capabilities?.gameLabs, worldActions, targetablePlayers, loadouts,
+  ]);
 
   const toggleLayer = (key: LiveLayerKey) => {
     setEnabledLayers(prev => {
@@ -861,10 +1048,153 @@ export default function LiveMapView({
           onCancel={() => { setTeleportDest(null); setTeleportTarget(null); }}
           onConfirm={async () => {
             if (teleportTarget?.steamId && teleportDest) {
-              await actions.teleport(teleportTarget.steamId, teleportDest.x, teleportDest.z);
+              // This result used to be discarded, so a rejected teleport looked
+              // exactly like a successful one.
+              const result = await actions.teleport(teleportTarget.steamId, teleportDest.x, teleportDest.z);
+              report(result, `Teleported ${teleportTarget.name}`);
             }
             setTeleportDest(null);
             setTeleportTarget(null);
+          }}
+        />
+
+        {/* --- Right-click server actions. One at a time, each stating the point. --- */}
+
+        <ConfirmDialog
+          open={pending?.kind === 'teleport'}
+          title="Teleport player"
+          message={pending?.kind === 'teleport' ? (
+            <>Teleport <b>{pending.name}</b> to <b>{formatWorldPos(pending.at.x, pending.at.z)}</b>?</>
+          ) : null}
+          confirmLabel="Teleport"
+          busy={actions.busy}
+          onCancel={() => setPending(null)}
+          onConfirm={async () => {
+            if (pending?.kind !== 'teleport') return;
+            const { steam64, name, at } = pending;
+            setPending(null);
+            report(await actions.teleport(steam64, at.x, at.z), `Teleported ${name}`);
+          }}
+        />
+
+        <ConfirmDialog
+          open={pending?.kind === 'teleport-all'}
+          title="Teleport every player"
+          destructive
+          message={pending?.kind === 'teleport-all' ? (
+            <>
+              Teleport all <b>{pending.players.length}</b> connected players to{' '}
+              <b>{formatWorldPos(pending.at.x, pending.at.z)}</b>?
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Everyone on the server is moved, one at a time. This cannot be undone —
+                nothing records where they were.
+              </p>
+            </>
+          ) : null}
+          confirmLabel="Teleport everyone"
+          busy={actions.busy}
+          onCancel={() => setPending(null)}
+          onConfirm={async () => {
+            if (pending?.kind !== 'teleport-all') return;
+            const { players, at } = pending;
+            setPending(null);
+            report(await actions.teleportAll(players, at.x, at.z), 'Teleported players');
+          }}
+        />
+
+        {/* AI spawn needs a count and a kind, so the confirm carries a small form
+            rather than adding a third modal component for three fields. */}
+        <ConfirmDialog
+          open={pending?.kind === 'spawn-ai'}
+          title="Spawn AI"
+          message={pending?.kind === 'spawn-ai' ? (
+            <div className="flex flex-col gap-3">
+              <p>Spawn at <b>{formatWorldPos(pending.at.x, pending.at.z)}</b>.</p>
+              <label className="flex items-center justify-between gap-3">
+                <span>Type</span>
+                <select
+                  value={aiForm.kind}
+                  onChange={e => setAiForm(f => ({ ...f, kind: e.target.value as AiSpawnForm['kind'] }))}
+                  className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                >
+                  <option value="infected">Infected</option>
+                  <option value="eai">Expansion AI patrol</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3">
+                <span>Count</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={aiForm.count}
+                  onChange={e => setAiForm(f => ({ ...f, count: Number(e.target.value) || 1 }))}
+                  className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                />
+              </label>
+              {aiForm.kind === 'eai' && (
+                <label className="flex items-center justify-between gap-3">
+                  <span>Faction</span>
+                  <input
+                    type="text"
+                    value={aiForm.faction}
+                    placeholder="default"
+                    onChange={e => setAiForm(f => ({ ...f, faction: e.target.value }))}
+                    className="w-40 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                  />
+                </label>
+              )}
+            </div>
+          ) : null}
+          confirmLabel="Spawn"
+          busy={actions.busy}
+          onCancel={() => setPending(null)}
+          onConfirm={async () => {
+            if (pending?.kind !== 'spawn-ai') return;
+            const { at } = pending;
+            setPending(null);
+            report(
+              await actions.spawnAi(at.x, at.z, { kind: aiForm.kind, count: aiForm.count, faction: aiForm.faction }),
+              `Spawned ${aiForm.count} ${aiForm.kind === 'eai' ? 'AI' : 'infected'}`,
+            );
+          }}
+        />
+
+        <MapSpawnPicker
+          isOpen={pending?.kind === 'airdrop'}
+          title="Start an airdrop here"
+          confirmLabel="Start airdrop"
+          at={pending?.at ?? { x: 0, z: 0 }}
+          options={missionOptions}
+          loading={missionsLoading}
+          emptyMessage="No airdrop missions configured for this map. Add one in Addons → Expansion → Air Drops."
+          busy={actions.busy}
+          notice="The drop runs this mission's container and loot, but at the coordinates you clicked instead of its configured drop zone."
+          onCancel={() => setPending(null)}
+          onConfirm={async (mission) => {
+            if (pending?.kind !== 'airdrop') return;
+            const { at } = pending;
+            setPending(null);
+            report(await actions.startAirdrop(at.x, at.z, mission), `Airdrop "${mission}" inbound`);
+          }}
+        />
+
+        <MapSpawnPicker
+          isOpen={pending?.kind === 'loadout'}
+          title="Spawn a loadout here"
+          confirmLabel="Spawn"
+          at={pending?.at ?? { x: 0, z: 0 }}
+          options={loadoutOptions}
+          emptyMessage="No loadouts saved for this map yet."
+          busy={actions.busy}
+          notice={worldActions?.spawnPile ? undefined
+            : 'Attachments and cargo will land as a loose pile — nesting needs the spacecat_gamelabs spawn action, which this server does not advertise.'}
+          onCancel={() => setPending(null)}
+          onConfirm={async (id) => {
+            if (pending?.kind !== 'loadout') return;
+            const { at } = pending;
+            setPending(null);
+            await spawnLoadoutPile(id, at);
           }}
         />
       </div>

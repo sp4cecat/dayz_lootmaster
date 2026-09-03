@@ -28,6 +28,8 @@ import * as cfg from '../../server/cftools-config.js';
 import * as ingest from '../../server/ingest-store.js';
 import {
   buildStatus, buildLiveSnapshot, buildRawEntities, resolveActionCode, spawnLoadout, teleportPlayer,
+  spawnItemWorld, spawnAiWorld, startAirdrop, spawnPileWorld, spawnPileFlat, teleportAll,
+  resolveWorldActions,
   _resetSpawnLedger,
 } from '../../server/cftools-service.js';
 
@@ -882,6 +884,174 @@ describe('teleportPlayer', () => {
         vector: { dataType: 'vector', valueVectorX: 4361, valueVectorY: 8188, valueVectorZ: 0 },
       },
     }));
+  });
+});
+
+describe('world-context actions', () => {
+  const withActions = (...codes) => cf.getGameLabsActions.mockResolvedValue({
+    at: 1, stale: false, data: { actions: codes.map(actionCode => ({ actionCode })) },
+  });
+
+  beforeEach(() => { cf.postGameLabsAction.mockResolvedValue({}); });
+
+  // The whole point of these actions: a map point, not an entity. A stray
+  // referenceKey would make GameLabs resolve an entity and change the meaning.
+  it('targets the world with no reference key', async () => {
+    withActions('CFCloud_SpawnItemWorld');
+    await spawnItemWorld('api-1', { x: 100, z: 200 }, 'M4A1');
+    expect(cf.postGameLabsAction).toHaveBeenCalledWith('api-1', expect.objectContaining({
+      actionCode: 'CFCloud_SpawnItemWorld',
+      actionContext: 'world',
+      referenceKey: null,
+    }));
+  });
+
+  it('packs coordinates in GameLabs order: valueVectorY = world Z, height 0 = surface snap', async () => {
+    withActions('CFCloud_SpawnItemWorld', 'Spacecat_SpawnAI', 'Spacecat_StartAirdrop', 'Spacecat_SpawnLoadout');
+    const expected = { dataType: 'vector', valueVectorX: 4361, valueVectorY: 8188, valueVectorZ: 0 };
+    const at = { x: 4361, z: 8188 };
+
+    await spawnItemWorld('api-1', at, 'M4A1');
+    await spawnAiWorld('api-1', at, { kind: 'infected', count: 3 });
+    await startAirdrop('api-1', at, 'Military');
+    await spawnPileWorld('api-1', at, [{ className: 'M4A1' }]);
+
+    for (const call of cf.postGameLabsAction.mock.calls) {
+      expect(call[1].parameters.vector).toEqual(expected);
+    }
+  });
+
+  it('sends the airdrop mission name as a string parameter', async () => {
+    withActions('Spacecat_StartAirdrop');
+    await startAirdrop('api-1', { x: 1, z: 2 }, 'Arctica');
+    expect(cf.postGameLabsAction).toHaveBeenCalledWith('api-1', expect.objectContaining({
+      parameters: expect.objectContaining({
+        mission: { dataType: 'string', valueString: 'Arctica' },
+      }),
+    }));
+  });
+
+  it('clamps the AI count to at least one', async () => {
+    withActions('Spacecat_SpawnAI');
+    await spawnAiWorld('api-1', { x: 1, z: 2 }, { count: 0 });
+    expect(cf.postGameLabsAction.mock.calls[0][1].parameters.count).toEqual({ dataType: 'int', valueInt: 1 });
+  });
+
+  it('serialises the pile tree so nesting survives the wire', async () => {
+    withActions('Spacecat_SpawnLoadout');
+    const tree = [{ className: 'M4A1', quantity: 1, attachments: [{ className: 'ACOGOptic', quantity: 1 }] }];
+    await spawnPileWorld('api-1', { x: 1, z: 2 }, tree);
+    const sent = cf.postGameLabsAction.mock.calls[0][1].parameters.tree;
+    expect(sent.dataType).toBe('string');
+    expect(JSON.parse(sent.valueString)).toEqual(tree);
+  });
+
+  it('reports no_grant when the server does not advertise the action', async () => {
+    withActions('CFCloud_TeleportPlayer');
+    await expect(spawnAiWorld('api-1', { x: 1, z: 2 })).rejects.toMatchObject({ reason: 'no_grant' });
+    await expect(startAirdrop('api-1', { x: 1, z: 2 }, 'M')).rejects.toMatchObject({ reason: 'no_grant' });
+  });
+});
+
+describe('resolveWorldActions', () => {
+  it('reports only what the server advertises', () => {
+    const stock = [{ actionCode: 'CFCloud_SpawnItemWorld' }, { actionCode: 'CFCloud_TeleportPlayer' }];
+    expect(resolveWorldActions(stock)).toEqual({
+      spawnItem: true, spawnAi: false, airdrop: false, spawnPile: false,
+    });
+  });
+
+  it('lights up the spacecat actions when their PBOs are installed', () => {
+    const full = ['CFCloud_SpawnItemWorld', 'Spacecat_SpawnAI', 'Spacecat_StartAirdrop', 'Spacecat_SpawnLoadout']
+      .map(actionCode => ({ actionCode }));
+    expect(resolveWorldActions(full)).toEqual({
+      spawnItem: true, spawnAi: true, airdrop: true, spawnPile: true,
+    });
+  });
+});
+
+describe('player vs world spawn resolution', () => {
+  // GameLabs ships BOTH CFCloud_SpawnPlayerItem and CFCloud_SpawnItemWorld, and the
+  // old loose pattern (/spawn.*item/i) matched the world one too. If the player action
+  // were ever renamed, "spawn on player" would silently fall through to the world
+  // action and post a steam64 as its referenceKey.
+  it('never resolves the player spawn to the world action', () => {
+    expect(resolveActionCode([{ actionCode: 'CFCloud_SpawnItemWorld' }], 'spawn')).toBeNull();
+  });
+
+  it('never resolves the world spawn to the player action', () => {
+    expect(resolveActionCode([{ actionCode: 'CFCloud_SpawnPlayerItem' }], 'spawnWorld')).toBeNull();
+  });
+
+  it('picks the right one when both are present', () => {
+    const both = [{ actionCode: 'CFCloud_SpawnItemWorld' }, { actionCode: 'CFCloud_SpawnPlayerItem' }];
+    expect(resolveActionCode(both, 'spawn')).toBe('CFCloud_SpawnPlayerItem');
+    expect(resolveActionCode(both, 'spawnWorld')).toBe('CFCloud_SpawnItemWorld');
+  });
+});
+
+describe('teleportAll', () => {
+  beforeEach(() => {
+    cf.getGameLabsActions.mockResolvedValue({
+      at: 1, stale: false, data: { actions: [{ actionCode: 'CFCloud_TeleportPlayer' }] },
+    });
+  });
+
+  it('names who failed rather than collapsing to one error', async () => {
+    cf.postGameLabsAction
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new cf.CfToolsError('unreachable', 'boom'))
+      .mockResolvedValueOnce({});
+    const players = [
+      { steam64: '765...1', name: 'Ann' },
+      { steam64: '765...2', name: 'Bo' },
+      { steam64: '765...3', name: 'Cy' },
+    ];
+    const results = await teleportAll('api-1', players, { x: 10, z: 20 }, { delayMs: 0 });
+    expect(results).toEqual([
+      { steam64: '765...1', name: 'Ann', ok: true },
+      { steam64: '765...2', name: 'Bo', ok: false, error: 'unreachable' },
+      { steam64: '765...3', name: 'Cy', ok: true },
+    ]);
+    // One failure must not abort the players behind it.
+    expect(cf.postGameLabsAction).toHaveBeenCalledTimes(3);
+  });
+
+  it('sends every player to the same point, player-context', async () => {
+    await teleportAll('api-1', [{ steam64: 'a' }, { steam64: 'b' }], { x: 7, z: 9 }, { delayMs: 0 });
+    for (const call of cf.postGameLabsAction.mock.calls) {
+      expect(call[1].actionContext).toBe('player');
+      expect(call[1].parameters.vector).toEqual({
+        dataType: 'vector', valueVectorX: 7, valueVectorY: 9, valueVectorZ: 0,
+      });
+    }
+  });
+
+  it('skips entries with no steam64 instead of firing a bad reference', async () => {
+    const results = await teleportAll('api-1', [{ name: 'ghost' }, { steam64: 'a' }], { x: 1, z: 2 }, { delayMs: 0 });
+    expect(results).toHaveLength(1);
+    expect(cf.postGameLabsAction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('spawnPileFlat', () => {
+  it('spawns each item into the world and reports per-item results', async () => {
+    cf.getGameLabsActions.mockResolvedValue({
+      at: 1, stale: false, data: { actions: [{ actionCode: 'CFCloud_SpawnItemWorld' }] },
+    });
+    cf.postGameLabsAction
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new cf.CfToolsError('rate_limited', 'slow down'));
+    const results = await spawnPileFlat(
+      'api-1', { x: 5, z: 6 },
+      [{ className: 'M4A1', quantity: 1 }, { className: 'Mag_STANAG_30Rnd', quantity: 3 }],
+      { delayMs: 0 },
+    );
+    expect(results).toEqual([
+      { className: 'M4A1', ok: true },
+      { className: 'Mag_STANAG_30Rnd', ok: false, error: 'rate_limited' },
+    ]);
+    expect(cf.postGameLabsAction.mock.calls[1][1].parameters.quantity).toEqual({ dataType: 'int', valueInt: 3 });
   });
 });
 

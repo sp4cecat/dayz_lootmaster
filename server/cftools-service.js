@@ -62,8 +62,14 @@ export async function buildStatus(profile) {
         // live: a server with GameLabs connected and no matching string), so they
         // are only the fallback when the actions probe itself fails. Cached 300s.
         let gameLabs;
+        // Which world actions exist is a separate question from whether GameLabs
+        // is installed at all: three of the four come from the spacecat action
+        // PBOs, so a stock GameLabs server has gameLabs=true and spawnAi=false.
+        let worldActions = { spawnItem: false, spawnAi: false, airdrop: false, spawnPile: false };
         try {
-            gameLabs = (await listGameLabsActions(bound.apiId)).length > 0;
+            const actions = await listGameLabsActions(bound.apiId);
+            gameLabs = actions.length > 0;
+            worldActions = resolveWorldActions(actions);
         } catch {
             const capabilities = Array.isArray(integration.capabilities) ? integration.capabilities : [];
             gameLabs = capabilities.some(c => /gamelabs/i.test(String(c)));
@@ -77,6 +83,7 @@ export async function buildStatus(profile) {
                 // GSM/session data rides on the base integration; GameLabs layers need the mod.
                 gsm: integration.status !== false,
                 gameLabs,
+                worldActions,
             },
         };
     } catch (err) {
@@ -945,7 +952,19 @@ const ACTION_PATTERNS = {
     teleport: [/^CFCloud_TeleportPlayer$/, /teleport/i],
     heal: [/^CFCloud_HealPlayer$/, /heal/i],
     kill: [/^CFCloud_KillPlayer$/, /(^|_)kill/i],
-    spawn: [/^CFCloud_SpawnPlayerItem$/, /spawn.*item|item.*spawn/i],
+    // The negative lookahead is load-bearing. GameLabs also ships
+    // CFCloud_SpawnItemWorld, which the old loose pattern (/spawn.*item/i)
+    // matched — so if the player action were ever renamed, "spawn on player"
+    // would fall through to the WORLD action and post a steam64 as its
+    // referenceKey. Player and world spawns must never resolve to each other.
+    spawn: [/^CFCloud_SpawnPlayerItem$/, /^(?!.*world).*(?:spawn.*item|item.*spawn)/i],
+    spawnWorld: [/^CFCloud_SpawnItemWorld$/, /(?:spawn.*item.*world|world.*spawn.*item)/i],
+    // Not shipped by GameLabs — these resolve only on a server running the
+    // matching spacecat_gamelabs action PBO, which is exactly why the UI asks
+    // resolveWorldActions() what exists rather than assuming.
+    spawnAi: [/^Spacecat_SpawnAI$/, /spawn.*(?:ai|infected)/i],
+    airdrop: [/^Spacecat_StartAirdrop$/, /airdrop/i],
+    spawnPile: [/^Spacecat_SpawnLoadout$/, /spawn.*loadout/i],
 };
 
 export function resolveActionCode(actions, wanted) {
@@ -1044,4 +1063,154 @@ export async function spawnLoadout(apiId, steam64, items, { delayMs = 300 } = {}
         if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
     }
     return results;
+}
+
+// ---- World-context actions ----------------------------------------------
+//
+// Everything below targets a point on the map rather than an entity, so all of
+// it is actionContext 'world' with a null referenceKey. Only spawnItemWorld is
+// backed by a stock GameLabs action; the other three need the spacecat action
+// PBOs, and resolve to null (→ no_grant) without them.
+
+/**
+ * The one place world coordinates get packed. GameLabs' GetVector() reads
+ * valueVectorX as world X, valueVectorY as world Z and valueVectorZ as HEIGHT —
+ * not the x/y/z order the name suggests. Height 0 is deliberate: GetVector()
+ * treats a falsy height as "snap to SurfaceY + 0.2", which is what you want for
+ * anything dropped onto terrain.
+ */
+function worldVector(x, z) {
+    return { dataType: 'vector', valueVectorX: x, valueVectorY: z, valueVectorZ: 0 };
+}
+
+async function worldAction(apiId, wanted, missing, parameters) {
+    const code = resolveActionCode(await listGameLabsActions(apiId), wanted);
+    if (!code) throw new cf.CfToolsError('no_grant', missing);
+    return cf.postGameLabsAction(apiId, {
+        actionCode: code,
+        actionContext: 'world',
+        referenceKey: null,
+        parameters,
+    });
+}
+
+/** Spawn an item on the ground at world coordinates (stock CFCloud_SpawnItemWorld). */
+export async function spawnItemWorld(apiId, { x, z }, className, quantity = 1) {
+    return worldAction(apiId, 'spawnWorld', 'No world spawn action available (is GameLabs installed?)', {
+        vector: worldVector(x, z),
+        ...spawnParameters(className, quantity),
+    });
+}
+
+/** Spawn AI or infected at world coordinates. Needs spacecat_gamelabs_compat_expansionai. */
+export async function spawnAiWorld(apiId, { x, z }, { kind = 'infected', count = 1, faction = '', loadout = '' } = {}) {
+    return worldAction(apiId, 'spawnAi', 'No AI spawn action available (install spacecat_gamelabs_compat_expansionai)', {
+        vector: worldVector(x, z),
+        kind: { dataType: 'string', valueString: String(kind) },
+        count: { dataType: 'int', valueInt: Math.max(1, Math.trunc(Number(count) || 1)) },
+        faction: { dataType: 'string', valueString: String(faction) },
+        loadout: { dataType: 'string', valueString: String(loadout) },
+    });
+}
+
+/**
+ * Start a configured Expansion airdrop mission at world coordinates.
+ * `mission` is the MissionName, not the Airdrop_*.json file name — the mod
+ * looks it up via ExpansionMissionModule.FindMission, which matches on that field.
+ */
+export async function startAirdrop(apiId, { x, z }, mission) {
+    return worldAction(apiId, 'airdrop', 'No airdrop action available (install spacecat_gamelabs_compat_airdrop)', {
+        vector: worldVector(x, z),
+        mission: { dataType: 'string', valueString: String(mission) },
+    });
+}
+
+/**
+ * Spawn a nested loadout tree as a ground pile in ONE call, preserving
+ * attachments, cargo and quantities. The flat spawnItemWorld loop below is the
+ * fallback when the mod isn't installed; it cannot express nesting.
+ */
+export async function spawnPileWorld(apiId, { x, z }, tree) {
+    return worldAction(apiId, 'spawnPile', 'No loadout spawn action available (install spacecat_gamelabs)', {
+        vector: worldVector(x, z),
+        tree: { dataType: 'string', valueString: JSON.stringify(tree) },
+    });
+}
+
+/**
+ * Flat ground pile: one world spawn per item. The degraded path used when
+ * Spacecat_SpawnLoadout isn't available — nesting and per-item quantity beyond
+ * a stack count are lost, so callers should say so in the UI.
+ *
+ * Paced and reported exactly like spawnLoadout: sequential, ~300ms apart, and a
+ * failure records itself rather than aborting the remaining items.
+ */
+export async function spawnPileFlat(apiId, { x, z }, items, { delayMs = 300 } = {}) {
+    const code = resolveActionCode(await listGameLabsActions(apiId), 'spawnWorld');
+    if (!code) throw new cf.CfToolsError('no_grant', 'No world spawn action available (is GameLabs installed?)');
+    const results = [];
+    for (const item of items) {
+        const className = typeof item === 'string' ? item : item && item.className;
+        const quantity = (item && typeof item === 'object' && Number(item.quantity)) || 1;
+        if (!className) continue;
+        try {
+            await cf.postGameLabsAction(apiId, {
+                actionCode: code,
+                actionContext: 'world',
+                referenceKey: null,
+                parameters: { vector: worldVector(x, z), ...spawnParameters(className, quantity) },
+            });
+            results.push({ className, ok: true });
+        } catch (err) {
+            results.push({ className, ok: false, error: reasonOf(err) });
+        }
+        if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
+    }
+    return results;
+}
+
+/**
+ * Teleport many players to the same point. Deliberately N calls to the stock
+ * per-player action rather than a new mod-side "teleport all": it works on any
+ * GameLabs server, and a partial failure names exactly who didn't move.
+ *
+ * Same pacing rationale as spawnLoadout — the game server's order queue is
+ * processed per tick and drops bursts.
+ */
+export async function teleportAll(apiId, players, { x, z }, { delayMs = 300 } = {}) {
+    const code = resolveActionCode(await listGameLabsActions(apiId), 'teleport');
+    if (!code) throw new cf.CfToolsError('no_grant', 'No teleport action available (is GameLabs installed?)');
+    const results = [];
+    for (const player of players) {
+        const steam64 = typeof player === 'string' ? player : player && player.steam64;
+        const name = (player && player.name) || steam64;
+        if (!steam64) continue;
+        try {
+            await cf.postGameLabsAction(apiId, {
+                actionCode: code,
+                actionContext: 'player',
+                referenceKey: steam64,
+                parameters: { vector: worldVector(x, z) },
+            });
+            results.push({ steam64, name, ok: true });
+        } catch (err) {
+            results.push({ steam64, name, ok: false, error: reasonOf(err) });
+        }
+        if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
+    }
+    return results;
+}
+
+/**
+ * Which world actions this server actually advertises. The Live Map hides menu
+ * items it can't fire, and resolving here keeps the action-code patterns in one
+ * place instead of duplicating the regexes in the client.
+ */
+export function resolveWorldActions(actions) {
+    return {
+        spawnItem: !!resolveActionCode(actions, 'spawnWorld'),
+        spawnAi: !!resolveActionCode(actions, 'spawnAi'),
+        airdrop: !!resolveActionCode(actions, 'airdrop'),
+        spawnPile: !!resolveActionCode(actions, 'spawnPile'),
+    };
 }

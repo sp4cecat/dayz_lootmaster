@@ -26,16 +26,49 @@ vi.mock('@/utils/api', () => ({
   getApiBase: () => 'http://localhost:4317',
 }));
 
+/**
+ * Per-test capabilities. The server-action menu items are gated on what the live
+ * server advertises, so tests need to move this rather than assume a fixed server.
+ * Read lazily by the mock, so a test can swap it before rendering.
+ */
+let capsOverride: Record<string, unknown> | null = null;
+
 vi.mock('@/hooks/useCfToolsStatus', () => ({
   useCfToolsStatus: () => ({
     status: {
       connected: true,
       nickname: 'Test Server',
-      capabilities: { gsm: true, gameLabs: true },
+      capabilities: capsOverride ?? { gsm: true, gameLabs: true },
     },
     reload: () => {},
   }),
 }));
+
+/** Records what the map fired, so tests can assert nothing goes out unconfirmed. */
+const fired: { route: string; args: unknown[] }[] = [];
+const actionResult = { ok: true };
+
+vi.mock('@/hooks/useCfToolsActions', () => {
+  const record = (route: string) => (...args: unknown[]) => {
+    fired.push({ route, args });
+    return Promise.resolve(actionResult);
+  };
+  return {
+    useCfToolsActions: () => ({
+      busy: false,
+      error: null,
+      clearError: () => {},
+      kick: record('kick'), message: record('message'), raw: record('raw'),
+      teleport: record('teleport'), heal: record('heal'), kill: record('kill'),
+      spawnItem: record('spawnItem'), spawnLoadout: record('spawnLoadout'),
+      gameLabsAction: record('gameLabsAction'),
+      teleportAll: record('teleportAll'), spawnItemWorld: record('spawnItemWorld'),
+      spawnAi: record('spawnAi'), startAirdrop: record('startAirdrop'),
+      spawnPile: record('spawnPile'), spawnPileFlat: record('spawnPileFlat'),
+    }),
+    default: () => ({}),
+  };
+});
 
 const at = (x: number, z: number) => [x, 0, z] as [number, number, number];
 
@@ -104,6 +137,8 @@ let writeText: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   playersOverride = null;
+  capsOverride = null;
+  fired.length = 0;
   writeText = vi.fn(async () => {});
   Object.defineProperty(globalThis.navigator, 'clipboard', {
     configurable: true,
@@ -123,7 +158,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-async function render(missionName = 'dayzoffline.chernarusplus') {
+async function render(missionName = 'dayzoffline.chernarusplus', loadouts?: unknown[]) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -135,6 +170,7 @@ async function render(missionName = 'dayzoffline.chernarusplus') {
         selectedProfileId="p1"
         missionName={missionName}
         isPanel={true}
+        loadouts={loadouts as never}
       />,
     );
   });
@@ -377,5 +413,174 @@ describe('LiveMapView right-click menu', () => {
     const after = (container.querySelector('[data-testid="player-dot"]')
       ?.closest('button') as HTMLElement).style.left;
     expect(after).toBe(before);
+  });
+});
+
+/**
+ * The server-side group. Every item here changes the live server, so the two
+ * things worth proving are that an item never appears when the server cannot
+ * perform it, and that nothing fires before its confirmation is accepted.
+ */
+describe('LiveMapView right-click server actions', () => {
+  const ALL_ACTIONS = {
+    gsm: true,
+    gameLabs: true,
+    worldActions: { spawnItem: true, spawnAi: true, airdrop: true, spawnPile: true },
+  };
+
+  const LOADOUTS = [
+    {
+      id: 'l1',
+      label: 'Starter kit',
+      updatedAt: 0,
+      items: [{ id: 'n1', type: 'item', name: 'M4A1', chance: 1, attachments: [], cargo: [] }],
+    },
+  ];
+
+  /** The player dot, as a right-click target. */
+  const playerMarker = (c: Element) =>
+    c.querySelector('button[aria-label="Alice"]') as HTMLElement;
+
+  /** The dialog's action buttons are plain buttons in a modal footer, not menuitems. */
+  const dialogButton = (label: string) =>
+    [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === label);
+
+  it('offers nothing beyond teleport on a plain GameLabs server', async () => {
+    capsOverride = { gsm: true, gameLabs: true };
+    const container = await render();
+    await rightClick(viewport(container), 400, 300);
+
+    const items = menuItems();
+    expect(items).not.toContain('Spawn AI here…');
+    expect(items).not.toContain('Start airdrop here…');
+    expect(items).not.toContain('Spawn loadout here…');
+    // The client-only items are unaffected by any of this.
+    expect(items).toContain('Copy coordinates');
+  });
+
+  it('hides every server action when GameLabs is absent', async () => {
+    capsOverride = { gsm: true, gameLabs: false };
+    const container = await render();
+    await rightClick(viewport(container), 400, 300);
+
+    const items = menuItems();
+    for (const label of ['Spawn AI here…', 'Start airdrop here…', 'Spawn loadout here…']) {
+      expect(items).not.toContain(label);
+    }
+    expect(items.some(i => i.startsWith('Teleport'))).toBe(false);
+  });
+
+  it('shows each action once its backing world action is advertised', async () => {
+    capsOverride = ALL_ACTIONS;
+    const container = await render('dayzoffline.chernarusplus', LOADOUTS);
+    await rightClick(viewport(container), 400, 300);
+
+    const items = menuItems();
+    expect(items).toContain('Spawn AI here…');
+    expect(items).toContain('Start airdrop here…');
+    expect(items).toContain('Spawn loadout here…');
+  });
+
+  it('still offers the loadout pile on a stock server, via the flat fallback', async () => {
+    // spawnPile false, spawnItem true: the nested action is missing, but
+    // CFCloud_SpawnItemWorld can still put the items on the ground.
+    capsOverride = {
+      gsm: true, gameLabs: true,
+      worldActions: { spawnItem: true, spawnAi: false, airdrop: false, spawnPile: false },
+    };
+    const container = await render('dayzoffline.chernarusplus', LOADOUTS);
+    await rightClick(viewport(container), 400, 300);
+    expect(menuItems()).toContain('Spawn loadout here…');
+  });
+
+  it('teleports the right-clicked player, and only after the confirmation', async () => {
+    capsOverride = ALL_ACTIONS;
+    const container = await render();
+    await rightClick(playerMarker(container), 300, 300);
+
+    expect(menuItems()).toContain('Teleport Alice here');
+    await act(async () => { menuItem('Teleport Alice here').click(); });
+
+    // Opening the dialog must not have sent anything yet.
+    expect(fired).toHaveLength(0);
+
+    await act(async () => { dialogButton('Teleport')?.click(); });
+    expect(fired).toHaveLength(1);
+    expect(fired[0].route).toBe('teleport');
+    expect(fired[0].args[0]).toBe(PLAYER.steamId);
+  });
+
+  it('does not fire when the confirmation is cancelled', async () => {
+    capsOverride = ALL_ACTIONS;
+    const container = await render();
+    await rightClick(playerMarker(container), 300, 300);
+    await act(async () => { menuItem('Teleport Alice here').click(); });
+    await act(async () => { dialogButton('Cancel')?.click(); });
+    expect(fired).toHaveLength(0);
+  });
+
+  it('only offers teleport-all when more than one player can be targeted', async () => {
+    capsOverride = ALL_ACTIONS;
+    const one = await render();
+    await rightClick(viewport(one), 400, 300);
+    expect(menuItems().some(i => i.startsWith('Teleport all'))).toBe(false);
+  });
+
+  it('excludes players with no steam64 from the teleport-all count', async () => {
+    capsOverride = ALL_ACTIONS;
+    playersOverride = [
+      PLAYER,
+      { ...PLAYER, sessionId: 'sess-2', steamId: '76500000000000002', name: 'Bob' },
+      // Still loading in — no steam64, so no action can target them.
+      { ...PLAYER, sessionId: 'sess-3', steamId: null as unknown as string, name: 'Ghost' },
+    ];
+    const container = await render();
+    await rightClick(viewport(container), 400, 300);
+    expect(menuItems()).toContain('Teleport all 2 players here');
+  });
+
+  it('disables the loadout item when there are no loadouts to spawn', async () => {
+    capsOverride = ALL_ACTIONS;
+    const container = await render('dayzoffline.chernarusplus', []);
+    await rightClick(viewport(container), 400, 300);
+
+    const item = [...document.querySelectorAll('[role="menuitem"]')]
+      .find(el => el.textContent?.trim() === 'Spawn loadout here…');
+    expect(item?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('spawns the loadout at the clicked point, not at a marker', async () => {
+    capsOverride = ALL_ACTIONS;
+    const container = await render('dayzoffline.chernarusplus', LOADOUTS);
+    // x = LETTERBOX is the left edge of the content square, i.e. world x 0.
+    await rightClick(viewport(container), LETTERBOX, BOX_H);
+    await act(async () => { menuItem('Spawn loadout here…').click(); });
+
+    const option = [...document.querySelectorAll('button')]
+      .find(b => b.textContent?.includes('Starter kit'));
+    await act(async () => { option?.click(); });
+    // Choosing an option must not fire it either — the footer button is the gate.
+    expect(fired).toHaveLength(0);
+
+    await act(async () => { dialogButton('Spawn')?.click(); });
+    expect(fired).toHaveLength(1);
+    expect(fired[0].route).toBe('spawnPile');
+    expect(fired[0].args[0]).toBe(0);
+  });
+
+  it('falls back to the flat spawn when the nested action is unavailable', async () => {
+    capsOverride = {
+      gsm: true, gameLabs: true,
+      worldActions: { spawnItem: true, spawnAi: false, airdrop: false, spawnPile: false },
+    };
+    const container = await render('dayzoffline.chernarusplus', LOADOUTS);
+    await rightClick(viewport(container), 400, 300);
+    await act(async () => { menuItem('Spawn loadout here…').click(); });
+    const option = [...document.querySelectorAll('button')]
+      .find(b => b.textContent?.includes('Starter kit'));
+    await act(async () => { option?.click(); });
+    await act(async () => { dialogButton('Spawn')?.click(); });
+
+    expect(fired[0].route).toBe('spawnPileFlat');
   });
 });

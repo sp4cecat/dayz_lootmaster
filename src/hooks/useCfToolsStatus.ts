@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../utils/api';
 
+/**
+ * Which map-point actions this server advertises. Separate from `gameLabs`
+ * because only `spawnItem` is stock: the other three come from the spacecat
+ * action PBOs, so a plain GameLabs server has gameLabs=true and the rest false.
+ * The Live Map hides the menu items it can't fire rather than showing duds.
+ */
+export interface CfToolsWorldActions {
+  /** Stock CFCloud_SpawnItemWorld — spawn one item at coordinates. */
+  spawnItem: boolean;
+  spawnAi: boolean;
+  airdrop: boolean;
+  /** Nested loadout tree in one call; without it the map falls back to spawnItem. */
+  spawnPile: boolean;
+}
+
 export interface CfToolsCapabilities {
   /** Session/player data (GSM) available on this grant. */
   gsm: boolean;
   /** GameLabs mod installed — vehicles/events layers + admin actions. */
   gameLabs: boolean;
+  worldActions?: CfToolsWorldActions;
 }
 
 export interface CfToolsStatus {
