@@ -1982,12 +1982,20 @@ async function handleHistoryRoute(url, req, res) {
         return true;
     }
 
-    // GET /api/history/inventory?pid&from&to — snapshot list, WITHOUT the trees.
+    // GET /api/history/inventory?pid&from&to&limit — snapshot list, WITHOUT the trees.
     if (route === 'inventory') {
         const pid = url.searchParams.get('pid') || undefined;
+        const rawLimit = Number(url.searchParams.get('limit'));
+        const limit = Number.isFinite(rawLimit) && rawLimit > 0
+            ? Math.min(rawLimit, HISTORY_INVENTORY_MAX)
+            : HISTORY_INVENTORY_DEFAULT;
+        const result = history.listInventory({ pid, from, to, limit });
         json(res, 200, {
-            available: true, from, to, pid: pid ?? null,
-            items: history.listInventory({ pid, from, to }),
+            available: true, from, to, pid: pid ?? null, limit,
+            // Same contract as /actions: a list that hits its cap says so, rather
+            // than passing off the newest N as the whole history.
+            truncated: result.truncated,
+            items: result.items,
         });
         return true;
     }
@@ -2009,6 +2017,9 @@ async function handleHistoryRoute(url, req, res) {
 /** Rows per action feed request. */
 const HISTORY_ACTION_DEFAULT = 500;
 const HISTORY_ACTION_MAX = 5000;
+/** Snapshots per inventory list request. The max is the store's own ceiling. */
+const HISTORY_INVENTORY_DEFAULT = 200;
+const HISTORY_INVENTORY_MAX = 2000;
 
 /**
  * Resolve every classname in a stored tree to its catalog display name.

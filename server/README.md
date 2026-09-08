@@ -241,7 +241,7 @@ for a feature that is merely switched off.
 | `/api/history/at` | GET | One row per player nearest `?ts`, within `?tol` |
 | `/api/history/area` | GET | Presence intervals inside `?x&z&radius` |
 | `/api/history/actions` | GET | Action feed; filter by `?ids`, `?kinds`, or a circle |
-| `/api/history/inventory` | GET | A player's snapshots, WITHOUT their trees |
+| `/api/history/inventory` | GET | A player's snapshots, WITHOUT their trees; `?limit` (default 200, max 2000), `truncated` says if it bit |
 | `/api/history/inventory/:id` | GET | One snapshot with its full tree, names resolved |
 | `/api/history/capture` | POST | Ask the mod to snapshot a player's inventory now |
 | `/api/history/rollback` | POST | Apply a stored loadout back onto a live player |

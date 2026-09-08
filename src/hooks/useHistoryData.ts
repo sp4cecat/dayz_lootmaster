@@ -232,10 +232,14 @@ export function useHistoryActions(
  */
 export function useInventorySnapshots(pid: string | null, from: number, to: number, nonce = 0) {
   const [snapshots, setSnapshots] = useState<InventorySummary[]>([]);
+  // The server caps the list; this says whether the cap bit, so the panel can
+  // tell the operator the oldest rows are missing rather than letting the list
+  // read as the whole history.
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!pid) { setSnapshots([]); return; }
+    if (!pid) { setSnapshots([]); setTruncated(false); return; }
     let cancelled = false;
     setLoading(true);
     (async () => {
@@ -244,9 +248,12 @@ export function useInventorySnapshots(pid: string | null, from: number, to: numb
           `/api/history/inventory?pid=${encodeURIComponent(pid)}&from=${from}&to=${to}`,
         );
         const body = res.ok ? await res.json() : null;
-        if (!cancelled) setSnapshots(body?.items ?? []);
+        if (!cancelled) {
+          setSnapshots(body?.items ?? []);
+          setTruncated(!!body?.truncated);
+        }
       } catch {
-        if (!cancelled) setSnapshots([]);
+        if (!cancelled) { setSnapshots([]); setTruncated(false); }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -254,7 +261,7 @@ export function useInventorySnapshots(pid: string | null, from: number, to: numb
     return () => { cancelled = true; };
   }, [pid, from, to, nonce]);
 
-  return { snapshots, loading };
+  return { snapshots, truncated, loading };
 }
 
 /** One snapshot with its tree. Fetched only when a row is actually opened. */

@@ -1048,9 +1048,13 @@ export function actionKinds({ from, to, srv = DEFAULT_SRV } = {}) {
  * The tree is deliberately not selected: a list of a season's snapshots would be
  * tens of megabytes of JSON to render a dozen rows of "when, why, how many items".
  * Fetch one by id when it is actually opened.
+ *
+ * `limit` is a hard cap, and `truncated` says whether it bit. A list that silently
+ * stops at 200 rows reads as "that is every loadout there is", when what it means
+ * is "the window is too wide to show them all". Returns `{ items, truncated }`.
  */
 export function listInventory({ pid, from, to, limit = 200, srv = DEFAULT_SRV } = {}) {
-    if (!ready && !init()) return [];
+    if (!ready && !init()) return { items: [], truncated: false };
     const where = ['srv = ?'];
     const args = [srv];
     if (pid) { where.push('pid = ?'); args.push(String(pid)); }
@@ -1058,16 +1062,23 @@ export function listInventory({ pid, from, to, limit = 200, srv = DEFAULT_SRV } 
         where.push('ts BETWEEN ? AND ?');
         args.push(from, to);
     }
+    // One extra row, so "did the limit bite" is answered without a COUNT(*).
+    const cap = Math.max(1, Math.min(limit, 2000));
     const rows = db.prepare(`
         SELECT id, pid, ts, reason, x, y, z, health, blood, shock, energy, water,
                items, truncated
           FROM inv_snapshot
          WHERE ${where.join(' AND ')}
          ORDER BY ts DESC
-         LIMIT ?`).all(...args, Math.max(1, Math.min(limit, 2000)));
+         LIMIT ?`).all(...args, cap + 1);
 
-    const names = nameMap([...new Set(rows.map(r => r.pid))], srv);
-    return rows.map(r => ({
+    const truncated = rows.length > cap;
+    const kept = truncated ? rows.slice(0, cap) : rows;
+
+    const names = nameMap([...new Set(kept.map(r => r.pid))], srv);
+    // Newest first, and left that way: the panel treats the first manual row as
+    // "what they are carrying now".
+    const items = kept.map(r => ({
         id: r.id,
         pid: r.pid,
         name: names.get(r.pid) || null,
@@ -1081,6 +1092,7 @@ export function listInventory({ pid, from, to, limit = 200, srv = DEFAULT_SRV } 
         items: r.items,
         truncated: r.truncated === 1,
     }));
+    return { items, truncated };
 }
 
 /** One snapshot with its tree parsed, or null. */

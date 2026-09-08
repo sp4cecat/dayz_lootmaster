@@ -67,7 +67,7 @@ export default function InventoryPanel({
    */
   const [capturedAt, setCapturedAt] = useState(0);
   const effectiveTo = Math.max(to, capturedAt);
-  const { snapshots, loading } = useInventorySnapshots(pid, from, effectiveTo, nonce);
+  const { snapshots, truncated, loading } = useInventorySnapshots(pid, from, effectiveTo, nonce);
   const [openId, setOpenId] = useState<number | null>(null);
   const { snapshot, loading: detailLoading } = useInventoryDetail(openId);
 
@@ -235,6 +235,13 @@ export default function InventoryPanel({
             </div>
           );
         })}
+
+        {/* A list that silently stops at its cap reads as the whole history. */}
+        {!loading && truncated && (
+          <div className="px-3 py-2 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-800">
+            Only the most recent loadouts are shown. Narrow the window to see the rest.
+          </div>
+        )}
       </div>
 
       {rollbackFor !== null && rollbackSnap && (

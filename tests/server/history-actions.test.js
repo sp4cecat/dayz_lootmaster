@@ -245,7 +245,7 @@ describe('inventory snapshots', () => {
 
     it('counts every node so the list view never parses a tree', () => {
         const id = history.recordInventory(snapshot(), T0);
-        expect(history.listInventory({ pid: '76561198000000001' })[0].items).toBe(3);
+        expect(history.listInventory({ pid: '76561198000000001' }).items[0].items).toBe(3);
         expect(history.getInventory(id).items).toBe(3);
     });
 
@@ -258,7 +258,7 @@ describe('inventory snapshots', () => {
 
     it('omits the tree from the list, and includes it from the detail', () => {
         history.recordInventory(snapshot(), T0);
-        const [row] = history.listInventory({ pid: '76561198000000001' });
+        const [row] = history.listInventory({ pid: '76561198000000001' }).items;
         expect(row.tree).toBeUndefined();
         expect(history.getInventory(row.id).tree).toHaveLength(1);
     });
@@ -267,14 +267,33 @@ describe('inventory snapshots', () => {
         history.recordInventory(snapshot({ n: 1, reason: 'connect' }), T0);
         history.recordInventory(snapshot({ n: 2, reason: 'death' }), T0 + 60000);
         history.recordInventory(snapshot({ n: 3, pid: 'other' }), T0 + 30000);
-        const rows = history.listInventory({ pid: '76561198000000001', from: 0, to: T0 + 100000 });
+        const { items: rows, truncated } = history.listInventory({
+            pid: '76561198000000001', from: 0, to: T0 + 100000,
+        });
         expect(rows.map(r => r.reason)).toEqual(['death', 'connect']);
+        expect(truncated).toBe(false);
+    });
+
+    it('reports when the limit bit, keeping the newest rows', () => {
+        // Silently stopping at the cap would make the newest N read as the whole
+        // history — the exact thing the flag exists to prevent.
+        history.recordInventory(snapshot({ n: 1, reason: 'connect' }), T0);
+        history.recordInventory(snapshot({ n: 2, reason: 'manual' }), T0 + 10000);
+        history.recordInventory(snapshot({ n: 3, reason: 'death' }), T0 + 20000);
+
+        const capped = history.listInventory({ pid: '76561198000000001', limit: 2 });
+        expect(capped.truncated).toBe(true);
+        expect(capped.items.map(r => r.reason)).toEqual(['death', 'manual']);
+
+        const exact = history.listInventory({ pid: '76561198000000001', limit: 3 });
+        expect(exact.truncated).toBe(false);
+        expect(exact.items).toHaveLength(3);
     });
 
     it('ignores a re-sent snapshot', () => {
         expect(history.recordInventory(snapshot(), T0)).toBeTruthy();
         expect(history.recordInventory(snapshot(), T0 + 1000)).toBeNull();
-        expect(history.listInventory({})).toHaveLength(1);
+        expect(history.listInventory({}).items).toHaveLength(1);
     });
 
     it('refuses a snapshot it cannot attribute', () => {
