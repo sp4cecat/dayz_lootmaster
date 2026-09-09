@@ -1999,7 +1999,10 @@ async function handleHistoryRoute(url, req, res) {
         return true;
     }
 
-    const st = history.stats();
+    // A cheap readiness check, not stats(): stats() aggregates over the whole
+    // position log and this gate runs in front of every history read, including
+    // the flags poll that every view now makes.
+    const st = history.status();
     if (!st.enabled) {
         json(res, 200, { available: false, reason: 'disabled', items: [] });
         return true;

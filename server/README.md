@@ -317,6 +317,14 @@ actions and inventories are never thinned, only deleted, because "he picked it u
 exempt from retention entirely — an archive is almost always older than the drop
 cutoff, and unlike mod rows it cannot be re-recorded.
 
+Retention runs 15 s after start and then hourly, never inline with a request.
+`node:sqlite` is synchronous, so the pass is sliced: thinning walks the band an hour
+at a time from a per-server watermark (`retention_state.thinned_to`), deletes by
+primary key in chunks of 1000, and yields between ~25 ms slices. A steady-state pass
+touches only the hour that has just aged past `HISTORY_FULL_DAYS`. The read routes
+gate on `history.status()` (no queries); only `/api/history/stats` aggregates, and it
+reports the pass through `retention.running` / `retention.last`.
+
 Requires Node 22.5+ for `node:sqlite`. On an older Node, recording reports itself as
 unavailable through `/api/history/stats` and nothing else changes.
 

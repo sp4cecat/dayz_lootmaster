@@ -278,6 +278,25 @@ const MIGRATIONS = [
             CREATE INDEX IF NOT EXISTS ix_enf_pid ON enforcement(srv, pid, ts);
         `);
     },
+
+    // v5 — retention bookkeeping and the provenance index.
+    //
+    // retention_state records how far thinning has advanced per server, so each
+    // pass only touches positions that have aged into the band since the last one.
+    // Without it every pass re-examined the whole 7..90-day band; at 1.2M rows that
+    // single statement ran for over ten minutes with the event loop held.
+    //
+    // ix_pos_src makes stats()' by-source breakdown an index scan instead of a
+    // full table scan (~320 ms on the same database).
+    (d) => {
+        d.exec(`
+            CREATE TABLE IF NOT EXISTS retention_state (
+                srv        TEXT    PRIMARY KEY,
+                thinned_to INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_pos_src ON player_pos(srv, src);
+        `);
+    },
 ];
 
 /**
@@ -340,6 +359,7 @@ export function close() {
     }
     db = null;
     ready = false;
+    thinJob = null;
 }
 
 function recordFailure(err) {
@@ -1550,7 +1570,7 @@ export function stats(srv = DEFAULT_SRV) {
         lastError,
         lastErrorAt: lastErrorAt || null,
         recordAi: RECORD_AI,
-        retention: { fullDays: FULL_DAYS, thinDays: THIN_DAYS },
+        retention: { fullDays: FULL_DAYS, thinDays: THIN_DAYS, running: !!pruneRun, last: lastPrune },
     };
     if (!ready && !init()) return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null, actions: 0, inventories: 0, flags: 0 };
     try {
@@ -1592,6 +1612,18 @@ export function stats(srv = DEFAULT_SRV) {
     }
 }
 
+/**
+ * Whether the store can answer, and nothing more. This is the gate the read
+ * routes check on every request, so it must not touch a table: stats() aggregates
+ * over the whole position log, and running that in front of a 15-second flags
+ * poll from every view meant the server spent ~400 ms blocked per poll on a
+ * 1.2M-row database.
+ */
+export function status() {
+    if (!ready) init();
+    return { enabled: ENABLED && !PERSIST_DISABLED, ready, lastError };
+}
+
 // ---- retention -------------------------------------------------------------
 
 /**
@@ -1605,11 +1637,61 @@ export function stats(srv = DEFAULT_SRV) {
  * a real observed position, at a real timestamp, is still evidence. A synthesised
  * mean of two positions is a place the player provably never stood.
  */
-export function prune(now = Date.now(), srv = DEFAULT_SRV) {
+/**
+ * Thinning walks the band one window at a time. Within a window the rows to
+ * remove are selected once and then deleted by primary key in chunks, so the
+ * time one call holds the event loop is bounded by THIN_CHUNK, not by how busy
+ * the server was that hour: the test server recorded ~200k positions a day, and
+ * a set-based DELETE over even six hours of that ran for 7–22 s.
+ */
+const THIN_WINDOW_MS = 60 * 60 * 1000;
+/** Rows deleted per transaction; ~1000 PK deletes is a few milliseconds. */
+const THIN_CHUNK = 1000;
+
+const bucketFloor = (ts) => Math.floor(ts / THIN_BUCKET_MS) * THIN_BUCKET_MS;
+
+/**
+ * The window currently being thinned, kept across budgeted calls so its victim
+ * list is computed once rather than once per slice. Dropped when the window
+ * completes, or when a call arrives for a different server or start point. The
+ * watermark only advances when the window completes, so a restart mid-window
+ * simply re-selects the survivors' remaining companions and carries on.
+ */
+let thinJob = null;
+
+function readThinnedTo(srv) {
+    const r = db.prepare('SELECT thinned_to FROM retention_state WHERE srv = ?').get(srv);
+    return r ? Number(r.thinned_to) : null;
+}
+
+function writeThinnedTo(srv, ts) {
+    db.prepare(`
+        INSERT INTO retention_state (srv, thinned_to) VALUES (?, ?)
+        ON CONFLICT(srv) DO UPDATE SET thinned_to = excluded.thinned_to`).run(srv, ts);
+}
+
+/**
+ * Apply the retention policy. Returns what it removed, plus `done`: false when
+ * `budgetMs` ran out with thinning still to do, in which case the next call
+ * resumes from the watermark it left in retention_state.
+ *
+ * The drops are one short transaction of indexed range deletes and always run to
+ * completion. Thinning is the expensive part and is windowed: the watermark
+ * means a steady-state hourly pass touches only the hour that has just aged past
+ * FULL_DAYS, and the budget means even the first pass over a large band never
+ * holds the event loop for more than a slice. node:sqlite is synchronous, so a
+ * long statement here is a server that accepts connections and answers none of
+ * them — which is exactly what the unbounded version did at 1.2M rows.
+ */
+export function prune(now = Date.now(), srv = DEFAULT_SRV, { budgetMs = Infinity } = {}) {
     if (!ready && !init()) return null;
+    const started = performance.now();
     const thinCutoff = now - FULL_DAYS * DAY_MS;
     const dropCutoff = now - THIN_DAYS * DAY_MS;
-    const result = { thinned: 0, dropped: 0, ticksThinned: 0, actionsDropped: 0, inventoriesDropped: 0 };
+    const result = {
+        thinned: 0, dropped: 0, ticksThinned: 0, actionsDropped: 0, inventoriesDropped: 0,
+        windows: 0, done: true,
+    };
 
     try {
         db.exec('BEGIN');
@@ -1628,32 +1710,6 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
                 "DELETE FROM player_pos WHERE srv = ? AND ts < ? AND src <> 'adm'",
             ).run(srv, dropCutoff);
             result.dropped = Number(dropped.changes || 0);
-
-            // The bucket size is INLINED, not bound. node:sqlite binds every JS
-            // number as REAL, so `ts / ?` is float division — 1000000/60000 comes
-            // back as 16.666… and every row lands in its own group, which makes the
-            // whole DELETE a silent no-op that still reports success. A literal
-            // keeps it integer division. THIN_BUCKET_MS is a module constant, never
-            // user input, so interpolating it is not an injection surface.
-            // Row-value IN needs SQLite 3.15+; Node bundles far newer.
-            const thinned = db.prepare(`
-                DELETE FROM player_pos
-                 WHERE srv = ? AND ts < ? AND ts >= ? AND src <> 'adm'
-                   AND (pid, ts) NOT IN (
-                        SELECT pid, MIN(ts) FROM player_pos
-                         WHERE srv = ? AND ts < ? AND ts >= ?
-                         GROUP BY pid, ts / ${THIN_BUCKET_MS})`,
-            ).run(srv, thinCutoff, dropCutoff, srv, thinCutoff, dropCutoff);
-            result.thinned = Number(thinned.changes || 0);
-
-            const ticks = db.prepare(`
-                DELETE FROM server_tick
-                 WHERE srv = ? AND ts < ?
-                   AND ts NOT IN (
-                        SELECT MIN(ts) FROM server_tick
-                         WHERE srv = ? AND ts < ? GROUP BY ts / ${THIN_BUCKET_MS})`,
-            ).run(srv, thinCutoff, srv, thinCutoff);
-            result.ticksThinned = Number(ticks.changes || 0);
 
             db.prepare('DELETE FROM server_tick WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
 
@@ -1685,6 +1741,103 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
             throw inner;
         }
 
+        // Thinning stops at a whole-minute boundary so a bucket is never split
+        // between this pass and the next: the survivor of a minute is chosen once,
+        // from all of that minute's samples.
+        const thinEnd = bucketFloor(thinCutoff);
+        const watermark = readThinnedTo(srv);
+        let cursor = watermark;
+        if (cursor == null || cursor < dropCutoff) {
+            // No watermark yet (or it fell behind a shrunken THIN_DAYS): start at
+            // the oldest row still in the band rather than at the cutoff itself, so
+            // a mostly-empty band is not walked window by window for nothing.
+            const firstPos = db.prepare(
+                "SELECT MIN(ts) AS t FROM player_pos WHERE srv = ? AND ts >= ? AND src <> 'adm'",
+            ).get(srv, dropCutoff)?.t;
+            const firstTick = db.prepare(
+                'SELECT MIN(ts) AS t FROM server_tick WHERE srv = ? AND ts >= ?',
+            ).get(srv, dropCutoff)?.t;
+            const earliest = [firstPos, firstTick].filter(v => v != null).map(Number);
+            cursor = earliest.length ? bucketFloor(Math.min(...earliest)) : thinEnd;
+        }
+
+        // The bucket size is INLINED, not bound. node:sqlite binds every JS number
+        // as REAL, so `ts / ?` is float division — 1000000/60000 comes back as
+        // 16.666… and every row lands in its own group, which makes the whole
+        // DELETE a silent no-op that still reports success. A literal keeps it
+        // integer division. THIN_BUCKET_MS is a module constant, never user input,
+        // so interpolating it is not an injection surface.
+        // Row-value IN needs SQLite 3.15+; Node bundles far newer.
+        // Everything in a bucket except its first sample, ranked with a window
+        // function. The obvious `(pid, ts) NOT IN (SELECT pid, MIN(ts) … GROUP BY)`
+        // form is what the old pass used; SQLite cannot index a row-value NOT IN
+        // against a WITHOUT ROWID table and falls back to a nested scan, which on
+        // a dense hour cost over a second. ROW_NUMBER is one sort of the window.
+        const posVictims = db.prepare(`
+            SELECT pid, ts FROM (
+                SELECT pid, ts,
+                       ROW_NUMBER() OVER (PARTITION BY pid, ts / ${THIN_BUCKET_MS} ORDER BY ts) AS rn
+                  FROM player_pos
+                 WHERE srv = ? AND ts >= ? AND ts < ? AND src <> 'adm')
+             WHERE rn > 1`);
+        const tickVictims = db.prepare(`
+            SELECT ts FROM (
+                SELECT ts, ROW_NUMBER() OVER (PARTITION BY ts / ${THIN_BUCKET_MS} ORDER BY ts) AS rn
+                  FROM server_tick
+                 WHERE srv = ? AND ts >= ? AND ts < ?)
+             WHERE rn > 1`);
+        const delPos = db.prepare('DELETE FROM player_pos WHERE srv = ? AND pid = ? AND ts = ?');
+        const delTick = db.prepare('DELETE FROM server_tick WHERE srv = ? AND ts = ?');
+
+        // Note the watermark only ever moves forward. Rows that arrive with a
+        // timestamp behind it are never re-thinned; the only writer that does that
+        // is the admin-log import, whose rows are exempt anyway.
+        let progressed = false;
+        while (cursor < thinEnd) {
+            // At least one chunk per call, whatever the budget, so a pass always
+            // makes progress.
+            if (progressed && performance.now() - started > budgetMs) {
+                result.done = false;
+                break;
+            }
+            if (!thinJob || thinJob.srv !== srv || thinJob.start !== cursor) {
+                const end = Math.min(cursor + THIN_WINDOW_MS, thinEnd);
+                thinJob = {
+                    srv, start: cursor, end,
+                    pos: posVictims.all(srv, cursor, end),
+                    ticks: tickVictims.all(srv, cursor, end),
+                    next: 0,
+                };
+            }
+            const job = thinJob;
+            const stop = Math.min(job.next + THIN_CHUNK, job.pos.length);
+            const complete = stop >= job.pos.length;
+            db.exec('BEGIN');
+            try {
+                for (let i = job.next; i < stop; i++) delPos.run(srv, job.pos[i].pid, job.pos[i].ts);
+                if (complete) {
+                    // Ticks are one row per server tick, not per player — a few
+                    // hundred an hour — so they go with the window's last chunk.
+                    for (const t of job.ticks) delTick.run(srv, t.ts);
+                    writeThinnedTo(srv, job.end);
+                }
+                db.exec('COMMIT');
+            } catch (inner) {
+                try { db.exec('ROLLBACK'); } catch { /* already unwound */ }
+                throw inner;
+            }
+            result.thinned += stop - job.next;
+            job.next = stop;
+            progressed = true;
+            if (complete) {
+                result.ticksThinned += job.ticks.length;
+                result.windows += 1;
+                cursor = job.end;
+                thinJob = null;
+            }
+        }
+        if (result.done && cursor !== watermark) writeThinnedTo(srv, cursor);
+
         // Incremental, never a blocking full VACUUM: this runs on a live server.
         if (result.dropped || result.thinned || result.actionsDropped || result.inventoriesDropped) {
             try { db.exec('PRAGMA incremental_vacuum'); } catch { /* best effort */ }
@@ -1696,17 +1849,70 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
     }
 }
 
-let pruneTimer = null;
+// ---- retention scheduler --------------------------------------------------
 
-/** Prune now, then hourly. The timer is unref()'d so it never holds the process open. */
+/** Longest the event loop is held by one prune slice. */
+const PRUNE_SLICE_MS = 25;
+/** Pause between slices, so queued requests and ingest get a turn. */
+const PRUNE_YIELD_MS = 10;
+/** Let the boot fetches through before the first pass starts. */
+const PRUNE_INITIAL_DELAY_MS = 15_000;
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+
+let pruneTimer = null;
+let pruneKick = null;
+let pruneSlice = null;
+/** The in-flight pass, or null. Reported through stats().retention.running. */
+let pruneRun = null;
+/** The last completed pass: when, how long, what it removed. */
+let lastPrune = null;
+
+/**
+ * One full retention pass, sliced. Each slice calls prune() with a time budget;
+ * an unfinished slice reschedules itself after a short yield. The drops rerun on
+ * every slice, but they are indexed range deletes that find nothing after the
+ * first, so that costs a few microseconds per slice.
+ */
+function runPrunePass(now = Date.now(), srv = DEFAULT_SRV) {
+    if (pruneRun) return;
+    const startedAt = Date.now();
+    const total = { thinned: 0, dropped: 0, ticksThinned: 0, actionsDropped: 0, inventoriesDropped: 0, windows: 0 };
+    pruneRun = { startedAt, total };
+    const step = () => {
+        pruneSlice = null;
+        const r = prune(now, srv, { budgetMs: PRUNE_SLICE_MS });
+        if (r) for (const k of Object.keys(total)) total[k] += r[k] || 0;
+        if (r && !r.done) {
+            pruneSlice = setTimeout(step, PRUNE_YIELD_MS);
+            pruneSlice.unref?.();
+            return;
+        }
+        lastPrune = { at: Date.now(), ms: Date.now() - startedAt, ok: !!r, ...total };
+        pruneRun = null;
+    };
+    step();
+}
+
+/**
+ * Schedule retention: a first pass shortly after start, then hourly. Every timer
+ * is unref()'d so none holds the process open. Nothing runs synchronously here —
+ * the previous version pruned inline and, on a large database, that was the
+ * whole startup stall.
+ */
 export function startRetention() {
     if (pruneTimer || !ENABLED || PERSIST_DISABLED) return;
-    prune();
-    pruneTimer = setInterval(() => prune(), 60 * 60 * 1000);
+    pruneKick = setTimeout(() => { pruneKick = null; runPrunePass(); }, PRUNE_INITIAL_DELAY_MS);
+    pruneKick.unref?.();
+    pruneTimer = setInterval(() => runPrunePass(), PRUNE_INTERVAL_MS);
     pruneTimer.unref?.();
 }
 
 export function stopRetention() {
     if (pruneTimer) clearInterval(pruneTimer);
+    if (pruneKick) clearTimeout(pruneKick);
+    if (pruneSlice) clearTimeout(pruneSlice);
     pruneTimer = null;
+    pruneKick = null;
+    pruneSlice = null;
+    pruneRun = null;
 }

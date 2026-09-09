@@ -423,3 +423,52 @@ describe('stats', () => {
         expect(s.from).toBeNull();
     });
 });
+
+describe('prune (incremental)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const seedAt = (base, count, stepMs = 10000) => {
+        for (let i = 0; i < count; i++) {
+            history.recordSnapshot({ players: [player({ pos: [i, 0, i] })] }, base + i * stepMs);
+        }
+    };
+
+    it('always advances at least one window, and resumes until done', () => {
+        seedAt(T0 - 30 * DAY, 30);
+        seedAt(T0 - 20 * DAY, 30);
+        let calls = 0, thinned = 0, r;
+        do {
+            r = history.prune(T0, 'default', { budgetMs: 0 });
+            calls += 1;
+            thinned += r.thinned;
+            expect(r.windows).toBeLessThanOrEqual(1);
+        } while (!r.done && calls < 10_000);
+        expect(r.done).toBe(true);
+        expect(calls).toBeGreaterThan(1);
+        expect(thinned).toBeGreaterThan(0);
+        // Both 5-minute stretches thinned to 5..6 survivors each.
+        expect(history.stats().rows).toBeLessThanOrEqual(12);
+        expect(history.stats().rows).toBeGreaterThanOrEqual(10);
+    });
+
+    it('remembers where it got to and only walks what has aged since', () => {
+        seedAt(T0 - 30 * DAY, 30);
+        expect(history.prune(T0).thinned).toBeGreaterThan(0);
+        // A second pass at the same instant has nothing to look at.
+        expect(history.prune(T0)).toMatchObject({ thinned: 0, windows: 0, done: true });
+
+        // Samples recorded 6 days before T0 are inside the full window at T0 …
+        seedAt(T0 - 6 * DAY, 30);
+        expect(history.prune(T0)).toMatchObject({ thinned: 0, windows: 0 });
+        // … and age into the band two days later. The pass covers only the two
+        // days since the last one (48 one-hour windows), not the whole 83-day band.
+        const later = history.prune(T0 + 2 * DAY);
+        expect(later.thinned).toBeGreaterThan(0);
+        expect(later.windows).toBeLessThanOrEqual(48);
+        expect(later.done).toBe(true);
+    });
+
+    it('status() answers without aggregating', () => {
+        expect(history.status()).toMatchObject({ ready: true });
+        expect(typeof history.status().enabled).toBe('boolean');
+    });
+});
