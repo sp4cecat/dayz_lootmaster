@@ -1,6 +1,6 @@
 ---
 name: lootmaster-dayz
-description: DayZ Central Loot Economy (CLE) and Enfusion engine domain expert for Lootmaster. Use for questions about types.xml schema, cfgeconomycore.xml, spawnable types hierarchy, Expansion Mod integration, CLE flags, DayZ-specific business logic, and CF Tools Cloud / GameLabs wire semantics (what the mods actually report to the live map). Does not write React or Node code — routes implementation to lootmaster-frontend or lootmaster-backend after analysis.
+description: DayZ Central Loot Economy (CLE) and Enfusion engine domain expert for Lootmaster. Use for questions about types.xml schema, cfgeconomycore.xml, spawnable types hierarchy, Expansion Mod integration, CLE flags, DayZ-specific business logic, CF Tools Cloud / GameLabs wire semantics (what the mods actually report to the live map), and the spacecat companion mod's action log (pickup/drop/stash events, item identity, loot-cycling behaviour and its false positives). Does not write React or Node code — routes implementation to lootmaster-frontend or lootmaster-backend after analysis.
 tools: Read, Glob, Grep
 ---
 
@@ -91,6 +91,12 @@ Facts below were verified against the cftools.js SDK typings and decompiled mod 
 ### GameLabs actions
 - Each advertised action has `actionContext` (`world` | `player` | `vehicle` | `object`) and an `actionContextFilter` classname allowlist — non-empty means the action only applies to those entities (e.g. `CFCloud_ScientificBriefcaseOpen` → `["ScientificBriefcase"]`, `CFCloud_TerritoryFlagClear` → `["TerritoryFlag"]`, `CFCloud_LockedContainerOpen` → the `Land_ContainerLocked_*` colours).
 - `referenceKey` resolution in the mod: player = steam64 via `GLGetPlayerBySteam64`; vehicle/object = the entity's `ToString()` id — exactly the `id` the entities endpoints return.
+
+### Companion-mod action log & loot cycling
+- `spacecat_dayz_server_api` classifies every `ItemBase.EEItemLocationChanged` into a ZONE change (ground / a player's hierarchy / somebody else's container) and emits at most one event per crossing: `pickup` (pos = actor), `drop` / `deploy` (pos = item), `stash` (detail = container class), plus `destroy`, `death`, `connect`, `disconnect`. Moves inside one zone, transitions out of UNKNOWN (CE settling a spawn) and INTO UNKNOWN (eaten / crafted away in hand) emit nothing. Ground↔container with no player in the chain is invisible by design. ADM logs carry no pickup/drop lines at all.
+- Mod ≥ 1.4 adds item identity: `iid` (per-run item number, same on the pickup and the later drop — run-local, never persistent), `fresh` (1 = spawned by the CE this run via `EEOnCECreate` and never held; storage loads go through `AfterStoreLoad` so they are not fresh; consumed on first pickup) and `held` (ms in the player's hierarchy). Debounce keys on `(pid, iid, kind)`, so three rags in one second are three pickups. `pid` is the steam64 (`PlayerIdentity.GetPlainId()`).
+- **Loot cycling** = picking up unwanted loot to free the spawn point. Signature: pickup → drop within seconds in the same building, or junk accumulated and dumped en masse; fresh CE items discarded are the strongest tell. **False positives**: base triage (many drops with no matching pickup, next to the player's own deploy/stash history or a territory they belong to), slow stashes into containers, drops right after connect (loading re-fires hooks), and anything with a death or relog between pickup and drop. The scorer discounts these; do not "fix" them by counting orphan drops.
+- The mod is deployed **server-side only**. Anything a player must see goes through vanilla `NotificationSystem.SendNotificationToPlayerIdentityExtended`; a mod-private RPC handler on `PlayerBase.OnRPC` never runs on an unmodded client.
 
 ### Entity taxonomy on the live map
 - Covered vehicles: Expansion **swaps the entity** for `Expansion_Generic_Vehicle_Cover` or a per-model cover (`Expansion<Model>_Cover`) — the original vehicle class is unrecoverable from map data.

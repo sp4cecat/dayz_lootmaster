@@ -5,17 +5,17 @@ Agent definitions live in `.claude/agents/`. Invoke via the Agent tool with the 
 
 ## lootmaster-frontend
 **File**: `.claude/agents/lootmaster-frontend.md`
-**Use for**: React component authoring, Untitled UI patterns, Tailwind styling, Hierarchical Editor (dnd-kit), TypeScript prop interfaces, dark-mode correctness, Live Server views (`src/components/live/*` — Font Awesome map markers, contextual GameLabs action panel, live-data hooks).
+**Use for**: React component authoring, Untitled UI patterns, Tailwind styling, Hierarchical Editor (dnd-kit), TypeScript prop interfaces, dark-mode correctness, Live Server views (`src/components/live/*` — lucide map markers, contextual GameLabs action panel, live-data hooks), Player History tool (`src/components/history/*` — action feed, loadouts, loot-cycle flags rail, policy modal).
 **Skip when**: the task is about server-side logic, XML parsing utilities, or DayZ economy domain rules.
 
 ## lootmaster-backend
 **File**: `.claude/agents/lootmaster-backend.md`
-**Use for**: `server/index.js` changes, profile/mission file I/O, IndexedDB schema (`src/utils/idb.js`), XML serialisation (`src/utils/xml.ts`), API endpoint design, change-log audit trail, CF Tools Cloud proxy (`server/cftools-{config,client,service}.js`, `/api/cftools/*` routes, TTL caching, degradation reasons).
+**Use for**: `server/index.js` changes, profile/mission file I/O, IndexedDB schema (`src/utils/idb.js`), XML serialisation (`src/utils/xml.ts`), API endpoint design, change-log audit trail, CF Tools Cloud proxy (`server/cftools-{config,client,service}.js`, `/api/cftools/*` routes, TTL caching, degradation reasons), companion-mod ingest + `node:sqlite` history store (`server/history-store.js`, `/ingest/*`, `/api/history/*`), loot-cycle detector and ladder (`server/loot-cycle{,-runner,-config,-webhook}.js`, `server/be-guid.js`).
 **Skip when**: the task is about React rendering or DayZ config semantics.
 
 ## lootmaster-dayz
 **File**: `.claude/agents/lootmaster-dayz.md`
-**Use for**: DayZ CLE domain questions — types.xml schema, cfgeconomycore.xml structure, spawnable types resolution hierarchy, Expansion Mod integration (market, airdrops, traders), cfglimitsdefinition.xml validation rules, vanilla override protection logic, CF Tools/GameLabs wire semantics (what the mods report, MapIcons.json renaming, covered vehicles, wreck taxonomy, action contexts).
+**Use for**: DayZ CLE domain questions — types.xml schema, cfgeconomycore.xml structure, spawnable types resolution hierarchy, Expansion Mod integration (market, airdrops, traders), cfglimitsdefinition.xml validation rules, vanilla override protection logic, CF Tools/GameLabs wire semantics (what the mods report, MapIcons.json renaming, covered vehicles, wreck taxonomy, action contexts), the spacecat mod's action log (zone classification, item identity `iid`/`fresh`/`held`), what loot cycling looks like and its false positives.
 **Skip when**: you need implementation code — this agent analyses and specifies; it routes coding tasks to the other two.
 
 ## lootmaster-expansion-airdrops
@@ -43,3 +43,6 @@ Agent definitions live in `.claude/agents/`. Invoke via the Agent tool with the 
 | Change the CF Tools proxy, caching, or add a Data API endpoint | `lootmaster-backend` |
 | Live map markers, icon mappings, contextual action panel, live hooks | `lootmaster-frontend` |
 | What GameLabs/CF Tools actually report, or why a live-map classname looks odd | `lootmaster-dayz` |
+| Tune loot-cycle scoring, the ladder, flags/enforcement storage, or the runner | `lootmaster-backend` |
+| Flags rail, policy modal, history hooks/types, live-map flag badges | `lootmaster-frontend` |
+| Whether a behaviour is loot cycling, why a flag is a false positive, what the mod can/cannot see | `lootmaster-dayz` |

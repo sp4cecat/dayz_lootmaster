@@ -1,6 +1,6 @@
 ---
 name: lootmaster-backend
-description: Node.js server, data-layer, and XML/JSON utility specialist for Lootmaster. Use for server/index.js changes, profile/mission file operations, IndexedDB schema, XML serialisation logic, API endpoint work, and the CF Tools Cloud proxy (server/cftools-*.js, /api/cftools/* routes). Do NOT use for React components or DayZ economy domain concepts.
+description: Node.js server, data-layer, and XML/JSON utility specialist for Lootmaster. Use for server/index.js changes, profile/mission file operations, IndexedDB schema, XML serialisation logic, API endpoint work, the CF Tools Cloud proxy (server/cftools-*.js, /api/cftools/* routes), the companion-mod ingest + history store (server/history-store.js, /ingest/*, /api/history/*), and the loot-cycle detector (server/loot-cycle*.js). Do NOT use for React components or DayZ economy domain concepts.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -64,8 +64,22 @@ Verified API facts (from the cftools.js SDK + live staging — do not re-derive)
 - `resolveActionCode` matches against the live actions list — never hardcode `CFCloud_*` codes.
 - Event `type` classification in `normalizeEvent`: heli crashes = bare `Wreck_*` / CrashBase; `Land_Wreck_*` (abandoned cars) and `StaticObj_Wreck_Train_*` → type `wreck`; `TerritoryFlag` entities split into the territories layer.
 
+## Companion-mod ingest & recorded history
+- `/ingest/*` (unauthenticated, profile-independent) is pushed by `spacecat_dayz_server_api` (source: `F:\Dayz Dev\sauce\spacecat_dayz_server_api`, contract `openapi-ingest.json` — the repo-root copy must track the mod's). `/ingest/snapshot` MUST return 2xx or the mod un-latches catalog delivery; every history write is a try/catch tee off it.
+- `server/history-store.js` is `node:sqlite` via `process.getBuiltinModule` (a static import breaks Vite/Vitest). Every JS number binds as REAL — inline integer divisors as literals (`ts / 60000` bound as `?` is float division). Schema is an append-only `MIGRATIONS[]` ladder on `PRAGMA user_version` (v4 = `iid`/`fresh`/`held`/`dropped` on `action`, `player_flag`, `enforcement`). Tables carry `srv`.
+- Events carry an `age`, not a timestamp (`instantFor`, capped 1 h); `(session, n)` is the dedup key so a retried batch is free. `batch.dropped` rides on the first stored row of its batch.
+- Read routes under `/api/history/*` never 5xx — `200 { available:false, reason }`. Action routes (`capture`, `rollback`, `flags/:pid/enforce`, `flags/:pid/clear`) return real codes. Mod commands go through `ingest.enqueueCommand` + `waitForCommand` (ack arrives on a separate request).
+- Mod wire sentinels (`server/mod-wire.js`): numeric unknown = -1 (`modStat` → null), string unknown = "", bools arrive as 1/0.
+
+## Loot-cycle detector (`server/loot-cycle*.js`)
+- `loot-cycle.js` is PURE (no IO): `createState / ingest / evaluate / sweep / nextFlag / buildHomeZones`, exported `WEIGHTS` / `LOG_MAX` / `SEVERITY_BANDS` in the stash-report style. Pairs drops to pickups by `iid` (classname FIFO fallback), scores a trailing 60 min window, discounts home-zone drops / storage triage / stashing, and goes `silent:'legacy-mod'` (score 0) when the mod sends no item identity. Never let missing data raise a score.
+- `loot-cycle-runner.js` ticks every 30 s from a rowid cursor (`history.actionsSince`), replays the last hour on start, persists `player_flag` with hysteresis (`RAISE_CONSECUTIVE` evaluations to promote, decay to demote), and walks the ladder. Refusals: no rung on a lossy window (`summary.lossy`), on a silent row, when `policy.enabled` is off, past a manual rung, or inside `cooldownMs`. Every fired rung = `enforcement` row + `action` row (`warned`/`kicked`/`banned`) + optional webhook.
+- `loot-cycle-config.js` — policy in gitignored `server/.cache/loot-cycle.json` (webhook URL is a secret; `redactedView` for the browser). Consequence actions live in `server/index.js` (`lootActions`): message/kick via the mod command queue with CF Tools fallback; temp ban = BattlEye `addBan <BE GUID> <min> <reason>` over `cftools.rawRcon`, GUID from `server/be-guid.js` (md5 of "BE" + steam64 LE).
+- Preview (`/api/history/loot-cycle/preview`) scores as of the LAST event in the range, not the range end — the window is trailing, so a week-wide `to` would prune everything.
+
 ## Testing
 - Framework: Vitest; environment: `jsdom` (required for `DOMParser`)
 - Run: `npx vitest run` (preferred; `npm test -- --watch=false` triggers a vitest CLI warning)
 - Focus coverage on `src/utils/xml.ts`, `src/utils/validation.js`, `src/hooks/useLootData.js`
 - CF Tools proxy: `tests/server/cftools-{client,config,service}.test.js` — auth serialization, TTL/stale-serve, endpoint-path regressions (`npx vitest run tests/server`)
+- History + detector: `tests/server/history-{store,actions,flags}.test.js` (in-memory DB via `_openForTest(':memory:')`), `loot-cycle.test.js` (pure scorer fixtures: cycler, dumper, base triage, legacy mod, hysteresis), `loot-cycle-runner.test.js` (real store, fake clock, recording actions — pins the refusals), `loot-cycle-{config,webhook}.test.js`, `be-guid.test.js`

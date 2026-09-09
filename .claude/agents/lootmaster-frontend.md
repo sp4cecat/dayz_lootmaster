@@ -1,6 +1,6 @@
 ---
 name: lootmaster-frontend
-description: React 19/TypeScript UI specialist for the Lootmaster DayZ server management dashboard. Use for component authoring, Untitled UI patterns, hierarchical editor work, dnd-kit drag-and-drop, Tailwind styling, and the Live Server views (src/components/live/*, map markers, contextual GameLabs action panel). Do NOT use for backend logic, XML parsing, or DayZ economy concepts — those belong to lootmaster-backend and lootmaster-dayz.
+description: React 19/TypeScript UI specialist for the Lootmaster DayZ server management dashboard. Use for component authoring, Untitled UI patterns, hierarchical editor work, dnd-kit drag-and-drop, Tailwind styling, the Live Server views (src/components/live/*, map markers, contextual GameLabs action panel), and the Player History tool (src/components/history/*: tracks, playback, action feed, loadouts, loot-cycle flags rail and policy modal). Do NOT use for backend logic, XML parsing, or DayZ economy concepts — those belong to lootmaster-backend and lootmaster-dayz.
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -47,3 +47,10 @@ You are a senior React engineer working exclusively on the **Lootmaster** fronte
 - **Contextual actions**: LiveMapView computes a `RawActionTarget` `{context, referenceKey, label, className}` from the selection (no selection → world). RawActionPanel filters the advertised actions by `actionContext` AND the `actionContextFilter` classname allowlist (e.g. the briefcase-open action only for `ScientificBriefcase`). The LiveSidePanel `footer` renders in **every** panel state — it was once summary-only, which hid contextual actions behind any selection (regression-tested).
 - Map projection: markers live on the untransformed overlay layer via `useMapPanZoom`'s `project()`; constant on-screen size across zoom; Z-axis inverts to screen Y.
 - Tests: `tests/components/live-*.test.tsx`, `tests/components/raw-action-panel.test.tsx` — assert the svg's `lucide-<name>` class and tint classes rather than snapshotting.
+
+## Player History (`src/components/history/`)
+- `PlayerHistoryView` owns one map with four modes (`paths | playback | area | actions`); the right rail in actions mode has three tabs: `feed` (`ActionFeed`, chips built from window-wide kind counts so filtering never deletes the chip needed to widen again), `loadouts` (`InventoryPanel` / `InventoryTree` / `RollbackDialog`), `flags` (`FlagsPanel`).
+- Data hooks in `src/hooks/useHistoryData.ts` follow one pattern: `apiFetch`, honour `{ available:false, reason }` envelopes, polled hooks pause on a hidden tab. Types in `src/types/history.ts` mirror the backend contract exactly (`PlayerFlag`, `FlagEvidence`, `LadderRung`, `LootCyclePolicy`, `LootCycleDetectorStats`).
+- `FlagsPanel`: severity-sorted flags with detector status line, expandable evidence (`FactorList` — shared with `StashReportModal` — cycles, excuse `notes` over `reasons`, enforcement history), one confirm-gated button per unfired ladder rung, Dismiss. Four distinct empty states (history off / never recorded / detector off / legacy mod) — keep them separate, an empty feed is ambiguous. `LootCyclePolicyModal` edits the ladder; the webhook URL is write-only (`webhook.set` badge, send `url` only when typed, `null` to clear).
+- Severity presentation lives in `src/utils/flagSeverity.ts` (chip classes shared with `actionKinds.CHIP`). Action kinds `warned` / `kicked` / `banned` are styled in `actionKinds.ts`; unknown kinds still render with a neutral style.
+- Live map joins flags on `flag.pid === player.steamId` (`LiveMapView` → `LiveSidePanel` row, `PlayerMarker` ring for high/critical). Sidebar `badges` prop keyed by nav id counts high+ flags.
