@@ -209,7 +209,11 @@ These profile-independent routes back an in-game companion mod that pushes live 
 
 `/items*` block until the mod responds (default 10s, `ITEM_SCAN_TIMEOUT_MS`) → `504` on timeout, `503` if the mod is disconnected.
 
-The full wire contract lives in the mod's own `openapi-ingest.json` (currently 1.2.0).
+The full wire contract lives in the mod's own `openapi-ingest.json` (currently 1.4.0; a
+copy sits at the repo root). 1.4.0 adds item identity to action events — `iid` (per-run
+item number), `fresh` (CE-spawned this run and never held) and `held` (ms in the
+player's hierarchy before a drop) — and a private `message` command alongside
+`broadcast` / `kick`. `batch.dropped` is now stored on the first row of the batch.
 Two conventions from it are worth restating here because they shape the storage:
 
 - **Events and inventories carry an `age`, not a timestamp.** The mod has no wall
@@ -245,6 +249,43 @@ for a feature that is merely switched off.
 | `/api/history/inventory/:id` | GET | One snapshot with its full tree, names resolved |
 | `/api/history/capture` | POST | Ask the mod to snapshot a player's inventory now |
 | `/api/history/rollback` | POST | Apply a stored loadout back onto a live player |
+| `/api/history/flags` | GET | Loot-cycle flags (`?kind&minSeverity&includeCleared`) plus detector health |
+| `/api/history/flags/:pid` | GET | One player's flag, the ladder, and what has fired |
+| `/api/history/flags/:pid/clear` | POST | Dismiss a flag; the ladder resets |
+| `/api/history/flags/:pid/enforce` | POST | Fire a ladder rung by hand (`{rung}`) |
+| `/api/history/loot-cycle/policy` | GET, PUT | The ladder, cooldown, webhook and weight overrides |
+| `/api/history/loot-cycle/preview` | GET | Score `?pid` over `?from&to` without touching stored flags |
+
+#### Loot-cycle detector
+
+"Loot cycling" is picking up loot you do not want so the spawn point frees up.
+`server/loot-cycle.js` is a pure scorer over the action log in the same shape as
+the stash report: it pairs every `drop`/`stash` with the `pickup` of the same item
+(by the mod's per-run item id `iid`, falling back to classname FIFO on an older
+mod), calls a pairing a *cycle* when the item was held under ten minutes and not
+dropped at the player's own base, and scores named factors — quick cycles, fresh
+CE loot discarded, peak rate, mass dumps, cycle ratio, drops where the pickup
+happened, distinct classes — each with its evidence string. Home zones come from
+the player's own `deploy`/`stash` history and the territories they belong to; a
+burst of drops with no matching pickups reads as storage triage and halves the
+score. A mod that sends no item identity produces a `silent` row scored 0.
+
+`server/loot-cycle-runner.js` drives it every 30 s from a cursor over `action`,
+persists per-player verdicts to `player_flag` with hysteresis (two evaluations to
+raise a level, 15 points/hour of decay to drop one), and walks the ladder in
+`server/.cache/loot-cycle.json`: automatic rungs fire on their own (default: a
+notice at medium, a warning at high), manual rungs are buttons (default: kick and
+temp ban at critical). Every rung writes an `enforcement` row and an action-log row
+(`warned` / `kicked` / `banned`). The runner never escalates on a tick where the
+mod reported dropped events, never skips a manual rung, and never messages a
+player twice inside the cooldown. Player messages and kicks go through the mod's
+command queue (`message`, `kick`) with CF Tools as the fallback; a temp ban is a
+BattlEye `addBan` over the CF Tools raw-RCon route, keyed by the BE GUID derived in
+`server/be-guid.js`. A Discord webhook, when set, gets an embed on every raise,
+escalation and automatic rung.
+
+Environment: `LOOT_CYCLE_CONFIG_FILE` (policy location) and `LOOTMASTER_PUBLIC_URL`
+(base for the deep links in webhook embeds; defaults to `http://localhost:<PORT>`).
 
 The two POSTs are action routes, not read routes: they change the game world, so
 they return real status codes (`503` mod offline, `409` player offline / snapshot

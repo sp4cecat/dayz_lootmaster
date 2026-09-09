@@ -29,6 +29,7 @@ import { SpawnableTypesManager } from './components/SpawnableTypesManager';
 import HeatMapModal from './components/HeatMapModal';
 import ItemScanModal from './components/ItemScanModal';
 import PlayerHistoryView from './components/history/PlayerHistoryView';
+import { useFlags } from './hooks/useHistoryData';
 import LiveMapView from './components/live/LiveMapView';
 import ServerStatsView from './components/live/ServerStatsView';
 import LeaderboardView from './components/live/LeaderboardView';
@@ -105,6 +106,15 @@ export default function App() {
         setSelectedProfileId,
         selectedProfile
     } = useLootData();
+
+    // Live loot-cycle flags at high or above, for the nav badge. Polled here rather
+    // than inside Player History so the count is visible from every other view —
+    // that being the point of a badge. Stops itself when history is disabled.
+    const { items: highFlags } = useFlags(15000, { minSeverity: 'high' });
+    const navBadges = useMemo(
+        () => (highFlags.length ? { 'map-tools:player-history': highFlags.length } : undefined),
+        [highFlags.length],
+    );
 
     // Options for pill-based editors in EditForm
     const allTypeNames = useMemo(() => {
@@ -252,6 +262,7 @@ export default function App() {
                 onSignOut={onSignOut}
                 selectedProfile={selectedProfile}
                 onProfileClick={() => setView('profiles')}
+                badges={navBadges}
             />
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/utils/api';
 import type {
-  ActionKindCount, AreaSelection, AreaVisit, HistoryAction, HistoryPlayer, HistoryStats,
-  HistoryTrack, InventorySnapshot, InventorySummary, RollbackResult,
+  ActionKindCount, AreaSelection, AreaVisit, EnforcementRow, HistoryAction, HistoryPlayer,
+  HistoryStats, HistoryTrack, InventorySnapshot, InventorySummary, LadderRung,
+  LootCycleDetectorStats, LootCyclePolicy, LootCyclePolicyUpdate, PlayerFlag, RollbackResult,
 } from '@/types/history';
 
 /**
@@ -394,4 +395,262 @@ export function useModOnline(pollMs = 10000) {
   }, [load, pollMs]);
 
   return { online, connected, reload: load };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Loot-cycle flags                                                            */
+/* ------------------------------------------------------------------------- */
+
+export interface UseFlagsOptions {
+  /** Lowest band to include; the backend filters, so "high" is cheap to poll. */
+  minSeverity?: string;
+  /** Include flags an operator has dismissed. */
+  includeCleared?: boolean;
+}
+
+/**
+ * Live player flags, with the detector's own health alongside them.
+ *
+ * Polled, like `useHistoryStats`, because flags describe the present: the runner
+ * re-evaluates every 30 s and a flag that appeared since the last read is exactly
+ * what an operator watching this list is waiting for. Pauses on a hidden tab.
+ *
+ * `available: false` is the recorder being off, not a fetch failure — the two are
+ * split so the panel can say "turn HISTORY_ENABLED on" for one and "the backend is
+ * unreachable" for the other.
+ */
+export function useFlags(pollMs = 15000, opts: UseFlagsOptions = {}) {
+  const { minSeverity, includeCleared } = opts;
+  const [items, setItems] = useState<PlayerFlag[]>([]);
+  const [detector, setDetector] = useState<LootCycleDetectorStats | null>(null);
+  const [available, setAvailable] = useState(true);
+  const [reason, setReason] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Set once the backend says history is disabled: nothing will change until a
+  // restart, so the timer stops rather than asking the same question all day.
+  const stopRef = useRef(false);
+
+  const load = useCallback(async () => {
+    if (stopRef.current) return;
+    const params = new URLSearchParams({ kind: 'loot_cycle' });
+    if (minSeverity) params.set('minSeverity', minSeverity);
+    if (includeCleared) params.set('includeCleared', '1');
+    try {
+      const res = await apiFetch(`/api/history/flags?${params}`);
+      const body = res.ok ? await res.json() : null;
+      if (!body) {
+        setError(`The flags could not be read (HTTP ${res.status}).`);
+        return;
+      }
+      if (body.available === false) {
+        setAvailable(false);
+        setReason(body.reason ?? null);
+        setItems([]);
+        setDetector(body.detector ?? null);
+        setError(null);
+        if (body.reason === 'disabled') stopRef.current = true;
+        return;
+      }
+      setAvailable(true);
+      setReason(null);
+      setItems(body.items ?? []);
+      setDetector(body.detector ?? null);
+      setError(null);
+    } catch {
+      setError('Could not reach the server.');
+    } finally {
+      setLoading(false);
+    }
+  }, [minSeverity, includeCleared]);
+
+  useEffect(() => {
+    stopRef.current = false;
+    load();
+    if (!pollMs) return;
+    const id = setInterval(() => { if (!document.hidden) load(); }, pollMs);
+    return () => clearInterval(id);
+  }, [load, pollMs]);
+
+  return { items, detector, available, reason, loading, error, refresh: load };
+}
+
+/**
+ * One player's flag in full: its cycles, its enforcement history, and the ladder
+ * the policy currently defines (so the panel knows which rungs are left).
+ *
+ * `nonce` is what an enforcement or a dismissal bumps: both change the rows this
+ * returns, and neither returns them, so the detail is simply re-read.
+ */
+export function useFlagDetail(pid: string | null, nonce = 0) {
+  const [flag, setFlag] = useState<PlayerFlag | null>(null);
+  const [enforcement, setEnforcement] = useState<EnforcementRow[]>([]);
+  const [ladder, setLadder] = useState<LadderRung[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pid) { setFlag(null); setEnforcement([]); setLadder([]); setError(null); return; }
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/history/flags/${encodeURIComponent(pid)}`);
+        const body = res.ok ? await res.json() : null;
+        if (cancelled) return;
+        if (!body || body.available === false) {
+          setFlag(null); setEnforcement([]); setLadder([]);
+          setError(body?.error || body?.reason || 'The flag could not be read.');
+        } else {
+          setFlag(body.flag ?? null);
+          setEnforcement(body.enforcement ?? []);
+          setLadder(body.ladder ?? []);
+          setError(null);
+        }
+      } catch {
+        if (!cancelled) { setFlag(null); setEnforcement([]); setError('Could not reach the server.'); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pid, nonce]);
+
+  return { flag, enforcement, ladder, loading, error };
+}
+
+/**
+ * The loot-cycle policy: ladder, cooldown, webhook and the CF Tools profile.
+ *
+ * The webhook URL never comes back — the backend redacts it to `set: true` — so
+ * `save` sends `webhook.url` only when the operator typed a new one (or `null`
+ * to clear it). Omitting it is read as "no change", which is the default we want.
+ */
+export function useLootCyclePolicy() {
+  const [policy, setPolicy] = useState<LootCyclePolicy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/history/loot-cycle/policy');
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.policy) {
+        setPolicy(null);
+        setError(body?.error || body?.reason || `The policy could not be read (HTTP ${res.status}).`);
+      } else {
+        setPolicy(body.policy);
+        setError(null);
+      }
+    } catch {
+      setPolicy(null);
+      setError('Could not reach the server.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = useCallback(async (partial: LootCyclePolicyUpdate): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await apiFetch('/api/history/loot-cycle/policy', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(partial),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.policy) {
+        setError(body?.error || body?.reason || `The policy was not saved (HTTP ${res.status}).`);
+        return false;
+      }
+      setPolicy(body.policy);
+      return true;
+    } catch {
+      setError('Could not reach the server.');
+      return false;
+    }
+  }, []);
+
+  return { policy, loading, error, save, reload: load };
+}
+
+/** The backend's `{ error, reason }` for a failed rung, in operator words. */
+function describeEnforceError(status: number, body: { error?: string; reason?: string } | null): string {
+  const reason = body?.reason || body?.error || '';
+  switch (reason) {
+    case 'no_binding':
+      return 'No CF Tools binding: pick a profile with a linked server in the loot-cycle policy.';
+    case 'player_not_found':
+      return 'The player is not on the server, so nothing could be sent.';
+    case 'mod_offline':
+      return 'The companion mod is not connected, so no message can reach the player.';
+    case 'rung_fired':
+      return 'That rung has already fired for this episode.';
+    default:
+      if (reason) return reason;
+      if (status === 504) return 'The mod did not acknowledge in time.';
+      if (status === 503) return 'The mod or CF Tools is unavailable right now.';
+      return `The action failed (HTTP ${status}).`;
+  }
+}
+
+/**
+ * The two operator actions on a flag: fire a ladder rung by hand, and dismiss.
+ *
+ * POSTs that reach a real player, so like `usePlayerRestore` they surface the
+ * backend's reason (`no_binding`, `player_not_found`, a mod timeout) rather than
+ * degrading to silence — a kick that quietly did nothing is the worst outcome.
+ */
+export function useEnforce() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const enforce = useCallback(async (pid: string, rung: number): Promise<EnforcementRow | null> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/history/flags/${encodeURIComponent(pid)}/enforce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rung }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) {
+        setError(describeEnforceError(res.status, body));
+        return null;
+      }
+      return body.enforcement ?? null;
+    } catch {
+      setError('Could not reach the server.');
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const clear = useCallback(async (pid: string): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/history/flags/${encodeURIComponent(pid)}/clear`, { method: 'POST' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) {
+        setError(body?.error || body?.reason || `The flag was not dismissed (HTTP ${res.status}).`);
+        return false;
+      }
+      return true;
+    } catch {
+      setError('Could not reach the server.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => setError(null), []);
+
+  return { enforce, clear, busy, error, reset };
 }

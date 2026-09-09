@@ -5,6 +5,7 @@ import { Badge } from './base/badges/badges';
 import { DatePicker } from './base/datepicker/datepicker';
 import { MapZoomControls } from './MapZoomControls';
 import MapImageLayer from './map/MapImageLayer';
+import FactorList from './history/FactorList';
 import { Archive, BarChart01, XClose, AlertTriangle, Route, SearchLg } from '@untitledui/icons';
 import { CalendarDateTime, fromDate, getLocalTimeZone, toCalendarDateTime } from '@internationalized/date';
 import { apiFetch } from '@/utils/api';
@@ -450,25 +451,10 @@ function PlayerDetail({ player, digs, tz, trackMeta, onOpenHistory }: {
           large one. */}
       <div className="p-3 space-y-2 border-b border-gray-200 dark:border-gray-800">
         <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Why this score</div>
-        {scoring.length === 0 ? (
-          <p className="text-xs text-gray-500 italic">Nothing suspicious — this player only dug up their own stashes.</p>
-        ) : scoring.map(f => (
-          <div key={f.key}>
-            <div className="flex items-baseline justify-between gap-2 text-xs">
-              <span className="text-gray-700 dark:text-gray-300">{f.label}</span>
-              <span className="tabular-nums text-gray-500 shrink-0">
-                {f.value}{f.unit ? ` ${f.unit}` : ''}
-              </span>
-            </div>
-            <div className="mt-1 h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-primary-500"
-                style={{ width: `${Math.round((f.points / f.max) * 100)}%` }}
-              />
-            </div>
-            {f.detail && <div className="mt-0.5 text-[11px] text-gray-500">{f.detail}</div>}
-          </div>
-        ))}
+        <FactorList
+          factors={scoring}
+          emptyText="Nothing suspicious — this player only dug up their own stashes."
+        />
       </div>
 
       {/* Every dig, with its provenance. */}

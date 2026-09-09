@@ -32,6 +32,10 @@ import * as cftoolsConfig from './cftools-config.js';
 import * as cftools from './cftools-client.js';
 import * as cftoolsService from './cftools-service.js';
 import {isAllowedSpawnableFileName} from './spawnable-files.js';
+import * as lootPolicy from './loot-cycle-config.js';
+import {createRunner as createLootCycleRunner} from './loot-cycle-runner.js';
+import * as lootWebhook from './loot-cycle-webhook.js';
+import {beGuidFor} from './be-guid.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -192,6 +196,7 @@ function mutateLoadouts(target, mutator) {
 await loadProfiles();
 // CF Tools Cloud credentials + per-profile server bindings (server/.cache/cftools.json)
 await cftoolsConfig.loadConfig();
+await lootPolicy.loadConfig();
 
 function corsHeaders() {
     return {
@@ -1801,10 +1806,143 @@ function admJobState() {
     return { ...rest, idle: false };
 }
 
+// ---- loot-cycle detector: consequences and the runner ----
+//
+// The three consequence actions are defined HERE rather than in the runner because
+// they are the only part of the detector that needs the profile list, the mod's
+// command queue and the CF Tools binding — everything the runner is deliberately
+// kept ignorant of. Each resolves { ok, result } and never throws.
+
+/** The profile whose CF Tools binding the detector may use for kick/ban fallbacks. */
+function lootCycleProfile(profileId) {
+    if (profileId) return profiles.find(p => p.id === profileId) || null;
+    // No explicit choice: the first profile that has a binding at all. Stated in
+    // the policy UI so it is a default, not a surprise.
+    return profiles.find(p => cftoolsConfig.getServerBinding(p.id)?.apiId) || null;
+}
+
+async function cfSessionFor(profile, steam64) {
+    if (!profile || !steam64) return null;
+    try {
+        const snap = await cftoolsService.buildLiveSnapshot(profile, ['players']);
+        const items = snap?.players?.items || [];
+        const hit = items.find(p => p.steamId && String(p.steamId) === String(steam64));
+        return hit?.sessionId || null;
+    } catch {
+        return null;
+    }
+}
+
+const lootActions = {
+    /** Private in-game notification. Mod channel first; CF Tools private message as fallback. */
+    async message(pid, title, text) {
+        if (ingest.modConnected()) {
+            const cmd = ingest.enqueueCommand('message', { playerId: String(pid), title, message: text });
+            const done = await waitForCommand(cmd.id, ITEM_SCAN_TIMEOUT_MS);
+            if (!done) return { ok: false, result: 'error:timeout' };
+            const r = String(done.result ?? 'error');
+            return { ok: r === 'ok', result: r };
+        }
+        const pol = lootPolicy.getPolicy();
+        const profile = lootCycleProfile(pol.profileId);
+        const sessionId = await cfSessionFor(profile, pid);
+        if (!sessionId) return { ok: false, result: 'error:mod_offline' };
+        const bound = cftoolsService.resolveBinding(profile);
+        if (bound.error) return { ok: false, result: `error:${bound.error}` };
+        await cftools.messagePrivate(bound.apiId, sessionId, `${title}: ${text}`);
+        return { ok: true, result: 'ok' };
+    },
+
+    async kick(pid, reason) {
+        if (ingest.modConnected()) {
+            const cmd = ingest.enqueueCommand('kick', { playerId: String(pid), reason });
+            const done = await waitForCommand(cmd.id, ITEM_SCAN_TIMEOUT_MS);
+            if (!done) return { ok: false, result: 'error:timeout' };
+            const r = String(done.result ?? 'error');
+            return { ok: r === 'ok', result: r };
+        }
+        const pol = lootPolicy.getPolicy();
+        const profile = lootCycleProfile(pol.profileId);
+        const sessionId = await cfSessionFor(profile, pid);
+        if (!sessionId) return { ok: false, result: 'error:mod_offline' };
+        const bound = cftoolsService.resolveBinding(profile);
+        if (bound.error) return { ok: false, result: `error:${bound.error}` };
+        await cftools.kick(bound.apiId, sessionId, reason);
+        return { ok: true, result: 'ok' };
+    },
+
+    /**
+     * Time-limited ban through BattlEye RCon, via the CF Tools raw-command route.
+     * `addBan <BE GUID> <minutes> <reason>` — BattlEye bans by its own GUID, which
+     * is derived from the steam64 in be-guid.js. This is the one action with no
+     * mod-side path at all.
+     */
+    async tempban(pid, minutes, reason, { profileId } = {}) {
+        const profile = lootCycleProfile(profileId);
+        if (!profile) return { ok: false, result: 'error:no_binding' };
+        const bound = cftoolsService.resolveBinding(profile);
+        if (bound.error) return { ok: false, result: `error:${bound.error}` };
+        const guid = beGuidFor(String(pid));
+        if (!guid) return { ok: false, result: 'error:not_steam64' };
+        const mins = Math.max(1, Math.trunc(Number(minutes) || 1440));
+        const safeReason = String(reason || 'Loot cycling').replace(/[\r\n"]/g, ' ').slice(0, 120);
+        await cftools.rawRcon(bound.apiId, `addBan ${guid} ${mins} ${safeReason}`);
+        // Also drop the live session so the ban takes effect now, not at next join.
+        const sessionId = await cfSessionFor(profile, pid);
+        if (sessionId) {
+            try { await cftools.kick(bound.apiId, sessionId, safeReason); } catch { /* ban still stands */ }
+        }
+        return { ok: true, result: 'ok', expires: Date.now() + mins * 60_000 };
+    },
+};
+
+// eslint-disable-next-line no-undef
+const LOOT_CYCLE_PUBLIC_URL = process.env.LOOTMASTER_PUBLIC_URL || `http://localhost:${PORT}`;
+const lootRunner = createLootCycleRunner({
+    history, ingest, policyStore: lootPolicy, actions: lootActions, webhook: lootWebhook,
+    baseUrl: LOOT_CYCLE_PUBLIC_URL,
+});
+
 async function handleHistoryRoute(url, req, res) {
     const parts = url.pathname.split('/').filter(Boolean); // ['api','history',...]
     if (parts[0] !== 'api' || parts[1] !== 'history') return false;
     const route = parts.slice(2).join('/');
+
+    // POST /api/history/flags/:pid/clear | /enforce — operator verdicts on a flag.
+    // Real status codes: they change what the player experiences.
+    if (parts.length === 5 && parts[2] === 'flags' && req.method === 'POST') {
+        const pid = decodeURIComponent(parts[3]);
+        if (parts[4] === 'clear') {
+            const ok = history.clearFlag({ pid });
+            json(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'No live flag for that player.', reason: 'no_flag' });
+            return true;
+        }
+        if (parts[4] === 'enforce') {
+            let body;
+            try { body = JSON.parse((await readBody(req, 4096)) || '{}'); } catch {
+                badRequest(res, 'Malformed request body.'); return true;
+            }
+            const rung = Number(body.rung);
+            if (!Number.isFinite(rung)) { badRequest(res, 'rung is required.'); return true; }
+            const out = await lootRunner.enforce(pid, rung);
+            if (out.error) { json(res, out.status || 400, { error: out.error, reason: out.reason }); return true; }
+            json(res, out.ok ? 200 : 502, out);
+            return true;
+        }
+        notFound(res);
+        return true;
+    }
+
+    // PUT /api/history/loot-cycle/policy — the escalation ladder and webhook.
+    if (route === 'loot-cycle/policy' && req.method === 'PUT') {
+        let body;
+        try { body = JSON.parse((await readBody(req, 64 * 1024)) || '{}'); } catch {
+            badRequest(res, 'Malformed request body.'); return true;
+        }
+        const policy = lootPolicy.setPolicy(body);
+        json(res, 200, { policy: lootPolicy.redactedView(policy) });
+        return true;
+    }
 
     // POST /api/history/rollback — the one write in this namespace. Handled before
     // the GET gate, and deliberately NOT a read route: it changes the game world,
@@ -1829,7 +1967,14 @@ async function handleHistoryRoute(url, req, res) {
     // GET /api/history/stats — volume, span and recorder health. Always answers,
     // even when recording is off, because "off" is exactly what the UI needs told.
     if (route === 'stats') {
-        json(res, 200, history.stats());
+        json(res, 200, { ...history.stats(), lootCycle: lootRunner.stats() });
+        return true;
+    }
+
+    // GET /api/history/loot-cycle/policy — readable even with history off, so the
+    // settings screen can be edited before the detector has anything to detect.
+    if (route === 'loot-cycle/policy') {
+        json(res, 200, { policy: lootPolicy.redactedView(lootPolicy.getPolicy()) });
         return true;
     }
 
@@ -1869,6 +2014,41 @@ async function handleHistoryRoute(url, req, res) {
     // GET /api/history/players?from&to — who has samples in the window.
     if (route === 'players') {
         json(res, 200, { available: true, from, to, items: history.listPlayers({ from, to }) });
+        return true;
+    }
+
+    // GET /api/history/flags?kind&minSeverity&includeCleared — the detector's verdicts.
+    if (route === 'flags') {
+        const kind = url.searchParams.get('kind') || 'loot_cycle';
+        const minSeverity = url.searchParams.get('minSeverity') || 'low';
+        const includeCleared = url.searchParams.get('includeCleared') === '1'
+            || url.searchParams.get('includeCleared') === 'true';
+        json(res, 200, {
+            available: true,
+            items: history.listFlags({ kind, minSeverity, includeCleared }),
+            detector: lootRunner.stats(),
+        });
+        return true;
+    }
+
+    // GET /api/history/flags/:pid — one player's flag, with the ladder and what has fired.
+    if (parts.length === 4 && parts[2] === 'flags') {
+        const pid = decodeURIComponent(parts[3]);
+        json(res, 200, {
+            available: true,
+            flag: history.getFlag({ pid }),
+            enforcement: history.listEnforcement({ pid, flag: 'loot_cycle', limit: 50 }),
+            ladder: lootPolicy.getPolicy().ladder,
+        });
+        return true;
+    }
+
+    // GET /api/history/loot-cycle/preview?pid&from&to — score a window, touch nothing.
+    if (route === 'loot-cycle/preview') {
+        const pid = url.searchParams.get('pid');
+        if (!pid) { badRequest(res, 'pid query parameter is required.'); return true; }
+        const out = lootRunner.preview({ pid, from, to });
+        json(res, 200, { available: true, pid, from, to, ...out });
         return true;
     }
 
@@ -4520,6 +4700,10 @@ server.listen(PORT, async () => {
         const h = history.stats();
         console.log(`History recording to ${h.dbFile} (${h.rows} rows, `
             + `${h.retention.fullDays}d full / ${h.retention.thinDays}d thinned)`);
+        // The loot-cycle detector rides on the same store. It starts even when the
+        // policy is disabled — a disabled policy stops the LADDER, not the reading —
+        // and reports itself through /api/history/stats.
+        lootRunner.start();
     } else {
         console.log('History recording is off (set HISTORY_ENABLED=1 and Node >= 22.5 to enable).');
     }

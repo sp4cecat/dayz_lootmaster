@@ -9,7 +9,7 @@
 
 import {
   Hand, PackageOpen, Archive, Hammer, Trash2, Skull, LogIn, LogOut, RotateCcw,
-  Circle, type LucideIcon,
+  MessageSquareWarning, UserX, Ban, Circle, type LucideIcon,
 } from 'lucide-react';
 
 export interface ActionKindStyle {
@@ -21,52 +21,40 @@ export interface ActionKindStyle {
   chip: string;
 }
 
+/**
+ * The chip palettes, exported so anything else that needs a small tinted pill
+ * (the loot-cycle severity chip, for one) draws from the same set rather than
+ * inventing a fourth shade of red.
+ */
+export const CHIP = {
+  success: 'bg-success-50 text-success-700 border-success-200 dark:bg-success-900/20 dark:text-success-300 dark:border-success-800',
+  warning: 'bg-warning-50 text-warning-700 border-warning-200 dark:bg-warning-900/20 dark:text-warning-300 dark:border-warning-800',
+  primary: 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800',
+  error: 'bg-error-50 text-error-700 border-error-200 dark:bg-error-900/20 dark:text-error-300 dark:border-error-800',
+  gray: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+} as const;
+
 const KINDS: Record<string, ActionKindStyle> = {
-  pickup: {
-    label: 'Picked up', icon: Hand, color: '#22c55e',
-    chip: 'bg-success-50 text-success-700 border-success-200 dark:bg-success-900/20 dark:text-success-300 dark:border-success-800',
-  },
-  drop: {
-    label: 'Dropped', icon: PackageOpen, color: '#f59e0b',
-    chip: 'bg-warning-50 text-warning-700 border-warning-200 dark:bg-warning-900/20 dark:text-warning-300 dark:border-warning-800',
-  },
-  stash: {
-    label: 'Stashed', icon: Archive, color: '#6366f1',
-    chip: 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800',
-  },
-  deploy: {
-    label: 'Deployed', icon: Hammer, color: '#06b6d4',
-    chip: 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800',
-  },
-  destroy: {
-    label: 'Destroyed', icon: Trash2, color: '#ef4444',
-    chip: 'bg-error-50 text-error-700 border-error-200 dark:bg-error-900/20 dark:text-error-300 dark:border-error-800',
-  },
-  death: {
-    label: 'Died', icon: Skull, color: '#dc2626',
-    chip: 'bg-error-50 text-error-700 border-error-200 dark:bg-error-900/20 dark:text-error-300 dark:border-error-800',
-  },
-  connect: {
-    label: 'Connected', icon: LogIn, color: '#94a3b8',
-    chip: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  },
-  disconnect: {
-    label: 'Disconnected', icon: LogOut, color: '#64748b',
-    chip: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  },
-  rollback: {
-    label: 'Rolled back', icon: RotateCcw, color: '#a855f7',
-    chip: 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800',
-  },
-  rollback_failed: {
-    label: 'Rollback failed', icon: RotateCcw, color: '#ef4444',
-    chip: 'bg-error-50 text-error-700 border-error-200 dark:bg-error-900/20 dark:text-error-300 dark:border-error-800',
-  },
+  pickup: { label: 'Picked up', icon: Hand, color: '#22c55e', chip: CHIP.success },
+  drop: { label: 'Dropped', icon: PackageOpen, color: '#f59e0b', chip: CHIP.warning },
+  stash: { label: 'Stashed', icon: Archive, color: '#6366f1', chip: CHIP.primary },
+  deploy: { label: 'Deployed', icon: Hammer, color: '#06b6d4', chip: CHIP.primary },
+  destroy: { label: 'Destroyed', icon: Trash2, color: '#ef4444', chip: CHIP.error },
+  death: { label: 'Died', icon: Skull, color: '#dc2626', chip: CHIP.error },
+  connect: { label: 'Connected', icon: LogIn, color: '#94a3b8', chip: CHIP.gray },
+  disconnect: { label: 'Disconnected', icon: LogOut, color: '#64748b', chip: CHIP.gray },
+  rollback: { label: 'Rolled back', icon: RotateCcw, color: '#a855f7', chip: CHIP.primary },
+  rollback_failed: { label: 'Rollback failed', icon: RotateCcw, color: '#ef4444', chip: CHIP.error },
+  // Written by the loot-cycle ladder rather than the mod's hooks (see
+  // server/loot-cycle-runner.js). They sit in the same feed so a warning shows up
+  // next to the drops that earned it.
+  warned: { label: 'Warned', icon: MessageSquareWarning, color: '#f59e0b', chip: CHIP.warning },
+  kicked: { label: 'Kicked', icon: UserX, color: '#ef4444', chip: CHIP.error },
+  banned: { label: 'Banned', icon: Ban, color: '#dc2626', chip: CHIP.error },
 };
 
 const FALLBACK: ActionKindStyle = {
-  label: '', icon: Circle, color: '#94a3b8',
-  chip: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
+  label: '', icon: Circle, color: '#94a3b8', chip: CHIP.gray,
 };
 
 export function actionKindStyle(kind: string): ActionKindStyle {

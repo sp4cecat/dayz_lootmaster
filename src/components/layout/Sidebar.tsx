@@ -22,6 +22,12 @@ interface SidebarProps {
   onSignOut: () => void;
   selectedProfile?: { id: string; name: string; missionName?: string; addons?: string[] };
   onProfileClick: () => void;
+  /**
+   * Count badges keyed by full nav id (`map-tools:player-history`). A collapsed
+   * parent shows the sum of its children's, so a flag is never hidden behind a
+   * closed section.
+   */
+  badges?: Record<string, number>;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -31,7 +37,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   editorID,
   onSignOut,
   selectedProfile,
-  onProfileClick
+  onProfileClick,
+  badges
 }) => {
   const mapMetadata = useMapMetadata(selectedProfile?.missionName);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(() => {
@@ -82,6 +89,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const isExpanded = expandedItems[fullId];
     const Icon = item.icon;
 
+    // A leaf shows its own count; a collapsed parent rolls its children up.
+    let badge = badges?.[fullId] ?? 0;
+    if (item.subItems && !isExpanded && badges) {
+      for (const [key, n] of Object.entries(badges)) {
+        if (key.startsWith(`${fullId}:`)) badge += n;
+      }
+    }
+
     return (
       <div key={fullId} className="space-y-1">
         <button
@@ -99,6 +114,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Icon className={cx("mr-3 shrink-0 transition-colors", isActive ? "text-primary-600 dark:text-primary-400" : "text-gray-400 group-hover:text-gray-500")} size={20} />
           )}
           <span className={cx("flex-1 text-left", depth >= 2 && "text-xs font-normal")}>{item.label}</span>
+          {badge > 0 && (
+            <span
+              data-testid={`nav-badge-${fullId}`}
+              title={`${badge} player${badge === 1 ? '' : 's'} flagged for loot cycling`}
+              className="ml-2 h-5 min-w-[1.25rem] px-1.5 inline-flex items-center justify-center rounded-full bg-error-600 text-white text-[10px] font-semibold tabular-nums shrink-0"
+            >
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
           {item.subItems && (
             <ChevronDown 
               size={16} 
