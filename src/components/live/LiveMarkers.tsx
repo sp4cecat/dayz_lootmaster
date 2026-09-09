@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import type { LiveAi, LiveEvent, LivePlayer, LiveVehicle } from '@/types/cftools';
+import type { PlayerFlag } from '@/types/history';
+import { severityAtLeast, severityLabel } from '@/utils/flagSeverity';
 
 /**
  * Live-map overlay markers. All of them live on the untransformed overlay layer
@@ -181,8 +183,10 @@ const DRAG_SLOP = 4;
  * releasing asks the caller to teleport the player there. A press that never
  * travels past the slop stays a click and selects the player as before.
  */
-export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, selected, dimmed, onSelect, onDragTeleport, toWorld }: {
+export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, selected, dimmed, flag, onSelect, onDragTeleport, toWorld }: {
   id: string; player: LivePlayer; px: number; py: number; selected: boolean; dimmed?: boolean;
+  /** Live loot-cycle flag for this player, if any; high/critical draws a red ring. */
+  flag?: PlayerFlag | null;
   /** Takes the id so the caller can pass one stable callback for the whole layer. */
   onSelect: (id: string) => void;
   /** Present when drag-to-teleport is available (GameLabs connected + steam64 known). */
@@ -262,7 +266,13 @@ export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, sel
           testId="player-dot"
           tone={PLAYER_TONE}
           selected={selected}
-          className={cx(drag && 'opacity-30', !drag && 'hover:scale-150')}
+          className={cx(
+            drag && 'opacity-30',
+            !drag && 'hover:scale-150',
+            // A thin red ring for a player the loot-cycle detector rates high or
+            // critical; lower bands stay in the tooltip so the map is not a rash.
+            flag && severityAtLeast(flag.severity, 'high') && 'ring-1 ring-error-500',
+          )}
         />
         {hover && !drag && (
           <span
@@ -276,6 +286,11 @@ export const PlayerMarker = memo(function PlayerMarker({ id, player, px, py, sel
             <span className="block text-[9px] text-gray-300 leading-tight">
               Hands: {player.handItemLabel || player.handItem || 'n/a'}
             </span>
+            {flag && (
+              <span className="block text-[9px] text-error-300 leading-tight">
+                Loot cycling: {severityLabel(flag.severity)} ({flag.score})
+              </span>
+            )}
           </span>
         )}
       </button>

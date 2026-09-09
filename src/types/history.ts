@@ -108,6 +108,10 @@ export interface HistoryStats {
    */
   actions?: number;
   inventories?: number;
+  /** Live (uncleared) player flags across every detector. */
+  flags?: number;
+  /** The loot-cycle detector's health, so the UI can say whether it is alive. */
+  lootCycle?: LootCycleDetectorStats;
 }
 
 /**
@@ -132,6 +136,14 @@ export interface HistoryAction {
   z: number | null;
   /** Free-form: `killer=<id>` on a death, the container class on a stash. */
   detail: string | null;
+  /** Mod item identity (spacecat_dayz_server_api 1.4+); null on older builds. */
+  iid: number | null;
+  /** True when the item was CE-spawned this run and this is its first pickup; null = unknown. */
+  fresh: boolean | null;
+  /** Milliseconds the item sat in the player's hierarchy before a drop/stash; null = unknown. */
+  held: number | null;
+  /** Events the mod dropped before this batch, carried on the batch's first row; null = none reported. */
+  dropped: number | null;
 }
 
 /** How many of each kind are present in a window; drives the filter chips. */
@@ -222,4 +234,141 @@ export interface AreaSelection {
   x: number;
   z: number;
   radius: number;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Loot-cycle detection: flags, evidence, enforcement and policy.              */
+/* Mirrors the "API contract" in the loot-cycling plan; server/loot-cycle.js   */
+/* is the scorer.                                                              */
+/* ------------------------------------------------------------------------- */
+
+/** Severity bands shared by every detector. */
+export type FlagSeverity = 'none' | 'low' | 'medium' | 'high' | 'critical';
+
+/** One named contribution to a score, with the evidence behind it. */
+export interface FlagFactor {
+  key: string;
+  label: string;
+  value: number;
+  unit: string | null;
+  points: number;
+  max: number;
+  detail: string | null;
+}
+
+/** A pickup paired with the drop or stash that closed it. */
+export interface CycleEvidence {
+  cls: string;
+  iid: number | null;
+  pickTs: number;
+  dropTs: number;
+  heldMs: number;
+  fresh: boolean | null;
+  pickX: number | null;
+  pickZ: number | null;
+  dropX: number | null;
+  dropZ: number | null;
+  distM: number | null;
+  kind: 'drop' | 'stash';
+  /** How the pair was matched: by the mod's item identity, or by classname FIFO. */
+  matched: 'iid' | 'cls';
+}
+
+export interface FlagEvidence {
+  score: number;
+  severity: string;
+  /** Set when the mod predates item identity: pairings shown, nothing scored. */
+  silent: 'legacy-mod' | null;
+  /**
+   * The mod dropped events in this window, so the score is a floor and the
+   * runner will not escalate on it. Optional: older backends do not send it.
+   */
+  lossy?: boolean;
+  factors: FlagFactor[];
+  /**
+   * What pulled the score down. `reasons` are the scorer's short keys
+   * (`triage`, `atHome`, `stashing`); `notes`, when present, are the same in
+   * full sentences and are what the UI prefers to show.
+   */
+  excuse: { multiplier: number; reasons: string[]; notes?: string[] };
+  counts: {
+    cycles: number; pickups: number; orphanDrops: number;
+    homeDrops: number; stashDrops: number; totalDrops: number;
+  };
+  cycles: CycleEvidence[];
+}
+
+export interface PlayerFlag {
+  pid: string;
+  name: string | null;
+  kind: 'loot_cycle';
+  score: number;
+  severity: string;
+  peak: number;
+  /** Ladder position reached this episode; 0 = nothing sent. */
+  rung: number;
+  episodes: number;
+  firstAt: number;
+  updatedAt: number;
+  /** Operator dismissal time; null while the flag is live. */
+  clearedAt: number | null;
+  evidence: FlagEvidence | null;
+  state: { level: string; smoothed: number; hits: number; peak: number; raisedAt: number | null } | null;
+}
+
+export type EnforcementAction = 'notice' | 'warning' | 'kick' | 'tempban' | 'webhook';
+
+export interface EnforcementRow {
+  id: number;
+  ts: number;
+  pid: string;
+  flag: string;
+  rung: number;
+  action: EnforcementAction;
+  auto: boolean;
+  /** ok | player_not_found | error:<msg>; null while unresolved. */
+  result: string | null;
+  /** Temp-ban expiry, epoch ms. */
+  expires: number | null;
+  /** Message text or ban reason. */
+  detail: string | null;
+}
+
+export interface LadderRung {
+  rung: number;
+  severity: string;
+  action: 'notice' | 'warning' | 'kick' | 'tempban';
+  text: string;
+  /** False = never fired by the runner; offered as a one-click button instead. */
+  auto: boolean;
+  minutes?: number;
+  repeat?: number;
+}
+
+export interface LootCyclePolicy {
+  enabled: boolean;
+  /** Which profile's CF Tools binding kick/ban resolve through; null = none. */
+  profileId: string | null;
+  ladder: LadderRung[];
+  cooldownMs: number;
+  /** The URL itself is write-only; the backend only ever says whether one is set. */
+  webhook: { set: boolean; minSeverity: string };
+  weights: Record<string, { k: number | null; max: number }> | null;
+}
+
+/** What the PUT accepts: the policy, plus a webhook URL to set (string) or clear (null). */
+export type LootCyclePolicyUpdate = Partial<Omit<LootCyclePolicy, 'webhook'>> & {
+  webhook?: { url?: string | null; minSeverity?: string };
+};
+
+export interface LootCycleDetectorStats {
+  enabled: boolean;
+  running: boolean;
+  lastRunAt: number | null;
+  lastError: string | null;
+  players: number;
+  cursor: number;
+  /** Whether any row in the last hour carried the field; false = the mod predates it. */
+  capable: { iid: boolean; fresh: boolean; rows: number };
+  modConnected: boolean;
 }

@@ -13,7 +13,7 @@ import {
 import { usePlaybackClock } from '@/hooks/usePlaybackClock';
 import { useHashRoute } from '@/hooks/useHashRoute';
 import { presenceSegments, sampleTrackAt, trailPoints } from '@/utils/trackSampling';
-import type { AreaSelection, HistoryMode } from '@/types/history';
+import type { AreaSelection, CycleEvidence, HistoryMode } from '@/types/history';
 import HistoryControls from './HistoryControls';
 import TrackLayer from './TrackLayer';
 import MapImageLayer from '../map/MapImageLayer';
@@ -25,6 +25,7 @@ import AreaResultsPanel from './AreaResultsPanel';
 import ActionsLayer from './ActionsLayer';
 import ActionFeed from './ActionFeed';
 import InventoryPanel from './InventoryPanel';
+import FlagsPanel from './FlagsPanel';
 
 interface PlayerHistoryViewProps {
   onClose: () => void;
@@ -111,9 +112,9 @@ export default function PlayerHistoryView({
   const [kinds, setKinds] = useState<string[]>([]);
   const [hoveredAction, setHoveredAction] = useState<number | null>(null);
   const [trailMs, setTrailMs] = useState(DEFAULT_TRAIL_MS);
-  // The Actions rail carries two different things about the same players, and
-  // stacking them in a 288 px column would leave neither readable.
-  const [rail, setRail] = useState<'feed' | 'loadouts'>('feed');
+  // The Actions rail carries three different things about the same players, and
+  // stacking them in a 320 px column would leave none of them readable.
+  const [rail, setRail] = useState<'feed' | 'loadouts' | 'flags'>('feed');
 
   const { players, loading: playersLoading } = useHistoryPlayers(range.from, range.to);
   const { tracks, loading: tracksLoading, error: tracksError } =
@@ -188,6 +189,21 @@ export default function PlayerHistoryView({
   const runAreaQuery = useCallback((next: AreaSelection) => {
     areaQuery.run(next, range.from, range.to);
   }, [areaQuery, range.from, range.to]);
+
+  /**
+   * A cycle line in the flags rail is under the cursor: light up the drop that
+   * closed it. The markers are keyed by action id and a cycle carries none, so
+   * the drop is found by actor, class and timestamp — the same three the scorer
+   * paired it on. Only the drop, and only when it is in the loaded window; the
+   * pickup would need a second hovered id, which the layer does not have.
+   */
+  const hoverCycle = useCallback((cycle: CycleEvidence | null, pid: string) => {
+    if (!cycle) { setHoveredAction(null); return; }
+    const hit = actionsQuery.actions.find(a =>
+      a.pid === pid && a.cls === cycle.cls && a.ts === cycle.dropTs
+      && (a.kind === 'drop' || a.kind === 'stash'));
+    setHoveredAction(hit ? hit.id : null);
+  }, [actionsQuery.actions]);
 
   /**
    * The one colour assignment every consumer reads — roster swatch, path, marker.
@@ -495,7 +511,7 @@ export default function PlayerHistoryView({
             {mode === 'actions' && (
               <div className="w-80 shrink-0 flex flex-col min-h-0 border-l border-gray-200 dark:border-gray-800">
                 <div className="flex items-center gap-1 p-2 border-b border-gray-200 dark:border-gray-800 shrink-0">
-                  {(['feed', 'loadouts'] as const).map((tab) => (
+                  {(['feed', 'loadouts', 'flags'] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -525,7 +541,7 @@ export default function PlayerHistoryView({
                     onHoverAction={setHoveredAction}
                     totalRecorded={stats?.actions}
                   />
-                ) : (
+                ) : rail === 'loadouts' ? (
                   <InventoryPanel
                     // One player at a time: a loadout belongs to somebody, and a
                     // merged list of four players' snapshots answers no question
@@ -536,6 +552,12 @@ export default function PlayerHistoryView({
                     to={range.to}
                     online={!!focusPid && online.has(focusPid)}
                     modConnected={modConnected}
+                  />
+                ) : (
+                  <FlagsPanel
+                    totalRecorded={stats?.actions}
+                    modConnected={modConnected}
+                    onHoverCycle={hoverCycle}
                   />
                 )}
               </div>

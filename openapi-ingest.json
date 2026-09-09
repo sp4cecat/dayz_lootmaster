@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "spacecat DayZ mod → receiver ingest contract",
-    "version": "1.1.0",
-    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nUNKNOWN-VALUE CONVENTIONS — read this before writing a consumer. A numeric field the game cannot supply arrives as `-1` (never a reading); a string arrives as `\"\"`; a whole object arrives as `null` or is omitted. A receiver must collapse **all three** to \"unknown\". Absence alone is NOT a reliable signal: Enforce's `JsonSerializer` writes every declared member of a class and cannot omit one per-instance, so a field that is meaningless for a given row still appears, carrying its sentinel. Treating `-1` as a value is how you end up rendering \"Level -1\" and a blank owner name.\n\nARRAY ABSENCE vs EMPTINESS is meaningful and distinct: a top-level array key that is **missing or null** means no source for it is registered at all (e.g. no territory mod installed, or AI collection switched off); a key **present and empty** means a source is active and reported zero rows. Consumers should surface those differently — otherwise a server running hundreds of AI silently looks identical to one with the feature disabled.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat/spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:4317`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick)."
+    "version": "1.4.0",
+    "description": "The contract a service must implement to receive live state **directly from the DayZ mod**, without the Node API in between.\n\nUNKNOWN-VALUE CONVENTIONS — read this before writing a consumer. A numeric field the game cannot supply arrives as `-1` (never a reading); a string arrives as `\"\"`; a whole object arrives as `null` or is omitted. A receiver must collapse **all three** to \"unknown\". Absence alone is NOT a reliable signal: Enforce's `JsonSerializer` writes every declared member of a class and cannot omit one per-instance, so a field that is meaningless for a given row still appears, carrying its sentinel. Treating `-1` as a value is how you end up rendering \"Level -1\" and a blank owner name.\n\nARRAY ABSENCE vs EMPTINESS is meaningful and distinct: a top-level array key that is **missing or null** means no source for it is registered at all (e.g. no territory mod installed, or AI collection switched off); a key **present and empty** means a source is active and reported zero rows. Consumers should surface those differently — otherwise a server running hundreds of AI silently looks identical to one with the feature disabled.\n\nIMPORTANT — direction of flow: the DayZ Enforce mod is an HTTP *client* (its `RestApi` is outbound-only). It cannot be connected to. Instead it PUSHES data to, and POLLS commands from, whatever URL is set as `baseUrl` in the server's `$profile:spacecat/spacecat_api.json`. Point that at your service and implement the paths below, and your service becomes the receiver.\n\nSo in this document the request bodies are what the **mod sends you**, and the responses are what **your service must return**. Bind your service where the mod can reach it (the mod POSTs to `baseUrl`; the default is `http://127.0.0.1:4317`, i.e. the DayZ server host's loopback — co-locate, or set `baseUrl` to a reachable host).\n\nCadence: snapshot every `snapshotInterval` s (default 5), command poll every `commandPollInterval` s (default 2), catalog once after the first successful snapshot (chunked; re-sent on error). All requests carry `Content-Type: application/json`.\n\nMinimal consumer (state only): implement `/ingest/snapshot` and `/ingest/catalog` returning 2xx, and `/ingest/commands` returning `{\"commands\":[]}`. You only need `/ingest/commands/ack` and non-empty command lists if you want to drive broadcast/kick/scanItems.\n\nCRITICAL: `/ingest/snapshot` MUST return 2xx — the mod only sends the catalog after a snapshot POST succeeds. A non-2xx anywhere is treated by the mod as an error (it retries the catalog; snapshots simply resend next tick).\n\nACTION LOG AND INVENTORY (1.2.0). Two further push routes carry what players DO rather than where they are. They are separate from `/ingest/snapshot` on purpose: an event burst or a full inventory tree sharing the one request that gates catalog delivery is how a firefight costs the server its item catalog.\n\nTIME IS AN AGE, NOT A TIMESTAMP. Events and inventory snapshots carry `age` — milliseconds between the thing happening and this POST — and no absolute time. The mod has no wall clock: `GetGame().GetTime()` counts from mission start and resets on every restart, and the in-game date is a time-of-day that wraps and can be accelerated. Subtract `age` from your own receive time, and clamp it — a receiver should not let an absurd age back-date a row.\n\nIDEMPOTENCY. Every event and snapshot carries `(session, n)`: `session` is unique per mission run, `n` is monotonic within it and shared across BOTH streams. The mod re-queues a batch it never saw acknowledged, so a receiver MUST treat `(session, n)` as a dedup key — otherwise a dropped reply invents history. `session` is what keeps the new run's `n=1` from being deduped against the previous run's.\n\nLOSS IS REPORTED, NOT HIDDEN. The mod's event buffer is bounded. When it overflows it discards the oldest and counts them, and the count arrives as `dropped` on the next batch."
   },
   "servers": [
     { "url": "http://127.0.0.1:4317", "description": "Your service, at whatever host:port you set as the mod's baseUrl" }
@@ -43,11 +43,41 @@
         }
       }
     },
+    "/ingest/events": {
+      "post": {
+        "tags": ["push"],
+        "summary": "Receive a batch of action events",
+        "description": "Flushed every `eventFlushInterval` s (default 5) while anything is buffered, and not at all when the buffer is empty. Dedup on `(session, n)`: the mod re-queues a batch it never saw acknowledged, so without that a lost reply duplicates a burst. A non-2xx is safe here \u2014 unlike /ingest/snapshot it does not un-latch catalog delivery, and the batch is simply retried.",
+        "operationId": "ingestEvents",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventBatch" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } }
+        }
+      }
+    },
+    "/ingest/inventory": {
+      "post": {
+        "tags": ["push"],
+        "summary": "Receive one player's full inventory tree",
+        "description": "Sent on connect (after a short delay \u2014 gear is not attached yet at the connect hook), on disconnect, on death, and on demand via the captureInventory command. ONE per flush, never batched: a tree can be a few hundred kilobytes, and the point of splitting these off the snapshot was to keep a bursty payload out of the request that gates catalog delivery. Dedup on `(session, n)` as for events. Honour `truncated` \u2014 see the schema.",
+        "operationId": "ingestInventory",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvSnapshot" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } }
+        }
+      }
+    },
     "/ingest/commands": {
       "get": {
         "tags": ["poll"],
         "summary": "Return pending commands for the mod to execute",
-        "description": "Polled every commandPollInterval seconds. Return the commands you want the server to run since the last poll; return an empty array if none. Each command you return should be executed once — the mod does not de-dupe, so only return a command until it has been picked up. Command types: broadcast (in-game notification), kick (disconnect a player), scanItems (enumerate spawned items in a region; results come back via /ingest/commands/ack).",
+        "description": "Polled every commandPollInterval seconds. Return the commands you want the server to run since the last poll; return an empty array if none. Each command you return should be executed once — the mod does not de-dupe, so only return a command until it has been picked up. Command types: broadcast (in-game notification to everyone), message (the same notification to ONE player, with your own title), kick (disconnect a player), scanItems (enumerate spawned items in a region), captureInventory (snapshot a player's inventory now \u2014 the tree itself arrives on /ingest/inventory at the next flush, not in the ack), restorePlayer (clear a player and rebuild the loadout you send). Results come back via /ingest/commands/ack.",
         "operationId": "ingestCommands",
         "responses": {
           "200": { "description": "The pending command list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommandList" } } } }
@@ -58,7 +88,7 @@
       "post": {
         "tags": ["poll"],
         "summary": "Receive a command result",
-        "description": "The mod calls this after executing a command. broadcast/kick send a string `result`; scanItems sends an `items` array (the region scan). Match on `id` to the command you issued. Return 2xx.",
+        "description": "The mod calls this after executing a command. broadcast/message/kick/captureInventory send a string `result`; scanItems sends an `items` array (the region scan); restorePlayer sends a `restore` object of per-node counts. Match on `id` to the command you issued, and check the most specific key first \u2014 flattening a restore's counts to the word \"ok\" throws away the only evidence that a rollback was partial. Return 2xx.",
         "operationId": "ingestAck",
         "requestBody": {
           "required": true,
@@ -67,7 +97,8 @@
               "schema": {
                 "oneOf": [
                   { "$ref": "#/components/schemas/ResultAck" },
-                  { "$ref": "#/components/schemas/ScanAck" }
+                  { "$ref": "#/components/schemas/ScanAck" },
+                  { "$ref": "#/components/schemas/RestoreAck" }
                 ]
               }
             }
@@ -295,12 +326,16 @@
         "type": "object",
         "description": "Only the fields relevant to the command type are meaningful.",
         "properties": {
-          "message": { "type": "string", "description": "broadcast: text to show in-game." },
-          "playerId": { "type": "string", "description": "kick: target plain id." },
+          "message": { "type": "string", "description": "broadcast / message: text to show in-game." },
+          "playerId": { "type": "string", "description": "message / kick / captureInventory / restorePlayer: target plain id." },
           "reason": { "type": "string", "description": "kick: reason." },
+          "title": { "type": "string", "description": "message: the notification heading, e.g. \"Loot cycling\". \"\" or absent falls back to \"Server\" — which is what a broadcast always shows, and what a private warning should NOT, since the heading is the only place it can say what it is about." },
           "x": { "type": "number", "description": "scanItems: world X of sweep centre." },
           "z": { "type": "number", "description": "scanItems: world Z of sweep centre." },
-          "radius": { "type": "number", "description": "scanItems: sphere radius (m); mod caps at 200." }
+          "radius": { "type": "number", "description": "scanItems: sphere radius (m); mod caps at 200." },
+          "snapshotId": { "type": "integer", "description": "restorePlayer: your snapshot id, echoed in the mod's log line." },
+          "stats": { "allOf": [{ "$ref": "#/components/schemas/StatBlock" }], "description": "restorePlayer: vitals to apply, or null/absent to leave them alone. Send nothing unless the operator asked \u2014 the commonest snapshot to roll back to is a DEATH, whose recorded health is 0, and applying that kills the character just restored. The mod also refuses any non-positive value." },
+          "tree": { "type": "array", "items": { "$ref": "#/components/schemas/InvNode" }, "description": "restorePlayer: the loadout to rebuild. The mod clears the player first." }
         }
       },
       "Command": {
@@ -308,7 +343,7 @@
         "required": ["id", "type"],
         "properties": {
           "id": { "type": "integer", "description": "Your correlation id; echoed back in the ack." },
-          "type": { "type": "string", "enum": ["broadcast", "kick", "scanItems"] },
+          "type": { "type": "string", "enum": ["broadcast", "message", "kick", "scanItems", "captureInventory", "restorePlayer"] },
           "args": { "$ref": "#/components/schemas/CommandArgs" }
         }
       },
@@ -321,7 +356,7 @@
       },
       "ResultAck": {
         "type": "object",
-        "description": "Ack for broadcast/kick.",
+        "description": "Ack for broadcast/kick/message (and captureInventory). `message` and `kick` answer \"player_not_found\" when that plain id is not a loaded character — a real answer, not an error: the command was queued against a snapshot up to a poll interval stale.",
         "required": ["id"],
         "properties": {
           "id": { "type": "integer" },
@@ -338,6 +373,100 @@
           "healthLevel": { "type": "integer", "enum": [0, 1, 2, 3, 4] },
           "damageState": { "type": "string", "enum": ["pristine", "worn", "damaged", "badly_damaged", "ruined", "unknown"] },
           "lifetimeMax": { "type": "number", "description": "Configured CE lifetime (s); live remaining TTL is not exposed by the engine." }
+        }
+      },
+      "ActionEvent": {
+        "type": "object",
+        "description": "One thing a player did. Classified from the engine's single inventory-transition funnel (EEItemLocationChanged), reduced to a change of ZONE: the ground, a player's own hierarchy, or somebody else's container. A move that does not cross a zone boundary is never sent \u2014 which is what keeps this affordable; dragging an item around a backpack produces no events at all.",
+        "required": ["n", "kind"],
+        "properties": {
+          "n": { "type": "integer", "description": "Monotonic within `session`. With it, the dedup key." },
+          "age": { "type": "integer", "description": "Milliseconds between the event and this POST. Subtract from your receive time; there is no absolute timestamp on the wire." },
+          "pid": { "type": "string", "description": "BI plain id of the actor; \"\" when nobody can be attributed (e.g. a tent the CE cleaned up)." },
+          "kind": { "type": "string", "enum": ["pickup", "drop", "stash", "deploy", "destroy", "death", "connect", "disconnect"], "description": "pickup: into a player's hierarchy from anywhere else. drop: out of a player onto the ground. stash: out of a player into a container that is not a player. deploy/destroy: the same transitions for the configured eventDeployKinds (base parts, tents, stationary containers) \u2014 destroy is restricted to those kinds because EEDelete otherwise fires for the entire loot economy." },
+          "cls": { "type": "string", "description": "Item classname; \"\" when the event is not about an item. For a death this is the victim's item in hands." },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "detail": { "type": "string", "description": "Free-form. `killer=<plainId>` or `cause=<class>` on a death, the container class on a stash, the player name on a connect." },
+          "iid": { "type": "integer", "description": "ITEM IDENTITY (1.4.0). A per-object id unique within `session`, minted the first time that object produces an event, so a `pickup` and the `drop`/`stash`/`deploy` of the SAME object can be paired instead of guessed at by classname. `0` means none: the mod predates 1.4.0, `eventItemIdentity` is off, or the event is not about a moving item (destroy/death/connect/disconnect). RUN-LOCAL — an iid means nothing outside the `session` it was minted in, and the same physical item gets a new one after a restart. Never treat it as a persistent item id." },
+          "fresh": { "type": "integer", "enum": [-1, 0, 1], "description": "ITEM IDENTITY (1.4.0). On a `pickup`: 1 when the central economy created this item during THIS mission run and no player had held it before (the mod hooks EEOnCECreate, which storage loads do not go through), 0 when it had been held before. 0 on a drop/stash. `-1` is UNKNOWN — pre-1.4.0 mod, feature off, or an event where it cannot mean anything. Consumed on the first pickup: an item dropped and re-taken reports 0 the second time, which is exactly what tells re-picking-up apart from a lucky find." },
+          "held": { "type": "integer", "description": "ITEM IDENTITY (1.4.0). Milliseconds the item spent inside the player's hierarchy before this `drop`/`stash`/`deploy`, measured mod-side from the pickup. `-1` when not applicable (any other kind), when the pickup happened before the mod was watching, or when the feature is off. Prefer it over differencing your own row timestamps: the mod saw both ends, your feed may have lost one." },
+          "_t": { "type": "integer", "description": "Mod-internal engine time, used to compute `age`. On the wire only because Enforce's JsonSerializer cannot omit a declared member. Ignore it." }
+        }
+      },
+      "EventBatch": {
+        "type": "object",
+        "required": ["session", "events"],
+        "properties": {
+          "session": { "type": "string", "description": "Unique per mission run. Half of the dedup key." },
+          "seq": { "type": "integer", "description": "Batch counter; for your logs only." },
+          "dropped": { "type": "integer", "description": "Events the mod's bounded buffer discarded since the last successful POST. Non-zero means the feed has a hole in it and should say so, rather than reading as a quiet period." },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/ActionEvent" } }
+        }
+      },
+      "InvNode": {
+        "type": "object",
+        "description": "One item in an inventory tree. A loadout only means anything as a hierarchy \u2014 a magazine IN a rifle IN a backpack ON the player \u2014 so every node records where it sat relative to its parent and nests its own children.",
+        "required": ["cls"],
+        "properties": {
+          "cls": { "type": "string", "description": "Config class name." },
+          "slot": { "type": "string", "description": "Attachment slot name; \"\" when the item is in cargo or hands." },
+          "where": { "type": "string", "enum": ["attachment", "cargo", "hands"] },
+          "health01": { "type": "number", "description": "0..1; -1 when undeclared." },
+          "healthLevel": { "type": "integer", "description": "0..4 (pristine..ruined); -1 when undeclared." },
+          "quantity": { "type": "number", "description": "Ammo count for a magazine, quantity otherwise; -1 when the item has no quantity concept." },
+          "quantityMax": { "type": "number", "description": "-1 when undeclared." },
+          "row": { "type": "integer", "description": "Cargo grid row; -1 for attachments and hands." },
+          "col": { "type": "integer", "description": "Cargo grid column; -1 for attachments and hands." },
+          "displayName": { "type": "string", "description": "Captured as a fallback only. Prefer your own catalog, which stays current as configs change." },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/InvNode" } }
+        }
+      },
+      "StatBlock": {
+        "type": "object",
+        "description": "Vitals at the moment of capture. A death snapshot records health 0.",
+        "properties": {
+          "health": { "type": "number" },
+          "blood": { "type": "number" },
+          "shock": { "type": "number" },
+          "energy": { "type": "number", "description": "-1 when the engine never declared it." },
+          "water": { "type": "number", "description": "-1 when undeclared." }
+        }
+      },
+      "InvSnapshot": {
+        "type": "object",
+        "required": ["pid", "reason", "tree"],
+        "properties": {
+          "session": { "type": "string" },
+          "n": { "type": "integer", "description": "Shares the event counter, so (session, n) is unique across both streams." },
+          "age": { "type": "integer", "description": "Milliseconds between capture and this POST." },
+          "pid": { "type": "string", "description": "BI plain id." },
+          "reason": { "type": "string", "enum": ["connect", "disconnect", "death", "manual"] },
+          "pos": { "$ref": "#/components/schemas/Position" },
+          "stats": { "$ref": "#/components/schemas/StatBlock" },
+          "tree": { "type": "array", "items": { "$ref": "#/components/schemas/InvNode" } },
+          "truncated": { "type": "integer", "enum": [0, 1], "description": "The node or depth cap bit, so this tree is SHORT. A receiver must not present it as a complete loadout, and must not restore it without an explicit override \u2014 a partial loadout applied and reported as complete is how an operator ends up believing they undid a bug they only half undid." },
+          "_t": { "type": "integer", "description": "Mod-internal; ignore. See ActionEvent._t." }
+        }
+      },
+      "RestoreResult": {
+        "type": "object",
+        "description": "What a restorePlayer command actually did. Per-node counts rather than a bare \"ok\", because a rollback can succeed partially and reporting that as success is misleading.",
+        "properties": {
+          "result": { "type": "string", "enum": ["ok", "player_not_found", "disabled", "empty", "error"] },
+          "created": { "type": "integer", "description": "Nodes rebuilt." },
+          "failed": { "type": "integer", "description": "Nodes the engine refused to create. Their children were skipped too \u2014 there was nowhere to put them." },
+          "misplaced": { "type": "integer", "description": "Rebuilt, but into cargo because the recorded slot would not take it. The item is back; the loadout is not the shape it was." },
+          "removed": { "type": "integer", "description": "Items cleared off the player first." },
+          "error": { "type": "string", "description": "\"\" when result is \"ok\"." }
+        }
+      },
+      "RestoreAck": {
+        "type": "object",
+        "description": "Ack for restorePlayer.",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "integer" },
+          "restore": { "$ref": "#/components/schemas/RestoreResult" }
         }
       },
       "ScanAck": {

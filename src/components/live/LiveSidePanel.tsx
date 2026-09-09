@@ -8,6 +8,8 @@ import type {
 } from '@/types/cftools';
 import type { MarkerSelection } from './LiveMarkers';
 import type { CfToolsStatus } from '@/hooks/useCfToolsStatus';
+import type { PlayerFlag } from '@/types/history';
+import { severityChipClass, severityLabel } from '@/utils/flagSeverity';
 
 interface LiveSidePanelProps {
   snapshot: LiveSnapshot | null;
@@ -18,6 +20,8 @@ interface LiveSidePanelProps {
   playerActions?: (player: LivePlayer) => React.ReactNode;
   /** Rendered below every panel state (e.g. the contextual GameLabs action panel). */
   footer?: React.ReactNode;
+  /** Live loot-cycle flags keyed by pid (steam64), joined onto `player.steamId`. */
+  flags?: Map<string, PlayerFlag>;
 }
 
 const fmtPos = (pos: [number, number, number] | null) =>
@@ -210,7 +214,7 @@ function TerritoryUnavailable({ hasLabel }: { hasLabel: boolean }) {
  * `playerActions` slot so the panel itself stays presentational.
  */
 export default function LiveSidePanel({
-  snapshot, status, selection, onClearSelection, playerActions, footer,
+  snapshot, status, selection, onClearSelection, playerActions, footer, flags,
 }: LiveSidePanelProps) {
   const findPlayer = (id: string): LivePlayer | undefined =>
     snapshot?.players?.items.find(p => (p.sessionId || p.steamId || p.name) === id);
@@ -261,6 +265,21 @@ export default function LiveSidePanel({
         <Row label="Ping">{player.ping != null ? `${player.ping} ms` : '—'}</Row>
         <Row label="Loaded in">{player.loaded ? 'yes' : 'still loading'}</Row>
         <Row label="Recorded bans">{player.banCount ?? '—'}</Row>
+        {/* Only when a flag exists: an "—" here would imply the detector cleared
+            them, which it cannot say about a server with no history at all. */}
+        {(() => {
+          const flag = player.steamId ? flags?.get(player.steamId) : undefined;
+          return flag ? (
+            <Row label="Loot cycling">
+              <span className="inline-flex items-center gap-1.5" data-testid="loot-cycle-flag">
+                <span className={cx('px-1.5 py-0.5 rounded-md text-[10px] font-medium border', severityChipClass(flag.severity))}>
+                  {severityLabel(flag.severity)}
+                </span>
+                <span className="tabular-nums">{flag.score}</span>
+              </span>
+            </Row>
+          ) : null;
+        })()}
         {playerActions && <div className="mt-3">{playerActions(player)}</div>}
       </div>
     ) : (

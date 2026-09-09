@@ -224,6 +224,60 @@ const MIGRATIONS = [
             CREATE INDEX IF NOT EXISTS ix_inv_pid ON inv_snapshot(srv, pid, ts);
         `);
     },
+
+    // v4 — item identity on actions, and the loot-cycle detector's tables.
+    //
+    // `iid` is the mod's per-run item number: the same value on an item's pickup
+    // and its later drop, which is what turns "he dropped a Rag" into "he dropped
+    // THE Rag he picked up nine seconds ago". `fresh` says the item had been spawned
+    // by the economy this run and never held before; `held` is how long it spent
+    // in the player's hierarchy. All three are null on rows from a mod older than
+    // 1.4, and every consumer must treat null as unknown, never as zero.
+    //
+    // `dropped` is the batch-level loss counter the mod has always sent and this
+    // store never read. It lands on the first row of the batch that reported it so
+    // a detector can refuse to escalate on a window with a hole in it.
+    (d) => {
+        d.exec(`
+            ALTER TABLE action ADD COLUMN iid     INTEGER;
+            ALTER TABLE action ADD COLUMN fresh   INTEGER;
+            ALTER TABLE action ADD COLUMN held    INTEGER;
+            ALTER TABLE action ADD COLUMN dropped INTEGER;
+
+            CREATE TABLE IF NOT EXISTS player_flag (
+                srv        TEXT    NOT NULL DEFAULT 'default',
+                pid        TEXT    NOT NULL,
+                kind       TEXT    NOT NULL,        -- detector: 'loot_cycle' today
+                score      INTEGER NOT NULL,        -- 0..100, latest evaluation
+                severity   TEXT    NOT NULL,        -- none|low|medium|high|critical (hysteresis-smoothed)
+                peak       INTEGER NOT NULL,        -- highest score this episode
+                rung       INTEGER NOT NULL DEFAULT 0, -- ladder step reached this episode
+                episodes   INTEGER NOT NULL DEFAULT 0, -- times the flag has been raised from none
+                evidence   TEXT    NOT NULL,        -- JSON: the detector's last evaluation row
+                state      TEXT    NOT NULL,        -- JSON: hysteresis state (nextFlag output)
+                first_at   INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                cleared_at INTEGER,                 -- operator dismissed; null = live
+                PRIMARY KEY (srv, pid, kind)
+            );
+            CREATE INDEX IF NOT EXISTS ix_flag_sev ON player_flag(srv, kind, severity, updated_at);
+
+            CREATE TABLE IF NOT EXISTS enforcement (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                srv     TEXT    NOT NULL DEFAULT 'default',
+                ts      INTEGER NOT NULL,
+                pid     TEXT    NOT NULL,
+                flag    TEXT    NOT NULL,           -- which detector: 'loot_cycle'
+                rung    INTEGER NOT NULL,           -- ladder step that fired
+                action  TEXT    NOT NULL,           -- notice|warning|kick|tempban|webhook
+                auto    INTEGER NOT NULL,           -- 1 fired by the runner, 0 by an operator
+                result  TEXT,                       -- ok|player_not_found|error:<msg>
+                expires INTEGER,                    -- temp-ban expiry, epoch ms
+                detail  TEXT                        -- message text / ban reason
+            );
+            CREATE INDEX IF NOT EXISTS ix_enf_pid ON enforcement(srv, pid, ts);
+        `);
+    },
 ];
 
 /**
@@ -564,6 +618,12 @@ function toActionRow(e, at, srv, session) {
         detail: detail ? detail.slice(0, DETAIL_MAX) : null,
         session,
         n: n === null ? null : Math.trunc(n),
+        // Mod 1.4+ item identity. The mod writes 0 / -1 for "none" on the kinds
+        // that are not about a held item (and everywhere on an older build), and
+        // modStat collapses every negative to null. iid 0 is "no identity" too.
+        iid: (() => { const v = modStat(e.iid); return v ? Math.trunc(v) : null; })(),
+        fresh: (() => { const v = modStat(e.fresh); return v === null ? null : (v ? 1 : 0); })(),
+        held: (() => { const v = modStat(e.held); return v === null ? null : Math.trunc(v); })(),
     };
 }
 
@@ -582,12 +642,18 @@ export function recordEvents(batch, at = Date.now(), srv = DEFAULT_SRV) {
     const events = Array.isArray(batch.events) ? batch.events : [];
     if (!events.length) return 0;
     const session = modStr(batch.session);
+    // The mod's bounded ring reports what it threw away since the last POST that
+    // landed. It rides on the first stored row of this batch so a reader walking
+    // the log in order meets the hole where it happened.
+    const droppedRaw = num(batch.dropped);
+    let dropped = droppedRaw !== null && droppedRaw > 0 ? Math.trunc(droppedRaw) : null;
 
     try {
         const ins = db.prepare(`
             INSERT OR IGNORE INTO action
-                (srv, ts, pid, kind, cls, x, y, z, cell, detail, session, n)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+                (srv, ts, pid, kind, cls, x, y, z, cell, detail, session, n,
+                 iid, fresh, held, dropped)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         let inserted = 0;
         db.exec('BEGIN');
         try {
@@ -595,8 +661,11 @@ export function recordEvents(batch, at = Date.now(), srv = DEFAULT_SRV) {
                 const r = toActionRow(e, at, srv, session);
                 if (!r) continue;
                 const res = ins.run(r.srv, r.ts, r.pid, r.kind, r.cls,
-                    r.x, r.y, r.z, r.cell, r.detail, r.session, r.n);
-                inserted += Number(res.changes || 0);
+                    r.x, r.y, r.z, r.cell, r.detail, r.session, r.n,
+                    r.iid, r.fresh, r.held, dropped);
+                const changes = Number(res.changes || 0);
+                inserted += changes;
+                if (changes) dropped = null;     // carried once, on the first row that stuck
             }
             db.exec('COMMIT');
         } catch (inner) {
@@ -994,7 +1063,7 @@ export function queryActions({
     // One extra row, so "did the limit bite" is answered without a COUNT(*).
     const cap = Math.max(1, Math.min(limit, 10000));
     const rows = db.prepare(`
-        SELECT id, ts, pid, kind, cls, x, y, z, detail
+        SELECT id, ts, pid, kind, cls, x, y, z, detail, iid, fresh, held, dropped
           FROM action
          WHERE ${where.join(' AND ')}
          ORDER BY ts DESC
@@ -1028,8 +1097,250 @@ export function queryActions({
             cls: r.cls,
             x: r.x, y: r.y, z: r.z,
             detail: r.detail,
+            iid: r.iid ?? null,
+            fresh: r.fresh === null || r.fresh === undefined ? null : r.fresh === 1,
+            held: r.held ?? null,
+            dropped: r.dropped ?? null,
         })),
     };
+}
+
+// ---- detector read path -------------------------------------------------------
+//
+// These feed server/loot-cycle-runner.js. They return the raw row shape the pure
+// scorer consumes ({ id, ts, pid, kind, cls, x, y, z, detail, iid, fresh, held,
+// dropped }) rather than the feed's presentation shape, and they are ordered the
+// way the scorer wants (ts, then id) rather than newest-first.
+
+const ACTION_COLS = 'id, ts, pid, kind, cls, x, y, z, detail, iid, fresh, held, dropped';
+
+/**
+ * Every action row inserted after `afterId`, in rowid order — the runner's cursor
+ * read. Rowid order is arrival order, which is what an incremental consumer needs;
+ * a batch is inserted atomically so a pickup and its drop never straddle a read.
+ */
+export function actionsSince({ afterId = 0, limit = 5000, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return [];
+    const cap = Math.max(1, Math.min(limit, 50_000));
+    return db.prepare(`
+        SELECT ${ACTION_COLS} FROM action
+         WHERE srv = ? AND id > ?
+         ORDER BY id ASC
+         LIMIT ?`).all(srv, Math.trunc(afterId), cap);
+}
+
+/** Highest action rowid, so a fresh cursor can start at "now" rather than at row 1. */
+export function maxActionId(srv = DEFAULT_SRV) {
+    if (!ready && !init()) return 0;
+    const r = db.prepare('SELECT MAX(id) AS m FROM action WHERE srv = ?').get(srv);
+    return Number(r?.m || 0);
+}
+
+/**
+ * Action rows in [from, to] for a replay or a preview, ascending. `pids` narrows
+ * to a set of players; `kinds` to a set of verbs. Capped, and the cap is reported.
+ */
+export function actionsInRange({ pids, kinds, from, to, limit = 50_000, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return { items: [], truncated: false };
+    const where = ['srv = ?', 'ts BETWEEN ? AND ?'];
+    const args = [srv, from, to];
+    const ids = (Array.isArray(pids) ? pids : pids ? [pids] : []).filter(Boolean).map(String);
+    if (ids.length) {
+        where.push(`pid IN (${ids.map(() => '?').join(',')})`);
+        args.push(...ids);
+    }
+    const kindList = (Array.isArray(kinds) ? kinds : kinds ? [kinds] : []).filter(Boolean).map(String);
+    if (kindList.length) {
+        where.push(`kind IN (${kindList.map(() => '?').join(',')})`);
+        args.push(...kindList);
+    }
+    const cap = Math.max(1, Math.min(limit, 200_000));
+    const rows = db.prepare(`
+        SELECT ${ACTION_COLS} FROM action
+         WHERE ${where.join(' AND ')}
+         ORDER BY ts ASC, id ASC
+         LIMIT ?`).all(...args, cap + 1);
+    const truncated = rows.length > cap;
+    return { items: truncated ? rows.slice(0, cap) : rows, truncated };
+}
+
+/**
+ * Where a player keeps things: their deploy and stash rows over the last `days`.
+ * The detector clusters these into home zones so a drop next to their own tent
+ * reads as tidying up, not as clearing a loot spawn.
+ */
+export function homeEvents({ pid, days = 30, now = Date.now(), srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return [];
+    if (!pid) return [];
+    return db.prepare(`
+        SELECT ts, x, z, kind FROM action
+         WHERE srv = ? AND pid = ? AND kind IN ('deploy', 'stash')
+           AND ts >= ? AND x IS NOT NULL AND z IS NOT NULL
+         ORDER BY ts ASC
+         LIMIT 2000`).all(srv, String(pid), now - days * DAY_MS);
+}
+
+/**
+ * Whether the mod feeding this store sends item identity at all, judged from the
+ * rows since `since`. A detector that scored an old mod's rows would be inventing
+ * suspicion out of missing data, so it asks this first and goes silent on false.
+ */
+export function capableSince({ since, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return { iid: false, fresh: false, rows: 0 };
+    const r = db.prepare(`
+        SELECT COUNT(*) AS rows,
+               SUM(CASE WHEN iid   IS NOT NULL THEN 1 ELSE 0 END) AS withIid,
+               SUM(CASE WHEN fresh IS NOT NULL THEN 1 ELSE 0 END) AS withFresh
+          FROM action
+         WHERE srv = ? AND ts >= ? AND kind IN ('pickup', 'drop', 'stash')`).get(srv, since);
+    return {
+        rows: Number(r?.rows || 0),
+        iid: Number(r?.withIid || 0) > 0,
+        fresh: Number(r?.withFresh || 0) > 0,
+    };
+}
+
+// ---- flags and enforcement ------------------------------------------------------
+
+const SEVERITY_RANK = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
+function flagFromRow(r, names) {
+    if (!r) return null;
+    let evidence = null;
+    let state = null;
+    try { evidence = JSON.parse(r.evidence); } catch { evidence = null; }
+    try { state = JSON.parse(r.state); } catch { state = null; }
+    return {
+        pid: r.pid,
+        name: names ? (names.get(r.pid) || null) : null,
+        kind: r.kind,
+        score: r.score,
+        severity: r.severity,
+        peak: r.peak,
+        rung: r.rung,
+        episodes: r.episodes,
+        firstAt: r.first_at,
+        updatedAt: r.updated_at,
+        clearedAt: r.cleared_at,
+        evidence,
+        state,
+    };
+}
+
+/**
+ * Write a detector's verdict for one player. Called every evaluation, so it is an
+ * upsert keyed on (srv, pid, kind); `first_at` and `episodes` survive updates and
+ * `cleared_at` is reset only when the caller says the flag was raised again.
+ */
+export function upsertFlag({
+    pid, kind, score, severity, peak, rung, evidence, state,
+    now = Date.now(), raised = false, uncleared = false,
+}, srv = DEFAULT_SRV) {
+    if (!ready && !init()) return false;
+    if (!pid || !kind) return false;
+    db.prepare(`
+        INSERT INTO player_flag
+            (srv, pid, kind, score, severity, peak, rung, episodes, evidence, state,
+             first_at, updated_at, cleared_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+        ON CONFLICT(srv, pid, kind) DO UPDATE SET
+            score      = excluded.score,
+            severity   = excluded.severity,
+            peak       = MAX(player_flag.peak, excluded.peak),
+            rung       = excluded.rung,
+            episodes   = player_flag.episodes + ${raised ? 1 : 0},
+            evidence   = excluded.evidence,
+            state      = excluded.state,
+            updated_at = excluded.updated_at,
+            cleared_at = ${uncleared ? 'NULL' : 'player_flag.cleared_at'}`).run(
+        srv, String(pid), String(kind),
+        Math.trunc(score), String(severity), Math.trunc(peak ?? score), Math.trunc(rung ?? 0),
+        raised ? 1 : 0,
+        JSON.stringify(evidence ?? null), JSON.stringify(state ?? null),
+        now, now,
+    );
+    return true;
+}
+
+export function getFlag({ pid, kind = 'loot_cycle', srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return null;
+    const r = db.prepare(
+        'SELECT * FROM player_flag WHERE srv = ? AND pid = ? AND kind = ?',
+    ).get(srv, String(pid), String(kind));
+    return flagFromRow(r, nameMap(r ? [r.pid] : [], srv));
+}
+
+/**
+ * Flags at or above `minSeverity`, live ones only unless `includeCleared`.
+ * Sorted worst first, then most recently updated.
+ */
+export function listFlags({
+    kind = 'loot_cycle', minSeverity = 'low', includeCleared = false, limit = 500, srv = DEFAULT_SRV,
+} = {}) {
+    if (!ready && !init()) return [];
+    const minRank = SEVERITY_RANK[minSeverity] ?? 1;
+    const rows = db.prepare(`
+        SELECT * FROM player_flag
+         WHERE srv = ? AND kind = ? ${includeCleared ? '' : 'AND cleared_at IS NULL'}
+         ORDER BY updated_at DESC
+         LIMIT ?`).all(srv, String(kind), Math.max(1, Math.min(limit, 5000)));
+    const kept = rows.filter(r => (SEVERITY_RANK[r.severity] ?? 0) >= minRank);
+    const names = nameMap([...new Set(kept.map(r => r.pid))], srv);
+    return kept
+        .map(r => flagFromRow(r, names))
+        .sort((a, b) => (SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
+            || (b.score - a.score) || (b.updatedAt - a.updatedAt));
+}
+
+/** Operator dismissal: the flag stays as a record but is no longer live, and the ladder resets. */
+export function clearFlag({ pid, kind = 'loot_cycle', now = Date.now(), srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return false;
+    const res = db.prepare(`
+        UPDATE player_flag SET cleared_at = ?, rung = 0, updated_at = ?
+         WHERE srv = ? AND pid = ? AND kind = ? AND cleared_at IS NULL`).run(
+        now, now, srv, String(pid), String(kind));
+    return Number(res.changes || 0) > 0;
+}
+
+export function setFlagRung({ pid, kind = 'loot_cycle', rung, now = Date.now(), srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return false;
+    const res = db.prepare(`
+        UPDATE player_flag SET rung = ?, updated_at = ?
+         WHERE srv = ? AND pid = ? AND kind = ?`).run(
+        Math.trunc(rung), now, srv, String(pid), String(kind));
+    return Number(res.changes || 0) > 0;
+}
+
+/**
+ * One consequence applied (or attempted). Throws rather than swallowing, like
+ * recordAction: a kick with no audit row is worse than a failed request.
+ */
+export function recordEnforcement({
+    ts = Date.now(), pid, flag = 'loot_cycle', rung, action, auto, result = null, expires = null, detail = null,
+}, srv = DEFAULT_SRV) {
+    if (!ready && !init()) return null;
+    const res = db.prepare(`
+        INSERT INTO enforcement (srv, ts, pid, flag, rung, action, auto, result, expires, detail)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+        srv, ts, String(pid), String(flag), Math.trunc(rung ?? 0), String(action),
+        auto ? 1 : 0, result === null ? null : String(result).slice(0, DETAIL_MAX),
+        expires, detail === null ? null : String(detail).slice(0, DETAIL_MAX));
+    return Number(res.lastInsertRowid);
+}
+
+export function listEnforcement({ pid, flag, limit = 100, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return [];
+    const where = ['srv = ?'];
+    const args = [srv];
+    if (pid) { where.push('pid = ?'); args.push(String(pid)); }
+    if (flag) { where.push('flag = ?'); args.push(String(flag)); }
+    const rows = db.prepare(`
+        SELECT id, ts, pid, flag, rung, action, auto, result, expires, detail
+          FROM enforcement
+         WHERE ${where.join(' AND ')}
+         ORDER BY ts DESC
+         LIMIT ?`).all(...args, Math.max(1, Math.min(limit, 2000)));
+    return rows.map(r => ({ ...r, auto: r.auto === 1 }));
 }
 
 /** Distinct action kinds present in the window; drives the feed's filter chips. */
@@ -1148,7 +1459,7 @@ export function stats(srv = DEFAULT_SRV) {
         recordAi: RECORD_AI,
         retention: { fullDays: FULL_DAYS, thinDays: THIN_DAYS },
     };
-    if (!ready && !init()) return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null, actions: 0, inventories: 0 };
+    if (!ready && !init()) return { ...base, rows: 0, players: 0, from: null, to: null, bytes: null, actions: 0, inventories: 0, flags: 0 };
     try {
         const agg = db.prepare(
             'SELECT COUNT(*) AS rows, MIN(ts) AS lo, MAX(ts) AS hi FROM player_pos WHERE srv = ?',
@@ -1171,12 +1482,16 @@ export function stats(srv = DEFAULT_SRV) {
         // when it shows nothing.
         const actions = db.prepare('SELECT COUNT(*) AS c FROM action WHERE srv = ?').get(srv).c;
         const inventories = db.prepare('SELECT COUNT(*) AS c FROM inv_snapshot WHERE srv = ?').get(srv).c;
+        // Live flags at low or above: what the nav badge and the flags rail count.
+        const flags = db.prepare(
+            "SELECT COUNT(*) AS c FROM player_flag WHERE srv = ? AND cleared_at IS NULL AND severity <> 'none'",
+        ).get(srv).c;
         let bytes = null;
         try { bytes = statSync(DB_FILE).size; } catch { /* :memory: has no file */ }
         return {
             ...base, ready: true,
             rows: agg.rows, players, from: agg.lo, to: agg.hi, bytes, bySrc,
-            actions, inventories,
+            actions, inventories, flags,
         };
     } catch (err) {
         recordFailure(err);
@@ -1257,6 +1572,12 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
             result.actionsDropped = Number(acts.changes || 0);
             const invs = db.prepare('DELETE FROM inv_snapshot WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
             result.inventoriesDropped = Number(invs.changes || 0);
+
+            // A flag nobody has touched since the drop cutoff describes evidence
+            // that no longer exists; the enforcement log ages out with the actions
+            // it explains.
+            db.prepare('DELETE FROM player_flag WHERE srv = ? AND updated_at < ?').run(srv, dropCutoff);
+            db.prepare('DELETE FROM enforcement WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
 
             db.exec('COMMIT');
         } catch (inner) {

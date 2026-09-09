@@ -21,7 +21,9 @@ import { useMapPanZoom, type MapPanZoom } from '@/hooks/useMapPanZoom';
 import { useCfToolsStatus } from '@/hooks/useCfToolsStatus';
 import { useLiveSnapshot } from '@/hooks/useLiveSnapshot';
 import { useCfToolsActions } from '@/hooks/useCfToolsActions';
+import { useFlags } from '@/hooks/useHistoryData';
 import type { LiveLayerKey, LivePlayer, LiveWorldInfo } from '@/types/cftools';
+import type { PlayerFlag } from '@/types/history';
 import LiveSidePanel from './LiveSidePanel';
 import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
@@ -222,6 +224,15 @@ export default function LiveMapView({
   const { snapshot, loading } = useLiveSnapshot(selectedProfileId, layers, status.connected);
 
   const [selection, setSelection] = useState<MarkerSelection | null>(null);
+
+  // Live loot-cycle flags, joined onto the roster by steam64. Read from the
+  // history backend, not CF Tools, so the ring and the card row work on a server
+  // with no binding at all — and they simply stay absent when history is off.
+  const { items: liveFlags } = useFlags(15000, { minSeverity: 'low' });
+  const flagsByPid = useMemo(
+    () => new Map<string, PlayerFlag>(liveFlags.map(f => [f.pid, f])),
+    [liveFlags],
+  );
 
   // Resolve the selected marker into a GameLabs action target. No selection →
   // world-context actions; player/vehicle/event selections narrow the raw
@@ -954,6 +965,7 @@ export default function LiveMapView({
                         py={p.py}
                         selected={isSel('player', id)}
                         dimmed={snapshot.players?.stale}
+                        flag={pl.steamId ? flagsByPid.get(pl.steamId) ?? null : null}
                         onSelect={selectPlayer}
                         toWorld={canDragTeleport ? view.toWorld : undefined}
                         onDragTeleport={canDragTeleport ? dragTeleport : undefined}
@@ -1034,6 +1046,7 @@ export default function LiveMapView({
               snapshot={snapshot}
               status={status}
               selection={selection}
+              flags={flagsByPid}
               onClearSelection={() => setSelection(null)}
               playerActions={(player) => (
                 <PlayerActionsBar
