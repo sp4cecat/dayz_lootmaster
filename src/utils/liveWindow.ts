@@ -36,8 +36,15 @@ export const SESSION_LOOKUP_STEP_MS = 5 * 60_000;
 /** The one kind the session lookup asks for. Module-level so the fetch key is stable. */
 export const CONNECT_KINDS: readonly string[] = ['connect'];
 
-/** What the server-wide ticker shows: things an admin reacts to, not every pickup. */
-export const TICKER_KINDS: readonly string[] = ['death', 'connect', 'disconnect', 'kicked', 'warned', 'banned'];
+/**
+ * What the server-wide ticker shows: things an admin reacts to, not every pickup.
+ *
+ * `kill` is in (a player killing something is news); `hit` and `damaged` are not.
+ * A firefight is dozens of hits a minute and a horde is a `damaged` per bite, so
+ * either would push every death and connect out of a 15-minute list within
+ * seconds. They stay in the Player History feed, which has filter chips.
+ */
+export const TICKER_KINDS: readonly string[] = ['death', 'kill', 'connect', 'disconnect', 'kicked', 'warned', 'banned'];
 export const TICKER_SPAN_MS = 15 * 60_000;
 
 /** How far a player can be and still count as "nearby" in the card. */

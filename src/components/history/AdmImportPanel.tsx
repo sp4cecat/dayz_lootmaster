@@ -293,7 +293,8 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
                     {running ? (
                         <p className="text-xs text-gray-600 dark:text-gray-300">
                             {job.progress?.files ?? 0} of {job.totalFiles ?? 0} files ·{' '}
-                            {(job.progress?.inserted ?? 0).toLocaleString()} rows stored
+                            {(job.progress?.inserted ?? 0).toLocaleString()} rows stored ·{' '}
+                            {(job.progress?.actionsInserted ?? 0).toLocaleString()} events stored
                         </p>
                     ) : job.error ? (
                         <p className="text-xs text-error-700 dark:text-error-400">Import failed: {job.error}</p>
@@ -308,6 +309,22 @@ export default function AdmImportPanel({ selectedProfileId }: { selectedProfileI
                                     <> · {(result.rows - result.inserted).toLocaleString()} already present</>
                                 )}
                             </p>
+                            {/* Hits, kills and deaths ride on the same lines as the positions.
+                              * The `?? 0` is for a job object written by a server that predates
+                              * them; it must not blank the whole summary. */}
+                            <p>
+                                {(result.actionsInserted ?? 0).toLocaleString()} combat and death events stored
+                                {(result.actions ?? 0) > (result.actionsInserted ?? 0) && (
+                                    <> · {((result.actions ?? 0) - (result.actionsInserted ?? 0)).toLocaleString()} already present</>
+                                )}
+                            </p>
+                            {(result.combatSkipped ?? 0) > 0 && (
+                                <p>
+                                    {(result.combatSkipped ?? 0).toLocaleString()} event(s) were left out because
+                                    the companion mod had already recorded that kind of event over the
+                                    period those files cover. The mod&apos;s record is the more detailed one.
+                                </p>
+                            )}
                             <p>
                                 {fmtDate(result.firstTs)} → {fmtDate(result.lastTs)}
                                 {job.timeZone && <> · read as {job.timeZone}</>}

@@ -179,3 +179,52 @@ describe('the feed', () => {
         expect(text()).toContain('Only the most recent events are shown');
     });
 });
+
+describe('combat rows', () => {
+    it('reads a hit as a sentence with zone, damage, weapon and range', () => {
+        render({
+            actions: [action({
+                kind: 'hit', cls: 'ZmbM_HermitSkinny_Base',
+                detail: 'victim=infected;zone=Head;dmg=102.4;ammo=Bullet_556x45;with=M4A1;dist=18.9;at=1,2,3',
+            })],
+        });
+        expect(text()).toContain('Hit infected · Head · 102 dmg · M4A1 · 19 m');
+    });
+
+    it('names the victim of a kill', () => {
+        render({
+            actions: [action({
+                kind: 'kill', cls: 'SurvivorM_Mirek',
+                detail: 'victim=player:76561198000000002;zone=Torso;dmg=80;ammo=Bullet_762x39;with=AKM;dist=40.2;at=1,2,3',
+            })],
+        });
+        expect(text()).toContain('Killed player 76561198000000002');
+    });
+
+    it('reads damage taken from a creature and from a fall', () => {
+        render({
+            actions: [
+                action({ id: 1, kind: 'damaged', cls: 'ZmbM_HermitSkinny_Base', detail: 'by=infected;zone=Torso;dmg=5;ammo=MeleeInfected;with=' }),
+                action({ id: 2, kind: 'damaged', cls: 'FallDamageHealth', detail: 'by=fall;zone=;dmg=12.3;ammo=FallDamageHealth;with=' }),
+                action({ id: 3, kind: 'damaged', cls: 'SurvivorM_Mirek', detail: 'by=ai;zone=Torso;dmg=20;ammo=Bullet_556x45;with=AUG A1;src=Mirek' }),
+            ],
+        });
+        expect(text()).toContain('By infected · Torso · 5 dmg');
+        expect(text()).toContain('By a fall · 12 dmg');
+        expect(text()).toContain('By AI Mirek · Torso · 20 dmg · AUG A1');
+    });
+
+    it('shows a combat detail it cannot parse verbatim rather than dropping it', () => {
+        // A newer mod build might change the format; the raw text still tells the
+        // operator something, a blank line tells them nothing.
+        render({ actions: [action({ kind: 'hit', detail: 'garbage' })] });
+        expect(text()).toContain('garbage');
+    });
+
+    it('labels the kill chip', () => {
+        render({ kindCounts: [{ kind: 'kill', count: 3 }, { kind: 'hit', count: 40 }, { kind: 'damaged', count: 7 }] });
+        expect(chip('Killed')).toBeTruthy();
+        expect(chip('Hit')).toBeTruthy();
+        expect(chip('Damaged')).toBeTruthy();
+    });
+});

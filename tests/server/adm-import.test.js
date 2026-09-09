@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
     voteOffset, rowsForFile, checkZone, toZone, UNRESOLVED_PREFIX, DEFAULT_OFFSET_MINUTES,
+    admDamageSource, admSessionTag, makePidFor,
 } from '../../server/adm-import.js';
-import { parseAdmFile } from '../../server/adm-parse.js';
+import { parseAdmFile, parseAdmLine } from '../../server/adm-parse.js';
 import * as history from '../../server/history-store.js';
 
 const file = (offsetMinutes, source, confident = true) => ({
@@ -112,10 +113,217 @@ describe('rowsForFile', () => {
     });
 });
 
+describe('admDamageSource', () => {
+    const c = (line) => parseAdmLine(line)[0].combat;
+    const hit = (tail) => c(`10:00:00 | Player "A" (id=G1 pos=<1, 2, 3>)[HP: 50] hit by ${tail}`);
+
+    it('classifies by the ammo token before the display name', () => {
+        // A mod can call its zombie anything; the ammo it swings with is a config
+        // class and does not lie. Verified across 26,929 hit lines.
+        expect(admDamageSource(hit('Infected into Torso(1) for 2.6775 damage (MeleeSoldierInfected)'))).toBe('infected');
+        expect(admDamageSource(hit('Infected into Head(0) for 10 damage (Dummy_Light)'))).toBe('infected');
+        expect(admDamageSource(hit('Brown Bear into Head(0) for 12.5 damage (MeleeBearShock)'))).toBe('animal');
+        expect(admDamageSource(hit('Dog into Head(0) for 5.5 damage (MeleeWolf)'))).toBe('animal');
+        expect(admDamageSource(hit('FallDamageHealth'))).toBe('fall');
+        expect(admDamageSource(hit('Fireplace with FireDamage'))).toBe('fire');
+        expect(admDamageSource(hit('Boat_01_Blue with TransportHit'))).toBe('vehicle');
+        expect(admDamageSource(hit('BBP_Bwall with BarbedWireHit'))).toBe('area');
+        expect(admDamageSource(hit('explosion (GasCanister_Ammo)'))).toBe('explosion');
+    });
+
+    it('reads a fire-breathing zombie as fire, because that is what burned them', () => {
+        expect(admDamageSource(hit('InfectedSoldierHardJMC2 with FireDamage'))).toBe('fire');
+    });
+
+    it('does not read a bear trap as a bear', () => {
+        expect(admDamageSource(hit('BearTrap into LeftLeg(3) for 10 damage (BearTrapHit)'))).toBe('area');
+    });
+
+    it('names players and AI by source type', () => {
+        expect(admDamageSource(hit('Player "B" (id=G2 pos=<4, 5, 6>) into Head(0) for 1 damage (MeleeFist)'))).toBe('player');
+        expect(admDamageSource(hit('AI "Elias" (group=2 faction="X" pos=<4, 5, 6>) into Head(0) for 1 damage (Bullet_556x45) with AUG A1 from 9 meters '))).toBe('ai');
+    });
+
+    it('falls back to the name for an ammo it has not met', () => {
+        expect(admDamageSource(hit('Wolf into Head(0) for 5 damage (SomeModAmmo)'))).toBe('animal');
+        expect(admDamageSource(hit('ZmbM_Custom into Head(0) for 5 damage (SomeModAmmo)'))).toBe('infected');
+    });
+
+    it('says other when it honestly does not know', () => {
+        // Environmental damage names the victim's own survivor class as the parent.
+        expect(admDamageSource(hit('SurvivorF_Keiko with EnviroDmg'))).toBe('other');
+        expect(admDamageSource(hit('jmc_mjolnir into (-1) for 0 damage (MeleeMjolnir)'))).toBe('other');
+        expect(admDamageSource(null)).toBe('other');
+    });
+});
+
+describe('admSessionTag', () => {
+    it('uses the parent folder and the file name, whichever slashes the path had', () => {
+        // Rotated names are only unique within one log folder; two crash dirs can
+        // each hold a DayZServer_x64_….ADM of the same name.
+        expect(admSessionTag('C:\\srv\\log_storage\\1736004650\\DayZServer_x64_2025_01_04_175050457.ADM'))
+            .toBe('adm:1736004650/DayZServer_x64_2025_01_04_175050457.ADM');
+        expect(admSessionTag('/srv/log_storage/1736004650/x.ADM')).toBe('adm:1736004650/x.ADM');
+    });
+});
+
+describe('rowsForFile: combat and death rows', () => {
+    const header = { y: 2025, mon: 0, d: 4, h: 0, mi: 0, s: 0 };
+    const SESSION = 'adm:dir/file.ADM';
+    const build = (lines, pidFor) => rowsForFile(parseAdmFile(lines.join('\n')), header, 0, SESSION, pidFor);
+    const HIT = '18:06:50 | Player "pie eater 32" (id=mHaN2IhgZWUlGEfl6G3OesRSCLBZr6tuiY-V-HFfAJc= pos=<6294.7, 1548.2, 216.8>)[HP: 5.95662] hit by Player "Peachman5" (id=dxNkGeV7h4_1Fz_H-yCa4Qs7JOuIpxiIr1VZuVC8M6I= pos=<6297.4, 1529.5, 216.7>) into LeftArm(18) for 102.351 damage (Bullet_762x39) with IZH-18 from 18.8819 meters';
+
+    it('turns a PvP hit into the attacker\'s hit row, in the mod\'s contract', () => {
+        // Verbatim line. Damage and range to one decimal, `at=` rounded, every key
+        // present — the same string the mod would have written for this shot.
+        const { actions } = build([HIT]);
+        expect(actions).toHaveLength(1);
+        const [a] = actions;
+        expect(a).toMatchObject({
+            kind: 'hit',
+            pid: `${UNRESOLVED_PREFIX}dxNkGeV7h4_1Fz_H-yCa4Qs7JOuIpxiIr1VZuVC8M6I=`,
+            cls: null,
+            x: 6297.4, y: 216.7, z: 1529.5,            // the attacker's position
+            session: SESSION,
+            n: 1 * 2 + 0,
+        });
+        expect(a.detail).toBe(
+            `victim=player:${UNRESOLVED_PREFIX}mHaN2IhgZWUlGEfl6G3OesRSCLBZr6tuiY-V-HFfAJc=;`
+            + 'zone=LeftArm;dmg=102.4;ammo=Bullet_762x39;with=IZH-18;dist=18.9;at=6295,217,1548',
+        );
+        expect(new Date(a.ts).toISOString()).toBe('2025-01-04T18:06:50.000Z');
+    });
+
+    it('writes empty values as empty so the key set is stable', () => {
+        const { actions } = build([
+            '10:00:00 | Player "A" (id=G1 pos=<1, 2, 3>)[HP: 90] hit by Player "B" (id=G2 pos=<4, 5, 6>) into (-1) for 0 damage (MeleeFist)',
+        ]);
+        expect(actions[0].detail).toBe(`victim=player:${UNRESOLVED_PREFIX}G1;zone=;dmg=0.0;ammo=MeleeFist;with=;dist=;at=1,3,2`);
+    });
+
+    it('emits nothing for the lethal PvP hit, because the kill line that follows is the record', () => {
+        const { actions } = build([
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>)[HP: 0] hit by Player "B" (id=G2 pos=<4, 5, 6>) into Head(0) for 90 damage (Bullet_556x45) with AUG A1 from 5 meters ',
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) killed by Player "B" (id=G2 pos=<4, 5, 6>) with AUG A1 from 5 meters ',
+        ]);
+        expect(actions.map(a => a.kind)).toEqual(['kill', 'death']);
+    });
+
+    it('turns a PvP kill into a kill for the attacker and a death for the victim', () => {
+        // Two actors, two rows, matching what the mod emits from EEHitBy and
+        // EEKilled. Slots 0 and 1 keep n unique for the one line.
+        const { actions } = build([
+            'x', 'x',
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) killed by Player "B" (id=G2 pos=<4, 5, 6>) with (MeleeFist)',
+        ]);
+        expect(actions).toHaveLength(2);
+        expect(actions[0]).toMatchObject({
+            kind: 'kill', pid: `${UNRESOLVED_PREFIX}G2`, cls: null, x: 4, y: 6, z: 5, n: 3 * 2 + 0,
+            detail: `victim=player:${UNRESOLVED_PREFIX}G1;zone=;dmg=;ammo=MeleeFist;with=;dist=;at=1,3,2`,
+        });
+        expect(actions[1]).toMatchObject({
+            kind: 'death', pid: `${UNRESOLVED_PREFIX}G1`, cls: null, x: 1, y: 3, z: 2, n: 3 * 2 + 1,
+            detail: `killer=${UNRESOLVED_PREFIX}G2`,
+        });
+        expect(actions[0].ts).toBe(actions[1].ts);
+    });
+
+    it('turns a non-player hit into the victim\'s damaged row', () => {
+        // The existing merge fixture: the same line that carries the victim's
+        // health now also records what bit them.
+        const { rows, actions } = build([
+            '10:00:00 | Player "A" (id=G1 pos=<100, 200, 300>)',
+            '10:00:00 | Player "A" (id=G1 pos=<100, 200, 300>)[HP: 42] hit by Infected into Torso(1) for 5 damage (MeleeInfected)',
+        ]);
+        expect(rows).toHaveLength(1);
+        expect(actions).toHaveLength(1);
+        expect(actions[0]).toMatchObject({
+            kind: 'damaged', pid: `${UNRESOLVED_PREFIX}G1`, cls: 'Infected', x: 100, y: 300, z: 200, n: 2 * 2,
+            detail: 'by=infected;zone=Torso;dmg=5.0;ammo=MeleeInfected;with=',
+        });
+    });
+
+    it('marks a lethal non-player blow and names an AI attacker', () => {
+        const { actions } = build([
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>)[HP: 0] hit by AI "Mirek" (group=6 faction="Mercenaries" pos=<4, 5, 6>) into Torso(16) for 6 damage (MeleeSpear) with Skull Staff - Basic',
+            '10:00:01 | Player "B" (id=G2 pos=<1, 2, 3>)[HP: 80] hit by FallDamageHealth',
+            '10:00:02 | Player "B" (id=G2 pos=<1, 2, 3>)[HP: 70] hit by Fireplace with FireDamage',
+        ]);
+        expect(actions.map(a => [a.kind, a.cls, a.detail])).toEqual([
+            ['damaged', null, 'by=ai;zone=Torso;dmg=6.0;ammo=MeleeSpear;with=Skull Staff - Basic;lethal=1;src=Mirek'],
+            ['damaged', 'FallDamageHealth', 'by=fall;zone=;dmg=;ammo=FallDamageHealth;with='],
+            ['damaged', 'Fireplace', 'by=fire;zone=;dmg=;ammo=FireDamage;with='],
+        ]);
+    });
+
+    it('records deaths by creatures, AI and the environment with what to blame', () => {
+        const { actions } = build([
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) killed by ZmbM_usSoldier_Woodland2_Bitterroot',
+            '10:00:01 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) killed by AI "Mirek" (group=6 faction="Mercenaries" pos=<4, 5, 6>) with Skull Staff - Basic',
+            '10:00:02 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) killed by  with Fireplace',
+            '10:00:03 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) drowned. Stats> Water: 1 Energy: 2 Bleed sources: 0',
+            '10:00:04 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) bled out',
+            '10:00:05 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) died. Stats> Water: 1 Energy: 2 Bleed sources: 0',
+        ]);
+        expect(actions.every(a => a.kind === 'death' && a.pid === `${UNRESOLVED_PREFIX}G1`)).toBe(true);
+        expect(actions.map(a => a.detail)).toEqual([
+            'cause=ZmbM_usSoldier_Woodland2_Bitterroot', 'killer=ai:Mirek', 'cause=Fireplace',
+            'cause=drowned', 'cause=bleeding', null,
+        ]);
+        expect(actions.map(a => a.n)).toEqual([2, 4, 6, 8, 10, 12]);
+    });
+
+    it('does not turn a suicide line into a death row', () => {
+        // Always paired with a `died.` the same second; two rows would be a lie.
+        const { actions } = build([
+            '10:00:00 | Player "A" (id=G1 pos=<1, 2, 3>) committed suicide',
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) died. Stats> Water: 1 Energy: 2 Bleed sources: 0',
+        ]);
+        expect(actions).toHaveLength(1);
+    });
+
+    it('resolves actor, victim and killer through the same ledger', () => {
+        // One function for all three, or a hit could name its victim under one id
+        // and the victim's own death under another.
+        const ledger = new Map([['G1', { steamId: '76561198000000001', name: 'A' }], ['G2', { steamId: '76561198000000002', name: 'B' }]]);
+        const { actions } = build([
+            '10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) killed by Player "B" (id=G2 pos=<4, 5, 6>) with Brass Knuckles',
+        ], makePidFor(ledger));
+        expect(actions[0]).toMatchObject({ pid: '76561198000000002', detail: 'victim=player:76561198000000001;zone=;dmg=;ammo=;with=Brass Knuckles;dist=;at=1,3,2' });
+        expect(actions[1]).toMatchObject({ pid: '76561198000000001', detail: 'killer=76561198000000002' });
+    });
+
+    it('leaves session and n null when no session tag is given', () => {
+        const { actions } = rowsForFile(parseAdmFile('10:00:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) bled out'), header, 0);
+        expect(actions[0]).toMatchObject({ session: null, kind: 'death' });
+    });
+
+    it('reports the span of instants the file covers', () => {
+        const { span } = build([
+            '10:00:00 | Player "A" (id=G1 pos=<1, 2, 3>)',
+            '10:05:00 | Player "A" (DEAD) (id=G1 pos=<1, 2, 3>) bled out',
+        ]);
+        expect(span.to - span.from).toBe(5 * 60_000);
+    });
+});
+
 describe('rowsForFile in a zone that observes daylight saving', () => {
     const SYD = 'Australia/Sydney';
     const at = (t, x = 1) => `${t} | Player "A" (id=G1 pos=<${x}, 2, 3>)`;
     const build = (date, lines) => rowsForFile(parseAdmFile(lines.join('\n')), date, SYD);
+
+    it('places a kill inside the repeated hour at the same instant as its position row', () => {
+        // Both come off one resolver call per line. A second resolver for the
+        // actions would see the 02:00 line first and put the death an hour before
+        // the corpse was placed.
+        const { rows, actions } = build({ y: 2025, mon: 3, d: 6 }, [
+            at('02:30:00', 1),
+            '02:00:00 | Player "A" (DEAD) (id=G1 pos=<2, 2, 3>) killed by ZmbM_X',
+        ]);
+        expect(actions).toHaveLength(1);
+        expect(actions[0].ts).toBe(rows[1].ts);
+        expect(actions[0].ts).toBeGreaterThan(rows[0].ts);
+    });
 
     it('reads the same wall clock as a different instant either side of the change', () => {
         // The live server is Australia/Sydney: +11:00 in January, +10:00 in July.
@@ -307,5 +515,72 @@ describe('import into the store', () => {
 
     it('accepts an empty batch', () => {
         expect(history.recordAdmRows([])).toBe(0);
+    });
+});
+
+describe('import of combat and death rows into the store', () => {
+    beforeEach(() => { history._openForTest(':memory:'); });
+    afterEach(() => { history.close(); });
+
+    const T0 = 1_700_000_000_000;
+    const action = (over = {}) => ({
+        ts: T0, pid: `${UNRESOLVED_PREFIX}G2`, kind: 'hit', cls: null,
+        x: 4, y: 6, z: 5, detail: 'victim=player:guid:G1;zone=Head;dmg=1.0;ammo=;with=;dist=;at=1,3,2',
+        session: 'adm:dir/file.ADM', n: 2,
+        ...over,
+    });
+    const all = () => history.queryActions({ from: 0, to: T0 + 1000 }).items;
+
+    it('stores rows and reports how many', () => {
+        expect(history.recordAdmActions([action(), action({ n: 4, kind: 'death' })])).toBe(2);
+        expect(all().map(a => a.kind).sort()).toEqual(['death', 'hit']);
+    });
+
+    it('is idempotent, so re-importing an archive doubles nothing', () => {
+        // (srv, session, n) is the store's dedup key and n comes off the line
+        // number. A re-run of the same file inserts zero rows.
+        expect(history.recordAdmActions([action()])).toBe(1);
+        expect(history.recordAdmActions([action()])).toBe(0);
+        expect(all()).toHaveLength(1);
+    });
+
+    it('throws and rolls the whole file back rather than storing half of it', () => {
+        // A foreground import the user is watching must fail loudly; and a file
+        // that half-landed would re-import as "already present" forever.
+        expect(() => history.recordAdmActions([action(), action({ n: 4, pid: {} })])).toThrow();
+        expect(all()).toHaveLength(0);
+    });
+
+    it('accepts an empty batch', () => {
+        expect(history.recordAdmActions([])).toBe(0);
+    });
+
+    it('asks per kind group whether the mod was already recording', () => {
+        // A mod build that logged deaths but predates combat support has death
+        // rows and no hit rows over the same hours; the hits must still backfill.
+        history.recordEvents({ session: 'run-a', seq: 1, events: [{ n: 1, age: 0, pid: 'a', kind: 'death', cls: '', pos: [1, 2, 3], detail: '' }] }, T0);
+        const window = { from: T0 - 3600_000, to: T0 + 3600_000 };
+        expect(history.hasLiveActions({ ...window, kinds: ['death'] })).toBe(true);
+        expect(history.hasLiveActions({ ...window, kinds: ['hit', 'kill'] })).toBe(false);
+        expect(history.hasLiveActions({ ...window, kinds: ['damaged'] })).toBe(false);
+        expect(history.hasLiveActions({ from: T0 + 1, to: T0 + 3600_000, kinds: ['death'] })).toBe(false);
+    });
+
+    it('does not count imported rows as the mod having been there', () => {
+        history.recordAdmActions([action({ kind: 'death' })]);
+        expect(history.hasLiveActions({ from: T0 - 1, to: T0 + 1, kinds: ['death'] })).toBe(false);
+    });
+
+    it('exempts imported actions from age-based retention', () => {
+        // Same reasoning as imported positions: an archive is almost always older
+        // than the drop cutoff, and without this the first hourly prune after an
+        // import would delete every kill it had just backfilled.
+        const ancient = Date.now() - 400 * 24 * 3600_000;
+        history.recordAdmActions([action({ ts: ancient })]);
+        history.recordAction({ ts: ancient, pid: 'a', kind: 'pickup' });
+        const result = history.prune(Date.now());
+        expect(result.actionsDropped).toBe(1);
+        const left = history.queryActions({ from: 0, to: Date.now() }).items;
+        expect(left.map(a => a.kind)).toEqual(['hit']);
     });
 });

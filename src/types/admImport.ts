@@ -75,6 +75,15 @@ export interface AdmImportResult {
   inserted: number;
   /** connect/disconnect lines used as session boundaries. */
   events: number;
+  /**
+   * Combat and death rows (hit / kill / damaged / death) built from the logs.
+   * Optional on the type: a job object saved by an older server lacks them.
+   */
+  actions?: number;
+  /** Combat and death rows actually stored — 0 on a re-import. */
+  actionsInserted?: number;
+  /** Rows set aside because the companion mod had already recorded that kind over the period. */
+  combatSkipped?: number;
   resolved: number;
   unresolved: number;
   /** Rows inside an hour daylight saving replayed; placed by file order. */

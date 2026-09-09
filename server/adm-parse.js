@@ -46,6 +46,68 @@ const PLAYER_RE = new RegExp(
     + '(?:\\s+pos=<\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*>)?\\)',
 );
 
+/** PLAYER_RE pinned to the start of a tail, for "who did it" positions. */
+const PLAYER_AT_START_RE = new RegExp('^\\s*' + PLAYER_RE.source);
+
+/**
+ * An Expansion AI reference: `AI "Name" (group=6 faction="Mercenaries" pos=<x, z, y>)`.
+ *
+ * Same shape as a player reference but with no `id=`, so PLAYER_RE never matches
+ * it and a bot's shots would otherwise fall through to the bare-ammo branch as an
+ * unrecognised tail. Bots have no GUID and never become a pid; the name and
+ * position are kept so the feed can say which one it was. Captures: name, x, z, y.
+ */
+const AI_RE = new RegExp(
+    '^\\s*AI "([^"]*)"\\s*\\([^)]*?pos=<\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*>\\)',
+);
+
+/**
+ * The damage clause every positioned hit carries:
+ * `into LeftArm(18) for 102.351 damage (Bullet_762x39)`.
+ *
+ * The zone can be empty (`into (-1)` — a hit that resolved no component, seen on
+ * modded melee and tripwires), so the name group is `\w*` not `\w+`. Captures:
+ * zone, component, damage, ammo.
+ */
+const HIT_MSG_RE = /^\s*into (\w*)\((-?\d+)\) for (-?[\d.]+) damage(?: \(([^)]*)\))?/;
+
+/**
+ * The optional weapon clause: `with IZH-18 from 18.8819 meters ` (ranged) or
+ * `with Skull Staff - Basic` (melee, no range).
+ *
+ * Weapon names are DISPLAY names — they carry spaces, hyphens, quotes
+ * (`B950 'Blaze'`) and the engine leaves a trailing space after `meters`. So the
+ * name is taken lazily and the clause is anchored at end-of-line on a numeric
+ * range, which is the only part of it with a fixed shape.
+ */
+const WITH_RE = /^\s*with (.+?)(?: from (-?[\d.]+) meters)?\s*$/;
+
+/** `explosion (GasCanister_Ammo)` — no attacker, the ammo says what went off. */
+const EXPLOSION_RE = /^\s*explosion \(([^)]*)\)\s*$/;
+
+/**
+ * `<parent> with <ammo>` — damage from a world object rather than a creature:
+ * `Fireplace with FireDamage`, `Boat_01_Blue with TransportHit`, `BBP_Bwall with
+ * BarbedWireHit`. The parent is a config class; there is no zone or damage figure.
+ */
+const AREA_RE = /^\s*(\S+) with (\S+)\s*$/;
+
+/** `<display> into …` — a creature by display name (`Infected`, `Brown Bear`, `Dog`). */
+const NAMED_HIT_RE = /^\s*(.+?)\s+(into .*)$/;
+
+/** A bare ammo token and nothing else: `FallDamageHealth`. */
+const BARE_RE = /^\s*(\S+)\s*$/;
+
+/**
+ * Deaths with nobody to blame. `died.` and `drowned.` carry a Stats> trailer;
+ * `bled out` stands alone.
+ *
+ * NOT here: `committed suicide` and `has drowned while unconscious`. Both are
+ * always paired with a `died.` line the same second, so matching them would
+ * record every such death twice.
+ */
+const SELF_DEATH_RE = /^\s*(died\.|drowned\.|bled out)/;
+
 /** `HH:MM:SS | ` line prefix. */
 const TIME_RE = /^\s*(\d{1,2}):(\d{2}):(\d{2})\s*\|\s*(.*)$/;
 
@@ -124,9 +186,12 @@ export function parseAdmLine(line) {
         subject.kind = 'hit';
     }
 
+    // A `(DEAD)` subject or zero health means this blow was the one that killed.
+    const lethal = subject.alive === false || (subject.health !== null && subject.health <= 0);
+
     if (/^\s*is connected/.test(tail)) subject.kind = 'connect';
     else if (/has been disconnected/.test(tail)) subject.kind = 'disconnect';
-    else if (/^\s*died\./.test(tail)) {
+    else if (SELF_DEATH_RE.test(tail)) {
         subject.kind = 'death';
         subject.alive = false;
         // `died. Stats> Water: 390.382 Energy: 193.751 Bleed sources: 0`
@@ -134,9 +199,18 @@ export function parseAdmLine(line) {
         const e = /Energy:\s*(-?[\d.]+)/.exec(tail);
         if (w) subject.water = Number(w[1]);
         if (e) subject.energy = Number(e[1]);
+        subject.combat = selfDeath(tail);
     } else if (/killed by/.test(tail)) {
         subject.kind = 'death';
         subject.alive = false;
+        const k = /killed by(.*)$/.exec(tail);
+        subject.combat = k ? parseKillTail(k[1]) : null;
+    } else if (hp) {
+        // Anything past the HP block is `hit by <source> …`. A tail this module
+        // cannot read keeps the observation (health and position are still good)
+        // and simply reports no combat, rather than guessing at an attacker.
+        const h = /^\s*hit by(.*)$/.exec(tail.slice(hp[0].length));
+        subject.combat = h ? parseHitTail(h[1], lethal) : null;
     } else if (/^\s*is unconscious/.test(tail)) subject.kind = 'unconscious';
     else if (/^\s*regained consciousness/.test(tail)) subject.kind = 'conscious';
     else if (/^\s*placed /.test(tail)) subject.kind = 'placed';
@@ -240,7 +314,198 @@ function toObservation(m, secOfDay) {
         y: hasPos ? Number(m[6]) : null,
         kind: 'list',
         health: null, water: null, energy: null,
+        // What was done to this player and by whom, on hit and death lines only.
+        // See parseHitTail for the shape; null everywhere else, including on a
+        // hit line whose tail this module could not read.
+        combat: null,
     };
+}
+
+// ---- combat tails -------------------------------------------------------------
+//
+// The `combat` object on an observation:
+//
+//   {
+//     event:     'hit' | 'kill' | 'self',
+//     source:    { type, name, guid, x, y, z, display },
+//     zone, component, dmg, ammo, weapon, dist, cause, lethal
+//   }
+//
+// `source.type` is one of: `player` (a GUID we can resolve), `ai` (an Expansion
+// bot — a name and a position, never an id), `named` (a creature or world object
+// by the string the log used), `explosion`, `ammo` (a bare ammo token such as
+// FallDamageHealth, where the ammo IS the source), or `none` (`killed by  with
+// Fireplace`, where the engine had nothing to name).
+//
+// `source.display` is set on the hit-line creature form only. There the engine
+// writes DISPLAY names (`Infected`, `Brown Bear`); on kill lines it writes config
+// classes (`ZmbM_usSoldier_Woodland2_Bitterroot`). The flag lets a consumer know
+// which it is holding, because the same animal appears both ways.
+//
+// Fields the line does not carry are null, never guessed: a melee hit has no
+// distance, a kill line has no zone or damage figure, an area hit has neither.
+
+/** An empty combat record for `event`, to be filled by the branch that matched. */
+function combatFor(event, source, lethal) {
+    return {
+        event,
+        source,
+        zone: null, component: null, dmg: null, ammo: null,
+        weapon: null, dist: null, cause: null,
+        lethal,
+    };
+}
+
+function playerSource(m) {
+    const hasPos = m[4] !== undefined;
+    return {
+        type: 'player',
+        name: m[1] || null,
+        guid: m[3] === UNKNOWN_ID ? null : m[3],
+        x: hasPos ? Number(m[4]) : null,
+        z: hasPos ? Number(m[5]) : null,
+        y: hasPos ? Number(m[6]) : null,
+        display: null,
+    };
+}
+
+function aiSource(m) {
+    return {
+        type: 'ai', name: m[1] || null, guid: null,
+        x: Number(m[2]), z: Number(m[3]), y: Number(m[4]),
+        display: null,
+    };
+}
+
+const namedSource = (name, display) => ({
+    type: 'named', name, guid: null, x: null, y: null, z: null, display: display ? name : null,
+});
+
+/**
+ * A player or AI reference at the start of a tail, with how much of the tail it
+ * consumed. Players first: an AI line can never match PLAYER_RE (no `id=`), but
+ * the two are checked explicitly rather than by which regex happened to fire.
+ */
+function actorSource(s) {
+    const pm = PLAYER_AT_START_RE.exec(s);
+    if (pm) return { source: playerSource(pm), matched: pm[0].length };
+    const am = AI_RE.exec(s);
+    if (am) return { source: aiSource(am), matched: am[0].length };
+    return null;
+}
+
+/** Apply an `into …` clause to a combat record. */
+function applyHitMsg(c, msg) {
+    c.zone = msg[1];
+    c.component = Number(msg[2]);
+    c.dmg = Number(msg[3]);
+    c.ammo = msg[4] ?? null;
+}
+
+/**
+ * Apply a `with …` clause. `with (MeleeFist)` on a kill line is the engine writing
+ * the ammo where the weapon goes because bare hands have no item; it is folded
+ * into `ammo` so fists look the same on a hit and on a kill.
+ */
+function applyWith(c, w) {
+    if (!w) return;
+    const paren = /^\((.+)\)$/.exec(w[1]);
+    if (paren && c.ammo === null) c.ammo = paren[1];
+    else c.weapon = w[1];
+    if (w[2] !== undefined) c.dist = Number(w[2]);
+}
+
+/**
+ * Everything after `hit by`. Branches in order of how much each form tells us,
+ * because the looser patterns would happily swallow the richer lines:
+ *
+ *   Player "…" (id=… pos=…) into Zone(N) for D damage (Ammo) [with W [from R meters]]
+ *   AI "…" (group=… pos=…) into … (same clause)
+ *   explosion (Ammo)
+ *   <display name> into … (same clause; no `with`)
+ *   <parent class> with <Ammo>
+ *   <Ammo>
+ *
+ * Returns null for a tail that fits none of them. The caller keeps the
+ * observation either way — health and position are already read.
+ */
+function parseHitTail(s, lethal) {
+    let m;
+    const actor = actorSource(s);
+    if (actor) {
+        const rest = s.slice(actor.matched);
+        const msg = HIT_MSG_RE.exec(rest);
+        if (!msg) return null;
+        const c = combatFor('hit', actor.source, lethal);
+        applyHitMsg(c, msg);
+        applyWith(c, WITH_RE.exec(rest.slice(msg[0].length)));
+        return c;
+    }
+    if ((m = EXPLOSION_RE.exec(s))) {
+        const c = combatFor('hit', { type: 'explosion', name: m[1], guid: null, x: null, y: null, z: null, display: null }, lethal);
+        c.ammo = m[1];
+        return c;
+    }
+    if ((m = NAMED_HIT_RE.exec(s))) {
+        const msg = HIT_MSG_RE.exec(m[2]);
+        if (msg) {
+            const c = combatFor('hit', namedSource(m[1], true), lethal);
+            applyHitMsg(c, msg);
+            applyWith(c, WITH_RE.exec(m[2].slice(msg[0].length)));
+            return c;
+        }
+    }
+    if ((m = AREA_RE.exec(s))) {
+        const c = combatFor('hit', namedSource(m[1], false), lethal);
+        c.ammo = m[2];
+        return c;
+    }
+    if ((m = BARE_RE.exec(s))) {
+        const c = combatFor('hit', { type: 'ammo', name: m[1], guid: null, x: null, y: null, z: null, display: null }, lethal);
+        c.ammo = m[1];
+        return c;
+    }
+    return null;
+}
+
+/**
+ * Everything after `killed by`:
+ *
+ *   Player "…" (id=… pos=…) with W [from R meters]     (W may be `(MeleeFist)`)
+ *   AI "…" (group=… pos=…) with W [from R meters]
+ *    with W                                            (no source at all: `killed by  with Fireplace`)
+ *   <config class>                                     (ZmbM_…, Boat_01_Blue, Animal_…)
+ *
+ * `cause` is the string a death row should blame when no player did it.
+ */
+function parseKillTail(s) {
+    let m;
+    const actor = actorSource(s);
+    if (actor) {
+        const c = combatFor('kill', actor.source, true);
+        applyWith(c, WITH_RE.exec(s.slice(actor.matched)));
+        return c;
+    }
+    if ((m = WITH_RE.exec(s))) {
+        const c = combatFor('kill', { type: 'none', name: null, guid: null, x: null, y: null, z: null, display: null }, true);
+        applyWith(c, m);
+        c.cause = c.weapon ?? c.ammo;
+        return c;
+    }
+    if ((m = BARE_RE.exec(s))) {
+        const c = combatFor('kill', namedSource(m[1], false), true);
+        c.cause = m[1];
+        return c;
+    }
+    return null;
+}
+
+/** `died.` / `drowned.` / `bled out` — the reason, where the line gives one. */
+function selfDeath(tail) {
+    const c = combatFor('self', { type: 'none', name: null, guid: null, x: null, y: null, z: null, display: null }, true);
+    if (/^\s*drowned\./.test(tail)) c.cause = 'drowned';
+    else if (/^\s*bled out/.test(tail)) c.cause = 'bleeding';
+    return c;
 }
 
 /**
@@ -254,17 +519,22 @@ function toObservation(m, secOfDay) {
  *
  * `dayOffset` plus `secOfDay` is the wall-clock reading; turning it into an
  * instant needs a zone and happens in adm-import.js.
+ *
+ * Each observation is also tagged with its 1-based `line`. The importer derives
+ * an action row's sequence number from it, which is what makes re-importing a
+ * file a no-op: the line is the only thing about a hit that is stable across runs.
  */
 export function parseAdmFile(text) {
     const rows = text.split(/\r?\n/);
     const out = [];
     const advance = createDayCounter();
 
-    for (const row of rows) {
-        const obs = parseAdmLine(row);
+    for (let i = 0; i < rows.length; i++) {
+        const obs = parseAdmLine(rows[i]);
         if (!obs.length) continue;
         const dayOffset = advance(obs[0].secOfDay);
         for (const o of obs) {
+            o.line = i + 1;
             o.dayOffset = dayOffset;
             o.offsetSec = dayOffset * 86400 + o.secOfDay;
             out.push(o);

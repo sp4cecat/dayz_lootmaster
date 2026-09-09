@@ -550,6 +550,25 @@ export const INV_MAX_DEPTH = 12;
 const DETAIL_MAX = 512;
 
 /**
+ * Session prefix on action rows backfilled from admin logs.
+ *
+ * Action rows have no `src` column the way player_pos does; the session is the
+ * only provenance they carry. The importer writes `adm:<dir>/<file>` so the mod's
+ * own session ids (a mission-run token, never colon-prefixed) can never collide
+ * with it, and so the two places that must treat imported rows differently —
+ * retention and the detector cursor — can tell them apart with one LIKE.
+ */
+export const ADM_SESSION_PREFIX = 'adm:';
+
+/**
+ * WHERE fragment selecting rows the live mod (or this server) wrote, as opposed to
+ * an import. Rollback audit rows carry no session at all and are live. The prefix
+ * is a module constant, never user input, so interpolating it is not an injection
+ * surface — same reasoning as THIN_BUCKET_MS in prune().
+ */
+const LIVE_ACTION_SQL = `(session IS NULL OR session NOT LIKE '${ADM_SESSION_PREFIX}%')`;
+
+/**
  * Normalise the mod's inventory tree, applying our own node and depth caps.
  *
  * Returns `{ tree, count, truncated }`. `truncated` is OR-ed with whatever the mod
@@ -702,6 +721,75 @@ export function recordAction({ ts = Date.now(), pid = null, kind, cls = null, po
         detail ? String(detail).slice(0, DETAIL_MAX) : null,
     );
     return Number(res.lastInsertRowid);
+}
+
+/**
+ * Bulk-insert action rows backfilled from admin logs. Returns the number stored.
+ *
+ * The importer has already resolved instants and ids, so rows arrive in the
+ * stored shape: `{ ts, pid, kind, cls, x, y, z, detail, session, n }`. `session`
+ * must carry ADM_SESSION_PREFIX and `n` must be unique within the file (the
+ * importer derives it from the line number), because idempotency here is the
+ * same UNIQUE (srv, session, n) index the mod's batches rely on: re-importing an
+ * archive inserts nothing rather than doubling every kill.
+ *
+ * Like recordAdmRows — and unlike the ingest tee — this throws. An import is a
+ * foreground action the user is watching, so a failure must surface.
+ */
+export function recordAdmActions(rows, srv = DEFAULT_SRV) {
+    if (!ready && !init()) return 0;
+    if (!Array.isArray(rows) || !rows.length) return 0;
+
+    const ins = db.prepare(`
+        INSERT OR IGNORE INTO action
+            (srv, ts, pid, kind, cls, x, y, z, cell, detail, session, n)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+
+    let inserted = 0;
+    db.exec('BEGIN');
+    try {
+        for (const r of rows) {
+            if (!r || !r.kind || !Number.isFinite(r.ts)) continue;
+            const hasPos = Number.isFinite(r.x) && Number.isFinite(r.z);
+            const res = ins.run(
+                srv, r.ts, r.pid ?? null, r.kind, r.cls ?? null,
+                hasPos ? r.x : null, hasPos ? (r.y ?? null) : null, hasPos ? r.z : null,
+                hasPos ? cellFor(r.x, r.z) : null,
+                r.detail ? String(r.detail).slice(0, DETAIL_MAX) : null,
+                r.session ?? null, r.n ?? null,
+            );
+            inserted += Number(res.changes || 0);
+        }
+        db.exec('COMMIT');
+    } catch (err) {
+        try { db.exec('ROLLBACK'); } catch { /* transaction already unwound */ }
+        recordFailure(err);
+        throw err;
+    }
+    return inserted;
+}
+
+/**
+ * Did the live mod record any of `kinds` inside [from, to]?
+ *
+ * The importer asks this per file before backfilling combat and death rows. Where
+ * the mod was already running, its rows are the better record (real classnames,
+ * item identity, a recorded clock) and the ADM copy would sit beside them as a
+ * near-duplicate the feed cannot collapse — different session, different n. The
+ * check is per kind group so a mod build that logged deaths but predates combat
+ * support still gets its hits backfilled. Answered off ix_action_ts with LIMIT 1.
+ */
+export function hasLiveActions({ from, to, kinds, srv = DEFAULT_SRV } = {}) {
+    if (!ready && !init()) return false;
+    const kindList = (Array.isArray(kinds) ? kinds : kinds ? [kinds] : []).filter(Boolean).map(String);
+    if (!kindList.length || !Number.isFinite(from) || !Number.isFinite(to)) return false;
+    const row = db.prepare(`
+        SELECT 1 FROM action
+         WHERE srv = ? AND ts BETWEEN ? AND ?
+           AND kind IN (${kindList.map(() => '?').join(',')})
+           AND ${LIVE_ACTION_SQL}
+         LIMIT 1`).get(srv, from, to, ...kindList);
+    return !!row;
 }
 
 /**
@@ -1118,13 +1206,18 @@ const ACTION_COLS = 'id, ts, pid, kind, cls, x, y, z, detail, iid, fresh, held, 
  * Every action row inserted after `afterId`, in rowid order — the runner's cursor
  * read. Rowid order is arrival order, which is what an incremental consumer needs;
  * a batch is inserted atomically so a pickup and its drop never straddle a read.
+ *
+ * Imported admin-log rows are excluded. They get fresh rowids with old timestamps,
+ * so an import would land in the cursor as if it had just happened — and a
+ * backfilled `death` from 2024 would clear a live player's open pickups today
+ * (loot-cycle.js treats death as the end of a carrying window).
  */
 export function actionsSince({ afterId = 0, limit = 5000, srv = DEFAULT_SRV } = {}) {
     if (!ready && !init()) return [];
     const cap = Math.max(1, Math.min(limit, 50_000));
     return db.prepare(`
         SELECT ${ACTION_COLS} FROM action
-         WHERE srv = ? AND id > ?
+         WHERE srv = ? AND id > ? AND ${LIVE_ACTION_SQL}
          ORDER BY id ASC
          LIMIT ?`).all(srv, Math.trunc(afterId), cap);
 }
@@ -1568,7 +1661,14 @@ export function prune(now = Date.now(), srv = DEFAULT_SRV) {
             // and then deleted outright — never thinned. Thinning a position stream
             // loses resolution; thinning an action log loses events, and "he picked
             // it up at 04:12" has no coarser version that is still true.
-            const acts = db.prepare('DELETE FROM action WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
+            //
+            // Imported admin-log actions get the same exemption as imported
+            // positions, for the same reason: the archive is almost always older
+            // than the cutoff, and without this the first hourly pass after an
+            // import would silently delete every kill it had just backfilled.
+            const acts = db.prepare(
+                `DELETE FROM action WHERE srv = ? AND ts < ? AND ${LIVE_ACTION_SQL}`,
+            ).run(srv, dropCutoff);
             result.actionsDropped = Number(acts.changes || 0);
             const invs = db.prepare('DELETE FROM inv_snapshot WHERE srv = ? AND ts < ?').run(srv, dropCutoff);
             result.inventoriesDropped = Number(invs.changes || 0);

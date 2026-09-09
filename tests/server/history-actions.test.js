@@ -167,6 +167,30 @@ describe('queryActions', () => {
     });
 });
 
+describe('actionsSince', () => {
+    it('walks the live log in arrival order', () => {
+        history.recordEvents(batch([ev({ n: 1 }), ev({ n: 2, kind: 'drop' })]), T0);
+        const rows = history.actionsSince({ afterId: 0 });
+        expect(rows.map(r => r.kind)).toEqual(['pickup', 'drop']);
+        expect(history.actionsSince({ afterId: rows[1].id })).toEqual([]);
+    });
+
+    it('skips rows imported from admin logs', () => {
+        // An import gets fresh rowids with old timestamps, so it would land in the
+        // detector's cursor as if it had just happened — and a backfilled death
+        // from last year would close a live player's open pickups today. The feed
+        // still sees the row; only the cursor read hides it.
+        history.recordEvents(batch([ev({ n: 1 })]), T0);
+        history.recordAdmActions([{
+            ts: T0 - 365 * 24 * 3600_000, pid: '76561198000000001', kind: 'death', cls: null,
+            x: 1, y: 2, z: 3, detail: 'cause=bleeding', session: `${history.ADM_SESSION_PREFIX}dir/file.ADM`, n: 2,
+        }]);
+        expect(history.actionsSince({ afterId: 0 }).map(r => r.kind)).toEqual(['pickup']);
+        expect(history.queryActions({ from: 0, to: T0 + 1000 }).items.map(r => r.kind).sort())
+            .toEqual(['death', 'pickup']);
+    });
+});
+
 describe('normalizeTree', () => {
     const node = (over = {}) => ({
         cls: 'TacticalBaconCan', slot: '', where: 'cargo',

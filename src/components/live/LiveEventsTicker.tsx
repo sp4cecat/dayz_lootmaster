@@ -3,9 +3,11 @@ import { Activity, Loader2 } from 'lucide-react';
 import { useHistoryActions } from '@/hooks/useHistoryData';
 import { TICKER_KINDS, TICKER_SPAN_MS } from '@/utils/liveWindow';
 import { actionKindStyle } from '@/utils/actionKinds';
+import { actorTypeLabel, parseKv, parseVictim } from '@/utils/actionDetail';
 import { formatDuration } from '@/utils/duration';
 import { cx } from '@/utils/cx';
 import type { LivePlayer } from '@/types/cftools';
+import type { HistoryAction } from '@/types/history';
 import { livePlayerId } from './LiveMarkers';
 
 interface LiveEventsTickerProps {
@@ -22,8 +24,27 @@ interface LiveEventsTickerProps {
 const NO_IDS: string[] = [];
 
 /**
- * What just happened, server-wide: the last quarter hour of deaths, connects and
- * enforcement across everybody, for the rail's no-selection state.
+ * The other party in a row, for the small line under the actor: ` · by Bob` on a
+ * death, ` · Bob` (or ` · infected`) on a kill. A steam id becomes a name only when
+ * that player is online right now — the ticker has no other name source and a
+ * 17-digit id is still more useful than nothing.
+ */
+function subline(a: HistoryAction, nameBySteam: Map<string, string>): string {
+  const kv = parseKv(a.detail);
+  if (!kv) return '';
+  if (kv.killer) return ` · by ${nameBySteam.get(kv.killer) ?? kv.killer}`;
+  if (a.kind === 'kill') {
+    const victim = parseVictim(kv);
+    if (!victim) return '';
+    if (victim.type === 'player' && victim.pid) return ` · ${nameBySteam.get(victim.pid) ?? victim.pid}`;
+    return ` · ${actorTypeLabel(victim.type)}`;
+  }
+  return '';
+}
+
+/**
+ * What just happened, server-wide: the last quarter hour of deaths, kills, connects
+ * and enforcement across everybody, for the rail's no-selection state.
  *
  * An empty `ids` list is a deliberate server-wide query here (the backend reads
  * it as "everyone"); `enabled` is what stops it running with history off.
@@ -36,6 +57,10 @@ export default function LiveEventsTicker({ now, enabled, historyReason, players,
   const rows = useMemo(() => [...actions].reverse(), [actions]);
   const onlineBySteam = useMemo(
     () => new Map(players.filter(p => p.steamId).map(p => [p.steamId as string, livePlayerId(p)])),
+    [players],
+  );
+  const nameBySteam = useMemo(
+    () => new Map(players.filter(p => p.steamId && p.name).map(p => [p.steamId as string, p.name as string])),
     [players],
   );
 
@@ -71,7 +96,7 @@ export default function LiveEventsTicker({ now, enabled, historyReason, players,
                   </span>
                   <span className="block text-[10px] text-gray-400 dark:text-gray-500 tabular-nums truncate">
                     {formatDuration(Math.max(0, now - a.ts))} ago
-                    {a.detail?.startsWith('killer=') ? ` · by ${a.detail.slice(7)}` : ''}
+                    {subline(a, nameBySteam)}
                   </span>
                 </span>
               </>

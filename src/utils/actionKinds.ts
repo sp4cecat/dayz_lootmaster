@@ -9,7 +9,7 @@
 
 import {
   Hand, PackageOpen, Archive, Hammer, Trash2, Skull, LogIn, LogOut, RotateCcw,
-  MessageSquareWarning, UserX, Ban, Circle, type LucideIcon,
+  MessageSquareWarning, UserX, Ban, Crosshair, Swords, HeartCrack, Circle, type LucideIcon,
 } from 'lucide-react';
 
 export interface ActionKindStyle {
@@ -41,6 +41,17 @@ const KINDS: Record<string, ActionKindStyle> = {
   deploy: { label: 'Deployed', icon: Hammer, color: '#06b6d4', chip: CHIP.primary },
   destroy: { label: 'Destroyed', icon: Trash2, color: '#ef4444', chip: CHIP.error },
   death: { label: 'Died', icon: Skull, color: '#dc2626', chip: CHIP.error },
+  // Combat (spacecat_dayz_server_api 1.5+, and the ADM backfill). `hit` and `kill`
+  // are the ATTACKER's rows — the pid is whoever pulled the trigger and the victim
+  // is named in the detail — so a `kill` sits beside the victim's own `death` as
+  // two rows for one shot. `damaged` is the VICTIM's row for damage no player
+  // dealt (infected, animals, AI, falls, fire, vehicles), which is why it is a
+  // separate kind rather than a `hit` with the roles swapped: a chip called
+  // "Hit" that mixes what a player did with what was done to them would be
+  // unreadable.
+  hit: { label: 'Hit', icon: Crosshair, color: '#f97316', chip: CHIP.warning },
+  kill: { label: 'Killed', icon: Swords, color: '#b91c1c', chip: CHIP.error },
+  damaged: { label: 'Damaged', icon: HeartCrack, color: '#eab308', chip: CHIP.warning },
   connect: { label: 'Connected', icon: LogIn, color: '#94a3b8', chip: CHIP.gray },
   disconnect: { label: 'Disconnected', icon: LogOut, color: '#64748b', chip: CHIP.gray },
   rollback: { label: 'Rolled back', icon: RotateCcw, color: '#a855f7', chip: CHIP.primary },

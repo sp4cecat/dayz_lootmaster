@@ -134,7 +134,13 @@ export interface HistoryAction {
   x: number | null;
   y: number | null;
   z: number | null;
-  /** Free-form: `killer=<id>` on a death, the container class on a stash. */
+  /**
+   * Free-form: `killer=<id>` or `cause=<class>` on a death, the container class on
+   * a stash, JSON on a rollback. The combat kinds (`hit`, `kill`, `damaged`) carry
+   * a `key=value;` list with a stable key set — `victim=<type>[:<pid>];zone=;dmg=;
+   * ammo=;with=;dist=;at=` for the attacker's rows, `by=<source>;zone=;dmg=;ammo=;
+   * with=[;lethal=1][;src=]` for the victim's — see `utils/actionDetail.ts`.
+   */
   detail: string | null;
   /** Mod item identity (spacecat_dayz_server_api 1.4+); null on older builds. */
   iid: number | null;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  SESSION_CAP_MS, SESSION_FALLBACK_MS, WINDOW_PRESET_MS,
+  SESSION_CAP_MS, SESSION_FALLBACK_MS, TICKER_KINDS, WINDOW_PRESET_MS,
   historyDeepLinkParams, quantiseNow, sessionStartFrom, windowFor,
 } from '../../src/utils/liveWindow';
 
@@ -61,6 +61,18 @@ describe('sessionStartFrom', () => {
 
   it('admits it does not know on a mod without event hooks', () => {
     expect(sessionStartFrom(null, false, NOW)).toEqual({ sessionStart: null, sessionKind: 'unknown' });
+  });
+});
+
+describe('TICKER_KINDS', () => {
+  it('shows kills alongside deaths', () => {
+    expect(TICKER_KINDS).toContain('death');
+    expect(TICKER_KINDS).toContain('kill');
+  });
+
+  it('leaves hits and damage taken out, or a firefight would flood the list', () => {
+    expect(TICKER_KINDS).not.toContain('hit');
+    expect(TICKER_KINDS).not.toContain('damaged');
   });
 });
 

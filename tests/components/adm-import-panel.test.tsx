@@ -268,6 +268,52 @@ describe('AdmImportPanel', () => {
         // archives are common and "5,436 already present" explains the shortfall.
         expect(text()).toContain('5,436 already present');
         expect(text()).toContain('276 player(s) could not be matched');
+        // This fixture predates the combat counts, as a job saved by an older
+        // server would. The summary must still render rather than blank out.
+        expect(text()).toContain('0 combat and death events stored');
+    });
+
+    it('reports the combat and death events it backfilled', async () => {
+        mockApi({
+            job: {
+                idle: false, running: false,
+                result: {
+                    files: 37, skipped: 0, rows: 28840, inserted: 23404, events: 3212,
+                    actions: 27210, actionsInserted: 27000, combatSkipped: 0,
+                    resolved: 0, unresolved: 28840, unresolvedGuids: 276, ambiguous: 0,
+                    firstTs: 1_700_000_000_000, lastTs: 1_700_900_000_000, errors: [],
+                },
+            },
+        });
+        await render();
+        expect(text()).toContain('27,000 combat and death events stored');
+        expect(text()).toContain('210 already present');
+        expect(text()).not.toContain('already recorded that kind');
+    });
+
+    it('explains events left out because the mod had already recorded them', async () => {
+        // Not a warning: the mod's record is the better one. But a count that
+        // silently fell short of the log would look like a parser bug.
+        mockApi({
+            job: {
+                idle: false, running: false,
+                result: {
+                    files: 3, skipped: 0, rows: 100, inserted: 100, events: 1,
+                    actions: 40, actionsInserted: 40, combatSkipped: 12,
+                    resolved: 0, unresolved: 0, unresolvedGuids: 0, ambiguous: 0,
+                    firstTs: 1_700_000_000_000, lastTs: 1_700_900_000_000, errors: [],
+                },
+            },
+        });
+        await render();
+        expect(text()).toContain('12 event(s) were left out');
+        expect(text()).toContain('already recorded that kind of event');
+    });
+
+    it('shows events stored while an import is running', async () => {
+        mockApi({ job: { idle: false, running: true, totalFiles: 12, progress: { files: 3, inserted: 900, actionsInserted: 41 } } });
+        await render();
+        expect(text()).toContain('41 events stored');
     });
 
     it('reports a failed import rather than looking idle', async () => {

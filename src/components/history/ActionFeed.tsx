@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Loader2, AlertTriangle, ListX } from 'lucide-react';
 import { cx } from '@/utils/cx';
 import { actionKindStyle } from '@/utils/actionKinds';
+import { describeCombat, parseKv } from '@/utils/actionDetail';
 import type { ActionKindCount, HistoryAction } from '@/types/history';
 
 function formatTime(ts: number): string {
@@ -16,10 +17,20 @@ function formatTime(ts: number): string {
  * The mod's format is deliberately loose (`killer=<id>`, a bare container class,
  * a player name), because inventing a schema for a free-text field would mean
  * versioning it. Anything unrecognised is shown verbatim rather than dropped.
+ *
+ * The combat kinds are the exception: their `key=value;` list is a contract the
+ * mod and the ADM backfill both honour, so it gets a proper sentence. A combat
+ * row whose detail does not parse still falls through to the verbatim path.
  */
 function describeDetail(action: HistoryAction): string | null {
   const d = action.detail;
   if (!d) return null;
+  if (action.kind === 'hit' || action.kind === 'kill' || action.kind === 'damaged') {
+    const kv = parseKv(d);
+    const sentence = kv ? describeCombat(action.kind, kv) : null;
+    if (sentence) return sentence;
+    return d;
+  }
   if (d.startsWith('killer=')) return `Killed by ${d.slice(7)}`;
   if (d.startsWith('cause=')) return `Cause: ${d.slice(6)}`;
   if (action.kind === 'stash') return `Into ${d}`;
