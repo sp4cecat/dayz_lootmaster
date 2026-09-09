@@ -22,9 +22,16 @@ import { useCfToolsStatus } from '@/hooks/useCfToolsStatus';
 import { useLiveSnapshot } from '@/hooks/useLiveSnapshot';
 import { useCfToolsActions } from '@/hooks/useCfToolsActions';
 import { useFlags } from '@/hooks/useHistoryData';
+import { useQuantisedNow } from '@/hooks/useQuantisedNow';
+import { useSelectedPlayerHistory } from '@/hooks/useSelectedPlayerHistory';
 import type { LiveLayerKey, LivePlayer, LiveWorldInfo } from '@/types/cftools';
 import type { PlayerFlag } from '@/types/history';
+import TrackLayer from '../history/TrackLayer';
+import ActionsLayer from '../history/ActionsLayer';
 import LiveSidePanel from './LiveSidePanel';
+import LiveRoster from './LiveRoster';
+import LivePlayerPanel from './LivePlayerPanel';
+import LiveEventsTicker from './LiveEventsTicker';
 import PlayerActionsBar from './PlayerActionsBar';
 import RawActionPanel, { type RawActionTarget } from './RawActionPanel';
 import ConfirmDialog from './ConfirmDialog';
@@ -34,7 +41,7 @@ import { buildSpawnTree, countSpawnTree, flattenSpawnTree } from '@/utils/loadou
 import { resolveLoadoutNode } from '@/utils/loadouts';
 import type { Loadout } from '@/types/loadouts';
 import {
-  AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker, territoryAtPoint,
+  AiMarker, EventMarker, PlayerMarker, TerritoryMarker, VehicleMarker, livePlayerId, territoryAtPoint,
   type MarkerSelection,
 } from './LiveMarkers';
 
@@ -228,11 +235,37 @@ export default function LiveMapView({
   // Live loot-cycle flags, joined onto the roster by steam64. Read from the
   // history backend, not CF Tools, so the ring and the card row work on a server
   // with no binding at all — and they simply stay absent when history is off.
-  const { items: liveFlags } = useFlags(15000, { minSeverity: 'low' });
+  const {
+    items: liveFlags, available: flagsAvailable, loading: flagsLoading,
+    reason: historyReason, refresh: refreshFlags,
+  } = useFlags(15000, { minSeverity: 'low' });
+  // Doubles as the "is history on" probe: it already polls, and it answers
+  // `available: false` when the recorder is off. Not until it has answered,
+  // though — the hook starts optimistic, and a selection made in that first
+  // second would otherwise fire history requests at a backend with none.
+  const historyAvailable = flagsAvailable && !flagsLoading;
   const flagsByPid = useMemo(
     () => new Map<string, PlayerFlag>(liveFlags.map(f => [f.pid, f])),
     [liveFlags],
   );
+
+  // The selected player's recorded path and actions. Keyed on a quantised clock
+  // and the selection, never on the 5 s snapshot — see liveWindow.ts.
+  const selectedPlayer = useMemo(
+    () => (selection?.kind === 'player'
+      ? snapshot?.players?.items.find(p => livePlayerId(p) === selection.id)
+      : undefined),
+    [selection, snapshot],
+  );
+  const now = useQuantisedNow(30_000);
+  const hist = useSelectedPlayerHistory({
+    pid: selectedPlayer?.steamId ?? null,
+    now,
+    enabled: historyAvailable,
+  });
+  // The world block errors whenever the mod is not reporting, which is the same
+  // question "can a capture reach this player" asks.
+  const modConnected = !!snapshot?.world && !snapshot.world.error;
 
   // Resolve the selected marker into a GameLabs action target. No selection →
   // world-context actions; player/vehicle/event selections narrow the raw
@@ -243,7 +276,7 @@ export default function LiveMapView({
     const world: RawActionTarget = { context: 'world', referenceKey: null, label: null, className: null };
     if (!selection || !snapshot) return world;
     if (selection.kind === 'player') {
-      const pl = snapshot.players?.items.find(p => (p.sessionId || p.steamId || p.name) === selection.id);
+      const pl = snapshot.players?.items.find(p => livePlayerId(p) === selection.id);
       return pl?.steamId ? { context: 'player', referenceKey: pl.steamId, label: pl.name, className: null } : world;
     }
     if (selection.kind === 'vehicle') {
@@ -437,7 +470,7 @@ export default function LiveMapView({
     if (!sel || !snapshot) return null;
     const at = (p: [number, number, number]): WorldPoint => ({ x: p[0], z: p[2] });
     if (sel.kind === 'player') {
-      const pl = snapshot.players?.items.find(p => (p.sessionId || p.steamId || p.name) === sel.id);
+      const pl = snapshot.players?.items.find(p => livePlayerId(p) === sel.id);
       if (!pl) return null;
       return {
         label: pl.name,
@@ -558,6 +591,24 @@ export default function LiveMapView({
       : await actions.spawnPileFlat(at.x, at.z, flattenSpawnTree(tree));
     report(result, `Spawned ${loadout.label} (${count} item${count === 1 ? '' : 's'})`);
   }, [loadouts, actions, worldActions, notify, report]);
+
+  /**
+   * Roster click: select, and bring the player into view. Centring only when the
+   * player has a position — a row for someone still loading in selects the card
+   * and leaves the viewport alone.
+   */
+  const selectFromRoster = useCallback((id: string) => {
+    selectPlayer(id);
+    const pl = snapshot?.players?.items.find(p => livePlayerId(p) === id);
+    if (pl?.position) centreOnWorld(pl.position[0], pl.position[2]);
+  }, [selectPlayer, snapshot, centreOnWorld]);
+
+  // The card's Follow button: the same `following` slot the context menu drives.
+  const followingSelected = !!following && !!selection
+    && following.kind === selection.kind && following.id === selection.id;
+  const toggleFollow = useCallback(() => {
+    setFollowing(f => (f && selection && f.kind === selection.kind && f.id === selection.id) ? null : selection);
+  }, [selection]);
 
   // Following: recentre whenever the followed entity's position changes. Keyed on the
   // coordinates rather than on `view`, so the transform this writes can't retrigger it.
@@ -836,6 +887,15 @@ export default function LiveMapView({
           </div>
         ) : (
           <div className="flex-1 flex gap-4 min-h-0">
+            <LiveRoster
+              players={snapshot?.players?.items ?? []}
+              stale={snapshot?.players?.stale}
+              layerError={snapshot?.players?.error}
+              selectedId={selection?.kind === 'player' ? selection.id : null}
+              onSelect={selectFromRoster}
+              flags={flagsByPid}
+            />
+
             {/* Map */}
             <div
               ref={view.viewportRef}
@@ -863,7 +923,14 @@ export default function LiveMapView({
                 </div>
               )}
               {showImage ? (
-                <MapImageLayer view={view} map={map} />
+                <MapImageLayer view={view} map={map}>
+                  {/* The selected player's recorded path. Inside the content box, not
+                      on the overlay: it is static geometry the browser scales for
+                      free (see TrackLayer). */}
+                  {hist.tracks.length > 0 && (
+                    <TrackLayer tracks={hist.tracks} worldSize={map.worldSize} colors={hist.colors} />
+                  )}
+                </MapImageLayer>
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 pointer-events-none">
                   No map preview for "{map.displayName}"
@@ -951,9 +1018,20 @@ export default function LiveMapView({
                     );
                   })}
 
+                  {/* The selected player's recent actions, under the live dots so a
+                      pickup marker can never steal the click meant for a player. */}
+                  {hist.actions.length > 0 && (
+                    <ActionsLayer
+                      actions={hist.actions}
+                      view={view}
+                      hoveredId={hist.hoveredId}
+                      onHoverAction={hist.setHoveredId}
+                    />
+                  )}
+
                   {enabledLayers.has('players') && snapshot.players?.items.map((pl) => {
                     if (!pl.position) return null;
-                    const id = pl.sessionId || pl.steamId || pl.name;
+                    const id = livePlayerId(pl);
                     const p = view.project(pl.position[0], pl.position[2]);
                     const canDragTeleport = !!status.capabilities?.gameLabs && !!pl.steamId;
                     return (
@@ -1048,13 +1126,40 @@ export default function LiveMapView({
               selection={selection}
               flags={flagsByPid}
               onClearSelection={() => setSelection(null)}
-              playerActions={(player) => (
-                <PlayerActionsBar
+              playerCard={(player, footer) => (
+                <LivePlayerPanel
                   player={player}
-                  actions={actions}
+                  players={snapshot?.players?.items ?? []}
+                  hist={hist}
+                  flag={player.steamId ? flagsByPid.get(player.steamId) ?? null : null}
+                  onFlagChanged={refreshFlags}
+                  historyAvailable={historyAvailable}
+                  historyReason={historyReason}
+                  modConnected={modConnected}
+                  following={followingSelected}
+                  onToggleFollow={toggleFollow}
+                  onSelectPlayer={selectFromRoster}
+                  onClear={() => setSelection(null)}
                   selectedProfileId={selectedProfileId}
-                  gameLabs={!!status.capabilities?.gameLabs}
-                  onStartTeleport={(p) => { setTeleportTarget(p); setTeleportDest(null); }}
+                  playerActions={(
+                    <PlayerActionsBar
+                      player={player}
+                      actions={actions}
+                      selectedProfileId={selectedProfileId}
+                      gameLabs={!!status.capabilities?.gameLabs}
+                      onStartTeleport={(p) => { setTeleportTarget(p); setTeleportDest(null); }}
+                    />
+                  )}
+                  footer={footer}
+                />
+              )}
+              summaryExtra={(
+                <LiveEventsTicker
+                  now={now}
+                  enabled={historyAvailable}
+                  historyReason={historyReason}
+                  players={snapshot?.players?.items ?? []}
+                  onSelectPlayer={selectFromRoster}
                 />
               )}
               footer={

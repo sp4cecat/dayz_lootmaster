@@ -6,7 +6,7 @@ import type {
   LiveAi, LiveEvent, LivePlayer, LiveSnapshot, LiveTerritoryInfo, LiveTerritoryMember,
   LivePlayerRef, LiveVehicle,
 } from '@/types/cftools';
-import type { MarkerSelection } from './LiveMarkers';
+import { livePlayerId, type MarkerSelection } from './LiveMarkers';
 import type { CfToolsStatus } from '@/hooks/useCfToolsStatus';
 import type { PlayerFlag } from '@/types/history';
 import { severityChipClass, severityLabel } from '@/utils/flagSeverity';
@@ -18,16 +18,25 @@ interface LiveSidePanelProps {
   onClearSelection: () => void;
   /** P3 slot: action bar rendered under a selected player's details. */
   playerActions?: (player: LivePlayer) => React.ReactNode;
+  /**
+   * Replaces the built-in player card entirely. Receives the footer too, and owns
+   * where it goes — the panel does not append it a second time. The slot renders
+   * directly in the rail's flex column so a scrolling child (the action feed, the
+   * loadout list) can size itself; the built-in card stays as the fallback.
+   */
+  playerCard?: (player: LivePlayer, footer?: React.ReactNode) => React.ReactNode;
   /** Rendered below every panel state (e.g. the contextual GameLabs action panel). */
   footer?: React.ReactNode;
+  /** Rendered under the layer counts in the no-selection summary. */
+  summaryExtra?: React.ReactNode;
   /** Live loot-cycle flags keyed by pid (steam64), joined onto `player.steamId`. */
   flags?: Map<string, PlayerFlag>;
 }
 
-const fmtPos = (pos: [number, number, number] | null) =>
+export const fmtPos = (pos: [number, number, number] | null) =>
   pos ? `${Math.round(pos[0])}, ${Math.round(pos[2])}` : '—';
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+export function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
       <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
@@ -36,13 +45,18 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function PanelHeader({ icon: Icon, title, onClear }: { icon: React.ElementType; title: string; onClear: () => void }) {
+export function PanelHeader({ icon: Icon, title, onClear, children }: {
+  icon: React.ElementType; title: string; onClear: () => void;
+  /** Controls between the title and the clear button. */
+  children?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-2 mb-2">
       <div className="flex items-center gap-2 min-w-0">
         <Icon size={16} className="text-primary-600 dark:text-primary-400 shrink-0" />
         <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{title}</h4>
       </div>
+      {children}
       <button
         type="button"
         onClick={onClear}
@@ -214,10 +228,10 @@ function TerritoryUnavailable({ hasLabel }: { hasLabel: boolean }) {
  * `playerActions` slot so the panel itself stays presentational.
  */
 export default function LiveSidePanel({
-  snapshot, status, selection, onClearSelection, playerActions, footer, flags,
+  snapshot, status, selection, onClearSelection, playerActions, playerCard, footer, summaryExtra, flags,
 }: LiveSidePanelProps) {
   const findPlayer = (id: string): LivePlayer | undefined =>
-    snapshot?.players?.items.find(p => (p.sessionId || p.steamId || p.name) === id);
+    snapshot?.players?.items.find(p => livePlayerId(p) === id);
   const findVehicle = (id: string): LiveVehicle | undefined =>
     snapshot?.vehicles?.items.find((v, i) => (v.id || String(i)) === id);
   const findEvent = (kind: 'event' | 'territory', id: string): LiveEvent | undefined => {
@@ -241,6 +255,13 @@ export default function LiveSidePanel({
     );
   } else if (selection?.kind === 'player') {
     const player = findPlayer(selection.id);
+    if (player && playerCard) {
+      return (
+        <div className={cx(RAIL, 'flex flex-col')}>
+          {playerCard(player, footer)}
+        </div>
+      );
+    }
     body = player ? (
       <div>
         <PanelHeader icon={User} title={player.name} onClear={onClearSelection} />
@@ -364,16 +385,20 @@ export default function LiveSidePanel({
           </div>
         ))}
         <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
-          Select a marker for details. Data via CF Tools Cloud{status.capabilities?.gameLabs ? ' + GameLabs' : ''}.
+          Select a marker or a roster row for details. Data via CF Tools Cloud{status.capabilities?.gameLabs ? ' + GameLabs' : ''}.
         </p>
+        {summaryExtra}
       </div>
     );
   }
 
   return (
-    <div className="w-72 shrink-0 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 p-4">
+    <div className={cx(RAIL, 'overflow-y-auto p-4')}>
       {body}
       {footer && <div className="mt-3">{footer}</div>}
     </div>
   );
 }
+
+/** The rail's frame, shared by the scrolling card states and the player-card slot. */
+const RAIL = 'w-80 shrink-0 min-h-0 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40';

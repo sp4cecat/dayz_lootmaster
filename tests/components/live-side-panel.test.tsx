@@ -250,6 +250,69 @@ describe('LiveSidePanel mod-sourced territory', () => {
   });
 });
 
+describe('LiveSidePanel slots', () => {
+  const withPlayer = {
+    ...snapshot,
+    players: {
+      at: 1, stale: false,
+      items: [{
+        sessionId: 's-1', cftoolsId: 'cf-1', name: 'Alice', steamId: '765',
+        position: [1, 0, 1], health: 50, handItem: null, handItemLabel: null,
+        blood: null, shock: null, energy: null, water: null, alive: true, ping: 10, loaded: true, banCount: 0,
+      }],
+    },
+  } as unknown as LiveSnapshot;
+
+  async function renderWith(props: Partial<React.ComponentProps<typeof LiveSidePanel>>) {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <LiveSidePanel
+          snapshot={withPlayer}
+          status={status as never}
+          selection={null}
+          onClearSelection={() => {}}
+          footer={<div data-testid="gl-footer">GameLabs actions</div>}
+          {...props}
+        />,
+      );
+    });
+    return container;
+  }
+
+  it('hands the player and the footer to the playerCard slot instead of the built-in card', async () => {
+    const container = await renderWith({
+      selection: { kind: 'player', id: 's-1' },
+      playerCard: (player, footer) => (
+        <div data-testid="card-slot">{player.name}{footer}</div>
+      ),
+    });
+    expect(container.querySelector('[data-testid="card-slot"]')?.textContent).toContain('Alice');
+    // Exactly one footer: the slot placed it, the panel did not add another.
+    expect(container.querySelectorAll('[data-testid="gl-footer"]').length).toBe(1);
+    // The built-in rows are gone.
+    expect(container.textContent).not.toContain('Recorded bans');
+  });
+
+  it('falls back to the built-in card without the slot', async () => {
+    const container = await renderWith({ selection: { kind: 'player', id: 's-1' } });
+    expect(container.textContent).toContain('Recorded bans');
+    expect(container.querySelector('[data-testid="gl-footer"]')).toBeTruthy();
+  });
+
+  it('renders summaryExtra in the no-selection state only', async () => {
+    const summary = await renderWith({ summaryExtra: <div data-testid="extra">ticker</div> });
+    expect(summary.querySelector('[data-testid="extra"]')).toBeTruthy();
+    const detail = await renderWith({
+      selection: { kind: 'vehicle', id: 'v1' },
+      summaryExtra: <div data-testid="extra">ticker</div>,
+    });
+    expect(detail.querySelector('[data-testid="extra"]')).toBeNull();
+  });
+});
+
 describe('LiveSidePanel AI detail', () => {
   it('renders the AI stat block with faction and group', async () => {
     const container = await render({ kind: 'ai', id: 'ai1' });

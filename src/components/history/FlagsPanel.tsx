@@ -335,7 +335,11 @@ const FlagRow = memo(function FlagRow({
 /** Newest first; the list item's evidence is the fallback while the detail loads. */
 const CYCLES_SHOWN = 8;
 
-function FlagDetail({ flag, onChanged, onHoverCycle }: {
+/**
+ * Exported for the Live Map's player card, which shows the same evidence and rungs
+ * next to a connected player rather than in the history rail.
+ */
+export function FlagDetail({ flag, onChanged, onHoverCycle }: {
   flag: PlayerFlag;
   onChanged: () => void;
   onHoverCycle?: (cycle: CycleEvidence | null, pid: string) => void;

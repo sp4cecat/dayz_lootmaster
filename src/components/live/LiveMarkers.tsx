@@ -28,6 +28,14 @@ export interface MarkerSelection {
 
 export const selectionKey = (s: MarkerSelection | null) => (s ? `${s.kind}:${s.id}` : null);
 
+/**
+ * The id a player marker is keyed and selected by. The session id is the stable
+ * choice while connected; the fallbacks cover a row CF Tools has not fully
+ * resolved yet. One definition, because a selection made from the roster has to
+ * resolve to the same marker the map would have selected on click.
+ */
+export const livePlayerId = (p: LivePlayer): string => p.sessionId || p.steamId || p.name;
+
 /** Vehicle-class icon mapping — shared by vehicles and vehicle-spawn events. */
 export function iconForClassName(className: string | null | undefined): LucideIcon | null {
   if (!className) return null;

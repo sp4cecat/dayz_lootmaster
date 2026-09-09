@@ -169,11 +169,17 @@ export function useAreaQuery() {
  * from the filtered result would delete the very chips needed to widen it again.
  */
 export function useHistoryActions(
-  pids: string[],
+  pids: readonly string[],
   from: number,
   to: number,
-  kinds: string[] = [],
+  kinds: readonly string[] = [],
   area: AreaSelection | null = null,
+  /**
+   * False parks the hook: state clears and nothing is fetched. Needed because an
+   * EMPTY `pids` is not "nobody" — the backend reads it as "everybody" — so a
+   * caller with no selection cannot express "fetch nothing" through the ids alone.
+   */
+  enabled = true,
 ) {
   const [actions, setActions] = useState<HistoryAction[]>([]);
   const [kindCounts, setKindCounts] = useState<ActionKindCount[]>([]);
@@ -187,6 +193,10 @@ export function useHistoryActions(
   const areaKey = area ? `${area.x}:${area.z}:${area.radius}` : '';
 
   useEffect(() => {
+    if (!enabled) {
+      setActions([]); setKindCounts([]); setTruncated(false); setError(null); setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     (async () => {
@@ -219,7 +229,7 @@ export function useHistoryActions(
     })();
     return () => { cancelled = true; };
     // areaKey rather than `area`: the object identity changes on every drag frame.
-  }, [idsKey, kindsKey, areaKey, from, to, area]);
+  }, [idsKey, kindsKey, areaKey, from, to, area, enabled]);
 
   return { actions, kindCounts, truncated, loading, error };
 }

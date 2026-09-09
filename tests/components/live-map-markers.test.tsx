@@ -128,6 +128,7 @@ vi.mock('@/contexts/CatalogContext', () => ({
 
 import LiveMapView from '../../src/components/live/LiveMapView';
 import { territoryAtPoint } from '../../src/components/live/LiveMarkers';
+import { apiFetch } from '../../src/utils/api';
 
 beforeAll(() => {
   if (typeof globalThis.ResizeObserver === 'undefined') {
@@ -292,7 +293,7 @@ describe('LiveMapView marker projection', () => {
     expect(document.body.textContent).toContain('7680, 7680');
     // The click that follows a drag-release must not re-select the player.
     await act(async () => { marker.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).not.toContain('Ping');
+    expect(container.querySelector('[data-testid="live-player-panel"]')).toBeNull();
   });
 
   it('maps modded classnames to their outline glyphs', async () => {
@@ -421,6 +422,107 @@ describe('territory circle as a click target', () => {
     await act(async () => { toggle.click(); });
     await click(container, INSIDE.x, INSIDE.y);
     expect(circle(container)).toBeNull();
+  });
+});
+
+/**
+ * The roster and the history layers. The default apiFetch mock answers nothing, which
+ * is the "history unreachable" case; these tests swap in a route-aware answer and put
+ * the plain one back.
+ */
+describe('LiveMapView roster and history layers', () => {
+  const mocked = apiFetch as unknown as ReturnType<typeof vi.fn>;
+  let calls: string[] = [];
+
+  function answer(historyAvailable: boolean) {
+    calls = [];
+    mocked.mockImplementation(async (path: string) => {
+      calls.push(path);
+      const ok = (body: unknown) => ({ ok: true, json: async () => body });
+      if (path.startsWith('/api/history/flags')) {
+        return ok(historyAvailable
+          ? { available: true, items: [], detector: null }
+          : { available: false, reason: 'disabled', items: [] });
+      }
+      if (path.startsWith('/api/history/actions')) {
+        const connect = path.includes('kinds=connect');
+        return ok({
+          available: true, truncated: false,
+          kinds: [{ kind: 'connect', count: 1 }, { kind: 'pickup', count: 1 }],
+          items: connect
+            ? [{ id: 1, ts: Date.now() - 3600_000, pid: PLAYER.steamId, name: 'Alice', kind: 'connect', cls: null, x: 1, y: 0, z: 1, detail: null, iid: null, fresh: null, held: null, dropped: null }]
+            : [{ id: 2, ts: Date.now() - 60_000, pid: PLAYER.steamId, name: 'Alice', kind: 'pickup', cls: 'M4A1', x: 7680, y: 0, z: 7680, detail: null, iid: null, fresh: null, held: null, dropped: null }],
+        });
+      }
+      if (path.startsWith('/api/history/track')) {
+        return ok({
+          available: true,
+          items: [{
+            pid: PLAYER.steamId, name: 'Alice', stride: 1, runs: 1, sampled: 2, simplified: false,
+            points: [
+              { ts: 1, x: 3000, y: 0, z: 11000, health: 90, blood: null, shock: null, energy: null, water: null, alive: true, hands: null, gap: false },
+              { ts: 2, x: 3840, y: 0, z: 11520, health: 87, blood: null, shock: null, energy: null, water: null, alive: true, hands: null, gap: false },
+            ],
+          }],
+        });
+      }
+      return { ok: false, json: async () => ({}) };
+    });
+  }
+
+  afterEach(() => {
+    mocked.mockImplementation(async () => ({ ok: false, json: async () => ({}) }));
+  });
+
+  async function settle() {
+    for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); });
+  }
+
+  // lucide glyphs are full of <polyline>s; the path is the one with a non-scaling stroke.
+  const path = (c: Element) => c.querySelector('polyline[vector-effect="non-scaling-stroke"]');
+
+  it('lists the online players in a left rail and selects the marker from a row', async () => {
+    answer(true);
+    const container = await render();
+    const row = container.querySelector('[data-testid="live-roster"] [data-testid="roster-row"]') as HTMLButtonElement;
+    expect(row.textContent).toContain('Alice');
+    await act(async () => { row.click(); });
+    const dot = container.querySelector('button[aria-label="Alice"] [data-testid="player-dot"]') as HTMLElement;
+    expect(dot.className).toContain('bg-primary-400/70');
+    expect(container.querySelector('[data-testid="live-player-panel"]')).toBeTruthy();
+  });
+
+  it('draws the selected player\'s recorded path in the content box and their actions on the overlay', async () => {
+    answer(true);
+    const container = await render();
+    await settle();
+    expect(path(container)).toBeNull();
+    const marker = container.querySelector('button[aria-label="Alice"]') as HTMLElement;
+    await act(async () => { marker.click(); });
+    await settle();
+    // The path is inside the transformed content box (the worldSize viewBox), not the overlay.
+    const line = path(container);
+    expect(line).toBeTruthy();
+    expect(line?.closest('svg')?.getAttribute('viewBox')).toBe(`0 0 ${WORLD} ${WORLD}`);
+    // The pickup at the world centre projects to the middle of the 600 px box.
+    const pickup = container.querySelector('.lucide-hand')?.closest('[style*="left"]') as HTMLElement;
+    expect(pickup).toBeTruthy();
+    expect(parseFloat(pickup.style.left)).toBeCloseTo(300, 3);
+    expect(calls.some(c => c.startsWith('/api/history/track'))).toBe(true);
+  });
+
+  it('keeps the map, roster and card working with history off, and asks history for nothing', async () => {
+    answer(false);
+    const container = await render();
+    // Let the flags probe answer "disabled" before the operator does anything.
+    await settle();
+    const marker = container.querySelector('button[aria-label="Alice"]') as HTMLElement;
+    await act(async () => { marker.click(); });
+    await settle();
+    expect(container.querySelector('[data-testid="live-player-panel"]')?.textContent).toContain('Alice');
+    expect(container.querySelector('[data-testid="live-roster"]')).toBeTruthy();
+    expect(path(container)).toBeNull();
+    expect(calls.filter(c => c.startsWith('/api/history/track') || c.startsWith('/api/history/actions'))).toEqual([]);
   });
 });
 
